@@ -10,8 +10,26 @@
       }
     ],
     "buildModeSet": [
-      { "name": "debug", "arkOptions": { "obfuscation": { "ruleFiles": ["./obfuscation-rules.txt"] } } },
-      { "name": "release", "arkOptions": { "obfuscation": { "ruleFiles": ["./obfuscation-rules.txt"] } } }
+      {
+        "name": "debug",
+        "arkOptions": {
+          "obfuscation": {
+            "ruleFiles": [
+              "./obfuscation-rules.txt"
+            ]
+          }
+        }
+      },
+      {
+        "name": "release",
+        "arkOptions": {
+          "obfuscation": {
+            "ruleFiles": [
+              "./obfuscation-rules.txt"
+            ]
+          }
+        }
+      }
     ]
   },
   "modules": [
@@ -21,7 +39,9 @@
       "targets": [
         {
           "name": "default",
-          "applyToProducts": ["default"]
+          "applyToProducts": [
+            "default"
+          ]
         }
       ]
     }
