@@ -9,7 +9,7 @@ export struct MetricCard {
   @Prop unit: string = '';
   @Prop sub: string = '';
   @Prop color: string = AppTheme.primary;
-  @Prop badgeText?: string;
+  @Prop badgeText: string = '';
 
   build() {
     Column({ space: 8 }) {

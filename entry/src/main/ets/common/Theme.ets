@@ -68,23 +68,28 @@ export function progressColor(value: number): string {
 }
 
 // 状态文本映射
-export interface StatusInfo {
+export class StatusInfo {
   text: string;
   color: string;
   dotColor: string;
+
+  constructor(text: string, color: string, dotColor: string) {
+    this.text = text;
+    this.color = color;
+    this.dotColor = dotColor;
+  }
 }
 
 export function statusInfo(status: string): StatusInfo {
-  const map: Record<string, StatusInfo> = {
-    online: { text: '在线', color: AppTheme.success, dotColor: AppTheme.success },
-    warning: { text: '告警', color: AppTheme.warning, dotColor: AppTheme.warning },
-    offline: { text: '离线', color: AppTheme.textTertiary, dotColor: AppTheme.textTertiary },
-    running: { text: '运行中', color: AppTheme.success, dotColor: AppTheme.success },
-    stopped: { text: '已停止', color: AppTheme.danger, dotColor: AppTheme.danger },
-    paused: { text: '已暂停', color: AppTheme.warning, dotColor: AppTheme.warning },
-    success: { text: '成功', color: AppTheme.success, dotColor: AppTheme.success },
-    failed: { text: '失败', color: AppTheme.danger, dotColor: AppTheme.danger },
-    active: { text: '可用', color: AppTheme.success, dotColor: AppTheme.success }
-  } as Record<string, StatusInfo>;
-  return map[status] || map.offline;
+  const map = new Map<string, StatusInfo>();
+  map.set('online', new StatusInfo('在线', AppTheme.success, AppTheme.success));
+  map.set('warning', new StatusInfo('告警', AppTheme.warning, AppTheme.warning));
+  map.set('offline', new StatusInfo('离线', AppTheme.textTertiary, AppTheme.textTertiary));
+  map.set('running', new StatusInfo('运行中', AppTheme.success, AppTheme.success));
+  map.set('stopped', new StatusInfo('已停止', AppTheme.danger, AppTheme.danger));
+  map.set('paused', new StatusInfo('已暂停', AppTheme.warning, AppTheme.warning));
+  map.set('success', new StatusInfo('成功', AppTheme.success, AppTheme.success));
+  map.set('failed', new StatusInfo('失败', AppTheme.danger, AppTheme.danger));
+  map.set('active', new StatusInfo('可用', AppTheme.success, AppTheme.success));
+  return map.get(status) || map.get('offline')!;
 }

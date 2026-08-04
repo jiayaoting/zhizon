@@ -7,7 +7,7 @@ export struct ProgressBar {
   @Prop value: number;       // 0~100
   @Prop showLabel: boolean = false;
   @Prop barHeight: number = 6;
-  @Prop customColor?: string;
+  @Prop customColor: string = '';
 
   build() {
     Column({ space: 4 }) {
