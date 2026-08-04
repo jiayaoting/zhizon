@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "智子 entry 模块",
+  "main": "",
+  "author": "zhizon",
+  "license": "MIT",
+  "dependencies": {}
+}

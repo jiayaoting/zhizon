@@ -1,0 +1,30 @@
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "6.0.0",
+        "targetSdkVersion": "6.0.0",
+        "runtimeOS": "HarmonyOS"
+      }
+    ],
+    "buildModeSet": [
+      { "name": "debug", "arkOptions": { "obfuscation": { "ruleFiles": ["./obfuscation-rules.txt"] } } },
+      { "name": "release", "arkOptions": { "obfuscation": { "ruleFiles": ["./obfuscation-rules.txt"] } } }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": ["default"]
+        }
+      ]
+    }
+  ]
+}

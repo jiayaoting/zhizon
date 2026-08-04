@@ -1,0 +1,12 @@
+/projects
+/.hvigor
+.cxx
+/.test
+/.idea
+**/build/
+**/oh_modules/
+local.properties
+*.iml
+.DS_Store
+.cxx
+.cache

@@ -1,0 +1,16 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/Servers",
+    "pages/ServerDetail",
+    "pages/Terminal",
+    "pages/Files",
+    "pages/Pve",
+    "pages/PveNodeDetail",
+    "pages/VmDetail",
+    "pages/Commands",
+    "pages/Batch",
+    "pages/Alerts",
+    "pages/Settings"
+  ]
+}

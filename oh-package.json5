@@ -1,0 +1,10 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "智子 - SSH & PVE 管理工具",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.21",
+    "@ohos/hvigor-ohos-plugin": "5.0.2",
+    "@ohos/hvigor": "5.0.2"
+  }
+}

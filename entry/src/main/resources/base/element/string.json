@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "智子主模块" },
+    { "name": "EntryAbility_desc", "value": "智子应用入口" },
+    { "name": "EntryAbility_label", "value": "智子" }
+  ]
+}

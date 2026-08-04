@@ -1,0 +1,4 @@
+# 智子 obfuscation 规则
+-enable-property-obfuscation
+-enable-toplevel-obfuscation
+-enable-export-obfuscation
