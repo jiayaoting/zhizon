@@ -1,10 +1,10 @@
 {
   "app": {
-    "compatibleSdkVersion": "6.0.0(12)",
     "signingConfigs": [],
     "products": [
       {
         "name": "default",
+        "compatibleSdkVersion": "6.0.0(12)",
         "buildOption": {}
       }
     ]
