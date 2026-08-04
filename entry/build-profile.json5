@@ -6,9 +6,7 @@
       "name": "release",
       "arkOptions": {
         "obfuscation": {
-          "ruleOptions": {
-            "files": ["./obfuscation-rules.txt"]
-          }
+          "enable": false
         }
       }
     }
