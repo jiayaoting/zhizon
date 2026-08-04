@@ -158,11 +158,11 @@ struct FilesPage {
           .fontColor(AppTheme.textTertiary)
           .fontFamily(AppTheme.fontMono)
           .margin({ right: 8 })
-        StatusBadge({ status: t.status, size: 'small' })
+        StatusBadge({ status: t.status, badgeSize: 'small' })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      ProgressBar({ value: t.progress, showLabel: true, height: 4 })
+      ProgressBar({ value: t.progress, showLabel: true, barHeight: 4 })
     }
     .width('100%')
     .padding(12)

@@ -8,14 +8,14 @@ import { ProgressBar } from '../components/ProgressBar';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
-import { PveCluster, PveNode } from '../model/Models';
+import { PveCluster, PveNode, Stats } from '../model/Models';
 
 @Entry
 @Component
 struct PvePage {
   @State activeNav: string = 'Pve';
   @State clusters: PveCluster[] = DataRepository.getPveClusters();
-  @State stats = DataRepository.getStats();
+  @State stats: Stats = DataRepository.getStats();
 
   // 顶栏操作：添加 PVE 节点主色按钮
   @Builder topActions() {
@@ -47,7 +47,7 @@ struct PvePage {
             .fontSize(15)
             .fontColor(AppTheme.textPrimary)
             .fontWeight(FontWeight.Bold)
-          StatusBadge({ status: n.status, size: 'small' })
+          StatusBadge({ status: n.status, badgeSize: 'small' })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
@@ -64,7 +64,7 @@ struct PvePage {
             Text('CPU').fontSize(10).fontColor(AppTheme.textTertiary).layoutWeight(1)
             Text(`${n.maxcpu} 核`).fontSize(10).fontColor(AppTheme.textSecondary)
           }.width('100%')
-          ProgressBar({ value: n.cpu * 100, showLabel: true, height: 4 })
+          ProgressBar({ value: n.cpu * 100, showLabel: true, barHeight: 4 })
         }.width('100%')
 
         // 内存进度
@@ -73,7 +73,7 @@ struct PvePage {
             Text('内存').fontSize(10).fontColor(AppTheme.textTertiary).layoutWeight(1)
             Text(`${n.mem.toFixed(1)} / ${n.maxmem} GB`).fontSize(10).fontColor(AppTheme.textSecondary)
           }.width('100%')
-          ProgressBar({ value: (n.mem / n.maxmem) * 100, showLabel: true, height: 4 })
+          ProgressBar({ value: (n.mem / n.maxmem) * 100, showLabel: true, barHeight: 4 })
         }.width('100%')
 
         // 磁盘进度
@@ -82,7 +82,7 @@ struct PvePage {
             Text('磁盘').fontSize(10).fontColor(AppTheme.textTertiary).layoutWeight(1)
             Text(`${n.disk} / ${n.maxdisk} GB`).fontSize(10).fontColor(AppTheme.textSecondary)
           }.width('100%')
-          ProgressBar({ value: (n.disk / n.maxdisk) * 100, showLabel: true, height: 4 })
+          ProgressBar({ value: (n.disk / n.maxdisk) * 100, showLabel: true, barHeight: 4 })
         }.width('100%')
 
         // 运行时长
@@ -182,7 +182,7 @@ struct PvePage {
                       .fontSize(16)
                       .fontColor(AppTheme.textPrimary)
                       .fontWeight(FontWeight.Bold)
-                    StatusBadge({ status: 'online', size: 'small' })
+                    StatusBadge({ status: 'online', badgeSize: 'small' })
                     Text(`${cluster.host}:${cluster.port}`)
                       .fontSize(10)
                       .fontColor(AppTheme.textTertiary)

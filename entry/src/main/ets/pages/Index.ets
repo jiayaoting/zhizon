@@ -84,7 +84,7 @@ struct IndexPage {
           .fontSize(AppTheme.fsMd)
           .fontColor(AppTheme.textPrimary)
           .fontWeight(FontWeight.Bold)
-        StatusBadge({ status: 'online', size: 'small' })
+        StatusBadge({ status: 'online', badgeSize: 'small' })
         Blank()
         Text(`${c.host}:${c.port}`)
           .fontSize(11)
@@ -204,7 +204,7 @@ struct IndexPage {
           Text('CPU')
             .fontSize(9)
             .fontColor(AppTheme.textTertiary)
-          ProgressBar({ value: s.metrics.cpu, height: 4 })
+          ProgressBar({ value: s.metrics.cpu, barHeight: 4 })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -213,7 +213,7 @@ struct IndexPage {
           Text('内存')
             .fontSize(9)
             .fontColor(AppTheme.textTertiary)
-          ProgressBar({ value: s.metrics.mem, height: 4 })
+          ProgressBar({ value: s.metrics.mem, barHeight: 4 })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -222,7 +222,7 @@ struct IndexPage {
           Text('磁盘')
             .fontSize(9)
             .fontColor(AppTheme.textTertiary)
-          ProgressBar({ value: s.metrics.disk, height: 4 })
+          ProgressBar({ value: s.metrics.disk, barHeight: 4 })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)

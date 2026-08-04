@@ -33,7 +33,7 @@ struct VmDetailPage {
   @State clusterId: string = '';
   @State nodeName: string = '';
   @State vmid: number = 0;
-  @State vm: Vm | undefined;
+  @State vm: Vm | undefined = undefined;
 
   aboutToAppear() {
     const params = router.getParams() as VmDetailParams;
@@ -158,7 +158,7 @@ struct VmDetailPage {
       .height(26)
       .padding({ left: 10, right: 10 })
       .onClick(() => {
-        promptAction.showToast({ message: `${text} ${this.vm.name} (vmid: ${this.vm.vmid})` });
+        promptAction.showToast({ message: `${text} ${this.vm!.name} (vmid: ${this.vm!.vmid})` });
       })
   }
 
@@ -466,7 +466,7 @@ struct VmDetailPage {
                       .height(30)
                       .padding({ left: 12, right: 12 })
                       .onClick(() => {
-                        promptAction.showToast({ message: `创建快照 ${this.vm.name} (开发中)` });
+                        promptAction.showToast({ message: `创建快照 ${this.vm!.name} (开发中)` });
                       })
                   }
                   .width('100%')

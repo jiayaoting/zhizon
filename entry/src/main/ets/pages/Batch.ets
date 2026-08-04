@@ -18,6 +18,31 @@ interface BatchResult {
   output: string;
 }
 
+// 分组卡片组件
+@Component
+struct SectionCard {
+  @Prop title: string;
+  @BuilderParam content: () => void = this.defaultContent;
+
+  @Builder defaultContent() {}
+
+  build() {
+    Column({ space: 12 }) {
+      Text(this.title)
+        .fontSize(AppTheme.fsMd)
+        .fontColor(AppTheme.textPrimary)
+        .fontWeight(FontWeight.Bold)
+      this.content()
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(10)
+    .backgroundColor(AppTheme.bgSurface)
+    .border({ width: 1, color: AppTheme.borderSubtle })
+    .alignItems(HorizontalAlign.Start)
+  }
+}
+
 @Entry
 @Component
 struct BatchPage {
@@ -66,7 +91,6 @@ struct BatchPage {
     const tpl = this.templateMap[name] || '';
     const newText = this.commandInput ? this.commandInput + '\n' + tpl : tpl;
     this.commandInput = newText;
-    this.textareaController.setText(newText);
     promptAction.showToast({ message: `已插入模板：${name}` });
   }
 
@@ -88,12 +112,12 @@ struct BatchPage {
         serverId: id,
         serverName: srv?.name || id,
         host: srv?.host || '',
-        status: success ? 'success' : 'failed',
+        status: (success ? 'success' : 'failed') as 'success' | 'failed',
         duration: success ? `${(0.8 + idx * 0.3).toFixed(2)}s` : '12.50s',
         output: success
           ? `$ ${firstLine}\n... 命令执行完成，退出码 0`
           : `ssh: connect to host ${srv?.host} port 22: Connection refused`
-      };
+      } as BatchResult;
     });
     this.expandedId = '';
     promptAction.showToast({ message: `已对 ${this.selectedServers.length} 台服务器执行命令` });
@@ -107,23 +131,6 @@ struct BatchPage {
       .borderRadius(6)
       .height(30)
       .onClick(() => this.runBatch())
-  }
-
-  // 分组卡片：标题 + 自定义内容
-  @Builder sectionCard(title: string, content: () => void) {
-    Column({ space: 12 }) {
-      Text(title)
-        .fontSize(AppTheme.fsMd)
-        .fontColor(AppTheme.textPrimary)
-        .fontWeight(FontWeight.Bold)
-      content()
-    }
-    .width('100%')
-    .padding(16)
-    .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
-    .alignItems(HorizontalAlign.Start)
   }
 
   // 勾选框（Stack 模拟）
@@ -158,7 +165,7 @@ struct BatchPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      StatusBadge({ status: srv.status, size: 'small' })
+      StatusBadge({ status: srv.status, badgeSize: 'small' })
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -186,7 +193,7 @@ struct BatchPage {
           .fontColor(AppTheme.textPrimary)
           .fontWeight(FontWeight.Medium)
           .layoutWeight(1)
-        StatusBadge({ status: r.status, size: 'small' })
+        StatusBadge({ status: r.status, badgeSize: 'small' })
         Text(r.duration)
           .fontSize(11)
           .fontColor(AppTheme.textTertiary)
@@ -230,7 +237,7 @@ struct BatchPage {
         Scroll() {
           Column({ space: 16 }) {
             // 选择服务器区
-            this.sectionCard('目标服务器') {
+            SectionCard({ title: '目标服务器' }) {
               Column({ space: 8 }) {
                 Row() {
                   Text(`已选 ${this.selectedServers.length}/${this.servers.length} 台`)
@@ -252,7 +259,7 @@ struct BatchPage {
             }
 
             // 命令输入区
-            this.sectionCard('执行命令') {
+            SectionCard({ title: '执行命令' }) {
               Column({ space: 10 }) {
                 TextArea({ placeholder: '输入要批量执行的命令，如：df -h\nfree -m\nuptime', controller: this.textareaController })
                   .width('100%')
@@ -278,7 +285,7 @@ struct BatchPage {
             }
 
             // 执行结果区
-            this.sectionCard('执行结果') {
+            SectionCard({ title: '执行结果' }) {
               Column({ space: 8 }) {
                 Row() {
                   Text(this.results.length > 0

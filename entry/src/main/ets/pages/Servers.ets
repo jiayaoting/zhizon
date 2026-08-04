@@ -77,7 +77,7 @@ struct ServersPage {
         .fontSize(12)
         .fontColor(AppTheme.textPrimary)
         .fontFamily(AppTheme.fontMono)
-      ProgressBar({ value: value, height: 4 })
+      ProgressBar({ value: value, barHeight: 4 })
     }
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
@@ -107,7 +107,7 @@ struct ServersPage {
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
           .margin({ left: 6 })
-        StatusBadge({ status: s.status, size: 'small' })
+        StatusBadge({ status: s.status, badgeSize: 'small' })
         Text('更多')
           .fontSize(11)
           .fontColor(AppTheme.textTertiary)

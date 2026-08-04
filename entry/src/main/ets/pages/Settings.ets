@@ -5,6 +5,31 @@ import { AppTheme } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 
+// 分组卡片组件
+@Component
+struct GroupCard {
+  @Prop title: string;
+  @BuilderParam content: () => void = this.defaultContent;
+
+  @Builder defaultContent() {}
+
+  build() {
+    Column({ space: 12 }) {
+      Text(this.title)
+        .fontSize(AppTheme.fsMd)
+        .fontColor(AppTheme.textPrimary)
+        .fontWeight(FontWeight.Bold)
+      this.content()
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(10)
+    .backgroundColor(AppTheme.bgSurface)
+    .border({ width: 1, color: AppTheme.borderSubtle })
+    .alignItems(HorizontalAlign.Start)
+  }
+}
+
 @Entry
 @Component
 struct SettingsPage {
@@ -23,23 +48,6 @@ struct SettingsPage {
 
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
-  }
-
-  // 分组卡片
-  @Builder groupCard(title: string, content: () => void) {
-    Column({ space: 12 }) {
-      Text(title)
-        .fontSize(AppTheme.fsMd)
-        .fontColor(AppTheme.textPrimary)
-        .fontWeight(FontWeight.Bold)
-      content()
-    }
-    .width('100%')
-    .padding(16)
-    .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
-    .alignItems(HorizontalAlign.Start)
   }
 
   // 普通值/操作项：左标签 + 右值 + 右箭头
@@ -97,7 +105,7 @@ struct SettingsPage {
         Scroll() {
           Column({ space: 16 }) {
             // 常规
-            this.groupCard('常规') {
+            GroupCard({ title: '常规' }) {
               Column({ space: 8 }) {
                 this.valueRow('默认 SSH 端口', '22')
                 this.valueRow('连接超时', '30s')
@@ -110,7 +118,7 @@ struct SettingsPage {
             }
 
             // 外观
-            this.groupCard('外观') {
+            GroupCard({ title: '外观' }) {
               Column({ space: 8 }) {
                 this.valueRow('主题', '深色')
                 this.valueRow('字号', '标准')
@@ -120,7 +128,7 @@ struct SettingsPage {
             }
 
             // 终端
-            this.groupCard('终端') {
+            GroupCard({ title: '终端' }) {
               Column({ space: 8 }) {
                 this.valueRow('默认字体', 'JetBrains Mono')
                 this.valueRow('光标样式', '块状')
@@ -134,7 +142,7 @@ struct SettingsPage {
             }
 
             // 安全
-            this.groupCard('安全') {
+            GroupCard({ title: '安全' }) {
               Column({ space: 8 }) {
                 this.valueRow('主密码', '已设置')
                 this.toggleRow('生物识别解锁', this.biometricUnlock, (v: boolean) => {
@@ -151,7 +159,7 @@ struct SettingsPage {
             }
 
             // 通知
-            this.groupCard('通知') {
+            GroupCard({ title: '通知' }) {
               Column({ space: 8 }) {
                 this.toggleRow('告警推送', this.alertPush, (v: boolean) => {
                   this.alertPush = v;
@@ -166,7 +174,7 @@ struct SettingsPage {
             }
 
             // 数据
-            this.groupCard('数据') {
+            GroupCard({ title: '数据' }) {
               Column({ space: 8 }) {
                 this.valueRow('导出配置', '')
                 this.valueRow('导入配置', '')
@@ -180,7 +188,7 @@ struct SettingsPage {
             }
 
             // 关于
-            this.groupCard('关于') {
+            GroupCard({ title: '关于' }) {
               Column({ space: 8 }) {
                 this.valueRow('版本', '1.0.0')
                 this.valueRow('检查更新', '')

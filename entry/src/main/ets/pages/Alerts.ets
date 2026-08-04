@@ -61,8 +61,12 @@ struct AlertsPage {
   }
 
   private markResolved(a: Alert) {
-    this.resolvedMap[a.id] = true;
-    this.resolvedMap = { ...this.resolvedMap };
+    const newMap: Record<string, boolean> = {};
+    for (const key in this.resolvedMap) {
+      newMap[key] = this.resolvedMap[key];
+    }
+    newMap[a.id] = true;
+    this.resolvedMap = newMap;
     promptAction.showToast({ message: '已标记为已处理' });
   }
 

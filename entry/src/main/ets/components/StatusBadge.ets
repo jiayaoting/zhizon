@@ -5,20 +5,20 @@ import { AppTheme, statusInfo } from '../common/Theme';
 @Component
 export struct StatusBadge {
   @Prop status: string;
-  @Prop size: string = 'normal'; // normal | small
+  @Prop badgeSize: string = 'normal'; // normal | small
 
   build() {
     Row({ space: 4 }) {
-      Circle({ width: this.size === 'small' ? 5 : 6, height: this.size === 'small' ? 5 : 6 })
+      Circle({ width: this.badgeSize === 'small' ? 5 : 6, height: this.badgeSize === 'small' ? 5 : 6 })
         .fill(statusInfo(this.status).dotColor)
       Text(statusInfo(this.status).text)
-        .fontSize(this.size === 'small' ? 10 : 11)
+        .fontSize(this.badgeSize === 'small' ? 10 : 11)
         .fontColor(statusInfo(this.status).color)
         .fontWeight(FontWeight.Medium)
     }
     .padding({
-      left: this.size === 'small' ? 6 : 8,
-      right: this.size === 'small' ? 6 : 8,
+      left: this.badgeSize === 'small' ? 6 : 8,
+      right: this.badgeSize === 'small' ? 6 : 8,
       top: 2,
       bottom: 2
     })

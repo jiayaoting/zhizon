@@ -1,14 +1,14 @@
 // 智子 - 通用组件：左侧导航栏
 
 import { AppTheme } from '../common/Theme';
-import { AppConstants } from '../common/Constants';
+import { AppConstants, NavItem } from '../common/Constants';
 
 @Component
 export struct NavSidebar {
   @Prop activeKey: string;
   onSelect: (key: string) => void = () => {};
 
-  @Builder navItem(item: { key: string; label: string; icon: string }, isActive: boolean) {
+  @Builder navItem(item: NavItem, isActive: boolean) {
     Row({ space: 10 }) {
       Text(item.icon)
         .fontSize(18)
@@ -62,7 +62,7 @@ export struct NavSidebar {
       // 导航项
       Scroll() {
         Column({ space: 2 }) {
-          ForEach(AppConstants.navItems, (item) => {
+          ForEach(AppConstants.navItems, (item: NavItem) => {
             this.navItem(item, item.key === this.activeKey)
           })
         }

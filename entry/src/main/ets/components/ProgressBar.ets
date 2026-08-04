@@ -6,7 +6,7 @@ import { AppTheme, progressColor } from '../common/Theme';
 export struct ProgressBar {
   @Prop value: number;       // 0~100
   @Prop showLabel: boolean = false;
-  @Prop height: number = 6;
+  @Prop barHeight: number = 6;
   @Prop customColor?: string;
 
   build() {
@@ -25,18 +25,18 @@ export struct ProgressBar {
         // 背景
         Column()
           .width('100%')
-          .height(this.height)
-          .borderRadius(this.height / 2)
+          .height(this.barHeight)
+          .borderRadius(this.barHeight / 2)
           .backgroundColor(AppTheme.bgSurface2)
         // 前景
         Column()
           .width(`${Math.max(0, Math.min(100, this.value))}%`)
-          .height(this.height)
-          .borderRadius(this.height / 2)
+          .height(this.barHeight)
+          .borderRadius(this.barHeight / 2)
           .backgroundColor(this.customColor || progressColor(this.value))
       }
       .width('100%')
-      .height(this.height)
+      .height(this.barHeight)
     }
     .width('100%')
   }

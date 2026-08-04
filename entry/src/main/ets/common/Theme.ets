@@ -85,6 +85,6 @@ export function statusInfo(status: string): StatusInfo {
     success: { text: '成功', color: AppTheme.success, dotColor: AppTheme.success },
     failed: { text: '失败', color: AppTheme.danger, dotColor: AppTheme.danger },
     active: { text: '可用', color: AppTheme.success, dotColor: AppTheme.success }
-  };
+  } as Record<string, StatusInfo>;
   return map[status] || map.offline;
 }

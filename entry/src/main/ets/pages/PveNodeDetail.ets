@@ -24,8 +24,8 @@ struct PveNodeDetailPage {
   @State vmSearch: string = '';
   @State clusterId: string = '';
   @State nodeName: string = '';
-  @State cluster: PveCluster | undefined;
-  @State pveNode: PveNode | undefined;
+  @State cluster: PveCluster | undefined = undefined;
+  @State pveNode: PveNode | undefined = undefined;
 
   aboutToAppear() {
     const params = router.getParams() as NodeDetailParams;
@@ -63,7 +63,7 @@ struct PveNodeDetailPage {
         .height(28)
         .padding({ left: 10, right: 10 })
         .onClick(() => {
-          this.pveNode = DataRepository.getPveNode(this.clusterId, this.nodeName);
+          this.pveNode = DataRepository.getPveCluster(this.clusterId)?.nodes.find(n => n.node === this.nodeName) || undefined;
           promptAction.showToast({ message: '已刷新节点数据' });
         })
       Button('SSH 连接')
@@ -149,7 +149,7 @@ struct PveNodeDetailPage {
         .layoutWeight(1)
         .alignItems(VerticalAlign.Center)
 
-        StatusBadge({ status: v.status, size: 'small' })
+        StatusBadge({ status: v.status, badgeSize: 'small' })
 
         // 操作按钮
         Row({ space: 6 }) {
@@ -231,7 +231,7 @@ struct PveNodeDetailPage {
           .fontSize(10)
           .fontColor(AppTheme.textTertiary)
           .layoutWeight(1)
-        StatusBadge({ status: s.status, size: 'small' })
+        StatusBadge({ status: s.status, badgeSize: 'small' })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -243,7 +243,7 @@ struct PveNodeDetailPage {
       .width('100%')
       .justifyContent(FlexAlign.SpaceBetween)
 
-      ProgressBar({ value: (s.used / s.total) * 100, showLabel: false, height: 4 })
+      ProgressBar({ value: (s.used / s.total) * 100, showLabel: false, barHeight: 4 })
     }
     .padding(12)
     .borderRadius(10)
@@ -282,7 +282,7 @@ struct PveNodeDetailPage {
 
       // 进度条（仅 running）
       if (t.status === 'running') {
-        ProgressBar({ value: t.progress, showLabel: true, height: 4 })
+        ProgressBar({ value: t.progress, showLabel: true, barHeight: 4 })
       }
 
       Row({ space: 16 }) {
