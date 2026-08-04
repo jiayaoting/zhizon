@@ -56,7 +56,7 @@ export class AppTheme {
   static readonly fs3xl = 32;
 
   // 字体
-  static readonly fontSans = ' sans-serif';
+  static readonly fontSans = 'sans-serif';
   static readonly fontMono = 'JetBrains Mono, Fira Code, Consolas, Courier New, monospace';
 }
 

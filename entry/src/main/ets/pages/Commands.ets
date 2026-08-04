@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { Command } from '../model/Models';
 
@@ -172,13 +173,17 @@ struct CommandsPage {
 
           // 右侧命令卡片网格
           Scroll() {
-            Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
-              ForEach(this.filteredCommands(), (cmd: Command) => {
-                this.commandCard(cmd)
-              }, (cmd: Command) => cmd.id)
+            if (this.filteredCommands().length === 0) {
+              EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
+            } else {
+              Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
+                ForEach(this.filteredCommands(), (cmd: Command) => {
+                  this.commandCard(cmd)
+                }, (cmd: Command) => cmd.id)
+              }
+              .padding(20)
+              .width('100%')
             }
-            .padding(20)
-            .width('100%')
           }
           .layoutWeight(1)
           .height('100%')

@@ -16,24 +16,24 @@ export class AppConstants {
   static readonly connectTimeout = 30000;
   static readonly keepAliveInterval = 30;
 
-  // 导航页面列表
+  // 导航页面列表（用 emoji 字符串避免 sys.symbol 兼容性问题）
   static readonly navItems: NavItem[] = [
-    { key: 'Index', label: '总览', icon: $r('sys.symbol.grid') },
-    { key: 'Servers', label: 'SSH 服务器', icon: $r('sys.symbol.server') },
-    { key: 'Pve', label: 'PVE 集群', icon: $r('sys.symbol.rectangle_stack') },
-    { key: 'Terminal', label: 'SSH 终端', icon: $r('sys.symbol.terminal') },
-    { key: 'Files', label: '文件管理', icon: $r('sys.symbol.folder') },
-    { key: 'Commands', label: '快捷命令', icon: $r('sys.symbol.command') },
-    { key: 'Batch', label: '批量操作', icon: $r('sys.symbol.layers') },
-    { key: 'Alerts', label: '告警中心', icon: $r('sys.symbol.bell') },
-    { key: 'Settings', label: '设置', icon: $r('sys.symbol.gearshape') }
+    { key: 'Index', label: '总览', icon: '📊' },
+    { key: 'Servers', label: 'SSH 服务器', icon: '🖥️' },
+    { key: 'Pve', label: 'PVE 集群', icon: '🗂️' },
+    { key: 'Terminal', label: 'SSH 终端', icon: '⌨️' },
+    { key: 'Files', label: '文件管理', icon: '📁' },
+    { key: 'Commands', label: '快捷命令', icon: '⚡' },
+    { key: 'Batch', label: '批量操作', icon: '🔄' },
+    { key: 'Alerts', label: '告警中心', icon: '🔔' },
+    { key: 'Settings', label: '设置', icon: '⚙️' }
   ];
 }
 
 export interface NavItem {
   key: string;
   label: string;
-  icon: Resource;
+  icon: string;
 }
 
 // 通用尺寸

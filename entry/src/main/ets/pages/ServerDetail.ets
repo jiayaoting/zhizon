@@ -5,6 +5,7 @@ import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
 import { Server, Alert } from '../model/Models';
 
@@ -142,7 +143,8 @@ struct ServerDetailPage {
         if (this.server) {
           TopBar({
             title: this.server.name,
-            subtitle: `${this.server.host}:${this.server.port} · ${this.server.os}`
+            subtitle: `${this.server.host}:${this.server.port} · ${this.server.os}`,
+            showBack: true
           }) {
             this.actionsBuilder()
           }
@@ -278,11 +280,15 @@ struct ServerDetailPage {
                   .fontSize(AppTheme.fsMd)
                   .fontColor(AppTheme.textPrimary)
                   .fontWeight(FontWeight.Bold)
-                ForEach(
-                  this.alerts.filter(a => a.source.includes(this.server!.name)),
-                  (a: Alert) => { this.alertRow(a) },
-                  (a: Alert) => a.id
-                )
+                if (this.alerts.filter(a => a.source.includes(this.server!.name)).length === 0) {
+                  EmptyState({ icon: '✅', title: '暂无告警', desc: '该服务器运行正常' })
+                } else {
+                  ForEach(
+                    this.alerts.filter(a => a.source.includes(this.server!.name)),
+                    (a: Alert) => { this.alertRow(a) },
+                    (a: Alert) => a.id
+                  )
+                }
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)

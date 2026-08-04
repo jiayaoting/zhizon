@@ -5,6 +5,7 @@ import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { Server } from '../model/Models';
 
@@ -82,8 +83,8 @@ struct ServersPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  // 次按钮
-  @Builder secondaryBtn(text: string) {
+  // 次按钮（支持独立 onClick）
+  @Builder secondaryBtn(text: string, onClick: () => void) {
     Button(text)
       .fontSize(11)
       .fontColor(AppTheme.textSecondary)
@@ -91,6 +92,7 @@ struct ServersPage {
       .borderRadius(5)
       .height(24)
       .padding({ left: 8, right: 8 })
+      .onClick(onClick)
   }
 
   // 服务器卡片
@@ -174,8 +176,12 @@ struct ServersPage {
           .onClick(() => {
             router.pushUrl({ url: 'pages/Terminal', params: { serverName: s.name } }).catch(() => {});
           })
-        this.secondaryBtn('终端')
-        this.secondaryBtn('详情')
+        this.secondaryBtn('终端', () => {
+          router.pushUrl({ url: 'pages/Terminal', params: { serverName: s.name } }).catch(() => {});
+        })
+        this.secondaryBtn('详情', () => {
+          router.pushUrl({ url: 'pages/ServerDetail', params: { serverId: s.id } }).catch(() => {});
+        })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -185,9 +191,6 @@ struct ServersPage {
     .borderRadius(10)
     .backgroundColor(AppTheme.bgSurface)
     .border({ width: 1, color: AppTheme.borderSubtle })
-    .onClick(() => {
-      router.pushUrl({ url: 'pages/ServerDetail', params: { serverId: s.id } }).catch(() => {});
-    })
   }
 
   build() {
@@ -216,9 +219,13 @@ struct ServersPage {
             .width('100%')
 
             // 服务器列表
-            ForEach(this.filteredServers(), (s: Server) => {
-              this.serverCard(s)
-            }, (s: Server) => s.id)
+            if (this.filteredServers().length === 0) {
+              EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
+            } else {
+              ForEach(this.filteredServers(), (s: Server) => {
+                this.serverCard(s)
+              }, (s: Server) => s.id)
+            }
           }
           .padding(24)
           .width('100%')

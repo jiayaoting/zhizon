@@ -8,12 +8,10 @@ export struct NavSidebar {
   @Prop activeKey: string;
   onSelect: (key: string) => void = () => {};
 
-  @Builder navItem(item: { key: string; label: string; icon: Resource }, isActive: boolean) {
+  @Builder navItem(item: { key: string; label: string; icon: string }, isActive: boolean) {
     Row({ space: 10 }) {
-      SymbolGlyph(item.icon)
+      Text(item.icon)
         .fontSize(18)
-        .fontColor(isActive ? AppTheme.primary : AppTheme.textSecondary)
-        .fontWeight(isActive ? FontWeight.Bold : FontWeight.Regular)
       Text(item.label)
         .fontSize(13)
         .fontColor(isActive ? AppTheme.primary : AppTheme.textSecondary)

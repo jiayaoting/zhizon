@@ -1,11 +1,12 @@
 // 智子 - PVE 集群列表页
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { MetricCard } from '../components/MetricCard';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
 import { PveCluster, PveNode } from '../model/Models';
 
@@ -25,6 +26,9 @@ struct PvePage {
       .borderRadius(6)
       .height(30)
       .padding({ left: 12, right: 12 })
+      .onClick(() => {
+        promptAction.showToast({ message: '添加 PVE 节点功能开发中' });
+      })
   }
 
   // 节点卡片
@@ -166,7 +170,10 @@ struct PvePage {
             .width('100%')
 
             // 集群分组展示
-            ForEach(this.clusters, (cluster: PveCluster) => {
+            if (this.clusters.length === 0) {
+              EmptyState({ icon: '🖥️', title: '暂无 PVE 集群', desc: '点击右上角"添加 PVE 节点"开始' })
+            } else {
+              ForEach(this.clusters, (cluster: PveCluster) => {
               Column({ space: 12 }) {
                 // 集群标题行
                 Row() {
@@ -202,6 +209,7 @@ struct PvePage {
                       .onClick(() => {
                         this.clusters = DataRepository.getPveClusters();
                         this.stats = DataRepository.getStats();
+                        promptAction.showToast({ message: '集群数据已刷新' });
                       })
                     Button('任务中心')
                       .fontSize(12)
@@ -210,6 +218,9 @@ struct PvePage {
                       .borderRadius(6)
                       .height(28)
                       .padding({ left: 10, right: 10 })
+                      .onClick(() => {
+                        router.pushUrl({ url: 'pages/Alerts' }).catch(() => {});
+                      })
                     Button('设置')
                       .fontSize(12)
                       .fontColor(AppTheme.textSecondary)
@@ -217,6 +228,9 @@ struct PvePage {
                       .borderRadius(6)
                       .height(28)
                       .padding({ left: 10, right: 10 })
+                      .onClick(() => {
+                        router.pushUrl({ url: 'pages/Settings' }).catch(() => {});
+                      })
                   }
                   .alignItems(VerticalAlign.Center)
                 }
@@ -237,6 +251,7 @@ struct PvePage {
               .backgroundColor(AppTheme.bgSurface)
               .border({ width: 1, color: AppTheme.borderSubtle })
             }, (cluster: PveCluster) => cluster.id)
+            }
           }
           .padding(24)
           .width('100%')

@@ -5,6 +5,7 @@ import { AppTheme } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { Alert } from '../model/Models';
 
@@ -212,9 +213,13 @@ struct AlertsPage {
             .width('100%')
 
             // 告警列表
-            ForEach(this.filteredAlerts(), (a: Alert) => {
-              this.alertCard(a)
-            }, (a: Alert) => a.id)
+            if (this.filteredAlerts().length === 0) {
+              EmptyState({ icon: '✅', title: '暂无告警', desc: '所有服务器运行正常' })
+            } else {
+              ForEach(this.filteredAlerts(), (a: Alert) => {
+                this.alertCard(a)
+              }, (a: Alert) => a.id)
+            }
           }
           .padding(24)
           .width('100%')

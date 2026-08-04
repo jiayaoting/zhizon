@@ -11,6 +11,7 @@ struct TerminalPage {
   @State activeNav: string = 'Terminal';
   @State activeSession: number = 0;
   @State cmdInput: string = '';
+  @State terminalLines: string[] = [...MockData.terminalLines];
   private sessions: string[] = ['prod-web-01', 'prod-db-master', 'dev-test-01'];
   private sessionCwds: string[] = ['~/projects', '~/data', '~/test'];
   private quickCmds: string[] = ['ls -la', 'cd ~', 'top', 'df -h', 'free -h', 'docker ps', 'uptime', 'cat /etc/os-release'];
@@ -18,6 +19,30 @@ struct TerminalPage {
   // 判断是否为命令提示符行
   private isPromptLine(line: string): boolean {
     return line.includes('root@') || line.includes('#');
+  }
+
+  // 发送命令（mock 实现：追加到终端输出）
+  private sendCommand(cmd: string) {
+    if (!cmd.trim()) return;
+    const server = this.sessions[this.activeSession] || 'server';
+    const prompt = `root@${server}:~# ${cmd}`;
+    // Mock 响应
+    let output = '';
+    if (cmd === 'ls -la' || cmd === 'ls') {
+      output = 'total 32\ndrwxr-xr-x  4 root root 4096 Aug  4 09:15 .\ndrwxr-xr-x  3 root root 4096 Aug  3 21:05 ..\n-rw-------  1 root root 12800 Aug  3 21:05 .bash_history';
+    } else if (cmd === 'uptime') {
+      output = ' 09:15:22 up 52 days,  7:36,  2 users,  load average: 0.42, 0.38, 0.40';
+    } else if (cmd === 'df -h') {
+      output = 'Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1        50G   31G   17G  62% /';
+    } else if (cmd === 'free -h') {
+      output = '               total        used        free      shared  buff/cache   available\nMem:            16Gi       7.2Gi       4.8Gi       256Mi       4.0Gi       8.5Gi';
+    } else if (cmd === 'docker ps') {
+      output = 'CONTAINER ID   IMAGE          STATUS         PORTS                  NAMES\na1b2c3d4e5f6   nginx:latest   Up 3 days      0.0.0.0:80->80/tcp     web-nginx';
+    } else {
+      output = `bash: ${cmd}: command mock executed`;
+    }
+    this.terminalLines = [...this.terminalLines, prompt, output, `root@${server}:~# `];
+    this.cmdInput = '';
   }
 
   @Builder actionsBuilder() {
@@ -79,7 +104,7 @@ struct TerminalPage {
       .backgroundColor(AppTheme.bgSurface2)
       .fontFamily(AppTheme.fontMono)
       .onClick(() => {
-        promptAction.showToast({ message: `执行: ${cmd}` });
+        this.sendCommand(cmd);
       })
   }
 
@@ -124,13 +149,13 @@ struct TerminalPage {
             // 终端内容区
             Scroll() {
               Column({ space: 0 }) {
-                ForEach(MockData.terminalLines, (line: string) => {
+                ForEach(this.terminalLines, (line: string) => {
                   Text(line)
                     .fontSize(12)
                     .fontFamily(AppTheme.fontMono)
                     .fontColor(this.isPromptLine(line) ? '#00FF88' : '#00D9A3')
                     .width('100%')
-                }, (line: string, idx: number) => String(idx))
+                }, (line: string, idx: number) => `${idx}-${line}`)
               }
               .width('100%')
               .padding(12)
@@ -172,8 +197,7 @@ struct TerminalPage {
                 .height(32)
                 .padding({ left: 16, right: 16 })
                 .onClick(() => {
-                  promptAction.showToast({ message: '命令已发送' });
-                  this.cmdInput = '';
+                  this.sendCommand(this.cmdInput);
                 })
             }
             .width('100%')

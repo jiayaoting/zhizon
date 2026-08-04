@@ -4,7 +4,8 @@
 
 import { PveCluster, PveNode, Vm, Storage, PveTask, Snapshot } from '../model/Models';
 import { DataRepository } from './DataRepository';
-import { http } from '@kit.NetworkKit';
+// 真实接入 PVE API 时取消下方注释
+// import { http } from '@kit.NetworkKit';
 
 // PVE API 客户端
 export class PveClient {
@@ -21,22 +22,27 @@ export class PveClient {
   // Body: username=root@pam&password=xxx
   async login(username: string, password: string): Promise<void> {
     // 真实实现：
-    // const res = await http.sendRequest(`${this.baseUrl}/access/ticket`, {...});
-    // this.ticket = res.data.ticket;
-    // this.csrfToken = res.data.CSRFPreventionToken;
+    // const res = await http.sendRequest(`${this.baseUrl}/access/ticket`, {
+    //   method: http.RequestMethod.POST,
+    //   extraData: `username=${username}&password=${password}`,
+    //   header: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    // });
+    // const data = res.result as Record<string, Object>;
+    // this.ticket = data.ticket as string;
+    // this.csrfToken = data.CSRFPreventionToken as string;
     this.ticket = 'mock-ticket';
     this.csrfToken = 'mock-csrf';
   }
 
   // 统一请求
-  private async request(method: string, path: string, data?: object): Promise<object> {
+  private async request(method: string, path: string, data?: Record<string, Object>): Promise<Record<string, Object>> {
     // 真实实现：
     // const res = await http.sendRequest(`${this.baseUrl}${path}`, {
     //   method,
     //   header: { Cookie: `PVEAuthCookie=${this.ticket}` },
     //   extraData: data
     // });
-    // return res.data;
+    // return res.result as Record<string, Object>;
     return {};
   }
 

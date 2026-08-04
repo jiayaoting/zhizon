@@ -1,10 +1,11 @@
 // 智子 - 虚拟机详情页
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme, progressColor } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime, formatSize } from '../service/DataRepository';
 import { Vm, PveTask, Snapshot } from '../model/Models';
 
@@ -103,6 +104,11 @@ struct VmDetailPage {
       .borderRadius(6)
       .height(30)
       .padding({ left: 12, right: 12 })
+      .onClick(() => {
+        if (this.vm) {
+          promptAction.showToast({ message: `${this.vm.name} 控制台功能开发中` });
+        }
+      })
   }
 
   // Tab 项
@@ -142,7 +148,7 @@ struct VmDetailPage {
       .backgroundColor(AppTheme.primaryDim)
   }
 
-  // 操作按钮（占位）
+  // 操作按钮
   @Builder actionBtn(text: string, bg: string, fg: string) {
     Button(text)
       .fontSize(11)
@@ -151,11 +157,27 @@ struct VmDetailPage {
       .borderRadius(5)
       .height(26)
       .padding({ left: 10, right: 10 })
-      .onClick(() => {})
+      .onClick(() => {
+        promptAction.showToast({ message: `${text} ${this.vm.name} (vmid: ${this.vm.vmid})` });
+      })
   }
 
-  // 快照行
-  @Builder snapshotRow(s: Snapshot) {
+  // 快照操作按钮（带具体快照名）
+  @Builder snapshotActionBtn(text: string, bg: string, fg: string, s: Snapshot) {
+    Button(text)
+      .fontSize(11)
+      .fontColor(fg)
+      .backgroundColor(bg)
+      .borderRadius(5)
+      .height(26)
+      .padding({ left: 10, right: 10 })
+      .onClick(() => {
+        promptAction.showToast({ message: `${text}快照 ${s.name}` });
+      })
+  }
+
+  // 快照行（带具体快照引用）
+  @Builder snapshotRowWithAction(s: Snapshot) {
     Row() {
       Column({ space: 4 }) {
         Text(s.name)
@@ -175,8 +197,8 @@ struct VmDetailPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      this.actionBtn('回滚', AppTheme.bgSurface2, AppTheme.textSecondary)
-      this.actionBtn('删除', AppTheme.bgSurface2, AppTheme.danger)
+      this.snapshotActionBtn('回滚', AppTheme.bgSurface2, AppTheme.textSecondary, s)
+      this.snapshotActionBtn('删除', AppTheme.bgSurface2, AppTheme.danger, s)
     }
     .width('100%')
     .padding(12)
@@ -222,7 +244,8 @@ struct VmDetailPage {
       Column() {
         TopBar({
           title: this.vm ? this.vm.name : '-',
-          subtitle: this.vm ? `VMID ${this.vm.vmid} · ${this.vm.node} · ${this.vm.type.toUpperCase()}` : ''
+          subtitle: this.vm ? `VMID ${this.vm.vmid} · ${this.vm.node} · ${this.vm.type.toUpperCase()}` : '',
+          showBack: true
         }) {
           this.topActions()
         }
@@ -442,13 +465,20 @@ struct VmDetailPage {
                       .borderRadius(6)
                       .height(30)
                       .padding({ left: 12, right: 12 })
+                      .onClick(() => {
+                        promptAction.showToast({ message: `创建快照 ${this.vm.name} (开发中)` });
+                      })
                   }
                   .width('100%')
 
                   // 快照列表
-                  ForEach(DataRepository.getSnapshots(this.vm.vmid), (s: Snapshot) => {
-                    this.snapshotRow(s)
-                  }, (s: Snapshot) => `${s.name}-${s.vmid}`)
+                  if (DataRepository.getSnapshots(this.vm.vmid).length === 0) {
+                    EmptyState({ icon: '📸', title: '暂无快照', desc: '点击"创建快照"开始' })
+                  } else {
+                    ForEach(DataRepository.getSnapshots(this.vm.vmid), (s: Snapshot) => {
+                      this.snapshotRowWithAction(s)
+                    }, (s: Snapshot) => `${s.name}-${s.vmid}`)
+                  }
                 }
                 .width('100%')
               }
@@ -482,14 +512,21 @@ struct VmDetailPage {
               // ===== Tab 历史 =====
               if (this.activeTab === 'history') {
                 Column({ space: 0 }) {
-                  ForEach(
-                    DataRepository.getTasks().filter(t =>
-                      t.node === this.vm!.node &&
-                      (t.target.includes(String(this.vm!.vmid)) || t.target.includes(this.vm!.name))
-                    ),
-                    (t: PveTask) => { this.miniTaskRow(t) },
-                    (t: PveTask) => t.id
-                  )
+                  if (DataRepository.getTasks().filter(t =>
+                    t.node === this.vm!.node &&
+                    (t.target.includes(String(this.vm!.vmid)) || t.target.includes(this.vm!.name))
+                  ).length === 0) {
+                    EmptyState({ icon: '📋', title: '暂无任务记录', desc: '该虚拟机暂无历史任务' })
+                  } else {
+                    ForEach(
+                      DataRepository.getTasks().filter(t =>
+                        t.node === this.vm!.node &&
+                        (t.target.includes(String(this.vm!.vmid)) || t.target.includes(this.vm!.name))
+                      ),
+                      (t: PveTask) => { this.miniTaskRow(t) },
+                      (t: PveTask) => t.id
+                    )
+                  }
                 }
                 .width('100%')
                 .padding({ left: 16, right: 16, top: 12, bottom: 12 })

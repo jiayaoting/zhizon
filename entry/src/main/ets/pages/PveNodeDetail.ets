@@ -1,11 +1,12 @@
 // 智子 - PVE 节点详情页
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme, progressColor } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { MetricCard } from '../components/MetricCard';
+import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime, formatSize } from '../service/DataRepository';
 import { PveCluster, PveNode, Vm, Storage, PveTask } from '../model/Models';
 
@@ -61,6 +62,10 @@ struct PveNodeDetailPage {
         .borderRadius(6)
         .height(28)
         .padding({ left: 10, right: 10 })
+        .onClick(() => {
+          this.pveNode = DataRepository.getPveNode(this.clusterId, this.nodeName);
+          promptAction.showToast({ message: '已刷新节点数据' });
+        })
       Button('SSH 连接')
         .fontSize(12)
         .fontColor(AppTheme.primary)
@@ -68,6 +73,9 @@ struct PveNodeDetailPage {
         .borderRadius(6)
         .height(28)
         .padding({ left: 10, right: 10 })
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/Terminal', params: { serverName: this.nodeName } }).catch(() => {});
+        })
     }
   }
 
@@ -98,8 +106,8 @@ struct PveNodeDetailPage {
       .onClick(() => { this.vmFilter = key; })
   }
 
-  // VM 操作按钮（占位）
-  @Builder vmActionBtn(text: string, color: string) {
+  // VM 操作按钮
+  @Builder vmActionBtn(text: string, color: string, v: Vm) {
     Button(text)
       .fontSize(11)
       .fontColor(color)
@@ -107,7 +115,9 @@ struct PveNodeDetailPage {
       .borderRadius(5)
       .height(24)
       .padding({ left: 8, right: 8 })
-      .onClick(() => {})
+      .onClick(() => {
+        promptAction.showToast({ message: `${text} ${v.name} (vmid: ${v.vmid})` });
+      })
   }
 
   // VM 行
@@ -144,10 +154,10 @@ struct PveNodeDetailPage {
         // 操作按钮
         Row({ space: 6 }) {
           if (v.status === 'stopped') {
-            this.vmActionBtn('启动', AppTheme.success)
+            this.vmActionBtn('启动', AppTheme.success, v)
           } else if (v.status === 'running') {
-            this.vmActionBtn('停止', AppTheme.danger)
-            this.vmActionBtn('重启', AppTheme.warning)
+            this.vmActionBtn('停止', AppTheme.danger, v)
+            this.vmActionBtn('重启', AppTheme.warning, v)
             Button('控制台')
               .fontSize(11)
               .fontColor(AppTheme.primary)
@@ -155,15 +165,23 @@ struct PveNodeDetailPage {
               .borderRadius(5)
               .height(24)
               .padding({ left: 8, right: 8 })
-              .onClick(() => {})
+              .onClick(() => {
+                promptAction.showToast({ message: `${v.name} 控制台功能开发中` });
+              })
           } else if (v.status === 'paused') {
-            this.vmActionBtn('恢复', AppTheme.success)
+            this.vmActionBtn('恢复', AppTheme.success, v)
           }
         }
         .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        router.pushUrl({
+          url: 'pages/VmDetail',
+          params: { clusterId: this.clusterId, node: this.nodeName, vmid: v.vmid }
+        }).catch(() => {});
+      })
 
       // 第二行：资源信息
       Row({ space: 16 }) {
@@ -179,12 +197,6 @@ struct PveNodeDetailPage {
     .borderRadius(10)
     .backgroundColor(AppTheme.bgSurface)
     .border({ width: 1, color: AppTheme.borderSubtle })
-    .onClick(() => {
-      router.pushUrl({
-        url: 'pages/VmDetail',
-        params: { clusterId: this.clusterId, node: this.nodeName, vmid: v.vmid }
-      }).catch(() => {});
-    })
   }
 
   // 存储类型徽章背景
@@ -321,7 +333,8 @@ struct PveNodeDetailPage {
       Column() {
         TopBar({
           title: this.pveNode ? this.pveNode.node : '-',
-          subtitle: this.cluster ? `${this.cluster.name} · ${this.cluster.host}:${this.cluster.port}` : ''
+          subtitle: this.cluster ? `${this.cluster.name} · ${this.cluster.host}:${this.cluster.port}` : '',
+          showBack: true
         }) {
           this.topActions()
         }
@@ -436,9 +449,13 @@ struct PveNodeDetailPage {
                   .width('100%')
 
                   // VM 列表
-                  ForEach(this.getFilteredVms(), (v: Vm) => {
-                    this.vmRow(v)
-                  }, (v: Vm) => String(v.vmid))
+                  if (this.getFilteredVms().length === 0) {
+                    EmptyState({ icon: '🖥️', title: '暂无虚拟机', desc: '该节点下没有匹配的 VM/CT' })
+                  } else {
+                    ForEach(this.getFilteredVms(), (v: Vm) => {
+                      this.vmRow(v)
+                    }, (v: Vm) => String(v.vmid))
+                  }
                 }
                 .width('100%')
               }

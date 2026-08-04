@@ -55,8 +55,8 @@ struct SettingsPage {
           .fontColor(AppTheme.textTertiary)
           .margin({ right: 6 })
       }
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(12)
+      Text('›')
+        .fontSize(14)
         .fontColor(AppTheme.textTertiary)
     }
     .width('100%')

@@ -13,10 +13,21 @@ import { Server, PveCluster, Alert, PveNode } from '../model/Models';
 @Component
 struct IndexPage {
   @State activeNav: string = 'Index';
+  @State currentTime: string = '';
   private stats = DataRepository.getStats();
   private clusters: PveCluster[] = DataRepository.getPveClusters();
   private servers: Server[] = DataRepository.getServers();
   private alerts: Alert[] = DataRepository.getAlerts();
+
+  aboutToAppear() {
+    this.currentTime = this.formatNow();
+  }
+
+  private formatNow(): string {
+    const d = new Date();
+    const pad = (n: number) => n < 10 ? `0${n}` : `${n}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
 
   // 告警级别颜色
   private alertColor(level: string): string {
@@ -284,7 +295,7 @@ struct IndexPage {
         }
       })
       Column() {
-        TopBar({ title: '总览', subtitle: '2026-08-04 09:15' }) {
+        TopBar({ title: '总览', subtitle: this.currentTime }) {
           this.actionsBuilder()
         }
         Scroll() {
