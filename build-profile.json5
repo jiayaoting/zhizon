@@ -1,34 +1,11 @@
 {
   "app": {
+    "compatibleSdkVersion": "6.0.0(12)",
     "signingConfigs": [],
     "products": [
       {
         "name": "default",
-        "compatibleSdkVersion": "6.0.0(12)",
-        "targetSdkVersion": "6.0.0(12)",
-        "runtimeOS": "HarmonyOS"
-      }
-    ],
-    "buildModeSet": [
-      {
-        "name": "debug",
-        "arkOptions": {
-          "obfuscation": {
-            "ruleFiles": [
-              "./obfuscation-rules.txt"
-            ]
-          }
-        }
-      },
-      {
-        "name": "release",
-        "arkOptions": {
-          "obfuscation": {
-            "ruleFiles": [
-              "./obfuscation-rules.txt"
-            ]
-          }
-        }
+        "buildOption": {}
       }
     ]
   },
