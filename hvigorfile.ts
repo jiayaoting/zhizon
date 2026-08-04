@@ -1,5 +1,7 @@
-// 鸿蒙项目根目录构建脚本
+// 鸿蒙项目工程级构建脚本
+import { appTasks } from '@ohos/hvigor-ohos-plugin';
+
 export default {
-  system: 'ohpm',
-  hooks: {}
+  system: appTasks,
+  plugins: []
 }
