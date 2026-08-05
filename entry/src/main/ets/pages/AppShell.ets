@@ -14,6 +14,8 @@ import { AlertsPage } from './Alerts';
 import { SettingsPage } from './Settings';
 
 const BP_SM = 600;
+const SAFE_TOP = 34;
+const SAFE_BOTTOM = 12;
 
 @Entry
 @Component
@@ -179,8 +181,10 @@ struct AppShell {
             this.renderPage()
           }
           .layoutWeight(1)
+          .padding({ top: SAFE_TOP })
 
           this.bottomTabBar()
+            .padding({ bottom: SAFE_BOTTOM })
         }
         .layoutWeight(1)
 
