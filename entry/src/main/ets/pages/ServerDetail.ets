@@ -26,6 +26,7 @@ interface TopProcess {
 struct ServerDetailPage {
   @State activeNav: string = 'Servers';
   @State server: Server | null = null;
+  @StorageLink('isSm') isSm: boolean = false;
   private alerts: Alert[] = DataRepository.getAlerts();
   private topProcesses: TopProcess[] = [
     { pid: 1234, name: 'nginx', cpu: 12.5, mem: 4.2 },
@@ -133,12 +134,14 @@ struct ServerDetailPage {
 
   build() {
     Row() {
-      NavSidebar({
-        activeKey: this.activeNav,
-        onSelect: (key: string) => {
-          router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-        }
-      })
+      if (!this.isSm) {
+        NavSidebar({
+          activeKey: this.activeNav,
+          onSelect: (key: string) => {
+            router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
+          }
+        })
+      }
       Column() {
         if (this.server) {
           TopBar({

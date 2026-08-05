@@ -1,7 +1,7 @@
 // 智子 - 总览仪表盘页面
 import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
+
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
@@ -9,11 +9,10 @@ import { ProgressBar } from '../components/ProgressBar';
 import { DataRepository } from '../service/DataRepository';
 import { Server, PveCluster, Alert, PveNode } from '../model/Models';
 
-@Entry
 @Component
-struct IndexPage {
-  @State activeNav: string = 'Index';
+export struct IndexPage {
   @State currentTime: string = '';
+  @StorageLink('isSm') isSm: boolean = false;
   private stats = DataRepository.getStats();
   private clusters: PveCluster[] = DataRepository.getPveClusters();
   private servers: Server[] = DataRepository.getServers();
@@ -287,20 +286,48 @@ struct IndexPage {
   }
 
   build() {
-    Row() {
-      NavSidebar({
-        activeKey: this.activeNav,
-        onSelect: (key: string) => {
-          router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-        }
-      })
-      Column() {
-        TopBar({ title: '总览', subtitle: this.currentTime }) {
-          this.actionsBuilder()
-        }
-        Scroll() {
-          Column({ space: 16 }) {
-            // 顶部 4 统计卡
+    Column() {
+      TopBar({ title: '总览', subtitle: this.currentTime }) {
+        this.actionsBuilder()
+      }
+      Scroll() {
+        Column({ space: 16 }) {
+          // 顶部 4 统计卡
+          if (this.isSm) {
+            Column({ space: 12 }) {
+              Row({ space: 12 }) {
+                MetricCard({
+                  title: 'SSH 服务器',
+                  value: String(this.stats.total),
+                  color: AppTheme.primary,
+                  badgeText: `在线 ${this.stats.online}`
+                }).layoutWeight(1)
+                MetricCard({
+                  title: 'PVE 节点',
+                  value: String(this.stats.pveNodes),
+                  color: AppTheme.purple,
+                  sub: `VM ${this.stats.vmTotal} · CT ${this.stats.ctTotal}`
+                }).layoutWeight(1)
+              }
+              .width('100%')
+              Row({ space: 12 }) {
+                MetricCard({
+                  title: '运行中 VM',
+                  value: `${this.stats.vmRunning}/${this.stats.vmTotal}`,
+                  color: AppTheme.info,
+                  sub: `已停止 ${this.stats.vmStopped}`
+                }).layoutWeight(1)
+                MetricCard({
+                  title: '未处理告警',
+                  value: String(this.stats.alerts),
+                  color: AppTheme.danger,
+                  sub: `运行中任务 ${this.stats.runningTasks}`
+                }).layoutWeight(1)
+              }
+              .width('100%')
+            }
+            .width('100%')
+          } else {
             Row({ space: 12 }) {
               MetricCard({
                 title: 'SSH 服务器',
@@ -328,35 +355,32 @@ struct IndexPage {
               }).layoutWeight(1)
             }
             .width('100%')
-
-            // PVE 集群状态
-            this.sectionTitle('PVE 集群状态', '管理集群 →', 'Pve')
-            ForEach(this.clusters, (c: PveCluster) => {
-              this.clusterCard(c)
-            }, (c: PveCluster) => c.id)
-
-            // SSH 服务器
-            this.sectionTitle('SSH 服务器', '管理 →', 'Servers')
-            ForEach(this.servers, (s: Server) => {
-              this.serverCard(s)
-            }, (s: Server) => s.id)
-
-            // 最近告警
-            this.sectionTitle('最近告警', '查看全部 →', 'Alerts')
-            ForEach(this.alerts.slice(0, 4), (a: Alert) => {
-              this.alertRow(a)
-            }, (a: Alert) => a.id)
           }
-          .padding(24)
-          .width('100%')
+
+          // PVE 集群状态
+          this.sectionTitle('PVE 集群状态', '管理集群 →', 'Pve')
+          ForEach(this.clusters, (c: PveCluster) => {
+            this.clusterCard(c)
+          }, (c: PveCluster) => c.id)
+
+          // SSH 服务器
+          this.sectionTitle('SSH 服务器', '管理 →', 'Servers')
+          ForEach(this.servers, (s: Server) => {
+            this.serverCard(s)
+          }, (s: Server) => s.id)
+
+          // 最近告警
+          this.sectionTitle('最近告警', '查看全部 →', 'Alerts')
+          ForEach(this.alerts.slice(0, 4), (a: Alert) => {
+            this.alertRow(a)
+          }, (a: Alert) => a.id)
         }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .align(Alignment.Top)
+        .padding(24)
+        .width('100%')
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
+      .scrollBar(BarState.Auto)
+      .align(Alignment.Top)
     }
     .height('100%')
     .backgroundColor(AppTheme.bgBase)

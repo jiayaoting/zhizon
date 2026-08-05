@@ -2,16 +2,13 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { Command } from '../model/Models';
 
-@Entry
 @Component
-struct CommandsPage {
-  @State activeNav: string = 'Commands';
+export struct CommandsPage {
   @State currentCat: string = '全部';
   private commands: Command[] = DataRepository.getCommands();
   private categories: string[] = ['全部', '系统', '进程', '网络', 'Docker', '安全', '服务'];
@@ -145,57 +142,50 @@ struct CommandsPage {
   }
 
   build() {
-    Row() {
-      NavSidebar({ activeKey: this.activeNav, onSelect: (key: string) => {
-        router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-      }})
-      Column() {
-        TopBar({ title: '快捷命令库', subtitle: `${this.commands.length} 条命令` }) {
-          this.actionsBuilder()
+    Column() {
+      TopBar({ title: '快捷命令库', subtitle: `${this.commands.length} 条命令` }) {
+        this.actionsBuilder()
+      }
+      Row() {
+        // 左侧分类侧栏
+        Scroll() {
+          Column({ space: 2 }) {
+            ForEach(this.categories, (cat: string) => {
+              this.categoryItem(cat)
+            }, (cat: string) => cat)
+          }
+          .padding({ top: 12, left: 8, right: 8 })
+          .width('100%')
         }
-        Row() {
-          // 左侧分类侧栏
-          Scroll() {
-            Column({ space: 2 }) {
-              ForEach(this.categories, (cat: string) => {
-                this.categoryItem(cat)
-              }, (cat: string) => cat)
+        .width(180)
+        .height('100%')
+        .backgroundColor(AppTheme.bgSurface)
+        .border({ width: { right: 1 }, color: AppTheme.borderSubtle })
+        .scrollBar(BarState.Off)
+        .align(Alignment.Top)
+
+        // 右侧命令卡片网格
+        Scroll() {
+          if (this.filteredCommands().length === 0) {
+            EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
+          } else {
+            Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
+              ForEach(this.filteredCommands(), (cmd: Command) => {
+                this.commandCard(cmd)
+              }, (cmd: Command) => cmd.id)
             }
-            .padding({ top: 12, left: 8, right: 8 })
+            .padding(20)
             .width('100%')
           }
-          .width(180)
-          .height('100%')
-          .backgroundColor(AppTheme.bgSurface)
-          .border({ width: { right: 1 }, color: AppTheme.borderSubtle })
-          .scrollBar(BarState.Off)
-          .align(Alignment.Top)
-
-          // 右侧命令卡片网格
-          Scroll() {
-            if (this.filteredCommands().length === 0) {
-              EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
-            } else {
-              Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
-                ForEach(this.filteredCommands(), (cmd: Command) => {
-                  this.commandCard(cmd)
-                }, (cmd: Command) => cmd.id)
-              }
-              .padding(20)
-              .width('100%')
-            }
-          }
-          .layoutWeight(1)
-          .height('100%')
-          .scrollBar(BarState.Auto)
-          .align(Alignment.Top)
         }
         .layoutWeight(1)
+        .height('100%')
+        .scrollBar(BarState.Auto)
+        .align(Alignment.Top)
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
     }
+    .layoutWeight(1)
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
   }

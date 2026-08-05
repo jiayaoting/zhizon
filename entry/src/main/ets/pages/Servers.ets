@@ -1,7 +1,7 @@
 // 智子 - SSH 服务器列表页面
 import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
+
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
@@ -9,10 +9,8 @@ import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { Server } from '../model/Models';
 
-@Entry
 @Component
-struct ServersPage {
-  @State activeNav: string = 'Servers';
+export struct ServersPage {
   @State currentGroup: string = '全部';
   private stats = DataRepository.getStats();
   private servers: Server[] = DataRepository.getServers();
@@ -194,49 +192,38 @@ struct ServersPage {
   }
 
   build() {
-    Row() {
-      NavSidebar({
-        activeKey: this.activeNav,
-        onSelect: (key: string) => {
-          router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-        }
-      })
-      Column() {
-        TopBar({
-          title: 'SSH 服务器',
-          subtitle: `${this.stats.total} 台 · 在线 ${this.stats.online} · 离线 ${this.stats.offline}`
-        }) {
-          this.actionsBuilder()
-        }
-        Scroll() {
-          Column({ space: 16 }) {
-            // 分组筛选标签
-            Row({ space: 8 }) {
-              ForEach(this.groups, (g: string) => {
-                this.groupTag(g)
-              }, (g: string) => g)
-            }
-            .width('100%')
-
-            // 服务器列表
-            if (this.filteredServers().length === 0) {
-              EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
-            } else {
-              ForEach(this.filteredServers(), (s: Server) => {
-                this.serverCard(s)
-              }, (s: Server) => s.id)
-            }
+    Column() {
+      TopBar({
+        title: 'SSH 服务器',
+        subtitle: `${this.stats.total} 台 · 在线 ${this.stats.online} · 离线 ${this.stats.offline}`
+      }) {
+        this.actionsBuilder()
+      }
+      Scroll() {
+        Column({ space: 16 }) {
+          // 分组筛选标签
+          Row({ space: 8 }) {
+            ForEach(this.groups, (g: string) => {
+              this.groupTag(g)
+            }, (g: string) => g)
           }
-          .padding(24)
           .width('100%')
+
+          // 服务器列表
+          if (this.filteredServers().length === 0) {
+            EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
+          } else {
+            ForEach(this.filteredServers(), (s: Server) => {
+              this.serverCard(s)
+            }, (s: Server) => s.id)
+          }
         }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .align(Alignment.Top)
+        .padding(24)
+        .width('100%')
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
+      .scrollBar(BarState.Auto)
+      .align(Alignment.Top)
     }
     .height('100%')
     .backgroundColor(AppTheme.bgBase)

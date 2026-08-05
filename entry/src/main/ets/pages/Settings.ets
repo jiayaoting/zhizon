@@ -2,7 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
+
 import { TopBar } from '../components/TopBar';
 
 // 分组卡片组件
@@ -30,10 +30,9 @@ struct GroupCard {
   }
 }
 
-@Entry
 @Component
-struct SettingsPage {
-  @State activeNav: string = 'Settings';
+export struct SettingsPage {
+  
   // 常规
   @State autoReconnect: boolean = true;
   // 终端
@@ -94,15 +93,11 @@ struct SettingsPage {
   @Builder actionsBuilder() {}
 
   build() {
-    Row() {
-      NavSidebar({ activeKey: this.activeNav, onSelect: (key: string) => {
-        router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-      }})
-      Column() {
-        TopBar({ title: '设置', subtitle: '智子 v1.0.0' }) {
-          this.actionsBuilder()
-        }
-        Scroll() {
+    Column() {
+      TopBar({ title: '设置', subtitle: '智子 v1.0.0' }) {
+        this.actionsBuilder()
+      }
+      Scroll() {
           Column({ space: 16 }) {
             // 常规
             GroupCard({ title: '常规' }) {
@@ -207,10 +202,7 @@ struct SettingsPage {
         .scrollBar(BarState.Auto)
         .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
-    }
+    .layoutWeight(1)
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
   }

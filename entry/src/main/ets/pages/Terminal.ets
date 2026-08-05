@@ -1,14 +1,11 @@
 // 智子 - SSH 终端页面
 import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { MockData } from '../service/MockData';
 
-@Entry
 @Component
-struct TerminalPage {
-  @State activeNav: string = 'Terminal';
+export struct TerminalPage {
   @State activeSession: number = 0;
   @State cmdInput: string = '';
   @State terminalLines: string[] = [...MockData.terminalLines];
@@ -109,111 +106,101 @@ struct TerminalPage {
   }
 
   build() {
-    Row() {
-      NavSidebar({
-        activeKey: this.activeNav,
-        onSelect: (key: string) => {
-          router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-        }
-      })
-      Column() {
-        TopBar({ title: 'SSH 终端', subtitle: '多标签会话' }) {
-          this.actionsBuilder()
-        }
+    Column() {
+      TopBar({ title: 'SSH 终端', subtitle: '多标签会话' }) {
+        this.actionsBuilder()
+      }
 
-        // 主区域：左侧会话列表 + 右侧终端
-        Row() {
-          // 左侧会话列表
-          Column({ space: 4 }) {
+      // 主区域：左侧会话列表 + 右侧终端
+      Row() {
+        // 左侧会话列表
+        Column({ space: 4 }) {
+          ForEach(this.sessions, (name: string, idx: number) => {
+            this.sessionItem(name, this.sessionCwds[idx], idx)
+          }, (name: string) => name)
+        }
+        .width(200)
+        .padding(8)
+        .backgroundColor(AppTheme.bgSurface)
+        .alignItems(HorizontalAlign.Start)
+        .height('100%')
+
+        // 右侧终端区
+        Column() {
+          // 顶部 Tab 栏
+          Row() {
             ForEach(this.sessions, (name: string, idx: number) => {
-              this.sessionItem(name, this.sessionCwds[idx], idx)
+              this.tabItem(name, idx)
             }, (name: string) => name)
           }
-          .width(200)
-          .padding(8)
-          .backgroundColor(AppTheme.bgSurface)
-          .alignItems(HorizontalAlign.Start)
-          .height('100%')
+          .width('100%')
+          .border({ width: { bottom: 1 }, color: AppTheme.borderSubtle })
 
-          // 右侧终端区
-          Column() {
-            // 顶部 Tab 栏
-            Row() {
-              ForEach(this.sessions, (name: string, idx: number) => {
-                this.tabItem(name, idx)
-              }, (name: string) => name)
+          // 终端内容区
+          Scroll() {
+            Column({ space: 0 }) {
+              ForEach(this.terminalLines, (line: string) => {
+                Text(line)
+                  .fontSize(12)
+                  .fontFamily(AppTheme.fontMono)
+                  .fontColor(this.isPromptLine(line) ? '#00FF88' : '#00D9A3')
+                  .width('100%')
+              }, (line: string, idx: number) => `${idx}-${line}`)
             }
             .width('100%')
-            .border({ width: { bottom: 1 }, color: AppTheme.borderSubtle })
-
-            // 终端内容区
-            Scroll() {
-              Column({ space: 0 }) {
-                ForEach(this.terminalLines, (line: string) => {
-                  Text(line)
-                    .fontSize(12)
-                    .fontFamily(AppTheme.fontMono)
-                    .fontColor(this.isPromptLine(line) ? '#00FF88' : '#00D9A3')
-                    .width('100%')
-                }, (line: string, idx: number) => `${idx}-${line}`)
-              }
-              .width('100%')
-              .padding(12)
-            }
-            .layoutWeight(1)
-            .backgroundColor('#000000')
-            .scrollBar(BarState.Auto)
-            .align(Alignment.Top)
-
-            // 快捷命令栏
-            Scroll() {
-              Row({ space: 8 }) {
-                ForEach(this.quickCmds, (cmd: string) => {
-                  this.quickCmdTag(cmd)
-                }, (cmd: string) => cmd)
-              }
-              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            }
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .width('100%')
-            .backgroundColor(AppTheme.bgSurface)
-
-            // 底部输入栏
-            Row({ space: 8 }) {
-              TextInput({ placeholder: '输入命令...', text: $$this.cmdInput })
-                .fontSize(12)
-                .fontColor(AppTheme.textPrimary)
-                .fontFamily(AppTheme.fontMono)
-                .backgroundColor(AppTheme.bgSurface2)
-                .borderRadius(6)
-                .height(32)
-                .layoutWeight(1)
-              Button('发送')
-                .fontSize(12)
-                .fontColor(AppTheme.bgBase)
-                .backgroundColor(AppTheme.primary)
-                .borderRadius(6)
-                .height(32)
-                .padding({ left: 16, right: 16 })
-                .onClick(() => {
-                  this.sendCommand(this.cmdInput);
-                })
-            }
-            .width('100%')
-            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-            .backgroundColor(AppTheme.bgSurface)
+            .padding(12)
           }
           .layoutWeight(1)
-          .height('100%')
-          .backgroundColor(AppTheme.bgBase)
+          .backgroundColor('#000000')
+          .scrollBar(BarState.Auto)
+          .align(Alignment.Top)
+
+          // 快捷命令栏
+          Scroll() {
+            Row({ space: 8 }) {
+              ForEach(this.quickCmds, (cmd: string) => {
+                this.quickCmdTag(cmd)
+              }, (cmd: string) => cmd)
+            }
+            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
+          .backgroundColor(AppTheme.bgSurface)
+
+          // 底部输入栏
+          Row({ space: 8 }) {
+            TextInput({ placeholder: '输入命令...', text: $$this.cmdInput })
+              .fontSize(12)
+              .fontColor(AppTheme.textPrimary)
+              .fontFamily(AppTheme.fontMono)
+              .backgroundColor(AppTheme.bgSurface2)
+              .borderRadius(6)
+              .height(32)
+              .layoutWeight(1)
+            Button('发送')
+              .fontSize(12)
+              .fontColor(AppTheme.bgBase)
+              .backgroundColor(AppTheme.primary)
+              .borderRadius(6)
+              .height(32)
+              .padding({ left: 16, right: 16 })
+              .onClick(() => {
+                this.sendCommand(this.cmdInput);
+              })
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          .backgroundColor(AppTheme.bgSurface)
         }
         .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(AppTheme.bgBase)
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
     }
+    .layoutWeight(1)
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
   }

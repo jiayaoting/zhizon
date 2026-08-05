@@ -34,6 +34,7 @@ struct VmDetailPage {
   @State nodeName: string = '';
   @State vmid: number = 0;
   @State vm: Vm | undefined = undefined;
+  @StorageLink('isSm') isSm: boolean = false;
 
   aboutToAppear() {
     const params = router.getParams() as VmDetailParams;
@@ -234,12 +235,14 @@ struct VmDetailPage {
 
   build() {
     Row() {
-      NavSidebar({
-        activeKey: this.activeNav,
-        onSelect: (key: string) => {
-          router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-        }
-      })
+      if (!this.isSm) {
+        NavSidebar({
+          activeKey: this.activeNav,
+          onSelect: (key: string) => {
+            router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
+          }
+        })
+      }
 
       Column() {
         TopBar({

@@ -26,6 +26,7 @@ struct PveNodeDetailPage {
   @State nodeName: string = '';
   @State cluster: PveCluster | undefined = undefined;
   @State pveNode: PveNode | undefined = undefined;
+  @StorageLink('isSm') isSm: boolean = false;
 
   aboutToAppear() {
     const params = router.getParams() as NodeDetailParams;
@@ -323,12 +324,14 @@ struct PveNodeDetailPage {
 
   build() {
     Row() {
-      NavSidebar({
-        activeKey: this.activeNav,
-        onSelect: (key: string) => {
-          router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-        }
-      })
+      if (!this.isSm) {
+        NavSidebar({
+          activeKey: this.activeNav,
+          onSelect: (key: string) => {
+            router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
+          }
+        })
+      }
 
       Column() {
         TopBar({

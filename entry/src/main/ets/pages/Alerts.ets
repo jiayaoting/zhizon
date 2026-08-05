@@ -2,17 +2,16 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
+
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { Alert } from '../model/Models';
 
-@Entry
 @Component
-struct AlertsPage {
-  @State activeNav: string = 'Alerts';
+export struct AlertsPage {
+  
   @State alertFilter: string = '全部';
   @State resolvedMap: Record<string, boolean> = {};
   private alerts: Alert[] = DataRepository.getAlerts();
@@ -172,15 +171,11 @@ struct AlertsPage {
   }
 
   build() {
-    Row() {
-      NavSidebar({ activeKey: this.activeNav, onSelect: (key: string) => {
-        router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-      }})
-      Column() {
-        TopBar({ title: '告警中心', subtitle: `${this.unresolvedCount()} 条未处理` }) {
-          this.actionsBuilder()
-        }
-        Scroll() {
+    Column() {
+      TopBar({ title: '告警中心', subtitle: `${this.unresolvedCount()} 条未处理` }) {
+        this.actionsBuilder()
+      }
+      Scroll() {
           Column({ space: 16 }) {
             // 顶部统计卡
             Row({ space: 12 }) {
@@ -232,10 +227,7 @@ struct AlertsPage {
         .scrollBar(BarState.Auto)
         .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
-    }
+    .layoutWeight(1)
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
   }

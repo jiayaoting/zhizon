@@ -24,7 +24,7 @@ export default class EntryAbility extends UIAbility {
     });
 
     // 加载首页
-    windowStage.loadContent('pages/Index', (err) => {
+    windowStage.loadContent('pages/AppShell', (err) => {
       if (err.code) {
         hilog.error(DOMAIN, 'EntryAbility', '加载首页失败: %{public}s', JSON.stringify(err));
         return;

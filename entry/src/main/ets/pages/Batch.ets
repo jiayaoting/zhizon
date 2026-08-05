@@ -2,7 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
+
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { DataRepository } from '../service/DataRepository';
@@ -43,10 +43,9 @@ struct SectionCard {
   }
 }
 
-@Entry
 @Component
-struct BatchPage {
-  @State activeNav: string = 'Batch';
+export struct BatchPage {
+  
   @State selectedServers: string[] = [];
   @State commandInput: string = '';
   @State results: BatchResult[] = [];
@@ -226,15 +225,11 @@ struct BatchPage {
   }
 
   build() {
-    Row() {
-      NavSidebar({ activeKey: this.activeNav, onSelect: (key: string) => {
-        router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-      }})
-      Column() {
-        TopBar({ title: '批量操作', subtitle: '多服务器并行执行' }) {
-          this.actionsBuilder()
-        }
-        Scroll() {
+    Column() {
+      TopBar({ title: '批量操作', subtitle: '多服务器并行执行' }) {
+        this.actionsBuilder()
+      }
+      Scroll() {
           Column({ space: 16 }) {
             // 选择服务器区
             SectionCard({ title: '目标服务器' }) {
@@ -320,10 +315,7 @@ struct BatchPage {
         .scrollBar(BarState.Auto)
         .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(AppTheme.bgBase)
-    }
+    .layoutWeight(1)
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
   }
