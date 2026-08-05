@@ -159,6 +159,7 @@ struct AppShell {
     }
     .width('100%')
     .backgroundColor(AppTheme.bgSurface)
+    .padding({ bottom: SAFE_BOTTOM })
   }
 
   // 半透明遮罩：点击关闭更多菜单
@@ -184,7 +185,6 @@ struct AppShell {
           .padding({ top: SAFE_TOP })
 
           this.bottomTabBar()
-            .padding({ bottom: SAFE_BOTTOM })
         }
         .layoutWeight(1)
 
