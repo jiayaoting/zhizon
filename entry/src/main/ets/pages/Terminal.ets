@@ -9,6 +9,7 @@ export struct TerminalPage {
   @State activeSession: number = 0;
   @State cmdInput: string = '';
   @State terminalLines: string[] = [...MockData.terminalLines];
+  @StorageLink('isSm') isSm: boolean = false;
   private sessions: string[] = ['prod-web-01', 'prod-db-master', 'dev-test-01'];
   private sessionCwds: string[] = ['~/projects', '~/data', '~/test'];
   private quickCmds: string[] = ['ls -la', 'cd ~', 'top', 'df -h', 'free -h', 'docker ps', 'uptime', 'cat /etc/os-release'];

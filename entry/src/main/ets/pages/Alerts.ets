@@ -14,6 +14,7 @@ export struct AlertsPage {
   
   @State alertFilter: string = '全部';
   @State resolvedMap: Record<string, boolean> = {};
+  @StorageLink('isSm') isSm: boolean = false;
   private alerts: Alert[] = DataRepository.getAlerts();
   private filters: string[] = ['全部', '未处理', '严重', '警告', '信息'];
 
@@ -220,7 +221,7 @@ export struct AlertsPage {
               }, (a: Alert) => a.id)
             }
           }
-          .padding(24)
+          .padding(this.isSm ? 16 : 24)
           .width('100%')
         }
         .layoutWeight(1)

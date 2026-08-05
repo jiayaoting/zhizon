@@ -10,6 +10,7 @@ import { Command } from '../model/Models';
 @Component
 export struct CommandsPage {
   @State currentCat: string = '全部';
+  @StorageLink('isSm') isSm: boolean = false;
   private commands: Command[] = DataRepository.getCommands();
   private categories: string[] = ['全部', '系统', '进程', '网络', 'Docker', '安全', '服务'];
 
@@ -174,7 +175,7 @@ export struct CommandsPage {
                 this.commandCard(cmd)
               }, (cmd: Command) => cmd.id)
             }
-            .padding(20)
+            .padding(this.isSm ? 12 : 20)
             .width('100%')
           }
         }

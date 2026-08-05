@@ -25,6 +25,7 @@ interface TransferItem {
 
 @Component
 export struct FilesPage {
+  @StorageLink('isSm') isSm: boolean = false;
   private remoteFiles: FileItem[] = DataRepository.getFiles();
   private breadcrumb: string[] = ['/', 'root', 'logs'];
   private localFiles: LocalFile[] = [
@@ -242,7 +243,7 @@ export struct FilesPage {
           .width('100%')
           .alignItems(HorizontalAlign.Start)
         }
-        .padding(24)
+        .padding(this.isSm ? 16 : 24)
         .width('100%')
       }
       .layoutWeight(1)

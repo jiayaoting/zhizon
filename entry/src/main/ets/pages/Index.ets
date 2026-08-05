@@ -375,7 +375,7 @@ export struct IndexPage {
             this.alertRow(a)
           }, (a: Alert) => a.id)
         }
-        .padding(24)
+        .padding(this.isSm ? 16 : 24)
         .width('100%')
       }
       .layoutWeight(1)

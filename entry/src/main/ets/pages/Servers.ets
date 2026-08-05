@@ -12,6 +12,7 @@ import { Server } from '../model/Models';
 @Component
 export struct ServersPage {
   @State currentGroup: string = '全部';
+  @StorageLink('isSm') isSm: boolean = false;
   private stats = DataRepository.getStats();
   private servers: Server[] = DataRepository.getServers();
   private groups: string[] = ['全部', '生产', '测试', '监控', '备份', 'CI/CD'];
@@ -218,7 +219,7 @@ export struct ServersPage {
             }, (s: Server) => s.id)
           }
         }
-        .padding(24)
+        .padding(this.isSm ? 16 : 24)
         .width('100%')
       }
       .layoutWeight(1)

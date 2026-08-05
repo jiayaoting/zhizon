@@ -1,4 +1,5 @@
 // 智子 - 自适应主框架（手机底部Tab / 平板侧边栏）
+import { display } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { AppConstants, NavItem } from '../common/Constants';
@@ -19,14 +20,56 @@ const BP_SM = 600;
 struct AppShell {
   @State currentPage: string = 'Index';
   @State winWidth: number = 0;
-  private navItems: NavItem[] = AppConstants.navItems;
+  @State showMoreMenu: boolean = false;
+  private allNavItems: NavItem[] = AppConstants.navItems;
+
+  // 手机端 5 个主 Tab
+  private smPrimaryTabs: NavItem[] = [
+    this.allNavItems[0], // 总览
+    this.allNavItems[1], // SSH 服务器
+    this.allNavItems[2], // PVE 集群
+    this.allNavItems[3], // SSH 终端
+    this.allNavItems[7], // 告警中心
+  ];
+
+  // 更多菜单中的项
+  private smMoreTabs: NavItem[] = [
+    this.allNavItems[4], // 文件管理
+    this.allNavItems[5], // 快捷命令
+    this.allNavItems[6], // 批量操作
+    this.allNavItems[8], // 设置
+  ];
 
   aboutToAppear() {
-    AppStorage.setOrCreate('isSm', false);
+    // 使用 display API 获取屏幕宽度，比 onAreaChange 更可靠
+    try {
+      const d = display.getDefaultDisplaySync();
+      const vpWidth = px2vp(d.width);
+      this.winWidth = vpWidth;
+      const sm = vpWidth < BP_SM;
+      AppStorage.setOrCreate('isSm', sm);
+    } catch (e) {
+      // 兜底：默认平板布局
+      this.winWidth = 800;
+      AppStorage.setOrCreate('isSm', false);
+    }
   }
 
   private get isSm(): boolean {
     return this.winWidth > 0 && this.winWidth < BP_SM;
+  }
+
+  private get isMd(): boolean {
+    return this.winWidth >= BP_SM && this.winWidth < 840;
+  }
+
+  private get isLg(): boolean {
+    return this.winWidth >= 840;
+  }
+
+  selectPage(key: string) {
+    this.currentPage = key;
+    this.showMoreMenu = false;
   }
 
   @Builder
@@ -53,56 +96,103 @@ struct AppShell {
   }
 
   @Builder
+  tabItem(item: NavItem, isActive: boolean, isMore: boolean) {
+    Column({ space: 2 }) {
+      Text(isMore ? '⋯' : item.icon)
+        .fontSize(isMore ? 20 : 18)
+      Text(isMore ? '更多' : item.label)
+        .fontSize(10)
+        .fontColor(isActive ? AppTheme.primary : AppTheme.textTertiary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 4, bottom: 4 })
+    .onClick(() => {
+      if (isMore) {
+        this.showMoreMenu = !this.showMoreMenu;
+      } else {
+        this.selectPage(item.key);
+      }
+    })
+  }
+
+  @Builder
   bottomTabBar() {
-    Row() {
-      ForEach(this.navItems, (item: NavItem) => {
-        Column({ space: 2 }) {
-          Text(item.icon)
-            .fontSize(18)
-          Text(item.label)
-            .fontSize(10)
-            .fontColor(item.key === this.currentPage ? AppTheme.primary : AppTheme.textTertiary)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
+    Column() {
+      // 更多菜单弹出层
+      if (this.showMoreMenu) {
+        Column({ space: 0 }) {
+          ForEach(this.smMoreTabs, (item: NavItem, idx: number) => {
+            Row({ space: 10 }) {
+              Text(item.icon).fontSize(16)
+              Text(item.label)
+                .fontSize(14)
+                .fontColor(this.currentPage === item.key ? AppTheme.primary : AppTheme.textPrimary)
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .padding({ left: 20, right: 20, top: 12, bottom: 12 })
+            .backgroundColor(this.currentPage === item.key ? AppTheme.primaryDim : Color.Transparent)
+            .onClick(() => this.selectPage(item.key))
+          }, (item: NavItem) => item.key)
         }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Center)
-        .justifyContent(FlexAlign.Center)
-        .padding({ top: 4, bottom: 4 })
-        .onClick(() => {
-          this.currentPage = item.key;
-        })
-      }, (item: NavItem) => item.key)
+        .width('100%')
+        .backgroundColor(AppTheme.bgElevated)
+        .borderRadius({ topLeft: 12, topRight: 12 })
+        .padding({ top: 4, bottom: 8 })
+      }
+
+      // 主 Tab 栏
+      Row() {
+        ForEach(this.smPrimaryTabs, (item: NavItem) => {
+          this.tabItem(item, item.key === this.currentPage, false)
+        }, (item: NavItem) => item.key)
+
+        // 更多按钮
+        this.tabItem({ key: 'more', label: '更多', icon: '⋯' },
+          this.smMoreTabs.some(t => t.key === this.currentPage), true)
+      }
+      .width('100%')
+      .height(56)
+      .backgroundColor(AppTheme.bgSurface)
+      .border({ width: { top: 1 }, color: AppTheme.borderSubtle })
     }
     .width('100%')
-    .height(56)
     .backgroundColor(AppTheme.bgSurface)
-    .border({ width: { top: 1 }, color: AppTheme.borderSubtle })
+  }
+
+  // 半透明遮罩：点击关闭更多菜单
+  @Builder
+  overlayMask() {
+    Column()
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.4)')
+      .onClick(() => { this.showMoreMenu = false; })
   }
 
   build() {
     Column() {
-      if (this.winWidth === 0) {
-        // 加载中占位
-        Column() {
-          Text('智子')
-            .fontSize(24)
-            .fontColor(AppTheme.primary)
-            .fontWeight(FontWeight.Bold)
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .backgroundColor(AppTheme.bgBase)
-      } else if (this.isSm) {
+      if (this.isSm) {
         // 手机：内容 + 底部Tab
-        Column() {
-          this.renderPage()
+        Stack({ alignContent: Alignment.Bottom }) {
+          Column() {
+            this.renderPage()
+          }
+          .layoutWeight(1)
+
+          this.bottomTabBar()
         }
         .layoutWeight(1)
 
-        this.bottomTabBar()
+        // 更多菜单遮罩
+        if (this.showMoreMenu) {
+          this.overlayMask()
+            .position({ x: 0, y: 0 })
+        }
       } else {
         // 平板+：侧边栏 + 内容
         Row() {
@@ -125,9 +215,12 @@ struct AppShell {
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
     .onAreaChange((oldArea: Area, newArea: Area) => {
+      // 窗口大小变化时更新（分屏、折叠屏等场景）
       const w = newArea.width as number;
-      this.winWidth = w;
-      AppStorage.setOrCreate('isSm', w > 0 && w < BP_SM);
+      if (w > 0 && Math.abs(w - this.winWidth) > 10) {
+        this.winWidth = w;
+        AppStorage.setOrCreate('isSm', w < BP_SM);
+      }
     })
   }
 }

@@ -50,6 +50,7 @@ export struct BatchPage {
   @State commandInput: string = '';
   @State results: BatchResult[] = [];
   @State expandedId: string = '';
+  @StorageLink('isSm') isSm: boolean = false;
   private servers: Server[] = DataRepository.getServers();
   private templates: string[] = ['系统信息', '磁盘检查', '服务重启', '日志查看'];
   private textareaController: TextAreaController = new TextAreaController();
@@ -308,7 +309,7 @@ export struct BatchPage {
               .width('100%')
             }
           }
-          .padding(24)
+          .padding(this.isSm ? 16 : 24)
           .width('100%')
         }
         .layoutWeight(1)

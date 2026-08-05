@@ -14,6 +14,7 @@ import { PveCluster, PveNode, Stats } from '../model/Models';
 export struct PvePage {
   @State clusters: PveCluster[] = DataRepository.getPveClusters();
   @State stats: Stats = DataRepository.getStats();
+  @StorageLink('isSm') isSm: boolean = false;
 
   // 顶栏操作：添加 PVE 节点主色按钮
   @Builder topActions() {
@@ -243,7 +244,7 @@ export struct PvePage {
           }, (cluster: PveCluster) => cluster.id)
           }
         }
-        .padding(24)
+        .padding(this.isSm ? 16 : 24)
         .width('100%')
       }
       .layoutWeight(1)

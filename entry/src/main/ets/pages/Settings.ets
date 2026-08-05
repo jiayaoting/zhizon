@@ -44,6 +44,7 @@ export struct SettingsPage {
   @State alertPush: boolean = true;
   // 数据
   @State autoBackup: boolean = false;
+  @StorageLink('isSm') isSm: boolean = false;
 
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
@@ -195,7 +196,7 @@ export struct SettingsPage {
               .width('100%')
             }
           }
-          .padding(24)
+          .padding(this.isSm ? 16 : 24)
           .width('100%')
         }
         .layoutWeight(1)
