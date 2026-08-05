@@ -14,7 +14,7 @@ import { PveCluster, PveNode, Stats } from '../model/Models';
 @Component
 export struct PvePage {
   @State clusters: PveCluster[] = [];
-  @State stats: Stats = DataRepository.getStats();
+  @State stats: Stats = { total: 0, online: 0, warning: 0, offline: 0, alerts: 0, pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0 };
   @StorageLink('isSm') isSm: boolean = false;
   @State loading: boolean = true;
   @State showAddDialog: boolean = false;
@@ -33,7 +33,7 @@ export struct PvePage {
     this.loading = true;
     try {
       this.clusters = await PveService.getClusters();
-      this.stats = DataRepository.getStats();
+      this.stats = await DataRepository.getStats();
     } catch (e) {
       promptAction.showToast({ message: '加载集群数据失败' });
     } finally {
@@ -424,7 +424,7 @@ export struct PvePage {
           .backgroundColor(AppTheme.bgSurface)
           .borderRadius(12)
           .width('90%')
-          .maxWidth(400)
+          .constraintSize({ maxWidth: 400 })
           .shadow({ radius: 20, color: '#00000030', offsetY: 4 })
         }
         .width('100%')

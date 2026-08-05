@@ -25,10 +25,8 @@ export struct ServersPage {
   private async loadData(): Promise<void> {
     this.loading = true;
     try {
-      const [servers, stats] = await Promise.all([
-        DataRepository.getServers(),
-        DataRepository.getStats()
-      ]);
+      const servers = await DataRepository.getServers();
+      const stats = await DataRepository.getStats();
       this.servers = servers;
       this.stats = stats;
     } catch (e) {

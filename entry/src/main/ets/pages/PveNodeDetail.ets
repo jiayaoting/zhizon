@@ -36,19 +36,14 @@ struct PveNodeDetailPage {
     const params = router.getParams() as NodeDetailParams;
     this.clusterId = params.clusterId;
     this.nodeName = params.node;
-    const c = await DataRepository.getPveCluster(this.clusterId);
+    const c: PveCluster | undefined = await DataRepository.getPveCluster(this.clusterId);
     this.cluster = c;
     if (c) {
       this.pveNode = c.nodes.find(n => n.node === this.nodeName);
       if (this.pveNode) {
-        const [vms, storages, tasks] = await Promise.all([
-          DataRepository.getVms(this.pveNode.node),
-          DataRepository.getStorages(this.pveNode.node),
-          DataRepository.getTasks()
-        ]);
-        this.vms = vms;
-        this.storages = storages;
-        this.tasks = tasks;
+        this.vms = await DataRepository.getVms(c, this.pveNode.node);
+        this.storages = await DataRepository.getStorages(c, this.pveNode.node);
+        this.tasks = await DataRepository.getTasks(c, this.pveNode.node);
       }
     }
     this.loading = false;
@@ -78,18 +73,13 @@ struct PveNodeDetailPage {
         .height(28)
         .padding({ left: 10, right: 10 })
         .onClick(async () => {
-          const c = await DataRepository.getPveCluster(this.clusterId);
+          const c: PveCluster | undefined = await DataRepository.getPveCluster(this.clusterId);
           this.cluster = c;
           this.pveNode = c?.nodes.find(n => n.node === this.nodeName) || undefined;
-          if (this.pveNode) {
-            const [vms, storages, tasks] = await Promise.all([
-              DataRepository.getVms(this.pveNode.node),
-              DataRepository.getStorages(this.pveNode.node),
-              DataRepository.getTasks()
-            ]);
-            this.vms = vms;
-            this.storages = storages;
-            this.tasks = tasks;
+          if (c && this.pveNode) {
+            this.vms = await DataRepository.getVms(c, this.pveNode.node);
+            this.storages = await DataRepository.getStorages(c, this.pveNode.node);
+            this.tasks = await DataRepository.getTasks(c, this.pveNode.node);
           }
           promptAction.showToast({ message: '已刷新节点数据' });
         })

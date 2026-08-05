@@ -78,35 +78,35 @@ export class DatabaseHelper {
 
   // 初始化数据库
   static async init(context: common.Context): Promise<void> {
-    if (this.store) return;
+    if (DatabaseHelper.store) return;
 
     const config: relationalStore.StoreConfig = {
       name: DB_NAME,
       securityLevel: relationalStore.SecurityLevel.S1
     };
 
-    this.store = await relationalStore.getRdbStore(context, config);
+    DatabaseHelper.store = await relationalStore.getRdbStore(context, config);
 
     // 创建表
-    await this.store.executeSql(SQL_CREATE_SERVERS);
-    await this.store.executeSql(SQL_CREATE_PVE_CLUSTERS);
-    await this.store.executeSql(SQL_CREATE_COMMANDS);
-    await this.store.executeSql(SQL_CREATE_ALERTS);
-    await this.store.executeSql(SQL_CREATE_SETTINGS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_SERVERS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_PVE_CLUSTERS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_COMMANDS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_ALERTS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_SETTINGS);
 
     // 插入默认数据
-    await this.seedDefaults();
+    await DatabaseHelper.seedDefaults();
   }
 
   static getStore(): relationalStore.RdbStore {
-    if (!this.store) throw new Error('Database not initialized');
-    return this.store;
+    if (!DatabaseHelper.store) throw new Error('Database not initialized');
+    return DatabaseHelper.store;
   }
 
   // ========== 服务器 CRUD ==========
 
   static async getServers(): Promise<Server[]> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('servers');
     const resultSet = await store.query(predicates);
     const servers: Server[] = [];
@@ -120,7 +120,7 @@ export class DatabaseHelper {
         username: resultSet.getString(resultSet.getColumnIndex('username')),
         authType: (resultSet.getString(resultSet.getColumnIndex('auth_type')) || 'password') as 'password' | 'key',
         group: resultSet.getString(resultSet.getColumnIndex('grp')) || undefined,
-        tags: this.parseTags(resultSet.getString(resultSet.getColumnIndex('tags'))),
+        tags: DatabaseHelper.parseTags(resultSet.getString(resultSet.getColumnIndex('tags'))),
         os: resultSet.getString(resultSet.getColumnIndex('os')) || undefined,
         status: 'offline',
         metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
@@ -133,7 +133,7 @@ export class DatabaseHelper {
   }
 
   static async getServer(id: string): Promise<Server | undefined> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('servers');
     predicates.equalTo('id', id);
     const resultSet = await store.query(predicates);
@@ -146,7 +146,7 @@ export class DatabaseHelper {
         username: resultSet.getString(resultSet.getColumnIndex('username')),
         authType: (resultSet.getString(resultSet.getColumnIndex('auth_type')) || 'password') as 'password' | 'key',
         group: resultSet.getString(resultSet.getColumnIndex('grp')) || undefined,
-        tags: this.parseTags(resultSet.getString(resultSet.getColumnIndex('tags'))),
+        tags: DatabaseHelper.parseTags(resultSet.getString(resultSet.getColumnIndex('tags'))),
         os: resultSet.getString(resultSet.getColumnIndex('os')) || undefined,
         status: 'offline',
         metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
@@ -161,7 +161,7 @@ export class DatabaseHelper {
   }
 
   static async addServer(server: Server): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const valueBucket: relationalStore.ValuesBucket = {
       id: server.id,
       name: server.name,
@@ -179,7 +179,7 @@ export class DatabaseHelper {
   }
 
   static async updateServer(id: string, updates: Partial<Server>): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const bucket: relationalStore.ValuesBucket = {};
     if (updates.name !== undefined) bucket['name'] = updates.name;
     if (updates.host !== undefined) bucket['host'] = updates.host;
@@ -196,7 +196,7 @@ export class DatabaseHelper {
   }
 
   static async deleteServer(id: string): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('servers');
     predicates.equalTo('id', id);
     await store.delete(predicates);
@@ -205,7 +205,7 @@ export class DatabaseHelper {
   // ========== PVE 集群 CRUD ==========
 
   static async getPveClusters(): Promise<PveCluster[]> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('pve_clusters');
     const resultSet = await store.query(predicates);
     const clusters: PveCluster[] = [];
@@ -229,7 +229,7 @@ export class DatabaseHelper {
   }
 
   static async addPveCluster(cluster: PveCluster): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const valueBucket: relationalStore.ValuesBucket = {
       id: cluster.id,
       name: cluster.name,
@@ -244,7 +244,7 @@ export class DatabaseHelper {
   }
 
   static async deletePveCluster(id: string): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('pve_clusters');
     predicates.equalTo('id', id);
     await store.delete(predicates);
@@ -253,7 +253,7 @@ export class DatabaseHelper {
   // ========== 快捷命令 CRUD ==========
 
   static async getCommands(): Promise<Command[]> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('commands');
     predicates.orderByDesc('uses');
     const resultSet = await store.query(predicates);
@@ -273,7 +273,7 @@ export class DatabaseHelper {
   }
 
   static async addCommand(cmd: Command): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const valueBucket: relationalStore.ValuesBucket = {
       id: cmd.id,
       name: cmd.name,
@@ -286,12 +286,12 @@ export class DatabaseHelper {
   }
 
   static async incrementCommandUses(id: string): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     await store.executeSql('UPDATE commands SET uses = uses + 1 WHERE id = ?', [id]);
   }
 
   static async deleteCommand(id: string): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('commands');
     predicates.equalTo('id', id);
     await store.delete(predicates);
@@ -300,7 +300,7 @@ export class DatabaseHelper {
   // ========== 告警 CRUD ==========
 
   static async getAlerts(resolvedOnly?: boolean): Promise<Alert[]> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('alerts');
     predicates.orderByDesc('created_at');
     if (resolvedOnly !== undefined) {
@@ -325,7 +325,7 @@ export class DatabaseHelper {
   }
 
   static async addAlert(alert: Alert): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const valueBucket: relationalStore.ValuesBucket = {
       id: alert.id,
       level: alert.level,
@@ -340,7 +340,7 @@ export class DatabaseHelper {
   }
 
   static async resolveAlert(id: string): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('alerts');
     predicates.equalTo('id', id);
     const bucket: relationalStore.ValuesBucket = { resolved: 1 };
@@ -348,7 +348,7 @@ export class DatabaseHelper {
   }
 
   static async resolveAllAlerts(): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('alerts');
     predicates.equalTo('resolved', 0);
     const bucket: relationalStore.ValuesBucket = { resolved: 1 };
@@ -372,7 +372,7 @@ export class DatabaseHelper {
   // ========== 设置 ==========
 
   static async getSetting(key: string, defaultValue: string = ''): Promise<string> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('settings');
     predicates.equalTo('key', key);
     const resultSet = await store.query(predicates);
@@ -386,7 +386,7 @@ export class DatabaseHelper {
   }
 
   static async setSetting(key: string, value: string): Promise<void> {
-    const store = this.getStore();
+    const store = DatabaseHelper.getStore();
     const predicates = new relationalStore.RdbPredicates('settings');
     predicates.equalTo('key', key);
     const resultSet = await store.query(predicates);
@@ -410,7 +410,7 @@ export class DatabaseHelper {
 
   // 初始化默认数据
   private static async seedDefaults(): Promise<void> {
-    const existing = await this.getServers();
+    const existing = await DatabaseHelper.getServers();
     if (existing.length > 0) return; // 已有数据，不重复播种
 
     const now = Date.now();
@@ -444,7 +444,7 @@ export class DatabaseHelper {
     ];
 
     for (const s of defaultServers) {
-      await this.addServer(s);
+      await DatabaseHelper.addServer(s);
     }
 
     const defaultCommands: Command[] = [
@@ -463,7 +463,7 @@ export class DatabaseHelper {
     ];
 
     for (const c of defaultCommands) {
-      await this.addCommand(c);
+      await DatabaseHelper.addCommand(c);
     }
   }
 }

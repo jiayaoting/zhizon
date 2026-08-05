@@ -1,6 +1,7 @@
 // 智子 - 数据仓库（基于数据库持久化）
 import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, FileItem, Stats } from '../model/Models';
 import { DatabaseHelper } from './DatabaseHelper';
+import { PveService } from './PveService';
 
 // 格式化运行时间
 export function formatUptime(seconds: number): string {
@@ -119,8 +120,8 @@ export class DataRepository {
   // ========== 统计 ==========
 
   static async getStats(): Promise<Stats> {
-    const servers = await this.getServers();
-    const alerts = await this.getAlerts();
+    const servers = await DataRepository.getServers();
+    const alerts = await DataRepository.getAlerts();
     const unresolvedAlerts = alerts.filter(a => !a.resolved);
 
     return {
@@ -136,5 +137,49 @@ export class DataRepository {
       ctTotal: 0,
       runningTasks: 0
     };
+  }
+
+  // ========== PVE 节点详情 ==========
+
+  static async getPveCluster(id: string): Promise<PveCluster | undefined> {
+    const clusters = await DataRepository.getPveClusters();
+    return clusters.find(c => c.id === id);
+  }
+
+  static async getVms(cluster: PveCluster, node?: string): Promise<Vm[]> {
+    try {
+      return await PveService.getVms(cluster, node);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static async getStorages(cluster: PveCluster, node: string): Promise<Storage[]> {
+    try {
+      return await PveService.getStorages(cluster, node);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static async getTasks(cluster: PveCluster, node: string): Promise<PveTask[]> {
+    try {
+      return await PveService.getTasks(cluster, node);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static async getVm(cluster: PveCluster, node: string, vmid: number): Promise<Vm | undefined> {
+    const vms = await DataRepository.getVms(cluster, node);
+    return vms.find(v => v.vmid === vmid);
+  }
+
+  static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<Snapshot[]> {
+    try {
+      return await PveService.getSnapshots(cluster, node, vmid);
+    } catch (e) {
+      return [];
+    }
   }
 }

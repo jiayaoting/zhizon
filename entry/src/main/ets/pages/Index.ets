@@ -40,12 +40,10 @@ export struct IndexPage {
 
   private async loadData() {
     try {
-      const [stats, clusters, servers, alerts] = await Promise.all([
-        DataRepository.getStats(),
-        DataRepository.getPveClusters(),
-        DataRepository.getServers(),
-        DataRepository.getAlerts()
-      ]);
+      const stats = await DataRepository.getStats();
+      const clusters = await DataRepository.getPveClusters();
+      const servers = await DataRepository.getServers();
+      const alerts = await DataRepository.getAlerts();
       this.stats = stats;
       this.clusters = clusters;
       this.servers = servers;

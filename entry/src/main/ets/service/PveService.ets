@@ -217,10 +217,11 @@ export class PveClient {
 
   // 创建快照 POST /nodes/{node}/qemu/{vmid}/snapshot
   async createSnapshot(node: string, vmid: number, snapName: string, description: string = ''): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, {
+    const data: Record<string, Object> = {
       snapname: snapName,
       description: description
-    });
+    };
+    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, data);
     return res !== null;
   }
 
@@ -230,13 +231,16 @@ export class PveClient {
     if (!res || !res['data']) return [];
 
     const snapsData = res['data'] as Array<Record<string, Object>>;
-    return snapsData.map(s => ({
-      name: s['name'] as string,
-      vmid: vmid,
-      date: s['snaptime'] ? new Date((s['snaptime'] as number) * 1000).toLocaleString() : '',
-      size: s['size'] ? `${(s['size'] as number / (1024 * 1024 * 1024)).toFixed(1)} GB` : '',
-      desc: (s['description'] as string) || ''
-    }));
+    return snapsData.map((s): Snapshot => {
+      const result: Snapshot = {
+        name: s['name'] as string,
+        vmid: vmid,
+        date: s['snaptime'] ? new Date((s['snaptime'] as number) * 1000).toLocaleString() : '',
+        size: s['size'] ? `${(s['size'] as number / (1024 * 1024 * 1024)).toFixed(1)} GB` : '',
+        desc: (s['description'] as string) || ''
+      };
+      return result;
+    });
   }
 
   // 删除快照
@@ -251,15 +255,18 @@ export class PveClient {
     if (!res || !res['data']) return [];
 
     const storagesData = res['data'] as Array<Record<string, Object>>;
-    return storagesData.map(s => ({
-      name: s['storage'] as string,
-      type: (s['type'] as string) as 'dir' | 'lvmthin' | 'zfs' | 'nfs',
-      node: node,
-      content: (s['content'] as string) || '',
-      used: s['used'] ? (s['used'] as number) / (1024 * 1024 * 1024) : 0,
-      total: s['total'] ? (s['total'] as number) / (1024 * 1024 * 1024) : 0,
-      status: (s['active'] as number) === 1 ? 'active' : 'inactive'
-    }));
+    return storagesData.map((s): Storage => {
+      const result: Storage = {
+        name: s['storage'] as string,
+        type: (s['type'] as string) as 'dir' | 'lvmthin' | 'zfs' | 'nfs',
+        node: node,
+        content: (s['content'] as string) || '',
+        used: s['used'] ? (s['used'] as number) / (1024 * 1024 * 1024) : 0,
+        total: s['total'] ? (s['total'] as number) / (1024 * 1024 * 1024) : 0,
+        status: (s['active'] as number) === 1 ? 'active' : 'inactive'
+      };
+      return result;
+    });
   }
 
   // 获取任务列表 GET /nodes/{node}/tasks
@@ -274,7 +281,7 @@ export class PveClient {
       if (tStatus === 'OK') status = 'success';
       else if (tStatus.includes('fail') || tStatus.includes('error')) status = 'failed';
 
-      return {
+      const result: PveTask = {
         id: t['upid'] as string,
         node: node,
         upid: t['upid'] as string,
@@ -285,6 +292,7 @@ export class PveClient {
         progress: 0,
         startTime: t['starttime'] ? new Date((t['starttime'] as number) * 1000).toLocaleTimeString() : ''
       };
+      return result;
     });
   }
 
@@ -312,7 +320,19 @@ export class PveService {
     // 登录
     const loggedIn = await client.login(cluster.username, '');
     if (!loggedIn) {
-      return { ...cluster, lastSync: '登录失败', nodes: [] };
+      const failedCluster: PveCluster = {
+        id: cluster.id,
+        name: cluster.name,
+        host: cluster.host,
+        port: cluster.port,
+        username: cluster.username,
+        authType: cluster.authType,
+        verifyTls: cluster.verifyTls,
+        version: cluster.version,
+        lastSync: '登录失败',
+        nodes: []
+      };
+      return failedCluster;
     }
 
     // 获取版本
@@ -329,12 +349,19 @@ export class PveService {
       node.ctCount = cts.length;
     }
 
-    return {
-      ...cluster,
+    const syncedCluster: PveCluster = {
+      id: cluster.id,
+      name: cluster.name,
+      host: cluster.host,
+      port: cluster.port,
+      username: cluster.username,
+      authType: cluster.authType,
+      verifyTls: cluster.verifyTls,
       version: version,
       lastSync: new Date().toLocaleTimeString(),
       nodes: nodes
     };
+    return syncedCluster;
   }
 
   // 获取 VM 列表

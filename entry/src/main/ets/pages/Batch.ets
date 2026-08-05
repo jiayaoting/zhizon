@@ -128,7 +128,7 @@ export struct BatchPage {
           serverId: id,
           serverName: id,
           host: '',
-          status: 'failed' as const,
+          status: 'failed',
           duration: '0.00s',
           output: '服务器未找到'
         } as BatchResult;
@@ -142,7 +142,7 @@ export struct BatchPage {
           serverId: id,
           serverName: srv.name,
           host: srv.host,
-          status: 'success' as const,
+          status: 'success',
           duration: duration,
           output: output
         } as BatchResult;
@@ -153,7 +153,7 @@ export struct BatchPage {
           serverId: id,
           serverName: srv.name,
           host: srv.host,
-          status: 'failed' as const,
+          status: 'failed',
           duration: duration,
           output: `ssh: connect to host ${srv.host} port ${srv.port}: ${errMsg}`
         } as BatchResult;

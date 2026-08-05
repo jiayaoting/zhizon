@@ -48,10 +48,8 @@ export struct FilesPage {
 
   private async loadData(): Promise<void> {
     try {
-      const [files, servers] = await Promise.all([
-        DataRepository.getFiles(),
-        DataRepository.getServers()
-      ]);
+      const files = await DataRepository.getFiles();
+      const servers = await DataRepository.getServers();
       this.files = files;
       this.servers = servers;
     } finally {

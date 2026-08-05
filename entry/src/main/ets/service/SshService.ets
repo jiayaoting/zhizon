@@ -93,13 +93,16 @@ export class AgentClient {
     if (!res || !res['files']) return [];
 
     const files = res['files'] as Array<Record<string, Object>>;
-    return files.map(f => ({
-      name: f['name'] as string,
-      type: (f['type'] as string) as 'dir' | 'file',
-      size: f['size'] as number,
-      modified: f['modified'] as string,
-      perms: f['perms'] as string
-    }));
+    return files.map((f): FileItem => {
+      const result: FileItem = {
+        name: f['name'] as string,
+        type: (f['type'] as string) as 'dir' | 'file',
+        size: f['size'] as number,
+        modified: f['modified'] as string,
+        perms: f['perms'] as string
+      };
+      return result;
+    });
   }
 
   // 创建目录

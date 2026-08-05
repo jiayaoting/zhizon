@@ -7,7 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime, formatSize } from '../service/DataRepository';
-import { Vm, PveTask, Snapshot } from '../model/Models';
+import { Vm, PveTask, Snapshot, PveCluster } from '../model/Models';
 
 interface VmDetailParams {
   clusterId: string;
@@ -44,9 +44,12 @@ struct VmDetailPage {
     this.clusterId = params.clusterId;
     this.nodeName = params.node;
     this.vmid = Number(params.vmid);
-    this.vm = await DataRepository.getVm(this.vmid);
-    this.tasks = await DataRepository.getTasks();
-    this.snapshots = await DataRepository.getSnapshots(this.vmid);
+    const cluster: PveCluster | undefined = await DataRepository.getPveCluster(this.clusterId);
+    if (cluster) {
+      this.vm = await DataRepository.getVm(cluster, this.nodeName, this.vmid);
+      this.tasks = await DataRepository.getTasks(cluster, this.nodeName);
+      this.snapshots = await DataRepository.getSnapshots(cluster, this.nodeName, this.vmid);
+    }
     this.loading = false;
   }
 
