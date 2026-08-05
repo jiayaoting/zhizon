@@ -54,7 +54,7 @@ export class PveClient {
   }
 
   // 统一请求方法
-  private async request(method: http.RequestMethod, path: string, data?: Record<string, Object>): Promise<Record<string, Object> | null> {
+  private async request(method: http.RequestMethod, path: string, data?: string): Promise<Record<string, Object> | null> {
     try {
       const req = http.createHttp();
       const headers: Record<string, string> = {};
@@ -70,7 +70,7 @@ export class PveClient {
       const res = await req.request(`${this.baseUrl}${path}`, {
         method: method,
         header: headers,
-        extraData: data ? JSON.stringify(data) : undefined,
+        extraData: data ? data : undefined,
         expectDataType: http.HttpDataType.OBJECT,
         connectTimeout: 15000,
         readTimeout: 15000
@@ -217,10 +217,8 @@ export class PveClient {
 
   // 创建快照 POST /nodes/{node}/qemu/{vmid}/snapshot
   async createSnapshot(node: string, vmid: number, snapName: string, description: string = ''): Promise<boolean> {
-    const data = new Map<string, Object>();
-    data.set('snapname', snapName);
-    data.set('description', description);
-    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, data);
+    const jsonStr = `{"snapname":"${snapName}","description":"${description}"}`;
+    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, jsonStr);
     return res !== null;
   }
 
