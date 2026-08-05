@@ -17,7 +17,7 @@
 
 - **开发语言**：ArkTS
 - **UI 框架**：ArkUI 声明式 + Stage 模型
-- **目标 SDK**：HarmonyOS 6.0 (API 12+)
+- **目标 SDK**：HarmonyOS 6.1.1 (API 20)
 - **数据存储**：Preferences + RelationalStore
 - **网络**：NetworkKit (HTTP) + NAPI (libssh2 规划中)
 
