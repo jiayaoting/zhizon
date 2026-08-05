@@ -2,45 +2,66 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
-import { MockData } from '../service/MockData';
+import { SshService } from '../service/SshService';
+import { Server } from '../model/Models';
 
 @Component
 export struct TerminalPage {
   @State activeSession: number = 0;
   @State cmdInput: string = '';
-  @State terminalLines: string[] = [...MockData.terminalLines];
+  @State terminalLines: string[] = [];
+  @State isLoading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
   private sessions: string[] = ['prod-web-01', 'prod-db-master', 'dev-test-01'];
   private sessionCwds: string[] = ['~/projects', '~/data', '~/test'];
   private quickCmds: string[] = ['ls -la', 'cd ~', 'top', 'df -h', 'free -h', 'docker ps', 'uptime', 'cat /etc/os-release'];
+
+  // 根据当前会话构建 Server 对象
+  private getServer(): Server {
+    return {
+      id: '',
+      name: this.sessions[this.activeSession],
+      host: '',
+      port: 22,
+      username: 'root',
+      authType: 'password',
+      tags: [],
+      status: 'online',
+      metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
+      createdAt: 0
+    };
+  }
 
   // 判断是否为命令提示符行
   private isPromptLine(line: string): boolean {
     return line.includes('root@') || line.includes('#');
   }
 
-  // 发送命令（mock 实现：追加到终端输出）
-  private sendCommand(cmd: string) {
-    if (!cmd.trim()) return;
-    const server = this.sessions[this.activeSession] || 'server';
-    const prompt = `root@${server}:~# ${cmd}`;
-    // Mock 响应
-    let output = '';
-    if (cmd === 'ls -la' || cmd === 'ls') {
-      output = 'total 32\ndrwxr-xr-x  4 root root 4096 Aug  4 09:15 .\ndrwxr-xr-x  3 root root 4096 Aug  3 21:05 ..\n-rw-------  1 root root 12800 Aug  3 21:05 .bash_history';
-    } else if (cmd === 'uptime') {
-      output = ' 09:15:22 up 52 days,  7:36,  2 users,  load average: 0.42, 0.38, 0.40';
-    } else if (cmd === 'df -h') {
-      output = 'Filesystem      Size  Used Avail Use% Mounted on\n/dev/vda1        50G   31G   17G  62% /';
-    } else if (cmd === 'free -h') {
-      output = '               total        used        free      shared  buff/cache   available\nMem:            16Gi       7.2Gi       4.8Gi       256Mi       4.0Gi       8.5Gi';
-    } else if (cmd === 'docker ps') {
-      output = 'CONTAINER ID   IMAGE          STATUS         PORTS                  NAMES\na1b2c3d4e5f6   nginx:latest   Up 3 days      0.0.0.0:80->80/tcp     web-nginx';
-    } else {
-      output = `bash: ${cmd}: command mock executed`;
+  // 页面即将出现时加载终端输出
+  async aboutToAppear(): Promise<void> {
+    try {
+      const server = this.getServer();
+      this.terminalLines = await SshService.getTerminalOutput(server);
+    } catch (e) {
+      this.terminalLines = [`连接失败: ${JSON.stringify(e)}`];
+    } finally {
+      this.isLoading = false;
     }
-    this.terminalLines = [...this.terminalLines, prompt, output, `root@${server}:~# `];
+  }
+
+  // 发送命令
+  private async sendCommand(cmd: string) {
+    if (!cmd.trim()) return;
+    const server = this.getServer();
+    const prompt = `root@${server.name}:~# ${cmd}`;
+    this.terminalLines = [...this.terminalLines, prompt];
     this.cmdInput = '';
+    try {
+      const output = await SshService.exec(server, cmd);
+      this.terminalLines = [...this.terminalLines, output, `root@${server.name}:~# `];
+    } catch (e) {
+      this.terminalLines = [...this.terminalLines, `错误: ${JSON.stringify(e)}`, `root@${server.name}:~# `];
+    }
   }
 
   @Builder actionsBuilder() {
@@ -112,19 +133,21 @@ export struct TerminalPage {
         this.actionsBuilder()
       }
 
-      // 主区域：左侧会话列表 + 右侧终端
+      // 主区域：左侧会话列表(平板) + 右侧终端
       Row() {
-        // 左侧会话列表
-        Column({ space: 4 }) {
-          ForEach(this.sessions, (name: string, idx: number) => {
-            this.sessionItem(name, this.sessionCwds[idx], idx)
-          }, (name: string) => name)
+        // 左侧会话列表 — 仅平板端显示
+        if (!this.isSm) {
+          Column({ space: 4 }) {
+            ForEach(this.sessions, (name: string, idx: number) => {
+              this.sessionItem(name, this.sessionCwds[idx], idx)
+            }, (name: string) => name)
+          }
+          .width(200)
+          .padding(8)
+          .backgroundColor(AppTheme.bgSurface)
+          .alignItems(HorizontalAlign.Start)
+          .height('100%')
         }
-        .width(200)
-        .padding(8)
-        .backgroundColor(AppTheme.bgSurface)
-        .alignItems(HorizontalAlign.Start)
-        .height('100%')
 
         // 右侧终端区
         Column() {
@@ -140,16 +163,26 @@ export struct TerminalPage {
           // 终端内容区
           Scroll() {
             Column({ space: 0 }) {
-              ForEach(this.terminalLines, (line: string) => {
-                Text(line)
-                  .fontSize(12)
+              if (this.isLoading) {
+                Text('加载中...')
+                  .fontSize(14)
+                  .fontColor('#00D9A3')
                   .fontFamily(AppTheme.fontMono)
-                  .fontColor(this.isPromptLine(line) ? '#00FF88' : '#00D9A3')
                   .width('100%')
-              }, (line: string, idx: number) => `${idx}-${line}`)
+                  .textAlign(TextAlign.Center)
+                  .padding({ top: 40 })
+              } else {
+                ForEach(this.terminalLines, (line: string) => {
+                  Text(line)
+                    .fontSize(12)
+                    .fontFamily(AppTheme.fontMono)
+                    .fontColor(this.isPromptLine(line) ? '#00FF88' : '#00D9A3')
+                    .width('100%')
+                }, (line: string, idx: number) => `${idx}-${line}`)
+              }
             }
             .width('100%')
-            .padding(12)
+            .padding(this.isSm ? 10 : 12)
           }
           .layoutWeight(1)
           .backgroundColor('#000000')
@@ -163,7 +196,7 @@ export struct TerminalPage {
                 this.quickCmdTag(cmd)
               }, (cmd: string) => cmd)
             }
-            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+            .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
           }
           .scrollable(ScrollDirection.Horizontal)
           .scrollBar(BarState.Off)
@@ -192,7 +225,7 @@ export struct TerminalPage {
               })
           }
           .width('100%')
-          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
           .backgroundColor(AppTheme.bgSurface)
         }
         .layoutWeight(1)

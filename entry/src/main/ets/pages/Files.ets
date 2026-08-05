@@ -5,7 +5,7 @@ import { TopBar } from '../components/TopBar';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { DataRepository, formatSize } from '../service/DataRepository';
-import { FileItem } from '../model/Models';
+import { FileItem, Server } from '../model/Models';
 
 // 本地文件占位数据
 interface LocalFile {
@@ -26,7 +26,9 @@ interface TransferItem {
 @Component
 export struct FilesPage {
   @StorageLink('isSm') isSm: boolean = false;
-  private remoteFiles: FileItem[] = DataRepository.getFiles();
+  @State files: FileItem[] = [];
+  @State servers: Server[] = [];
+  @State loading: boolean = true;
   private breadcrumb: string[] = ['/', 'root', 'logs'];
   private localFiles: LocalFile[] = [
     { name: 'Documents', modified: '2026-08-03 14:22', size: '-', perms: 'drwxr-xr-x' },
@@ -39,6 +41,23 @@ export struct FilesPage {
     { name: 'deploy.sh', progress: 50, speed: '1.2 MB/s', status: 'running' },
     { name: 'nginx.conf.bak', progress: 80, speed: '0.8 MB/s', status: 'running' }
   ];
+
+  aboutToAppear(): void {
+    this.loadData();
+  }
+
+  private async loadData(): Promise<void> {
+    try {
+      const [files, servers] = await Promise.all([
+        DataRepository.getFiles(),
+        DataRepository.getServers()
+      ]);
+      this.files = files;
+      this.servers = servers;
+    } finally {
+      this.loading = false;
+    }
+  }
 
   @Builder actionsBuilder() {
     Row({ space: 8 }) {
@@ -173,82 +192,98 @@ export struct FilesPage {
       TopBar({ title: '文件管理', subtitle: 'SFTP 双栏浏览' }) {
         this.actionsBuilder()
       }
-      Scroll() {
-        Column({ space: 16 }) {
-          // 面包屑导航
-          Row({ space: 6 }) {
-            ForEach(this.breadcrumb, (c: string, idx: number) => {
-              this.crumbItem(c, idx)
-            }, (c: string) => c)
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-
-          // 双栏布局
-          Row() {
-            // 左栏：本地
-            Column({ space: 8 }) {
-              Text('本地 - /Users/you')
-                .fontSize(12)
-                .fontColor(AppTheme.textPrimary)
-                .fontWeight(FontWeight.Bold)
-              ForEach(this.localFiles, (f: LocalFile) => {
-                this.localFileRow(f)
-              }, (f: LocalFile) => f.name)
-            }
-            .layoutWeight(1)
-            .padding(12)
-            .backgroundColor(AppTheme.bgSurface)
-            .borderRadius(10)
-            .border({ width: 1, color: AppTheme.borderSubtle })
-            .alignItems(HorizontalAlign.Start)
-
-            // 中间分隔线
-            Divider()
-              .vertical(true)
-              .height('100%')
-              .strokeWidth(1)
-              .color(AppTheme.borderSubtle)
-
-            // 右栏：远程
-            Column({ space: 8 }) {
-              Text('远程 - /root')
-                .fontSize(12)
-                .fontColor(AppTheme.textPrimary)
-                .fontWeight(FontWeight.Bold)
-              ForEach(this.remoteFiles, (f: FileItem) => {
-                this.remoteFileRow(f)
-              }, (f: FileItem) => f.name)
-            }
-            .layoutWeight(1)
-            .padding(12)
-            .backgroundColor(AppTheme.bgSurface)
-            .borderRadius(10)
-            .border({ width: 1, color: AppTheme.borderSubtle })
-            .alignItems(HorizontalAlign.Start)
-          }
-          .layoutWeight(1)
-          .width('100%')
-
-          // 底部传输队列
-          Column({ space: 8 }) {
-            Text('传输队列')
-              .fontSize(AppTheme.fsMd)
-              .fontColor(AppTheme.textPrimary)
-              .fontWeight(FontWeight.Bold)
-            ForEach(this.transfers, (t: TransferItem) => {
-              this.transferRow(t)
-            }, (t: TransferItem) => t.name)
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
+      if (this.loading) {
+        Column() {
+          LoadingProgress()
+            .width(48)
+            .height(48)
+            .color(AppTheme.primary)
+          Text('加载中...')
+            .fontSize(12)
+            .fontColor(AppTheme.textTertiary)
+            .margin({ top: 12 })
         }
-        .padding(this.isSm ? 16 : 24)
-        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        Scroll() {
+          Column({ space: 16 }) {
+            // 面包屑导航
+            Row({ space: 6 }) {
+              ForEach(this.breadcrumb, (c: string, idx: number) => {
+                this.crumbItem(c, idx)
+              }, (c: string) => c)
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            // 双栏布局
+            Row() {
+              // 左栏：本地
+              Column({ space: 8 }) {
+                Text('本地 - /Users/you')
+                  .fontSize(12)
+                  .fontColor(AppTheme.textPrimary)
+                  .fontWeight(FontWeight.Bold)
+                ForEach(this.localFiles, (f: LocalFile) => {
+                  this.localFileRow(f)
+                }, (f: LocalFile) => f.name)
+              }
+              .layoutWeight(1)
+              .padding(12)
+              .backgroundColor(AppTheme.bgSurface)
+              .borderRadius(10)
+              .border({ width: 1, color: AppTheme.borderSubtle })
+              .alignItems(HorizontalAlign.Start)
+
+              // 中间分隔线
+              Divider()
+                .vertical(true)
+                .height('100%')
+                .strokeWidth(1)
+                .color(AppTheme.borderSubtle)
+
+              // 右栏：远程
+              Column({ space: 8 }) {
+                Text('远程 - /root')
+                  .fontSize(12)
+                  .fontColor(AppTheme.textPrimary)
+                  .fontWeight(FontWeight.Bold)
+                ForEach(this.files, (f: FileItem) => {
+                  this.remoteFileRow(f)
+                }, (f: FileItem) => f.name)
+              }
+              .layoutWeight(1)
+              .padding(12)
+              .backgroundColor(AppTheme.bgSurface)
+              .borderRadius(10)
+              .border({ width: 1, color: AppTheme.borderSubtle })
+              .alignItems(HorizontalAlign.Start)
+            }
+            .layoutWeight(1)
+            .width('100%')
+
+            // 底部传输队列
+            Column({ space: 8 }) {
+              Text('传输队列')
+                .fontSize(AppTheme.fsMd)
+                .fontColor(AppTheme.textPrimary)
+                .fontWeight(FontWeight.Bold)
+              ForEach(this.transfers, (t: TransferItem) => {
+                this.transferRow(t)
+              }, (t: TransferItem) => t.name)
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .padding(this.isSm ? 16 : 24)
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
-      .align(Alignment.Top)
     }
     .layoutWeight(1)
     .height('100%')

@@ -171,6 +171,7 @@ struct AppShell {
       .width('100%')
       .height('100%')
       .backgroundColor('rgba(0,0,0,0.4)')
+      .position({ x: 0, y: 0 })
       .onClick(() => { this.showMoreMenu = false; })
   }
 
@@ -191,7 +192,6 @@ struct AppShell {
         // 更多菜单遮罩
         if (this.showMoreMenu) {
           this.overlayMask()
-            .position({ x: 0, y: 0 })
         }
       } else {
         // 平板+：侧边栏 + 内容

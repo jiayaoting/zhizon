@@ -7,19 +7,52 @@ import { MetricCard } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { DataRepository } from '../service/DataRepository';
-import { Server, PveCluster, Alert, PveNode } from '../model/Models';
+import { Server, PveCluster, Alert, Stats, PveNode } from '../model/Models';
+
+const emptyStats: Stats = {
+  total: 0,
+  online: 0,
+  warning: 0,
+  offline: 0,
+  alerts: 0,
+  pveNodes: 0,
+  vmTotal: 0,
+  vmRunning: 0,
+  vmStopped: 0,
+  ctTotal: 0,
+  runningTasks: 0
+};
 
 @Component
 export struct IndexPage {
   @State currentTime: string = '';
   @StorageLink('isSm') isSm: boolean = false;
-  private stats = DataRepository.getStats();
-  private clusters: PveCluster[] = DataRepository.getPveClusters();
-  private servers: Server[] = DataRepository.getServers();
-  private alerts: Alert[] = DataRepository.getAlerts();
+  @State stats: Stats = emptyStats;
+  @State clusters: PveCluster[] = [];
+  @State servers: Server[] = [];
+  @State alerts: Alert[] = [];
+  @State loading: boolean = true;
 
   aboutToAppear() {
     this.currentTime = this.formatNow();
+    this.loadData();
+  }
+
+  private async loadData() {
+    try {
+      const [stats, clusters, servers, alerts] = await Promise.all([
+        DataRepository.getStats(),
+        DataRepository.getPveClusters(),
+        DataRepository.getServers(),
+        DataRepository.getAlerts()
+      ]);
+      this.stats = stats;
+      this.clusters = clusters;
+      this.servers = servers;
+      this.alerts = alerts;
+    } finally {
+      this.loading = false;
+    }
   }
 
   private formatNow(): string {
@@ -51,6 +84,8 @@ export struct IndexPage {
       .height(30)
       .padding({ left: 12, right: 12 })
       .onClick(() => {
+        this.loading = true;
+        this.loadData();
         promptAction.showToast({ message: '数据已刷新' });
       })
   }
@@ -290,11 +325,60 @@ export struct IndexPage {
       TopBar({ title: '总览', subtitle: this.currentTime }) {
         this.actionsBuilder()
       }
-      Scroll() {
-        Column({ space: 16 }) {
-          // 顶部 4 统计卡
-          if (this.isSm) {
-            Column({ space: 12 }) {
+      if (this.loading) {
+        Column() {
+          LoadingProgress()
+            .width(36)
+            .height(36)
+            .color(AppTheme.primary)
+          Text('加载中...')
+            .fontSize(14)
+            .fontColor(AppTheme.textSecondary)
+            .margin({ top: 12 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        Scroll() {
+          Column({ space: 16 }) {
+            // 顶部 4 统计卡
+            if (this.isSm) {
+              Column({ space: 12 }) {
+                Row({ space: 12 }) {
+                  MetricCard({
+                    title: 'SSH 服务器',
+                    value: String(this.stats.total),
+                    color: AppTheme.primary,
+                    badgeText: `在线 ${this.stats.online}`
+                  }).layoutWeight(1)
+                  MetricCard({
+                    title: 'PVE 节点',
+                    value: String(this.stats.pveNodes),
+                    color: AppTheme.purple,
+                    sub: `VM ${this.stats.vmTotal} · CT ${this.stats.ctTotal}`
+                  }).layoutWeight(1)
+                }
+                .width('100%')
+                Row({ space: 12 }) {
+                  MetricCard({
+                    title: '运行中 VM',
+                    value: `${this.stats.vmRunning}/${this.stats.vmTotal}`,
+                    color: AppTheme.info,
+                    sub: `已停止 ${this.stats.vmStopped}`
+                  }).layoutWeight(1)
+                  MetricCard({
+                    title: '未处理告警',
+                    value: String(this.stats.alerts),
+                    color: AppTheme.danger,
+                    sub: `运行中任务 ${this.stats.runningTasks}`
+                  }).layoutWeight(1)
+                }
+                .width('100%')
+              }
+              .width('100%')
+            } else {
               Row({ space: 12 }) {
                 MetricCard({
                   title: 'SSH 服务器',
@@ -308,9 +392,6 @@ export struct IndexPage {
                   color: AppTheme.purple,
                   sub: `VM ${this.stats.vmTotal} · CT ${this.stats.ctTotal}`
                 }).layoutWeight(1)
-              }
-              .width('100%')
-              Row({ space: 12 }) {
                 MetricCard({
                   title: '运行中 VM',
                   value: `${this.stats.vmRunning}/${this.stats.vmTotal}`,
@@ -326,61 +407,32 @@ export struct IndexPage {
               }
               .width('100%')
             }
-            .width('100%')
-          } else {
-            Row({ space: 12 }) {
-              MetricCard({
-                title: 'SSH 服务器',
-                value: String(this.stats.total),
-                color: AppTheme.primary,
-                badgeText: `在线 ${this.stats.online}`
-              }).layoutWeight(1)
-              MetricCard({
-                title: 'PVE 节点',
-                value: String(this.stats.pveNodes),
-                color: AppTheme.purple,
-                sub: `VM ${this.stats.vmTotal} · CT ${this.stats.ctTotal}`
-              }).layoutWeight(1)
-              MetricCard({
-                title: '运行中 VM',
-                value: `${this.stats.vmRunning}/${this.stats.vmTotal}`,
-                color: AppTheme.info,
-                sub: `已停止 ${this.stats.vmStopped}`
-              }).layoutWeight(1)
-              MetricCard({
-                title: '未处理告警',
-                value: String(this.stats.alerts),
-                color: AppTheme.danger,
-                sub: `运行中任务 ${this.stats.runningTasks}`
-              }).layoutWeight(1)
-            }
-            .width('100%')
+
+            // PVE 集群状态
+            this.sectionTitle('PVE 集群状态', '管理集群 →', 'Pve')
+            ForEach(this.clusters, (c: PveCluster) => {
+              this.clusterCard(c)
+            }, (c: PveCluster) => c.id)
+
+            // SSH 服务器
+            this.sectionTitle('SSH 服务器', '管理 →', 'Servers')
+            ForEach(this.servers, (s: Server) => {
+              this.serverCard(s)
+            }, (s: Server) => s.id)
+
+            // 最近告警
+            this.sectionTitle('最近告警', '查看全部 →', 'Alerts')
+            ForEach(this.alerts.slice(0, 4), (a: Alert) => {
+              this.alertRow(a)
+            }, (a: Alert) => a.id)
           }
-
-          // PVE 集群状态
-          this.sectionTitle('PVE 集群状态', '管理集群 →', 'Pve')
-          ForEach(this.clusters, (c: PveCluster) => {
-            this.clusterCard(c)
-          }, (c: PveCluster) => c.id)
-
-          // SSH 服务器
-          this.sectionTitle('SSH 服务器', '管理 →', 'Servers')
-          ForEach(this.servers, (s: Server) => {
-            this.serverCard(s)
-          }, (s: Server) => s.id)
-
-          // 最近告警
-          this.sectionTitle('最近告警', '查看全部 →', 'Alerts')
-          ForEach(this.alerts.slice(0, 4), (a: Alert) => {
-            this.alertRow(a)
-          }, (a: Alert) => a.id)
+          .padding(this.isSm ? 16 : 24)
+          .width('100%')
         }
-        .padding(this.isSm ? 16 : 24)
-        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
-      .align(Alignment.Top)
     }
     .height('100%')
     .backgroundColor(AppTheme.bgBase)

@@ -6,6 +6,7 @@ import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { DataRepository } from '../service/DataRepository';
+import { SshService } from '../service/SshService';
 import { Server } from '../model/Models';
 
 // 批量执行结果
@@ -50,8 +51,9 @@ export struct BatchPage {
   @State commandInput: string = '';
   @State results: BatchResult[] = [];
   @State expandedId: string = '';
+  @State servers: Server[] = [];
+  @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
-  private servers: Server[] = DataRepository.getServers();
   private templates: string[] = ['系统信息', '磁盘检查', '服务重启', '日志查看'];
   private textareaController: TextAreaController = new TextAreaController();
 
@@ -62,6 +64,20 @@ export struct BatchPage {
     '服务重启': 'systemctl restart nginx',
     '日志查看': 'tail -n 100 /var/log/syslog'
   };
+
+  aboutToAppear(): void {
+    this.loadServers();
+  }
+
+  private async loadServers(): Promise<void> {
+    try {
+      this.servers = await DataRepository.getServers();
+    } catch (e) {
+      console.error('Failed to load servers:', JSON.stringify(e));
+    } finally {
+      this.loading = false;
+    }
+  }
 
   private isSelected(id: string): boolean {
     return this.selectedServers.indexOf(id) >= 0;
@@ -94,7 +110,7 @@ export struct BatchPage {
     promptAction.showToast({ message: `已插入模板：${name}` });
   }
 
-  private runBatch() {
+  private async runBatch() {
     if (this.selectedServers.length === 0) {
       promptAction.showToast({ message: '请先选择目标服务器' });
       return;
@@ -103,22 +119,48 @@ export struct BatchPage {
       promptAction.showToast({ message: '请输入要执行的命令' });
       return;
     }
-    const firstLine = this.commandInput.split('\n')[0];
-    // 模拟执行结果
-    this.results = this.selectedServers.map((id, idx) => {
+
+    const command = this.commandInput.trim();
+    const tasks = this.selectedServers.map(async (id) => {
       const srv = this.servers.find(s => s.id === id);
-      const success = idx % 5 !== 2; // 第三台模拟失败
-      return {
-        serverId: id,
-        serverName: srv?.name || id,
-        host: srv?.host || '',
-        status: (success ? 'success' : 'failed') as 'success' | 'failed',
-        duration: success ? `${(0.8 + idx * 0.3).toFixed(2)}s` : '12.50s',
-        output: success
-          ? `$ ${firstLine}\n... 命令执行完成，退出码 0`
-          : `ssh: connect to host ${srv?.host} port 22: Connection refused`
-      } as BatchResult;
+      if (!srv) {
+        return {
+          serverId: id,
+          serverName: id,
+          host: '',
+          status: 'failed' as const,
+          duration: '0.00s',
+          output: '服务器未找到'
+        } as BatchResult;
+      }
+
+      const start = Date.now();
+      try {
+        const output = await SshService.exec(srv, command);
+        const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
+        return {
+          serverId: id,
+          serverName: srv.name,
+          host: srv.host,
+          status: 'success' as const,
+          duration: duration,
+          output: output
+        } as BatchResult;
+      } catch (e) {
+        const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
+        const errMsg = e instanceof Error ? e.message : JSON.stringify(e);
+        return {
+          serverId: id,
+          serverName: srv.name,
+          host: srv.host,
+          status: 'failed' as const,
+          duration: duration,
+          output: `ssh: connect to host ${srv.host} port ${srv.port}: ${errMsg}`
+        } as BatchResult;
+      }
     });
+
+    this.results = await Promise.all(tasks);
     this.expandedId = '';
     promptAction.showToast({ message: `已对 ${this.selectedServers.length} 台服务器执行命令` });
   }

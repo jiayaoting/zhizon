@@ -34,14 +34,20 @@ struct VmDetailPage {
   @State nodeName: string = '';
   @State vmid: number = 0;
   @State vm: Vm | undefined = undefined;
+  @State loading: boolean = true;
+  @State tasks: PveTask[] = [];
+  @State snapshots: Snapshot[] = [];
   @StorageLink('isSm') isSm: boolean = false;
 
-  aboutToAppear() {
+  async aboutToAppear() {
     const params = router.getParams() as VmDetailParams;
     this.clusterId = params.clusterId;
     this.nodeName = params.node;
     this.vmid = Number(params.vmid);
-    this.vm = DataRepository.getVm(this.vmid);
+    this.vm = await DataRepository.getVm(this.vmid);
+    this.tasks = await DataRepository.getTasks();
+    this.snapshots = await DataRepository.getSnapshots(this.vmid);
+    this.loading = false;
   }
 
   // 硬件配置分组（硬编码示例）
@@ -253,7 +259,23 @@ struct VmDetailPage {
           this.topActions()
         }
 
-        if (this.vm) {
+        if (this.loading) {
+          Column() {
+            LoadingProgress()
+              .width(48)
+              .height(48)
+              .color(AppTheme.primary)
+            Text('加载中...')
+              .fontSize(13)
+              .fontColor(AppTheme.textSecondary)
+              .margin({ top: 12 })
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          .width('100%')
+          .height('100%')
+        } else if (this.vm) {
           Scroll() {
             Column({ space: 16 }) {
               // VM 头部卡片
@@ -438,7 +460,7 @@ struct VmDetailPage {
                       .width('100%')
                       .padding({ top: 12, bottom: 4 })
                     ForEach(
-                      DataRepository.getTasks().filter(t =>
+                      this.tasks.filter(t =>
                         t.target.includes(String(this.vm!.vmid)) || t.target.includes(this.vm!.name)
                       ),
                       (t: PveTask) => { this.miniTaskRow(t) },
@@ -475,10 +497,10 @@ struct VmDetailPage {
                   .width('100%')
 
                   // 快照列表
-                  if (DataRepository.getSnapshots(this.vm.vmid).length === 0) {
+                  if (this.snapshots.length === 0) {
                     EmptyState({ icon: '📸', title: '暂无快照', desc: '点击"创建快照"开始' })
                   } else {
-                    ForEach(DataRepository.getSnapshots(this.vm.vmid), (s: Snapshot) => {
+                    ForEach(this.snapshots, (s: Snapshot) => {
                       this.snapshotRowWithAction(s)
                     }, (s: Snapshot) => `${s.name}-${s.vmid}`)
                   }
@@ -515,14 +537,14 @@ struct VmDetailPage {
               // ===== Tab 历史 =====
               if (this.activeTab === 'history') {
                 Column({ space: 0 }) {
-                  if (DataRepository.getTasks().filter(t =>
+                  if (this.tasks.filter(t =>
                     t.node === this.vm!.node &&
                     (t.target.includes(String(this.vm!.vmid)) || t.target.includes(this.vm!.name))
                   ).length === 0) {
                     EmptyState({ icon: '📋', title: '暂无任务记录', desc: '该虚拟机暂无历史任务' })
                   } else {
                     ForEach(
-                      DataRepository.getTasks().filter(t =>
+                      this.tasks.filter(t =>
                         t.node === this.vm!.node &&
                         (t.target.includes(String(this.vm!.vmid)) || t.target.includes(this.vm!.name))
                       ),
@@ -539,7 +561,7 @@ struct VmDetailPage {
                 .alignItems(HorizontalAlign.Start)
               }
             }
-            .padding(24)
+            .padding(this.isSm ? 16 : 24)
             .width('100%')
           }
           .layoutWeight(1)

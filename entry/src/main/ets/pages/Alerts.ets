@@ -14,9 +14,19 @@ export struct AlertsPage {
   
   @State alertFilter: string = '全部';
   @State resolvedMap: Record<string, boolean> = {};
+  @State alerts: Alert[] = [];
+  @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
-  private alerts: Alert[] = DataRepository.getAlerts();
   private filters: string[] = ['全部', '未处理', '严重', '警告', '信息'];
+
+  aboutToAppear(): void {
+    DataRepository.getAlerts().then((data: Alert[]) => {
+      this.alerts = data;
+      this.loading = false;
+    }).catch(() => {
+      this.loading = false;
+    });
+  }
 
   // 级别颜色
   private levelColor(level: string): string {
@@ -61,20 +71,24 @@ export struct AlertsPage {
   }
 
   private markResolved(a: Alert) {
-    const newMap: Record<string, boolean> = {};
-    Object.keys(this.resolvedMap).forEach((key: string) => {
-      newMap[key] = this.resolvedMap[key];
+    DataRepository.resolveAlert(a.id).then(() => {
+      const newMap: Record<string, boolean> = {};
+      Object.keys(this.resolvedMap).forEach((key: string) => {
+        newMap[key] = this.resolvedMap[key];
+      });
+      newMap[a.id] = true;
+      this.resolvedMap = newMap;
+      promptAction.showToast({ message: '已标记为已处理' });
     });
-    newMap[a.id] = true;
-    this.resolvedMap = newMap;
-    promptAction.showToast({ message: '已标记为已处理' });
   }
 
   private markAllRead() {
-    const map: Record<string, boolean> = {};
-    this.alerts.forEach(a => { map[a.id] = true; });
-    this.resolvedMap = map;
-    promptAction.showToast({ message: '已全部标记已读' });
+    DataRepository.resolveAllAlerts().then(() => {
+      const map: Record<string, boolean> = {};
+      this.alerts.forEach(a => { map[a.id] = true; });
+      this.resolvedMap = map;
+      promptAction.showToast({ message: '已全部标记已读' });
+    });
   }
 
   @Builder actionsBuilder() {
@@ -171,10 +185,30 @@ export struct AlertsPage {
     .opacity(this.isResolved(a) ? 0.5 : 1)
   }
 
+  @Builder loadingBuilder() {
+    Column() {
+      LoadingProgress()
+        .width(40)
+        .height(40)
+        .color(AppTheme.primary)
+      Text('加载中...')
+        .fontSize(13)
+        .fontColor(AppTheme.textTertiary)
+        .margin({ top: 12 })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
   build() {
     Column() {
       TopBar({ title: '告警中心', subtitle: `${this.unresolvedCount()} 条未处理` }) {
         this.actionsBuilder()
+      }
+      if (this.loading) {
+        this.loadingBuilder()
       }
       Scroll() {
           Column({ space: 16 }) {

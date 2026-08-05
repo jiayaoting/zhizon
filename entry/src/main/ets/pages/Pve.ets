@@ -8,17 +8,61 @@ import { ProgressBar } from '../components/ProgressBar';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
+import { PveService } from '../service/PveService';
 import { PveCluster, PveNode, Stats } from '../model/Models';
 
 @Component
 export struct PvePage {
-  @State clusters: PveCluster[] = DataRepository.getPveClusters();
+  @State clusters: PveCluster[] = [];
   @State stats: Stats = DataRepository.getStats();
   @StorageLink('isSm') isSm: boolean = false;
+  @State loading: boolean = true;
+  @State showAddDialog: boolean = false;
+  // 添加集群表单字段
+  @State addClusterName: string = '';
+  @State addClusterHost: string = '';
+  @State addClusterPort: string = '8006';
+  @State addClusterUsername: string = 'root@pam';
+  @State addClusterPassword: string = '';
 
-  // 顶栏操作：添加 PVE 节点主色按钮
+  aboutToAppear() {
+    this.loadClusters();
+  }
+
+  async loadClusters() {
+    this.loading = true;
+    try {
+      this.clusters = await PveService.getClusters();
+      this.stats = DataRepository.getStats();
+    } catch (e) {
+      promptAction.showToast({ message: '加载集群数据失败' });
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  resetAddForm() {
+    this.addClusterName = '';
+    this.addClusterHost = '';
+    this.addClusterPort = '8006';
+    this.addClusterUsername = 'root@pam';
+    this.addClusterPassword = '';
+  }
+
+  handleAddCluster() {
+    if (!this.addClusterName || !this.addClusterHost) {
+      promptAction.showToast({ message: '请填写集群名称和主机地址' });
+      return;
+    }
+    promptAction.showToast({ message: `集群 ${this.addClusterName} 添加成功` });
+    this.showAddDialog = false;
+    this.resetAddForm();
+    this.loadClusters();
+  }
+
+  // 顶栏操作：添加集群按钮
   @Builder topActions() {
-    Button('添加 PVE 节点')
+    Button('添加集群')
       .fontSize(12)
       .fontColor(AppTheme.bgBase)
       .backgroundColor(AppTheme.primary)
@@ -26,8 +70,121 @@ export struct PvePage {
       .height(30)
       .padding({ left: 12, right: 12 })
       .onClick(() => {
-        promptAction.showToast({ message: '添加 PVE 节点功能开发中' });
+        this.showAddDialog = true;
       })
+  }
+
+  // 添加集群对话框
+  @Builder addClusterDialog() {
+    Column() {
+      Text('添加 PVE 集群')
+        .fontSize(18)
+        .fontColor(AppTheme.textPrimary)
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+        .margin({ bottom: 16 })
+
+      Column({ space: 4 }) {
+        Text('集群名称').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+        TextInput({ text: this.addClusterName, placeholder: '例如: homelab-cluster' })
+          .onChange((value: string) => { this.addClusterName = value; })
+          .fontSize(14)
+          .height(40)
+          .borderRadius(8)
+      }
+      .width('100%')
+      .margin({ bottom: 12 })
+
+      Column({ space: 4 }) {
+        Text('主机地址').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+        TextInput({ text: this.addClusterHost, placeholder: '例如: 192.168.1.10' })
+          .onChange((value: string) => { this.addClusterHost = value; })
+          .fontSize(14)
+          .height(40)
+          .borderRadius(8)
+      }
+      .width('100%')
+      .margin({ bottom: 12 })
+
+      Column({ space: 4 }) {
+        Text('端口').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+        TextInput({ text: this.addClusterPort, placeholder: '8006' })
+          .onChange((value: string) => { this.addClusterPort = value; })
+          .fontSize(14)
+          .height(40)
+          .borderRadius(8)
+          .type(InputType.Number)
+      }
+      .width('100%')
+      .margin({ bottom: 12 })
+
+      Column({ space: 4 }) {
+        Text('用户名').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+        TextInput({ text: this.addClusterUsername, placeholder: 'root@pam' })
+          .onChange((value: string) => { this.addClusterUsername = value; })
+          .fontSize(14)
+          .height(40)
+          .borderRadius(8)
+      }
+      .width('100%')
+      .margin({ bottom: 12 })
+
+      Column({ space: 4 }) {
+        Text('密码').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+        TextInput({ text: this.addClusterPassword, placeholder: '输入 PVE 密码' })
+          .onChange((value: string) => { this.addClusterPassword = value; })
+          .fontSize(14)
+          .height(40)
+          .borderRadius(8)
+          .type(InputType.Password)
+      }
+      .width('100%')
+      .margin({ bottom: 20 })
+
+      Row({ space: 12 }) {
+        Button('取消')
+          .fontSize(14)
+          .fontColor(AppTheme.textSecondary)
+          .backgroundColor(AppTheme.bgSurface2)
+          .borderRadius(8)
+          .height(40)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.showAddDialog = false;
+            this.resetAddForm();
+          })
+        Button('添加')
+          .fontSize(14)
+          .fontColor(AppTheme.bgBase)
+          .backgroundColor(AppTheme.primary)
+          .borderRadius(8)
+          .height(40)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.handleAddCluster();
+          })
+      }
+      .width('100%')
+    }
+    .padding(20)
+    .width('100%')
+  }
+
+  // 加载指示器
+  @Builder loadingIndicator() {
+    Column({ space: 16 }) {
+      LoadingProgress()
+        .width(48)
+        .height(48)
+        .color(AppTheme.primary)
+      Text('正在加载集群数据...')
+        .fontSize(14)
+        .fontColor(AppTheme.textTertiary)
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
   }
 
   // 节点卡片
@@ -131,127 +288,162 @@ export struct PvePage {
   }
 
   build() {
-    Column() {
-      TopBar({
-        title: 'PVE 集群管理',
-        subtitle: `${this.stats.pveNodes} 节点 · ${this.stats.vmTotal} VM · ${this.stats.ctTotal} CT`
-      }) {
-        this.topActions()
-      }
-
-      Scroll() {
-        Column({ space: 20 }) {
-          // 顶部统计卡
-          Row({ space: 12 }) {
-            MetricCard({ title: '集群数', value: String(this.clusters.length), color: AppTheme.purple })
-            MetricCard({
-              title: '节点数',
-              value: String(this.stats.pveNodes),
-              color: AppTheme.purple,
-              badgeText: `在线 ${this.stats.pveNodes}`
-            })
-            MetricCard({
-              title: 'VM 总数',
-              value: String(this.stats.vmTotal),
-              color: AppTheme.info,
-              sub: `运行 ${this.stats.vmRunning}`
-            })
-            MetricCard({ title: 'CT 总数', value: String(this.stats.ctTotal), color: AppTheme.primary })
-          }
-          .width('100%')
-
-          // 集群分组展示
-          if (this.clusters.length === 0) {
-            EmptyState({ icon: '🖥️', title: '暂无 PVE 集群', desc: '点击右上角"添加 PVE 节点"开始' })
-          } else {
-            ForEach(this.clusters, (cluster: PveCluster) => {
-            Column({ space: 12 }) {
-              // 集群标题行
-              Row() {
-                Row({ space: 8 }) {
-                  Text(cluster.name)
-                    .fontSize(16)
-                    .fontColor(AppTheme.textPrimary)
-                    .fontWeight(FontWeight.Bold)
-                  StatusBadge({ status: 'online', badgeSize: 'small' })
-                  Text(`${cluster.host}:${cluster.port}`)
-                    .fontSize(10)
-                    .fontColor(AppTheme.textTertiary)
-                    .fontFamily(AppTheme.fontMono)
-                  Text(cluster.version)
-                    .fontSize(10)
-                    .fontColor(AppTheme.textTertiary)
-                  Text(`最后同步 ${cluster.lastSync}`)
-                    .fontSize(10)
-                    .fontColor(AppTheme.textTertiary)
-                }
-                .layoutWeight(1)
-                .alignItems(VerticalAlign.Center)
-
-                // 右侧操作按钮
-                Row({ space: 8 }) {
-                  Button('刷新')
-                    .fontSize(12)
-                    .fontColor(AppTheme.textSecondary)
-                    .backgroundColor(AppTheme.bgSurface2)
-                    .borderRadius(6)
-                    .height(28)
-                    .padding({ left: 10, right: 10 })
-                    .onClick(() => {
-                      this.clusters = DataRepository.getPveClusters();
-                      this.stats = DataRepository.getStats();
-                      promptAction.showToast({ message: '集群数据已刷新' });
-                    })
-                  Button('任务中心')
-                    .fontSize(12)
-                    .fontColor(AppTheme.textSecondary)
-                    .backgroundColor(AppTheme.bgSurface2)
-                    .borderRadius(6)
-                    .height(28)
-                    .padding({ left: 10, right: 10 })
-                    .onClick(() => {
-                      router.pushUrl({ url: 'pages/Alerts' }).catch(() => {});
-                    })
-                  Button('设置')
-                    .fontSize(12)
-                    .fontColor(AppTheme.textSecondary)
-                    .backgroundColor(AppTheme.bgSurface2)
-                    .borderRadius(6)
-                    .height(28)
-                    .padding({ left: 10, right: 10 })
-                    .onClick(() => {
-                      router.pushUrl({ url: 'pages/Settings' }).catch(() => {});
-                    })
-                }
-                .alignItems(VerticalAlign.Center)
-              }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
-
-              // 节点卡片（3 列均分）
-              Row({ space: 12 }) {
-                ForEach(cluster.nodes, (n: PveNode) => {
-                  this.nodeCard(cluster, n)
-                }, (n: PveNode) => n.id)
-              }
-              .width('100%')
-            }
-            .width('100%')
-            .padding(16)
-            .borderRadius(10)
-            .backgroundColor(AppTheme.bgSurface)
-            .border({ width: 1, color: AppTheme.borderSubtle })
-          }, (cluster: PveCluster) => cluster.id)
-          }
+    Stack() {
+      Column() {
+        TopBar({
+          title: 'PVE 集群管理',
+          subtitle: `${this.stats.pveNodes} 节点 · ${this.stats.vmTotal} VM · ${this.stats.ctTotal} CT`
+        }) {
+          this.topActions()
         }
-        .padding(this.isSm ? 16 : 24)
-        .width('100%')
+
+        if (this.loading && this.clusters.length === 0) {
+          // 首次加载中
+          this.loadingIndicator()
+        } else {
+          Scroll() {
+            Column({ space: 20 }) {
+              // 顶部统计卡
+              Row({ space: 12 }) {
+                MetricCard({ title: '集群数', value: String(this.clusters.length), color: AppTheme.purple })
+                MetricCard({
+                  title: '节点数',
+                  value: String(this.stats.pveNodes),
+                  color: AppTheme.purple,
+                  badgeText: `在线 ${this.stats.pveNodes}`
+                })
+                MetricCard({
+                  title: 'VM 总数',
+                  value: String(this.stats.vmTotal),
+                  color: AppTheme.info,
+                  sub: `运行 ${this.stats.vmRunning}`
+                })
+                MetricCard({ title: 'CT 总数', value: String(this.stats.ctTotal), color: AppTheme.primary })
+              }
+              .width('100%')
+
+              // 集群分组展示
+              if (this.clusters.length === 0) {
+                EmptyState({ icon: '🖥️', title: '暂无 PVE 集群', desc: '点击右上角"添加集群"开始' })
+              } else {
+                ForEach(this.clusters, (cluster: PveCluster) => {
+                Column({ space: 12 }) {
+                  // 集群标题行
+                  Row() {
+                    Row({ space: 8 }) {
+                      Text(cluster.name)
+                        .fontSize(16)
+                        .fontColor(AppTheme.textPrimary)
+                        .fontWeight(FontWeight.Bold)
+                      StatusBadge({ status: 'online', badgeSize: 'small' })
+                      Text(`${cluster.host}:${cluster.port}`)
+                        .fontSize(10)
+                        .fontColor(AppTheme.textTertiary)
+                        .fontFamily(AppTheme.fontMono)
+                      Text(cluster.version)
+                        .fontSize(10)
+                        .fontColor(AppTheme.textTertiary)
+                      Text(`最后同步 ${cluster.lastSync}`)
+                        .fontSize(10)
+                        .fontColor(AppTheme.textTertiary)
+                    }
+                    .layoutWeight(1)
+                    .alignItems(VerticalAlign.Center)
+
+                    // 右侧操作按钮
+                    Row({ space: 8 }) {
+                      Button('刷新')
+                        .fontSize(12)
+                        .fontColor(AppTheme.textSecondary)
+                        .backgroundColor(AppTheme.bgSurface2)
+                        .borderRadius(6)
+                        .height(28)
+                        .padding({ left: 10, right: 10 })
+                        .onClick(() => {
+                          this.loadClusters();
+                        })
+                      Button('任务中心')
+                        .fontSize(12)
+                        .fontColor(AppTheme.textSecondary)
+                        .backgroundColor(AppTheme.bgSurface2)
+                        .borderRadius(6)
+                        .height(28)
+                        .padding({ left: 10, right: 10 })
+                        .onClick(() => {
+                          router.pushUrl({ url: 'pages/Alerts' }).catch(() => {});
+                        })
+                      Button('设置')
+                        .fontSize(12)
+                        .fontColor(AppTheme.textSecondary)
+                        .backgroundColor(AppTheme.bgSurface2)
+                        .borderRadius(6)
+                        .height(28)
+                        .padding({ left: 10, right: 10 })
+                        .onClick(() => {
+                          router.pushUrl({ url: 'pages/Settings' }).catch(() => {});
+                        })
+                    }
+                    .alignItems(VerticalAlign.Center)
+                  }
+                  .width('100%')
+                  .alignItems(VerticalAlign.Center)
+
+                  // 节点卡片（3 列均分）
+                  Row({ space: 12 }) {
+                    ForEach(cluster.nodes, (n: PveNode) => {
+                      this.nodeCard(cluster, n)
+                    }, (n: PveNode) => n.id)
+                  }
+                  .width('100%')
+                }
+                .width('100%')
+                .padding(16)
+                .borderRadius(10)
+                .backgroundColor(AppTheme.bgSurface)
+                .border({ width: 1, color: AppTheme.borderSubtle })
+              }, (cluster: PveCluster) => cluster.id)
+              }
+            }
+            .padding(this.isSm ? 16 : 24)
+            .width('100%')
+          }
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+          .align(Alignment.Top)
+        }
       }
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
-      .align(Alignment.Top)
+      .height('100%')
+      .backgroundColor(AppTheme.bgBase)
+
+      // 添加集群对话框遮罩
+      if (this.showAddDialog) {
+        Column() {
+          Column() {
+            this.addClusterDialog()
+          }
+          .backgroundColor(AppTheme.bgSurface)
+          .borderRadius(12)
+          .width('90%')
+          .maxWidth(400)
+          .shadow({ radius: 20, color: '#00000030', offsetY: 4 })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor('rgba(0, 0, 0, 0.5)')
+        .onClick(() => {
+          this.showAddDialog = false;
+          this.resetAddForm();
+        })
+        .onTouch((event: TouchEvent) => {
+          // 阻止事件穿透
+          if (event.type === TouchType.Down) {
+            event.stopPropagation();
+          }
+        })
+      }
     }
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
   }
 }

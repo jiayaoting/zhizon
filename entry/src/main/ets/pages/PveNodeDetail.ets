@@ -27,22 +27,36 @@ struct PveNodeDetailPage {
   @State cluster: PveCluster | undefined = undefined;
   @State pveNode: PveNode | undefined = undefined;
   @StorageLink('isSm') isSm: boolean = false;
+  @State loading: boolean = true;
+  @State vms: Vm[] = [];
+  @State storages: Storage[] = [];
+  @State tasks: PveTask[] = [];
 
-  aboutToAppear() {
+  async aboutToAppear() {
     const params = router.getParams() as NodeDetailParams;
     this.clusterId = params.clusterId;
     this.nodeName = params.node;
-    const c = DataRepository.getPveCluster(this.clusterId);
+    const c = await DataRepository.getPveCluster(this.clusterId);
     this.cluster = c;
     if (c) {
       this.pveNode = c.nodes.find(n => n.node === this.nodeName);
+      if (this.pveNode) {
+        const [vms, storages, tasks] = await Promise.all([
+          DataRepository.getVms(this.pveNode.node),
+          DataRepository.getStorages(this.pveNode.node),
+          DataRepository.getTasks()
+        ]);
+        this.vms = vms;
+        this.storages = storages;
+        this.tasks = tasks;
+      }
     }
+    this.loading = false;
   }
 
   // 过滤后的 VM 列表
   getFilteredVms(): Vm[] {
-    if (!this.pveNode) return [];
-    let vms = DataRepository.getVms(this.pveNode.node);
+    let vms = this.vms;
     if (this.vmFilter === 'running') vms = vms.filter(v => v.status === 'running');
     else if (this.vmFilter === 'stopped') vms = vms.filter(v => v.status === 'stopped');
     else if (this.vmFilter === 'qemu') vms = vms.filter(v => v.type === 'qemu');
@@ -63,8 +77,20 @@ struct PveNodeDetailPage {
         .borderRadius(6)
         .height(28)
         .padding({ left: 10, right: 10 })
-        .onClick(() => {
-          this.pveNode = DataRepository.getPveCluster(this.clusterId)?.nodes.find(n => n.node === this.nodeName) || undefined;
+        .onClick(async () => {
+          const c = await DataRepository.getPveCluster(this.clusterId);
+          this.cluster = c;
+          this.pveNode = c?.nodes.find(n => n.node === this.nodeName) || undefined;
+          if (this.pveNode) {
+            const [vms, storages, tasks] = await Promise.all([
+              DataRepository.getVms(this.pveNode.node),
+              DataRepository.getStorages(this.pveNode.node),
+              DataRepository.getTasks()
+            ]);
+            this.vms = vms;
+            this.storages = storages;
+            this.tasks = tasks;
+          }
           promptAction.showToast({ message: '已刷新节点数据' });
         })
       Button('SSH 连接')
@@ -342,7 +368,21 @@ struct PveNodeDetailPage {
           this.topActions()
         }
 
-        if (this.pveNode && this.cluster) {
+        if (this.loading) {
+          Column() {
+            LoadingProgress()
+              .color(AppTheme.primary)
+              .width(40)
+              .height(40)
+            Text('加载中...')
+              .fontSize(14)
+              .fontColor(AppTheme.textSecondary)
+              .margin({ top: 12 })
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (this.pveNode && this.cluster) {
           Scroll() {
             Column({ space: 16 }) {
               // 节点头部卡片
@@ -465,7 +505,7 @@ struct PveNodeDetailPage {
 
               // ===== Tab2 存储池 =====
               if (this.activeTab === 'storage') {
-                ForEach(DataRepository.getStorages(this.pveNode.node), (s: Storage) => {
+                ForEach(this.storages, (s: Storage) => {
                   this.storageRow(s)
                 }, (s: Storage) => `${s.name}-${s.node}`)
               }
@@ -473,7 +513,7 @@ struct PveNodeDetailPage {
               // ===== Tab3 任务中心 =====
               if (this.activeTab === 'task') {
                 ForEach(
-                  DataRepository.getTasks().filter(t => t.node === this.pveNode!.node),
+                  this.tasks.filter(t => t.node === this.pveNode!.node),
                   (t: PveTask) => { this.taskRow(t) },
                   (t: PveTask) => t.id
                 )
@@ -505,7 +545,7 @@ struct PveNodeDetailPage {
                 .border({ width: 1, color: AppTheme.borderSubtle })
               }
             }
-            .padding(24)
+            .padding(this.isSm ? 16 : 24)
             .width('100%')
           }
           .layoutWeight(1)

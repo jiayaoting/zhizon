@@ -50,18 +50,22 @@
 ┌─────────────────────────────────────────────────┐
 │                  ArkUI 表现层                    │
 │   12 Pages + 5 Components + @State 状态管理      │
+│   全异步数据加载 (aboutToAppear + await)         │
 ├─────────────────────────────────────────────────┤
 │                  业务逻辑层                      │
-│   SshService │ PveService │ DataRepository       │
+│   SshService (AgentClient) │ PveService (PveClient) │
+│   DataRepository (CRUD 门面)                    │
 ├─────────────────────────────────────────────────┤
 │                  数据访问层                      │
-│   MockData │ Preferences │ RelationalStore (规划)│
+│   DatabaseHelper (RDB Store) │ 5 张持久化表     │
+│   servers / pve_clusters / commands / alerts / settings │
 ├─────────────────────────────────────────────────┤
-│                  原生能力层 (NAPI)               │
-│   libssh2 (规划) │ libssh │ OpenSSL              │
+│              远程通信层 (Agent)                  │
+│   Go Agent (HTTP + WebSocket)                   │
+│   /api/metrics /api/exec /api/files /ws/terminal│
 ├─────────────────────────────────────────────────┤
 │            HarmonyOS 系统能力                    │
-│   NetworkKit │ NotificationKit │ BackgroundTask  │
+│   NetworkKit │ ArkData │ NotificationKit        │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -69,14 +73,16 @@
 
 | 模块 | 技术方案 | 实现状态 |
 |------|---------|---------|
-| 开发语言 | ArkTS | ✅ |
+| 开发语言 | ArkTS + Go (Agent) | ✅ |
 | UI 框架 | ArkUI 声明式 + Stage 模型 | ✅ |
 | 目标 SDK | HarmonyOS 6.0.0 (API 12+) | ✅ |
-| 数据存储 | Preferences + RelationalStore | 🚧 规划 |
-| SSH 协议 | NAPI 封装 libssh2 | 🚧 规划（已写接口骨架） |
-| PVE API | `@ohos.net.http` 调 REST API | 🚧 规划（已写 PveClient） |
+| 数据存储 | RelationalStore (RDB) + 5 表 | ✅ |
+| SSH 终端 | Go Agent WebSocket 中继 | ✅ |
+| PVE API | `@ohos.net.http` 调 REST API | ✅ |
+| 服务器指标 | Go Agent gopsutil 采集 | ✅ |
+| 文件管理 | Go Agent HTTP API | ✅ |
+| 命令执行 | Go Agent /api/exec | ✅ |
 | 图表渲染 | 自绘 Canvas | 🚧 规划 |
-| 终端仿真 | Xterm.js 移植 / 自研 | 🚧 规划 |
 | 后台保活 | BackgroundTaskKit | 🚧 规划 |
 | 加密存储 | @ohos.security.cryptoHash + AES-256-GCM | 🚧 规划 |
 
@@ -476,13 +482,28 @@ interface Server {
 
 | 数据类型 | 存储方式 | 状态 |
 |---------|---------|------|
-| Mock 数据 | 内存常量 MockData | ✅ |
-| 服务器/密钥/PVE 配置 | Preferences | 🚧 规划 |
-| 命令历史、操作日志 | RelationalStore | 🚧 规划 |
-| 临时监控数据 | 内存 + 文件缓存 | 🚧 规划 |
-| 文件缓存 | 应用沙箱 | 🚧 规划 |
+| SSH 服务器配置 | RDB `servers` 表 | ✅ |
+| PVE 集群配置 | RDB `pve_clusters` 表 | ✅ |
+| 快捷命令 | RDB `commands` 表 | ✅ |
+| 告警记录 | RDB `alerts` 表 | ✅ |
+| 应用设置 | RDB `settings` 表 | ✅ |
+| 服务器实时指标 | Go Agent `/api/metrics` 实时获取 | ✅ |
+| PVE 节点/VM 数据 | PVE REST API 实时获取 | ✅ |
+| 文件列表 | Go Agent `/api/files` 实时获取 | ✅ |
 
-### 5.3 Mock 数据规模
+### 5.3 数据库表结构
+
+**servers 表**：id, name, host, port, username, auth_type, password_enc, key_id, grp, tags, os, created_at, last_connected
+
+**pve_clusters 表**：id, name, host, port, username, auth_type, password_enc, token_id, token_secret_enc, verify_tls, created_at, last_sync
+
+**commands 表**：id, name, cmd, category, uses, created_at
+
+**alerts 表**：id, level, source, title, detail, time, resolved, created_at
+
+**settings 表**：key (PK), value
+
+### 5.4 初始默认数据
 
 | 数据 | 数量 | 说明 |
 |------|------|------|
@@ -685,24 +706,27 @@ Index ─┬─> Servers ──> ServerDetail ──> Terminal
 
 ## 十、关键技术方案
 
-### 10.1 SSH 协议实现（规划）
+### 10.1 Go Agent（服务器端代理）
 
-```
-ArkTS 层
-  └─ SshService 类
-      ├─ connect(config)
-      ├─ exec(command)
-      ├─ shell() → 终端流
-      └─ sftp() → 文件操作
-           │
-NAPI 层（C/C++）
-  └─ libssh2 封装
-      ├─ 会话管理
-      ├─ 通道复用
-      └─ 加密握手
-```
+智子采用 Agent 架构替代 NAPI SSH 直连方案。在每台被管理的 Linux 服务器上部署一个轻量级 Go Agent，HarmonyOS App 通过 HTTP/WebSocket 与 Agent 通信。
 
-**当前实现**：[SshService.ets](file:///workspace/zhizon/entry/src/main/ets/service/SshService.ets) 已写好接口骨架，方法返回 Mock 数据。
+**Agent 端点**（默认端口 9527）：
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/health` | GET | 健康检查（无需认证） |
+| `/api/metrics` | GET | 系统指标（CPU/内存/磁盘/网络/负载） |
+| `/api/exec` | POST | 执行 Shell 命令 |
+| `/api/files` | GET | 列出目录文件 |
+| `/api/files/upload` | POST | 上传文件 |
+| `/api/files/download` | GET | 下载文件 |
+| `/api/files/mkdir` | POST | 创建目录 |
+| `/api/files/delete` | POST | 删除文件 |
+| `/ws/terminal` | WS | 终端中继 |
+
+**启动方式**：`./zhizon-agent -port 9527 -token your-token`
+
+**安全特性**：Token 认证（X-Auth-Token 头）、路径防穿越、命令超时 30s、上传限制 100MB
 
 ### 10.2 PVE API 客户端
 
@@ -764,18 +788,20 @@ VM 清单涵盖：ubuntu-web、debian-db、alpine-dns、centos-redis、win10-off
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | **M1: 基础框架** | 项目骨架、设计系统、导航、12 页面 UI | ✅ 完成 |
-| **M2: SSH 核心** | NAPI libssh2、终端组件、服务器管理 | 🚧 规划 |
-| **M3: PVE 集成** | PVE API 真实对接、节点/VM 管理 | 🚧 规划 |
-| **M4: 监控告警** | 监控图表、告警系统、通知推送 | 🚧 规划 |
-| **M5: 高级功能** | SFTP、批量操作、文件管理 | 🚧 规划 |
-| **M6: 优化发布** | 性能优化、安全加固、上架准备 | 🚧 规划 |
+| **M2: 数据持久化** | RDB Store 数据库、5 张表、CRUD 操作 | ✅ 完成 |
+| **M3: Agent 通信** | Go Agent 开发、SshService 对接、指标采集 | ✅ 完成 |
+| **M4: PVE 集成** | PVE API 真实对接、节点/VM 管理、VM 操作 | ✅ 完成 |
+| **M5: 全异步改造** | 12 页面 aboutToAppear 异步加载、Loading 状态 | ✅ 完成 |
+| **M6: 监控告警** | 监控图表、告警系统、通知推送 | 🚧 规划 |
+| **M7: 高级功能** | SFTP、批量操作增强、文件管理增强 | 🚧 规划 |
+| **M8: 优化发布** | 性能优化、安全加固、加密存储、上架准备 | 🚧 规划 |
 
 ### 12.2 优先级排序
 
-- **P0（已完成）**：项目骨架、12 页面 UI、Mock 数据、主题系统
-- **P1（下一步）**：SSH 协议层（libssh2 NAPI）、PVE 真实 API、数据持久化
-- **P2（增强）**：监控图表、告警通知、SFTP
-- **P3（可选）**：VM 控制台、集群迁移、Webhook 告警
+- **P0（已完成）**：项目骨架、12 页面 UI、主题系统、响应式布局、数据持久化、Go Agent、PVE API 集成、全异步改造
+- **P1（下一步）**：监控图表、加密存储、告警通知增强
+- **P2（增强）**：VM 控制台、批量操作增强、SFTP 增强
+- **P3（可选）**：集群迁移、Webhook 告警、多端同步
 
 ---
 
@@ -783,11 +809,11 @@ VM 清单涵盖：ubuntu-web、debian-db、alpine-dns、centos-redis、win10-off
 
 | 风险 | 等级 | 应对 |
 |------|------|------|
-| libssh2 在鸿蒙编译困难 | 高 | 预先验证 NAPI 编译链；备选 libssh |
-| 终端性能不足 | 中 | 自研轻量终端；限制滚动行数 |
+| Agent 部署复杂度 | 中 | 提供一键安装脚本、预编译二进制 |
+| Agent 端口被防火墙拦截 | 中 | 默认 9527，支持自定义端口 |
 | PVE API 版本兼容 | 低 | 仅支持 PVE 7.x+，API v2 |
 | 后台保活被系统限制 | 中 | 引导用户加入电池白名单 |
-| 密钥泄露 | 高 | AES-256 + 生物识别 + 内存隔离 |
+| 密钥泄露 | 高 | AES-256 + 生物识别 + 内存隔离（规划） |
 
 ---
 
@@ -823,6 +849,7 @@ VM 清单涵盖：ubuntu-web、debian-db、alpine-dns、centos-redis、win10-off
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0.0 | 2026-08-04 | 初始版本，对应 MVP 实现（40 文件 / 4773 行） |
+| v1.1.0 | 2026-08-05 | 数据持久化 (RDB)、Go Agent、PVE API 集成、全异步改造 |
 
 ---
 

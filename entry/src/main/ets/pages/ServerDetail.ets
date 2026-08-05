@@ -26,8 +26,9 @@ interface TopProcess {
 struct ServerDetailPage {
   @State activeNav: string = 'Servers';
   @State server: Server | null = null;
+  @State alerts: Alert[] = [];
+  @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
-  private alerts: Alert[] = DataRepository.getAlerts();
   private topProcesses: TopProcess[] = [
     { pid: 1234, name: 'nginx', cpu: 12.5, mem: 4.2 },
     { pid: 2345, name: 'mysqld', cpu: 8.3, mem: 18.6 },
@@ -36,9 +37,11 @@ struct ServerDetailPage {
     { pid: 5678, name: 'systemd', cpu: 0.5, mem: 0.8 }
   ];
 
-  aboutToAppear() {
+  async aboutToAppear() {
     const params = router.getParams() as Record<string, string>;
-    this.server = DataRepository.getServer(params?.serverId || '') || null;
+    this.server = await DataRepository.getServer(params?.serverId || '') || null;
+    this.alerts = await DataRepository.getAlerts();
+    this.loading = false;
   }
 
   // 告警级别颜色
@@ -143,7 +146,22 @@ struct ServerDetailPage {
         })
       }
       Column() {
-        if (this.server) {
+        if (this.loading) {
+          Column() {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(AppTheme.primary)
+            Text('加载中...')
+              .fontSize(12)
+              .fontColor(AppTheme.textTertiary)
+              .margin({ top: 12 })
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else if (this.server) {
           TopBar({
             title: this.server.name,
             subtitle: `${this.server.host}:${this.server.port} · ${this.server.os}`,
@@ -296,7 +314,7 @@ struct ServerDetailPage {
               .width('100%')
               .alignItems(HorizontalAlign.Start)
             }
-            .padding(24)
+            .padding(this.isSm ? 16 : 24)
             .width('100%')
           }
           .layoutWeight(1)

@@ -2,6 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
+import { DataRepository } from '../service/DataRepository';
 
 import { TopBar } from '../components/TopBar';
 
@@ -32,19 +33,75 @@ struct GroupCard {
 
 @Component
 export struct SettingsPage {
-  
+  @State loading: boolean = true;
+
   // 常规
   @State autoReconnect: boolean = true;
+  @State defaultSshPort: string = '22';
+  @State connectionTimeout: string = '30s';
+  // 外观
+  @State theme: string = '深色';
+  @State fontSizeSetting: string = '标准';
+  @State fontFamily: string = 'JetBrains Mono';
   // 终端
   @State color256: boolean = true;
+  @State defaultFont: string = 'JetBrains Mono';
+  @State cursorStyle: string = '块状';
+  @State scrollLines: string = '1000';
   // 安全
   @State biometricUnlock: boolean = false;
   @State hostKeyVerify: boolean = true;
+  @State autoLock: string = '5 分钟';
   // 通知
   @State alertPush: boolean = true;
+  @State doNotDisturb: string = '22:00-08:00';
+  @State cpuThreshold: string = '85%';
+  @State memoryThreshold: string = '90%';
+  @State diskThreshold: string = '95%';
   // 数据
   @State autoBackup: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
+
+  async aboutToAppear(): Promise<void> {
+    this.loading = true;
+    try {
+      // 加载开关类设置
+      const autoReconnectVal = await DataRepository.getSetting('autoReconnect', 'true');
+      this.autoReconnect = autoReconnectVal === 'true';
+
+      const color256Val = await DataRepository.getSetting('color256', 'true');
+      this.color256 = color256Val === 'true';
+
+      const biometricUnlockVal = await DataRepository.getSetting('biometricUnlock', 'false');
+      this.biometricUnlock = biometricUnlockVal === 'true';
+
+      const hostKeyVerifyVal = await DataRepository.getSetting('hostKeyVerify', 'true');
+      this.hostKeyVerify = hostKeyVerifyVal === 'true';
+
+      const alertPushVal = await DataRepository.getSetting('alertPush', 'true');
+      this.alertPush = alertPushVal === 'true';
+
+      const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
+      this.autoBackup = autoBackupVal === 'true';
+
+      // 加载值类设置
+      this.defaultSshPort = await DataRepository.getSetting('defaultSshPort', '22');
+      this.connectionTimeout = await DataRepository.getSetting('connectionTimeout', '30s');
+      this.theme = await DataRepository.getSetting('theme', '深色');
+      this.fontSizeSetting = await DataRepository.getSetting('fontSize', '标准');
+      this.fontFamily = await DataRepository.getSetting('fontFamily', 'JetBrains Mono');
+      this.defaultFont = await DataRepository.getSetting('defaultFont', 'JetBrains Mono');
+      this.cursorStyle = await DataRepository.getSetting('cursorStyle', '块状');
+      this.scrollLines = await DataRepository.getSetting('scrollLines', '1000');
+      this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
+      this.doNotDisturb = await DataRepository.getSetting('doNotDisturb', '22:00-08:00');
+      this.cpuThreshold = await DataRepository.getSetting('cpuThreshold', '85%');
+      this.memoryThreshold = await DataRepository.getSetting('memoryThreshold', '90%');
+      this.diskThreshold = await DataRepository.getSetting('diskThreshold', '95%');
+    } finally {
+      this.loading = false;
+    }
+  }
 
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
@@ -103,10 +160,11 @@ export struct SettingsPage {
             // 常规
             GroupCard({ title: '常规' }) {
               Column({ space: 8 }) {
-                this.valueRow('默认 SSH 端口', '22')
-                this.valueRow('连接超时', '30s')
+                this.valueRow('默认 SSH 端口', this.defaultSshPort)
+                this.valueRow('连接超时', this.connectionTimeout)
                 this.toggleRow('自动重连', this.autoReconnect, (v: boolean) => {
                   this.autoReconnect = v;
+                  DataRepository.setSetting('autoReconnect', v ? 'true' : 'false');
                   this.toast(`自动重连：${v ? '已开启' : '已关闭'}`);
                 })
               }
@@ -116,9 +174,9 @@ export struct SettingsPage {
             // 外观
             GroupCard({ title: '外观' }) {
               Column({ space: 8 }) {
-                this.valueRow('主题', '深色')
-                this.valueRow('字号', '标准')
-                this.valueRow('字体', 'JetBrains Mono')
+                this.valueRow('主题', this.theme)
+                this.valueRow('字号', this.fontSizeSetting)
+                this.valueRow('字体', this.fontFamily)
               }
               .width('100%')
             }
@@ -126,11 +184,12 @@ export struct SettingsPage {
             // 终端
             GroupCard({ title: '终端' }) {
               Column({ space: 8 }) {
-                this.valueRow('默认字体', 'JetBrains Mono')
-                this.valueRow('光标样式', '块状')
-                this.valueRow('滚屏行数', '1000')
+                this.valueRow('默认字体', this.defaultFont)
+                this.valueRow('光标样式', this.cursorStyle)
+                this.valueRow('滚屏行数', this.scrollLines)
                 this.toggleRow('256 色', this.color256, (v: boolean) => {
                   this.color256 = v;
+                  DataRepository.setSetting('color256', v ? 'true' : 'false');
                   this.toast(`256 色：${v ? '已开启' : '已关闭'}`);
                 })
               }
@@ -143,11 +202,13 @@ export struct SettingsPage {
                 this.valueRow('主密码', '已设置')
                 this.toggleRow('生物识别解锁', this.biometricUnlock, (v: boolean) => {
                   this.biometricUnlock = v;
+                  DataRepository.setSetting('biometricUnlock', v ? 'true' : 'false');
                   this.toast(`生物识别解锁：${v ? '已开启' : '已关闭'}`);
                 })
-                this.valueRow('自动锁定', '5 分钟')
+                this.valueRow('自动锁定', this.autoLock)
                 this.toggleRow('主机指纹校验', this.hostKeyVerify, (v: boolean) => {
                   this.hostKeyVerify = v;
+                  DataRepository.setSetting('hostKeyVerify', v ? 'true' : 'false');
                   this.toast(`主机指纹校验：${v ? '已开启' : '已关闭'}`);
                 })
               }
@@ -159,12 +220,13 @@ export struct SettingsPage {
               Column({ space: 8 }) {
                 this.toggleRow('告警推送', this.alertPush, (v: boolean) => {
                   this.alertPush = v;
+                  DataRepository.setSetting('alertPush', v ? 'true' : 'false');
                   this.toast(`告警推送：${v ? '已开启' : '已关闭'}`);
                 })
-                this.valueRow('勿扰时段', '22:00-08:00')
-                this.valueRow('CPU 阈值', '85%')
-                this.valueRow('内存阈值', '90%')
-                this.valueRow('磁盘阈值', '95%')
+                this.valueRow('勿扰时段', this.doNotDisturb)
+                this.valueRow('CPU 阈值', this.cpuThreshold)
+                this.valueRow('内存阈值', this.memoryThreshold)
+                this.valueRow('磁盘阈值', this.diskThreshold)
               }
               .width('100%')
             }
@@ -177,6 +239,7 @@ export struct SettingsPage {
                 this.valueRow('清除缓存', '')
                 this.toggleRow('自动备份', this.autoBackup, (v: boolean) => {
                   this.autoBackup = v;
+                  DataRepository.setSetting('autoBackup', v ? 'true' : 'false');
                   this.toast(`自动备份：${v ? '已开启' : '已关闭'}`);
                 })
               }

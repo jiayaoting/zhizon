@@ -7,15 +7,40 @@ import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
-import { Server } from '../model/Models';
+import { Server, Stats } from '../model/Models';
 
 @Component
 export struct ServersPage {
   @State currentGroup: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
-  private stats = DataRepository.getStats();
-  private servers: Server[] = DataRepository.getServers();
+  @State loading: boolean = true;
+  @State stats: Stats = { total: 0, online: 0, warning: 0, offline: 0, alerts: 0, pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0 };
+  @State servers: Server[] = [];
   private groups: string[] = ['全部', '生产', '测试', '监控', '备份', 'CI/CD'];
+
+  aboutToAppear(): void {
+    this.loadData();
+  }
+
+  private async loadData(): Promise<void> {
+    this.loading = true;
+    try {
+      const [servers, stats] = await Promise.all([
+        DataRepository.getServers(),
+        DataRepository.getStats()
+      ]);
+      this.servers = servers;
+      this.stats = stats;
+    } catch (e) {
+      promptAction.showToast({ message: '加载数据失败' });
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  refresh(): void {
+    this.loadData();
+  }
 
   // 状态点颜色
   private statusDotColor(status: string): string {
@@ -200,31 +225,48 @@ export struct ServersPage {
       }) {
         this.actionsBuilder()
       }
-      Scroll() {
-        Column({ space: 16 }) {
-          // 分组筛选标签
-          Row({ space: 8 }) {
-            ForEach(this.groups, (g: string) => {
-              this.groupTag(g)
-            }, (g: string) => g)
-          }
-          .width('100%')
-
-          // 服务器列表
-          if (this.filteredServers().length === 0) {
-            EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
-          } else {
-            ForEach(this.filteredServers(), (s: Server) => {
-              this.serverCard(s)
-            }, (s: Server) => s.id)
-          }
+      if (this.loading) {
+        Column() {
+          LoadingProgress()
+            .width(36)
+            .height(36)
+            .color(AppTheme.primary)
+          Text('加载中…')
+            .fontSize(12)
+            .fontColor(AppTheme.textTertiary)
+            .margin({ top: 8 })
         }
-        .padding(this.isSm ? 16 : 24)
         .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        Scroll() {
+          Column({ space: 16 }) {
+            // 分组筛选标签
+            Row({ space: 8 }) {
+              ForEach(this.groups, (g: string) => {
+                this.groupTag(g)
+              }, (g: string) => g)
+            }
+            .width('100%')
+
+            // 服务器列表
+            if (this.filteredServers().length === 0) {
+              EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
+            } else {
+              ForEach(this.filteredServers(), (s: Server) => {
+                this.serverCard(s)
+              }, (s: Server) => s.id)
+            }
+          }
+          .padding(this.isSm ? 16 : 24)
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
-      .align(Alignment.Top)
     }
     .height('100%')
     .backgroundColor(AppTheme.bgBase)

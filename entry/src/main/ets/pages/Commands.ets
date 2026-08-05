@@ -11,8 +11,18 @@ import { Command } from '../model/Models';
 export struct CommandsPage {
   @State currentCat: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
-  private commands: Command[] = DataRepository.getCommands();
+  @State commands: Command[] = [];
+  @State loading: boolean = true;
   private categories: string[] = ['全部', '系统', '进程', '网络', 'Docker', '安全', '服务'];
+
+  aboutToAppear(): void {
+    DataRepository.getCommands().then((data: Command[]) => {
+      this.commands = data;
+      this.loading = false;
+    }).catch(() => {
+      this.loading = false;
+    });
+  }
 
   // 分类下命令数
   private countOf(cat: string): number {
@@ -134,12 +144,29 @@ export struct CommandsPage {
       }
       .width('100%')
     }
-    .width(280)
+    .width(this.isSm ? '100%' : 280)
     .padding(14)
-    .margin({ right: 12, bottom: 12 })
+    .margin({ right: this.isSm ? 0 : 12, bottom: 12 })
     .borderRadius(10)
     .backgroundColor(AppTheme.bgSurface)
     .border({ width: 1, color: AppTheme.borderSubtle })
+  }
+
+  @Builder loadingBuilder() {
+    Column() {
+      LoadingProgress()
+        .width(40)
+        .height(40)
+        .color(AppTheme.primary)
+      Text('加载中...')
+        .fontSize(13)
+        .fontColor(AppTheme.textTertiary)
+        .margin({ top: 12 })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
   }
 
   build() {
@@ -147,44 +174,100 @@ export struct CommandsPage {
       TopBar({ title: '快捷命令库', subtitle: `${this.commands.length} 条命令` }) {
         this.actionsBuilder()
       }
-      Row() {
-        // 左侧分类侧栏
-        Scroll() {
-          Column({ space: 2 }) {
-            ForEach(this.categories, (cat: string) => {
-              this.categoryItem(cat)
-            }, (cat: string) => cat)
-          }
-          .padding({ top: 12, left: 8, right: 8 })
-          .width('100%')
-        }
-        .width(180)
-        .height('100%')
-        .backgroundColor(AppTheme.bgSurface)
-        .border({ width: { right: 1 }, color: AppTheme.borderSubtle })
-        .scrollBar(BarState.Off)
-        .align(Alignment.Top)
-
-        // 右侧命令卡片网格
-        Scroll() {
-          if (this.filteredCommands().length === 0) {
-            EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
-          } else {
-            Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
-              ForEach(this.filteredCommands(), (cmd: Command) => {
-                this.commandCard(cmd)
-              }, (cmd: Command) => cmd.id)
+      if (this.isSm) {
+        // ===== 手机端：横向分类栏 + 卡片列表 =====
+        Column() {
+          // 横向滚动分类栏
+          Scroll() {
+            Row({ space: 8 }) {
+              ForEach(this.categories, (cat: string) => {
+                Text(cat)
+                  .fontSize(12)
+                  .fontColor(cat === this.currentCat ? Color.White : AppTheme.textSecondary)
+                  .fontWeight(cat === this.currentCat ? FontWeight.Medium : FontWeight.Regular)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .borderRadius(14)
+                  .backgroundColor(cat === this.currentCat ? AppTheme.primary : AppTheme.bgSurface2)
+                  .onClick(() => { this.currentCat = cat; })
+              }, (cat: string) => cat)
             }
-            .padding(this.isSm ? 12 : 20)
-            .width('100%')
+            .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+          }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
+          .backgroundColor(AppTheme.bgSurface)
+          .border({ width: { bottom: 1 }, color: AppTheme.borderSubtle })
+
+          // 命令卡片列表
+          if (this.loading) {
+            this.loadingBuilder()
+          } else {
+            Scroll() {
+              if (this.filteredCommands().length === 0) {
+                EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
+              } else {
+                Column({ space: 10 }) {
+                  ForEach(this.filteredCommands(), (cmd: Command) => {
+                    this.commandCard(cmd)
+                  }, (cmd: Command) => cmd.id)
+                }
+                .padding(12)
+                .width('100%')
+              }
+            }
+            .layoutWeight(1)
+            .scrollBar(BarState.Auto)
+            .align(Alignment.Top)
           }
         }
         .layoutWeight(1)
-        .height('100%')
-        .scrollBar(BarState.Auto)
-        .align(Alignment.Top)
+        .width('100%')
+      } else {
+        // ===== 平板端：左侧分类侧栏 + 右侧卡片网格 =====
+        Row() {
+          // 左侧分类侧栏
+          Scroll() {
+            Column({ space: 2 }) {
+              ForEach(this.categories, (cat: string) => {
+                this.categoryItem(cat)
+              }, (cat: string) => cat)
+            }
+            .padding({ top: 12, left: 8, right: 8 })
+            .width('100%')
+          }
+          .width(180)
+          .height('100%')
+          .backgroundColor(AppTheme.bgSurface)
+          .border({ width: { right: 1 }, color: AppTheme.borderSubtle })
+          .scrollBar(BarState.Off)
+          .align(Alignment.Top)
+
+          // 右侧命令卡片网格
+          if (this.loading) {
+            this.loadingBuilder()
+          } else {
+            Scroll() {
+              if (this.filteredCommands().length === 0) {
+                EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
+              } else {
+                Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Start }) {
+                  ForEach(this.filteredCommands(), (cmd: Command) => {
+                    this.commandCard(cmd)
+                  }, (cmd: Command) => cmd.id)
+                }
+                .padding(20)
+                .width('100%')
+              }
+            }
+            .layoutWeight(1)
+            .height('100%')
+            .scrollBar(BarState.Auto)
+            .align(Alignment.Top)
+          }
+        }
+        .layoutWeight(1)
       }
-      .layoutWeight(1)
     }
     .layoutWeight(1)
     .height('100%')

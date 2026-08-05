@@ -1,7 +1,6 @@
-// 智子 - 业务服务基类与格式化工具
-
+// 智子 - 数据仓库（基于数据库持久化）
 import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, FileItem, Stats } from '../model/Models';
-import { MockData } from './MockData';
+import { DatabaseHelper } from './DatabaseHelper';
 
 // 格式化运行时间
 export function formatUptime(seconds: number): string {
@@ -14,78 +13,128 @@ export function formatUptime(seconds: number): string {
   return `${m}分钟`;
 }
 
-// 格式化大小（GB → TB）
+// 格式化大小（GB -> TB）
 export function formatSize(gb: number): string {
   if (gb >= 1024) return (gb / 1024).toFixed(1) + ' TB';
   return gb.toFixed(1) + ' GB';
 }
 
-// 数据仓库 - MVP 阶段直接返回 Mock 数据
+// 生成唯一 ID
+export function generateId(prefix: string): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 8);
+  return `${prefix}-${timestamp}-${random}`;
+}
+
+// 数据仓库 - 持久化版本
 export class DataRepository {
-  static getServers(): Server[] {
-    return MockData.servers;
+  // ========== 服务器管理 ==========
+
+  static async getServers(): Promise<Server[]> {
+    return await DatabaseHelper.getServers();
   }
 
-  static getServer(id: string): Server | undefined {
-    return MockData.servers.find(s => s.id === id);
+  static async getServer(id: string): Promise<Server | undefined> {
+    return await DatabaseHelper.getServer(id);
   }
 
-  static getPveClusters(): PveCluster[] {
-    return MockData.pveClusters;
+  static async addServer(server: Server): Promise<void> {
+    await DatabaseHelper.addServer(server);
   }
 
-  static getPveCluster(id: string): PveCluster | undefined {
-    return MockData.pveClusters.find(c => c.id === id);
+  static async updateServer(id: string, updates: Partial<Server>): Promise<void> {
+    await DatabaseHelper.updateServer(id, updates);
   }
 
-  static getVms(node?: string): Vm[] {
-    return node ? MockData.vms.filter(v => v.node === node) : MockData.vms;
+  static async deleteServer(id: string): Promise<void> {
+    await DatabaseHelper.deleteServer(id);
   }
 
-  static getVm(vmid: number): Vm | undefined {
-    return MockData.vms.find(v => v.vmid === vmid);
+  // ========== PVE 集群管理 ==========
+
+  static async getPveClusters(): Promise<PveCluster[]> {
+    return await DatabaseHelper.getPveClusters();
   }
 
-  static getStorages(node?: string): Storage[] {
-    return node ? MockData.storages.filter(s => s.node === node) : MockData.storages;
+  static async addPveCluster(cluster: PveCluster): Promise<void> {
+    await DatabaseHelper.addPveCluster(cluster);
   }
 
-  static getTasks(): PveTask[] {
-    return MockData.pveTasks;
+  static async deletePveCluster(id: string): Promise<void> {
+    await DatabaseHelper.deletePveCluster(id);
   }
 
-  static getSnapshots(vmid?: number): Snapshot[] {
-    return vmid ? MockData.snapshots.filter(s => s.vmid === vmid) : MockData.snapshots;
+  // ========== 快捷命令 ==========
+
+  static async getCommands(): Promise<Command[]> {
+    return await DatabaseHelper.getCommands();
   }
 
-  static getCommands(): Command[] {
-    return MockData.commands;
+  static async addCommand(cmd: Command): Promise<void> {
+    await DatabaseHelper.addCommand(cmd);
   }
 
-  static getAlerts(): Alert[] {
-    return MockData.alerts;
+  static async incrementCommandUses(id: string): Promise<void> {
+    await DatabaseHelper.incrementCommandUses(id);
   }
 
-  static getFiles(): FileItem[] {
-    return MockData.files;
+  static async deleteCommand(id: string): Promise<void> {
+    await DatabaseHelper.deleteCommand(id);
   }
 
-  static getStats(): Stats {
-    const s = MockData.servers;
-    const vms = MockData.vms;
-    const nodes = MockData.pveClusters.flatMap(c => c.nodes);
+  // ========== 告警 ==========
+
+  static async getAlerts(): Promise<Alert[]> {
+    return await DatabaseHelper.getAlerts();
+  }
+
+  static async addAlert(alert: Alert): Promise<void> {
+    await DatabaseHelper.addAlert(alert);
+  }
+
+  static async resolveAlert(id: string): Promise<void> {
+    await DatabaseHelper.resolveAlert(id);
+  }
+
+  static async resolveAllAlerts(): Promise<void> {
+    await DatabaseHelper.resolveAllAlerts();
+  }
+
+  // ========== 文件管理 ==========
+
+  static async getFiles(): Promise<FileItem[]> {
+    return await DatabaseHelper.getFiles();
+  }
+
+  // ========== 设置 ==========
+
+  static async getSetting(key: string, defaultValue: string = ''): Promise<string> {
+    return await DatabaseHelper.getSetting(key, defaultValue);
+  }
+
+  static async setSetting(key: string, value: string): Promise<void> {
+    await DatabaseHelper.setSetting(key, value);
+  }
+
+  // ========== 统计 ==========
+
+  static async getStats(): Promise<Stats> {
+    const servers = await this.getServers();
+    const alerts = await this.getAlerts();
+    const unresolvedAlerts = alerts.filter(a => !a.resolved);
+
     return {
-      total: s.length,
-      online: s.filter(x => x.status === 'online').length,
-      warning: s.filter(x => x.status === 'warning').length,
-      offline: s.filter(x => x.status === 'offline').length,
-      alerts: MockData.alerts.filter(a => !a.resolved).length,
-      pveNodes: nodes.length,
-      vmTotal: vms.length,
-      vmRunning: vms.filter(v => v.status === 'running').length,
-      vmStopped: vms.filter(v => v.status === 'stopped').length,
-      ctTotal: vms.filter(v => v.type === 'lxc').length,
-      runningTasks: MockData.pveTasks.filter(t => t.status === 'running').length
+      total: servers.length,
+      online: 0,
+      warning: 0,
+      offline: servers.length,
+      alerts: unresolvedAlerts.length,
+      pveNodes: 0,
+      vmTotal: 0,
+      vmRunning: 0,
+      vmStopped: 0,
+      ctTotal: 0,
+      runningTasks: 0
     };
   }
 }
