@@ -54,6 +54,7 @@ export struct BatchPage {
   @State servers: Server[] = [];
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('isMd') isMd: boolean = false;
   private templates: string[] = ['系统信息', '磁盘检查', '服务重启', '日志查看'];
   private textareaController: TextAreaController = new TextAreaController();
 
@@ -193,24 +194,28 @@ export struct BatchPage {
   }
 
   @Builder serverRow(srv: Server) {
-    Row({ space: 12 }) {
+    Row({ space: this.isSm || this.isMd ? 8 : 12 }) {
       this.checkbox(this.isSelected(srv.id))
       Column({ space: 2 }) {
         Text(srv.name)
-          .fontSize(13)
+          .fontSize(this.isSm || this.isMd ? 12 : 13)
           .fontColor(AppTheme.textPrimary)
           .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`${srv.host}:${srv.port}`)
-          .fontSize(11)
+          .fontSize(this.isSm || this.isMd ? 10 : 11)
           .fontColor(AppTheme.textTertiary)
           .fontFamily(AppTheme.fontMono)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       StatusBadge({ status: srv.status, badgeSize: 'small' })
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .padding({ left: this.isSm || this.isMd ? 8 : 12, right: this.isSm || this.isMd ? 8 : 12, top: 10, bottom: 10 })
     .borderRadius(6)
     .backgroundColor(AppTheme.bgSurface2)
     .onClick(() => this.toggleServer(srv.id))
@@ -229,19 +234,21 @@ export struct BatchPage {
 
   @Builder resultRow(r: BatchResult) {
     Column({ space: 8 }) {
-      Row({ space: 12 }) {
+      Row({ space: this.isSm || this.isMd ? 8 : 12 }) {
         Text(r.serverName)
-          .fontSize(13)
+          .fontSize(this.isSm || this.isMd ? 12 : 13)
           .fontColor(AppTheme.textPrimary)
           .fontWeight(FontWeight.Medium)
           .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
         StatusBadge({ status: r.status, badgeSize: 'small' })
         Text(r.duration)
-          .fontSize(11)
+          .fontSize(this.isSm || this.isMd ? 10 : 11)
           .fontColor(AppTheme.textTertiary)
           .fontFamily(AppTheme.fontMono)
         Text('查看详情')
-          .fontSize(11)
+          .fontSize(this.isSm || this.isMd ? 10 : 11)
           .fontColor(AppTheme.primary)
           .onClick(() => {
             this.expandedId = this.expandedId === r.serverId ? '' : r.serverId;
@@ -351,7 +358,7 @@ export struct BatchPage {
               .width('100%')
             }
           }
-          .padding(this.isSm ? 16 : 24)
+          .padding(this.isSm || this.isMd ? 12 : 24)
           .width('100%')
         }
         .layoutWeight(1)

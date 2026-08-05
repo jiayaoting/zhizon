@@ -21,6 +21,7 @@ struct AppShell {
   @State currentPage: string = 'Index';
   @State winWidth: number = 0;
   @State showMoreMenu: boolean = false;
+  @StorageLink('isMd') isMd: boolean = false;
   private allNavItems: NavItem[] = AppConstants.navItems;
 
   // 手机端 5 个主 Tab
@@ -47,11 +48,14 @@ struct AppShell {
       const vpWidth = px2vp(d.width);
       this.winWidth = vpWidth;
       const sm = vpWidth < BP_SM;
+      const md = vpWidth >= BP_SM && vpWidth < 840;
       AppStorage.setOrCreate('isSm', sm);
+      AppStorage.setOrCreate('isMd', md);
     } catch (e) {
       // 兜底：默认平板布局
       this.winWidth = 800;
       AppStorage.setOrCreate('isSm', false);
+      AppStorage.setOrCreate('isMd', true);
     }
   }
 
@@ -59,12 +63,12 @@ struct AppShell {
     return this.winWidth > 0 && this.winWidth < BP_SM;
   }
 
-  private get isMd(): boolean {
-    return this.winWidth >= BP_SM && this.winWidth < 840;
-  }
-
   private get isLg(): boolean {
     return this.winWidth >= 840;
+  }
+
+  private get sidebarWidth(): number {
+    return this.isLg() ? 220 : 160;
   }
 
   selectPage(key: string) {
@@ -198,10 +202,12 @@ struct AppShell {
         Row() {
           NavSidebar({
             activeKey: this.currentPage,
+            compact: !this.isLg(),
             onSelect: (key: string) => {
               this.currentPage = key;
             }
           })
+          .width(this.sidebarWidth())
 
           Column() {
             this.renderPage()
@@ -220,6 +226,7 @@ struct AppShell {
       if (w > 0 && Math.abs(w - this.winWidth) > 10) {
         this.winWidth = w;
         AppStorage.setOrCreate('isSm', w < BP_SM);
+        AppStorage.setOrCreate('isMd', w >= BP_SM && w < 840);
       }
     })
   }
