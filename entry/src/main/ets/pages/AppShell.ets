@@ -68,7 +68,7 @@ struct AppShell {
   }
 
   private get sidebarWidth(): number {
-    return this.isLg() ? 220 : 160;
+    return this.isLg ? 220 : 160;
   }
 
   selectPage(key: string) {
@@ -202,12 +202,12 @@ struct AppShell {
         Row() {
           NavSidebar({
             activeKey: this.currentPage,
-            compact: !this.isLg(),
+            compact: !this.isLg,
             onSelect: (key: string) => {
               this.currentPage = key;
             }
           })
-          .width(this.sidebarWidth())
+          .width(this.sidebarWidth)
 
           Column() {
             this.renderPage()
