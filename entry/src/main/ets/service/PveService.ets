@@ -217,10 +217,9 @@ export class PveClient {
 
   // 创建快照 POST /nodes/{node}/qemu/{vmid}/snapshot
   async createSnapshot(node: string, vmid: number, snapName: string, description: string = ''): Promise<boolean> {
-    const data: Record<string, Object> = {
-      snapname: snapName,
-      description: description
-    };
+    const data = new Map<string, Object>();
+    data.set('snapname', snapName);
+    data.set('description', description);
     const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, data);
     return res !== null;
   }
