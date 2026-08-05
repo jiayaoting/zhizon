@@ -34,7 +34,11 @@ export struct TerminalPage {
 
   // 判断是否为命令提示符行
   private isPromptLine(line: string): boolean {
-    return line.includes('root@') || line.includes('#');
+    return line.includes('root@') || (line.includes('#') && !line.includes('错误') && !line.includes('失败'));
+  }
+
+  private isErrorLine(line: string): boolean {
+    return line.includes('错误') || line.includes('失败') || line.includes('Error') || line.includes('error');
   }
 
   // 页面即将出现时加载终端输出
@@ -176,7 +180,7 @@ export struct TerminalPage {
                   Text(line)
                     .fontSize(12)
                     .fontFamily(AppTheme.fontMono)
-                    .fontColor(this.isPromptLine(line) ? '#00FF88' : '#00D9A3')
+                    .fontColor(this.isErrorLine(line) ? '#EF4444' : (this.isPromptLine(line) ? '#00FF88' : '#00D9A3'))
                     .width('100%')
                 }, (line: string, idx: number) => `${idx}-${line}`)
               }
@@ -233,6 +237,7 @@ export struct TerminalPage {
         .backgroundColor(AppTheme.bgBase)
       }
       .layoutWeight(1)
+      .padding({ bottom: this.isSm ? 68 : 0 })
     }
     .layoutWeight(1)
     .height('100%')

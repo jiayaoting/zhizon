@@ -16,7 +16,7 @@ export class AppTheme {
   // 文字
   static readonly textPrimary = '#E2E8F0';
   static readonly textSecondary = '#94A3B8';
-  static readonly textTertiary = '#64748B';
+  static readonly textTertiary = '#8B95A7';
 
   // 主色 - 终端青绿
   static readonly primary = '#00D9A3';

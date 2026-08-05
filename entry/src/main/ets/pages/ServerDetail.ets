@@ -316,6 +316,7 @@ struct ServerDetailPage {
             }
             .padding(this.isSm ? 16 : 24)
             .width('100%')
+            .padding({ bottom: this.isSm ? 80 : 24 })
           }
           .layoutWeight(1)
           .scrollBar(BarState.Auto)

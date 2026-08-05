@@ -419,12 +419,116 @@ export struct PvePage {
       if (this.showAddDialog) {
         Column() {
           Column() {
-            this.addClusterDialog()
+            Text('添加 PVE 集群')
+              .fontSize(18)
+              .fontColor(AppTheme.textPrimary)
+              .fontWeight(FontWeight.Bold)
+              .width('100%')
+              .margin({ bottom: 12 })
+
+            Scroll() {
+              Column({ space: 10 }) {
+                Column({ space: 4 }) {
+                  Text('集群名称').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+                  TextInput({ text: this.addClusterName, placeholder: '例如: homelab-cluster' })
+                    .onChange((value: string) => { this.addClusterName = value; })
+                    .fontSize(14)
+                    .height(36)
+                    .borderRadius(8)
+                    .backgroundColor(AppTheme.bgSurface2)
+                    .fontColor(AppTheme.textPrimary)
+                }
+                .width('100%')
+
+                Column({ space: 4 }) {
+                  Text('主机地址').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+                  TextInput({ text: this.addClusterHost, placeholder: '例如: 192.168.1.10' })
+                    .onChange((value: string) => { this.addClusterHost = value; })
+                    .fontSize(14)
+                    .height(36)
+                    .borderRadius(8)
+                    .backgroundColor(AppTheme.bgSurface2)
+                    .fontColor(AppTheme.textPrimary)
+                }
+                .width('100%')
+
+                Row({ space: 10 }) {
+                  Column({ space: 4 }) {
+                    Text('端口').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+                    TextInput({ text: this.addClusterPort, placeholder: '8006' })
+                      .onChange((value: string) => { this.addClusterPort = value; })
+                      .fontSize(14)
+                      .height(36)
+                      .borderRadius(8)
+                      .backgroundColor(AppTheme.bgSurface2)
+                      .fontColor(AppTheme.textPrimary)
+                      .type(InputType.Number)
+                  }
+                  .layoutWeight(1)
+
+                  Column({ space: 4 }) {
+                    Text('用户名').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+                    TextInput({ text: this.addClusterUsername, placeholder: 'root@pam' })
+                      .onChange((value: string) => { this.addClusterUsername = value; })
+                      .fontSize(14)
+                      .height(36)
+                      .borderRadius(8)
+                      .backgroundColor(AppTheme.bgSurface2)
+                      .fontColor(AppTheme.textPrimary)
+                  }
+                  .layoutWeight(1)
+                }
+                .width('100%')
+
+                Column({ space: 4 }) {
+                  Text('密码').fontSize(12).fontColor(AppTheme.textSecondary).width('100%')
+                  TextInput({ text: this.addClusterPassword, placeholder: '输入 PVE 密码' })
+                    .onChange((value: string) => { this.addClusterPassword = value; })
+                    .fontSize(14)
+                    .height(36)
+                    .borderRadius(8)
+                    .backgroundColor(AppTheme.bgSurface2)
+                    .fontColor(AppTheme.textPrimary)
+                    .type(InputType.Password)
+                }
+                .width('100%')
+              }
+              .width('100%')
+            }
+            .layoutWeight(1)
+            .scrollBar(BarState.Auto)
+
+            Row({ space: 12 }) {
+              Button('取消')
+                .fontSize(14)
+                .fontColor(AppTheme.textSecondary)
+                .backgroundColor(AppTheme.bgSurface2)
+                .borderRadius(8)
+                .height(40)
+                .layoutWeight(1)
+                .onClick(() => {
+                  this.showAddDialog = false;
+                  this.resetAddForm();
+                })
+              Button('添加')
+                .fontSize(14)
+                .fontColor(AppTheme.bgBase)
+                .backgroundColor(AppTheme.primary)
+                .borderRadius(8)
+                .height(40)
+                .layoutWeight(1)
+                .onClick(() => {
+                  this.handleAddCluster();
+                })
+            }
+            .width('100%')
+            .margin({ top: 12 })
           }
+          .padding(20)
+          .width(this.isSm ? '88%' : '80%')
+          .constraintSize({ maxWidth: 420, maxHeight: '85%' })
           .backgroundColor(AppTheme.bgSurface)
           .borderRadius(12)
-          .width('90%')
-          .constraintSize({ maxWidth: 400 })
           .shadow({ radius: 20, color: '#00000030', offsetY: 4 })
         }
         .width('100%')
@@ -437,7 +541,6 @@ export struct PvePage {
           this.resetAddForm();
         })
         .onTouch((event: TouchEvent) => {
-          // 阻止事件穿透
           if (event.type === TouchType.Down) {
             event.stopPropagation();
           }
