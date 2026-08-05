@@ -120,6 +120,7 @@ export struct NavSidebar {
       .padding({ left: this.compact ? 0 : 16, right: this.compact ? 0 : 16, top: 12, bottom: 16 })
       .justifyContent(this.compact ? FlexAlign.Center : FlexAlign.Start)
     }
+    .width('100%')
     .height('100%')
     .backgroundColor(AppTheme.bgSurface)
     .border({ width: { right: 1 }, color: AppTheme.borderSubtle })

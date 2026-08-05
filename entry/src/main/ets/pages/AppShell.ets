@@ -21,7 +21,9 @@ struct AppShell {
   @State currentPage: string = 'Index';
   @State winWidth: number = 0;
   @State showMoreMenu: boolean = false;
+  @StorageLink('isSm') isSm: boolean = true;
   @StorageLink('isMd') isMd: boolean = false;
+  @StorageLink('isLg') isLg: boolean = false;
   private allNavItems: NavItem[] = AppConstants.navItems;
 
   // 手机端 5 个主 Tab
@@ -42,7 +44,6 @@ struct AppShell {
   ];
 
   aboutToAppear() {
-    // 使用 display API 获取屏幕宽度，比 onAreaChange 更可靠
     try {
       const d = display.getDefaultDisplaySync();
       const vpWidth = px2vp(d.width);
@@ -51,28 +52,14 @@ struct AppShell {
     } catch (e) {
       // 兜底：默认手机布局，等 onAreaChange 更新
       this.winWidth = 0;
-      AppStorage.setOrCreate('isSm', true);
-      AppStorage.setOrCreate('isMd', false);
+      this.applyWidth(0);
     }
   }
 
   private applyWidth(w: number) {
-    const sm = w < BP_SM;
-    const md = w >= BP_SM && w < 840;
-    AppStorage.setOrCreate('isSm', sm);
-    AppStorage.setOrCreate('isMd', md);
-  }
-
-  private get isSm(): boolean {
-    return this.winWidth > 0 && this.winWidth < BP_SM;
-  }
-
-  private get isLg(): boolean {
-    return this.winWidth >= 840;
-  }
-
-  private get sidebarWidth(): number {
-    return this.isLg ? 220 : 160;
+    this.isSm = w < BP_SM;
+    this.isMd = w >= BP_SM && w < 840;
+    this.isLg = w >= 840;
   }
 
   selectPage(key: string) {
@@ -211,7 +198,7 @@ struct AppShell {
               this.currentPage = key;
             }
           })
-          .width(this.sidebarWidth)
+          .width(this.isLg ? 220 : 160)
 
           Column() {
             this.renderPage()
