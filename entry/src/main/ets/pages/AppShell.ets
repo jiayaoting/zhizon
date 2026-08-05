@@ -47,16 +47,20 @@ struct AppShell {
       const d = display.getDefaultDisplaySync();
       const vpWidth = px2vp(d.width);
       this.winWidth = vpWidth;
-      const sm = vpWidth < BP_SM;
-      const md = vpWidth >= BP_SM && vpWidth < 840;
-      AppStorage.setOrCreate('isSm', sm);
-      AppStorage.setOrCreate('isMd', md);
+      this.applyWidth(vpWidth);
     } catch (e) {
-      // 兜底：默认平板布局
-      this.winWidth = 800;
-      AppStorage.setOrCreate('isSm', false);
-      AppStorage.setOrCreate('isMd', true);
+      // 兜底：默认手机布局，等 onAreaChange 更新
+      this.winWidth = 0;
+      AppStorage.setOrCreate('isSm', true);
+      AppStorage.setOrCreate('isMd', false);
     }
+  }
+
+  private applyWidth(w: number) {
+    const sm = w < BP_SM;
+    const md = w >= BP_SM && w < 840;
+    AppStorage.setOrCreate('isSm', sm);
+    AppStorage.setOrCreate('isMd', md);
   }
 
   private get isSm(): boolean {
@@ -221,12 +225,10 @@ struct AppShell {
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
     .onAreaChange((oldArea: Area, newArea: Area) => {
-      // 窗口大小变化时更新（分屏、折叠屏等场景）
       const w = newArea.width as number;
       if (w > 0 && Math.abs(w - this.winWidth) > 10) {
         this.winWidth = w;
-        AppStorage.setOrCreate('isSm', w < BP_SM);
-        AppStorage.setOrCreate('isMd', w >= BP_SM && w < 840);
+        this.applyWidth(w);
       }
     })
   }
