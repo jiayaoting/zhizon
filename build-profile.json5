@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\wenju\\.ohos\\config\\default_zhizon_s1WEt4f7G4fUMbutbOm0Y0FmP36o62igErlhlzkvd8s=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B2BCBB5AEFB82DD10EE906ED472AC6D5C2F8868E154828F1A8F767B06E0268237A8487E5B0F7BE7",
+          "profile": "C:\\Users\\wenju\\.ohos\\config\\default_zhizon_s1WEt4f7G4fUMbutbOm0Y0FmP36o62igErlhlzkvd8s=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\wenju\\.ohos\\config\\default_zhizon_s1WEt4f7G4fUMbutbOm0Y0FmP36o62igErlhlzkvd8s=.p12",
+          "storePassword": "0000001BC0D5910DF5B69494D8921C9D992E99548A67219EC7D482CEDE0703BEE418E1A6B21974025E2262"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
