@@ -80,7 +80,7 @@
 |------|---------|---------|
 | 开发语言 | ArkTS + Go (Agent) | ✅ |
 | UI 框架 | ArkUI 声明式 + Stage 模型 | ✅ |
-| 目标 SDK | HarmonyOS 6.0.0 (API 12+) | ✅ |
+| 目标 SDK | HarmonyOS 6.1.1 (API 24) | ✅ |
 | 数据存储 | RelationalStore (RDB) + 5 表 | ✅ |
 | SSH 终端 | Go Agent WebSocket 中继 | ✅ |
 | PVE API | `@kit.NetworkKit` HTTP 调 REST API | ✅ |
