@@ -14,8 +14,6 @@ import { AlertsPage } from './Alerts';
 import { SettingsPage } from './Settings';
 
 const BP_SM = 600;
-const SAFE_TOP = 34;
-const SAFE_BOTTOM = 12;
 
 @Entry
 @Component
@@ -26,6 +24,8 @@ struct AppShell {
   @StorageLink('isSm') isSm: boolean = true;
   @StorageLink('isMd') isMd: boolean = false;
   @StorageLink('isLg') isLg: boolean = false;
+  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
   private allNavItems: NavItem[] = AppConstants.navItems;
 
   // 手机端 5 个主 Tab
@@ -159,7 +159,7 @@ struct AppShell {
     }
     .width('100%')
     .backgroundColor(AppTheme.bgSurface)
-    .padding({ bottom: SAFE_BOTTOM })
+    .padding({ bottom: this.navBarHeight })
   }
 
   // 半透明遮罩：点击关闭更多菜单
@@ -179,19 +179,20 @@ struct AppShell {
         // 手机：内容 + 底部Tab
         Stack({ alignContent: Alignment.Bottom }) {
           Column() {
-            this.renderPage()
+            // 更多菜单遮罩（仅覆盖页面内容区，不影响底部 Tab 栏和弹出菜单）
+            Stack() {
+              this.renderPage()
+              if (this.showMoreMenu) {
+                this.overlayMask()
+              }
+            }
+            .layoutWeight(1)
           }
           .layoutWeight(1)
-          .padding({ top: SAFE_TOP })
 
           this.bottomTabBar()
         }
         .layoutWeight(1)
-
-        // 更多菜单遮罩
-        if (this.showMoreMenu) {
-          this.overlayMask()
-        }
       } else {
         // 平板+：侧边栏 + 内容
         Row() {
@@ -211,6 +212,7 @@ struct AppShell {
           .height('100%')
         }
         .height('100%')
+        .padding({ bottom: this.navBarHeight })
       }
     }
     .height('100%')

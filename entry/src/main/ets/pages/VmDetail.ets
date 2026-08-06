@@ -29,6 +29,7 @@ interface HwGroup {
 @Component
 struct VmDetailPage {
   @State activeNav: string = 'Pve';
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State activeTab: string = 'overview'; // overview | snapshot | hardware | history
   @State clusterId: string = '';
   @State nodeName: string = '';
@@ -577,6 +578,7 @@ struct VmDetailPage {
       .backgroundColor(AppTheme.bgBase)
     }
     .height('100%')
+    .padding({ bottom: this.navBarHeight })
     .backgroundColor(AppTheme.bgBase)
   }
 }

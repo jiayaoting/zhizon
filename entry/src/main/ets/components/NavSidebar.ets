@@ -7,6 +7,7 @@ import { AppConstants, NavItem } from '../common/Constants';
 export struct NavSidebar {
   @Prop activeKey: string;
   @Prop compact: boolean = false;
+  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   onSelect: (key: string) => void = () => {};
 
   @Builder navItem(item: NavItem, isActive: boolean) {
@@ -80,7 +81,7 @@ export struct NavSidebar {
         }
       }
       .width('100%')
-      .padding({ left: this.compact ? 0 : 16, right: this.compact ? 0 : 16, top: 20, bottom: 20 })
+      .padding({ left: this.compact ? 0 : 16, right: this.compact ? 0 : 16, top: this.statusBarHeight + 20, bottom: 20 })
       .justifyContent(this.compact ? FlexAlign.Center : FlexAlign.Start)
 
       Divider().color(AppTheme.borderSubtle)

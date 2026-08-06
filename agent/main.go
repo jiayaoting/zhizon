@@ -27,6 +27,7 @@ import (
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
+	"golang.org/x/crypto/ssh"
 )
 
 // Config holds the agent configuration.
@@ -643,6 +644,261 @@ func (h *Handlers) wsTerminal(w http.ResponseWriter, r *http.Request) {
 	log.Printf("INFO: WebSocket terminal disconnected from %s", r.RemoteAddr)
 }
 
+// --- WebSocket SSH Gateway (x/crypto/ssh + creack/pty) ---
+
+// SSH connect parameters sent as first message from client
+type sshConnectParams struct {
+	Type              string `json:"type"` // "connect"
+	Host              string `json:"host"`
+	Port              int    `json:"port"`
+	Username          string `json:"username"`
+	Password          string `json:"password"`
+	PrivateKeyContent string `json:"privateKeyContent"`
+	AuthType          string `json:"authType"` // "password" or "key"
+	Cols              int    `json:"cols"`
+	Rows              int    `json:"rows"`
+}
+
+type wsControlMessage struct {
+	Type    string `json:"type"`    // "connect" | "disconnect" | "resize" | "event" | "progress"
+	Cols    int    `json:"cols"`
+	Rows    int    `json:"rows"`
+	Event   string `json:"event"`
+	Message string `json:"message"`
+}
+
+func (h *Handlers) wsSSHGateway(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("ERROR: SSH gateway WebSocket upgrade failed: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	log.Printf("INFO: SSH gateway WebSocket connected from %s", r.RemoteAddr)
+
+	// Wait for the first message — SSH connect parameters
+	_, message, err := conn.ReadMessage()
+	if err != nil {
+		log.Printf("ERROR: SSH gateway failed to read connect params: %v", err)
+		return
+	}
+
+	var params sshConnectParams
+	if err := json.Unmarshal(message, &params); err != nil || params.Type != "connect" {
+		conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"event","event":"error","message":"invalid connect parameters"}`))
+		log.Printf("ERROR: SSH gateway invalid connect params: %s", string(message))
+		return
+	}
+
+	log.Printf("INFO: SSH gateway connecting to %s@%s:%d (auth=%s)", params.Username, params.Host, params.Port, params.AuthType)
+
+	// Build SSH client config
+	sshConfig := &ssh.ClientConfig{
+		User:            params.Username,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Accept any host key (user can verify fingerprint)
+		Timeout:         15 * time.Second,
+	}
+
+	// Authentication
+	if params.AuthType == "key" && params.PrivateKeyContent != "" {
+		// Parse private key
+		var signer ssh.Signer
+		var keyErr error
+
+		// Try as raw private key
+		signer, keyErr = ssh.ParsePrivateKey([]byte(params.PrivateKeyContent))
+		if keyErr != nil {
+			// Try passphrase-protected key (no passphrase)
+			signer, keyErr = ssh.ParsePrivateKeyWithPassphrase([]byte(params.PrivateKeyContent), []byte{})
+		}
+		if keyErr != nil {
+			log.Printf("ERROR: SSH gateway failed to parse private key: %v", keyErr)
+			conn.WriteMessage(websocket.TextMessage,
+				[]byte(`{"type":"event","event":"error","message":"invalid private key format"}`))
+			return
+		}
+		sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+	} else if params.Password != "" {
+		sshConfig.Auth = []ssh.AuthMethod{ssh.Password(params.Password)}
+	} else {
+		conn.WriteMessage(websocket.TextMessage,
+			[]byte(`{"type":"event","event":"error","message":"no authentication credentials provided"}`))
+		return
+	}
+
+	// Connect to remote SSH server
+	addr := fmt.Sprintf("%s:%d", params.Host, params.Port)
+	client, err := ssh.Dial("tcp", addr, sshConfig)
+	if err != nil {
+		log.Printf("ERROR: SSH gateway connection failed to %s: %v", addr, err)
+		conn.WriteMessage(websocket.TextMessage,
+			[]byte(fmt.Sprintf(`{"type":"event","event":"error","message":"SSH connection failed: %v"}`, err)))
+		return
+	}
+	defer client.Close()
+
+	// Open a PTY session
+	session, err := client.NewSession()
+	if err != nil {
+		log.Printf("ERROR: SSH gateway failed to create session: %v", err)
+		conn.WriteMessage(websocket.TextMessage,
+			[]byte(fmt.Sprintf(`{"type":"event","event":"error","message":"failed to create session: %v"}`, err)))
+		return
+	}
+	defer session.Close()
+
+	// Set terminal modes
+	cols := params.Cols
+	rows := params.Rows
+	if cols <= 0 {
+		cols = 80
+	}
+	if rows <= 0 {
+		rows = 24
+	}
+
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,     // enable echoing
+		ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+	}
+
+	if err := session.RequestPty("xterm-256color", rows, cols, modes); err != nil {
+		log.Printf("ERROR: SSH gateway failed to request PTY: %v", err)
+		conn.WriteMessage(websocket.TextMessage,
+			[]byte(fmt.Sprintf(`{"type":"event","event":"error","message":"failed to request PTY: %v"}`, err)))
+		return
+	}
+
+	// Get stdin/stdout pipes
+	stdinPipe, err := session.StdinPipe()
+	if err != nil {
+		log.Printf("ERROR: SSH gateway failed to get stdin pipe: %v", err)
+		return
+	}
+	stdoutPipe, err := session.StdoutPipe()
+	if err != nil {
+		log.Printf("ERROR: SSH gateway failed to get stdout pipe: %v", err)
+		return
+	}
+	stderrPipe, err := session.StderrPipe()
+	if err != nil {
+		log.Printf("ERROR: SSH gateway failed to get stderr pipe: %v", err)
+		return
+	}
+
+	// Start shell
+	if err := session.Shell(); err != nil {
+		log.Printf("ERROR: SSH gateway failed to start shell: %v", err)
+		conn.WriteMessage(websocket.TextMessage,
+			[]byte(fmt.Sprintf(`{"type":"event","event":"error","message":"failed to start shell: %v"}`, err)))
+		return
+	}
+
+	// Notify connected
+	conn.WriteMessage(websocket.TextMessage,
+		[]byte(`{"type":"event","event":"connected","message":"SSH session established"}`))
+
+	log.Printf("INFO: SSH gateway PTY shell started on %s (%dx%d)", addr, cols, rows)
+
+	// Context for cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Read from stdout/stderr → write to WebSocket
+	go func() {
+		buf := make([]byte, 4096)
+		readers := []io.Reader{stdoutPipe, stderrPipe}
+		for _, reader := range readers {
+			go func(r io.Reader) {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+					}
+					n, err := r.Read(buf)
+					if n > 0 {
+						conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+						if writeErr := conn.WriteMessage(websocket.TextMessage, buf[:n]); writeErr != nil {
+							log.Printf("ERROR: SSH gateway WS write error: %v", writeErr)
+							cancel()
+							return
+						}
+					}
+					if err != nil {
+						if err != io.EOF {
+							log.Printf("ERROR: SSH gateway read error: %v", err)
+						}
+						return
+					}
+				}
+			}(reader)
+		}
+	}()
+
+	// Read from WebSocket → write to stdin
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			conn.SetReadDeadline(time.Now().Add(120 * time.Second))
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				if !websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					log.Printf("INFO: SSH gateway WS closed: %v", err)
+				} else {
+					log.Printf("ERROR: SSH gateway WS read error: %v", err)
+				}
+				cancel()
+				return
+			}
+
+			// Check for control messages (JSON)
+			var ctrl wsControlMessage
+			if json.Unmarshal(message, &ctrl) == nil {
+				switch ctrl.Type {
+				case "disconnect":
+					log.Printf("INFO: SSH gateway client requested disconnect")
+					cancel()
+					return
+				case "resize":
+					if ctrl.Cols > 0 && ctrl.Rows > 0 {
+						session.WindowChange(ctrl.Rows, ctrl.Cols)
+						log.Printf("INFO: SSH gateway terminal resized to %dx%d", ctrl.Cols, ctrl.Rows)
+					}
+					continue
+				default:
+					// Unknown control message, ignore
+					continue
+				}
+			}
+
+			// Write raw bytes to stdin (terminal input)
+			if _, err := stdinPipe.Write(message); err != nil {
+				log.Printf("ERROR: SSH gateway stdin write error: %v", err)
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// Wait for session to end
+	err = session.Wait()
+	if err != nil {
+		log.Printf("INFO: SSH gateway session ended: %v", err)
+	}
+
+	conn.WriteMessage(websocket.TextMessage,
+		[]byte(fmt.Sprintf(`{"type":"event","event":"disconnected","message":"SSH session ended: %v"}`, err)))
+	log.Printf("INFO: SSH gateway disconnected from %s", addr)
+}
+
 // --- Router setup ---
 
 func (h *Handlers) setupRoutes() http.Handler {
@@ -674,6 +930,8 @@ func (h *Handlers) setupRoutes() http.Handler {
 
 	// WebSocket terminal
 	mux.HandleFunc("/ws/terminal", h.wsTerminal)
+	// WebSocket SSH gateway (PTY interactive terminal via remote SSH)
+	mux.HandleFunc("/ws/ssh", h.wsSSHGateway)
 
 	// Apply middleware: CORS → Auth → Logging
 	var handler http.Handler = mux

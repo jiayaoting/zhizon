@@ -27,6 +27,7 @@ struct PveNodeDetailPage {
   @State cluster: PveCluster | undefined = undefined;
   @State pveNode: PveNode | undefined = undefined;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State loading: boolean = true;
   @State vms: Vm[] = [];
   @State storages: Storage[] = [];
@@ -548,6 +549,7 @@ struct PveNodeDetailPage {
       .backgroundColor(AppTheme.bgBase)
     }
     .height('100%')
+    .padding({ bottom: this.navBarHeight })
     .backgroundColor(AppTheme.bgBase)
   }
 }

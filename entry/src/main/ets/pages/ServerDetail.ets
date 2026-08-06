@@ -14,7 +14,7 @@ interface ServerDetailParams {
   serverId: string;
 }
 
-// Top 进程假数据
+// Top 进程（后续由真实 SSH 命令获取）
 interface TopProcess {
   pid: number;
   name: string;
@@ -26,17 +26,12 @@ interface TopProcess {
 @Component
 struct ServerDetailPage {
   @State activeNav: string = 'Servers';
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State server: Server | null = null;
   @State alerts: Alert[] = [];
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
-  private topProcesses: TopProcess[] = [
-    { pid: 1234, name: 'nginx', cpu: 12.5, mem: 4.2 },
-    { pid: 2345, name: 'mysqld', cpu: 8.3, mem: 18.6 },
-    { pid: 3456, name: 'node', cpu: 5.1, mem: 6.8 },
-    { pid: 4567, name: 'redis-server', cpu: 2.4, mem: 1.2 },
-    { pid: 5678, name: 'systemd', cpu: 0.5, mem: 0.8 }
-  ];
+  @State topProcesses: TopProcess[] = [];
 
   async aboutToAppear() {
     const params = router.getParams() as Record<string, string>;
@@ -318,9 +313,26 @@ struct ServerDetailPage {
                   .padding({ top: 8, bottom: 8 })
                   .alignItems(VerticalAlign.Center)
 
-                  ForEach(this.topProcesses, (p: TopProcess) => {
-                    this.processRow(p)
-                  }, (p: TopProcess) => String(p.pid))
+                  if (this.topProcesses.length === 0) {
+                    Column({ space: 6 }) {
+                      Text('📊')
+                        .fontSize(24)
+                      Text('暂无进程数据')
+                        .fontSize(11)
+                        .fontColor(AppTheme.textTertiary)
+                      Text('连接终端后执行 "top -bn1" 获取')
+                        .fontSize(10)
+                        .fontColor(AppTheme.textTertiary)
+                    }
+                    .width('100%')
+                    .padding({ top: 20, bottom: 20 })
+                    .justifyContent(FlexAlign.Center)
+                    .alignItems(HorizontalAlign.Center)
+                  } else {
+                    ForEach(this.topProcesses, (p: TopProcess) => {
+                      this.processRow(p)
+                    }, (p: TopProcess) => String(p.pid))
+                  }
                 }
                 .width('100%')
                 .padding({ left: 16, right: 16 })
@@ -374,6 +386,7 @@ struct ServerDetailPage {
       .backgroundColor(AppTheme.bgBase)
     }
     .height('100%')
+    .padding({ bottom: this.navBarHeight })
     .backgroundColor(AppTheme.bgBase)
   }
 }

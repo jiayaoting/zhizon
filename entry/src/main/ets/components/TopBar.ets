@@ -8,6 +8,7 @@ export struct TopBar {
   @Prop subtitle: string = '';
   @Prop showBack: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @BuilderParam actions: () => void = this.emptyActions;
 
   @Builder emptyActions() {}
@@ -53,7 +54,7 @@ export struct TopBar {
       this.actions()
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 16, bottom: 16 })
+    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: this.statusBarHeight + 16, bottom: 16 })
     .alignItems(VerticalAlign.Center)
   }
 }

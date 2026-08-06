@@ -3,6 +3,7 @@
     "pages/AppShell",
     "pages/ServerDetail",
     "pages/PveNodeDetail",
-    "pages/VmDetail"
+    "pages/VmDetail",
+    "pages/ServerForm"
   ]
 }

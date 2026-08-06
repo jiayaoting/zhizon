@@ -2,9 +2,10 @@
 import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { Server, PveCluster, Command, Alert, FileItem } from '../model/Models';
+import { CryptoHelper } from '../common/CryptoHelper';
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // 建表 SQL
 const SQL_CREATE_SERVERS = `
@@ -22,7 +23,7 @@ const SQL_CREATE_SERVERS = `
     os TEXT,
     created_at INTEGER,
     last_connected INTEGER DEFAULT 0,
-    connection_mode TEXT DEFAULT 'agent',
+    connection_mode TEXT DEFAULT 'direct',
     agent_token TEXT DEFAULT 'zhizon-agent',
     private_key_path TEXT
   )
@@ -33,6 +34,11 @@ const SQL_MIGRATE_V2 = [
   'ALTER TABLE servers ADD COLUMN connection_mode TEXT DEFAULT \'agent\'',
   'ALTER TABLE servers ADD COLUMN agent_token TEXT DEFAULT \'zhizon-agent\'',
   'ALTER TABLE servers ADD COLUMN private_key_path TEXT'
+];
+
+// v3 迁移：servers 表新增私钥内容列（加密存储）
+const SQL_MIGRATE_V3 = [
+  'ALTER TABLE servers ADD COLUMN key_content TEXT'
 ];
 
 const SQL_CREATE_PVE_CLUSTERS = `
@@ -106,9 +112,11 @@ export class DatabaseHelper {
 
     // v2 迁移：为已有 servers 表新增列（安全执行，列已存在时忽略错误）
     await DatabaseHelper.migrateV2();
+    // v3 迁移：servers 表新增 key_content 列
+    await DatabaseHelper.migrateV3();
 
-    // 插入默认数据
-    await DatabaseHelper.seedDefaults();
+    // 清理历史种子假数据（对旧版本播种的假 id 生效）
+    await DatabaseHelper.cleanupLegacySeedData();
   }
 
   static getStore(): relationalStore.RdbStore {
@@ -123,6 +131,17 @@ export class DatabaseHelper {
         await DatabaseHelper.store!.executeSql(sql);
       } catch (e) {
         // 列已存在，忽略错误
+        console.info('Migration column already exists, skipping:', sql);
+      }
+    }
+  }
+
+  // v3 迁移：安全添加 key_content 列（列已存在时忽略错误）
+  private static async migrateV3(): Promise<void> {
+    for (const sql of SQL_MIGRATE_V3) {
+      try {
+        await DatabaseHelper.store!.executeSql(sql);
+      } catch (e) {
         console.info('Migration column already exists, skipping:', sql);
       }
     }
@@ -144,7 +163,7 @@ export class DatabaseHelper {
         port: resultSet.getLong(resultSet.getColumnIndex('port')),
         username: resultSet.getString(resultSet.getColumnIndex('username')),
         authType: (resultSet.getString(resultSet.getColumnIndex('auth_type')) || 'password') as 'password' | 'key',
-        connectionMode: (resultSet.getString(resultSet.getColumnIndex('connection_mode')) || 'agent') as 'direct' | 'agent',
+        connectionMode: (resultSet.getString(resultSet.getColumnIndex('connection_mode')) || 'direct') as 'direct' | 'agent',
         agentToken: resultSet.getString(resultSet.getColumnIndex('agent_token')) || undefined,
         privateKeyPath: resultSet.getString(resultSet.getColumnIndex('private_key_path')) || undefined,
         group: resultSet.getString(resultSet.getColumnIndex('grp')) || undefined,
@@ -173,7 +192,7 @@ export class DatabaseHelper {
         port: resultSet.getLong(resultSet.getColumnIndex('port')),
         username: resultSet.getString(resultSet.getColumnIndex('username')),
         authType: (resultSet.getString(resultSet.getColumnIndex('auth_type')) || 'password') as 'password' | 'key',
-        connectionMode: (resultSet.getString(resultSet.getColumnIndex('connection_mode')) || 'agent') as 'direct' | 'agent',
+        connectionMode: (resultSet.getString(resultSet.getColumnIndex('connection_mode')) || 'direct') as 'direct' | 'agent',
         agentToken: resultSet.getString(resultSet.getColumnIndex('agent_token')) || undefined,
         privateKeyPath: resultSet.getString(resultSet.getColumnIndex('private_key_path')) || undefined,
         group: resultSet.getString(resultSet.getColumnIndex('grp')) || undefined,
@@ -205,10 +224,21 @@ export class DatabaseHelper {
       os: server.os || '',
       created_at: server.createdAt,
       last_connected: server.lastConnected || 0,
-      connection_mode: server.connectionMode || 'agent',
+      connection_mode: server.connectionMode || 'direct',
       agent_token: server.agentToken || 'zhizon-agent',
       private_key_path: server.privateKeyPath || ''
     };
+    // 加密凭据落库（明文不持久化）；加密失败则抛异常避免泄露
+    if (server.password) {
+      const enc = await CryptoHelper.encrypt(server.password);
+      if (!enc) throw new Error('凭据加密失败，请稍后重试');
+      valueBucket['password_enc'] = enc;
+    }
+    if (server.privateKeyContent) {
+      const enc = await CryptoHelper.encrypt(server.privateKeyContent);
+      if (!enc) throw new Error('凭据加密失败，请稍后重试');
+      valueBucket['key_content'] = enc;
+    }
     await store.insert('servers', valueBucket);
   }
 
@@ -226,10 +256,78 @@ export class DatabaseHelper {
     if (updates.connectionMode !== undefined) bucket['connection_mode'] = updates.connectionMode;
     if (updates.agentToken !== undefined) bucket['agent_token'] = updates.agentToken;
     if (updates.privateKeyPath !== undefined) bucket['private_key_path'] = updates.privateKeyPath;
+    // 凭据更新：显式传入明文时加密落库
+    if (updates.password !== undefined && updates.password.length > 0) {
+      bucket['password_enc'] = await CryptoHelper.encrypt(updates.password);
+    }
+    if (updates.privateKeyContent !== undefined && updates.privateKeyContent.length > 0) {
+      bucket['key_content'] = await CryptoHelper.encrypt(updates.privateKeyContent);
+    }
 
     const predicates = new relationalStore.RdbPredicates('servers');
     predicates.equalTo('id', id);
     await store.update(bucket, predicates);
+  }
+
+  // 保存密码/密钥内容（加密后落库）；传空字符串则清除
+  static async saveCredentials(id: string, password?: string, keyContent?: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const bucket: relationalStore.ValuesBucket = {};
+    if (password !== undefined) {
+      if (password.length > 0) {
+        const enc = await CryptoHelper.encrypt(password);
+        if (!enc) throw new Error('凭据加密失败，请稍后重试');
+        bucket['password_enc'] = enc;
+      } else {
+        bucket['password_enc'] = '';
+      }
+    }
+    if (keyContent !== undefined) {
+      if (keyContent.length > 0) {
+        const enc = await CryptoHelper.encrypt(keyContent);
+        if (!enc) throw new Error('凭据加密失败，请稍后重试');
+        bucket['key_content'] = enc;
+      } else {
+        bucket['key_content'] = '';
+      }
+    }
+    if (Object.keys(bucket).length === 0) return;
+    const predicates = new relationalStore.RdbPredicates('servers');
+    predicates.equalTo('id', id);
+    await store.update(bucket, predicates);
+  }
+
+  // 读取解密后的密码（无则返回空串）
+  static async getPassword(id: string): Promise<string> {
+    const enc = await DatabaseHelper.getEncColumn(id, 'password_enc');
+    if (!enc) return '';
+    return await CryptoHelper.decrypt(enc);
+  }
+
+  // 读取解密后的私钥内容（无则返回空串）
+  static async getKeyContent(id: string): Promise<string> {
+    const enc = await DatabaseHelper.getEncColumn(id, 'key_content');
+    if (!enc) return '';
+    return await CryptoHelper.decrypt(enc);
+  }
+
+  // 读取单个加密列（按 id）
+  private static async getEncColumn(id: string, column: string): Promise<string> {
+    try {
+      const store = DatabaseHelper.getStore();
+      const predicates = new relationalStore.RdbPredicates('servers');
+      predicates.equalTo('id', id);
+      const resultSet = await store.query(predicates);
+      let val = '';
+      if (resultSet.goToNextRow()) {
+        val = resultSet.getString(resultSet.getColumnIndex(column)) || '';
+      }
+      resultSet.close();
+      return val;
+    } catch (e) {
+      console.error('getEncColumn failed:', column, e);
+      return '';
+    }
   }
 
   static async deleteServer(id: string): Promise<void> {
@@ -392,20 +490,6 @@ export class DatabaseHelper {
     await store.update(bucket, predicates);
   }
 
-  // ========== 文件管理 ==========
-
-  static async getFiles(): Promise<FileItem[]> {
-    return [
-      { name: 'app', type: 'dir', size: 0, modified: '2026-08-04 09:30', perms: 'drwxr-xr-x' },
-      { name: 'logs', type: 'dir', size: 0, modified: '2026-08-05 07:15', perms: 'drwxr-xr-x' },
-      { name: 'config', type: 'dir', size: 0, modified: '2026-07-28 16:00', perms: 'drwxr-xr-x' },
-      { name: 'deploy.sh', type: 'file', size: 2048, modified: '2026-08-03 11:20', perms: '-rwxr-xr-x' },
-      { name: 'nginx.conf', type: 'file', size: 5120, modified: '2026-08-02 14:45', perms: '-rw-r--r--' },
-      { name: 'docker-compose.yml', type: 'file', size: 3072, modified: '2026-07-30 08:00', perms: '-rw-r--r--' },
-      { name: '.env', type: 'file', size: 1024, modified: '2026-08-01 19:10', perms: '-rw-------' }
-    ];
-  }
-
   // ========== 设置 ==========
 
   static async getSetting(key: string, defaultValue: string = ''): Promise<string> {
@@ -445,62 +529,21 @@ export class DatabaseHelper {
     return tagsStr.split(',').filter(t => t.trim() !== '');
   }
 
-  // 初始化默认数据
-  private static async seedDefaults(): Promise<void> {
-    const existing = await DatabaseHelper.getServers();
-    if (existing.length > 0) return; // 已有数据，不重复播种
-
-    const now = Date.now();
-    const day = 86400000;
-
-    const defaultServers: Server[] = [
-      { id: 'srv-001', name: 'prod-web-01', host: '192.168.1.10', port: 22, username: 'root',
-        authType: 'key', connectionMode: 'agent', group: '生产', tags: ['web', 'nginx'], os: 'Ubuntu 22.04 LTS',
-        status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-        createdAt: now - day * 30 },
-      { id: 'srv-002', name: 'prod-db-master', host: '192.168.1.20', port: 22, username: 'root',
-        authType: 'key', connectionMode: 'agent', group: '生产', tags: ['mysql', 'master'], os: 'Debian 12',
-        status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-        createdAt: now - day * 60 },
-      { id: 'srv-003', name: 'dev-test-01', host: '192.168.1.30', port: 22, username: 'ubuntu',
-        authType: 'password', connectionMode: 'direct', group: '测试', tags: ['docker'], os: 'Ubuntu 24.04 LTS',
-        status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-        createdAt: now - day * 10 },
-      { id: 'srv-004', name: 'monitor-grafana', host: '192.168.1.40', port: 22, username: 'root',
-        authType: 'key', connectionMode: 'agent', group: '监控', tags: ['grafana', 'prometheus'], os: 'CentOS Stream 9',
-        status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-        createdAt: now - day * 90 },
-      { id: 'srv-005', name: 'backup-storage', host: '192.168.1.50', port: 2222, username: 'backup',
-        authType: 'password', connectionMode: 'direct', group: '备份', tags: ['minio', 'storage'], os: 'Alpine 3.19',
-        status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-        createdAt: now - day * 120 },
-      { id: 'srv-006', name: 'ci-runner-01', host: '192.168.1.60', port: 22, username: 'gitlab',
-        authType: 'key', connectionMode: 'agent', group: 'CI/CD', tags: ['gitlab', 'runner'], os: 'Ubuntu 22.04 LTS',
-        status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-        createdAt: now - day * 45 }
-    ];
-
-    for (const s of defaultServers) {
-      await DatabaseHelper.addServer(s);
+  // 清理历史种子假数据（旧版本播种的 srv-xxx / cxx 残留，幂等：无此 id 时静默跳过）
+  private static async cleanupLegacySeedData(): Promise<void> {
+    const legacyServerIds: string[] = ['srv-001', 'srv-002', 'srv-003', 'srv-004', 'srv-005', 'srv-006'];
+    const legacyCmdIds: string[] = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11', 'c12'];
+    const store = DatabaseHelper.getStore();
+    for (const id of legacyServerIds) {
+      const predicates = new relationalStore.RdbPredicates('servers');
+      predicates.equalTo('id', id);
+      await store.delete(predicates);
     }
-
-    const defaultCommands: Command[] = [
-      { id: 'c1', name: '查看 CPU 占用 Top10', cmd: 'ps aux --sort=-%cpu | head -10', category: '进程', uses: 23 },
-      { id: 'c2', name: '查看内存使用', cmd: 'free -h', category: '系统', uses: 45 },
-      { id: 'c3', name: '磁盘空间', cmd: 'df -h', category: '系统', uses: 67 },
-      { id: 'c4', name: '查看监听端口', cmd: 'ss -tlnp', category: '网络', uses: 31 },
-      { id: 'c5', name: '查看 TCP 连接数', cmd: 'ss -s', category: '网络', uses: 18 },
-      { id: 'c6', name: '实时网络流量', cmd: 'iftop -n -N', category: '网络', uses: 9 },
-      { id: 'c7', name: '查看系统负载', cmd: 'uptime', category: '系统', uses: 89 },
-      { id: 'c8', name: 'Docker 容器列表', cmd: 'docker ps -a', category: 'Docker', uses: 52 },
-      { id: 'c9', name: 'Docker 资源占用', cmd: 'docker stats --no-stream', category: 'Docker', uses: 28 },
-      { id: 'c10', name: '查看登录记录', cmd: 'last -n 20', category: '安全', uses: 14 },
-      { id: 'c11', name: '查看失败登录', cmd: 'grep "Failed password" /var/log/auth.log | tail -20', category: '安全', uses: 6 },
-      { id: 'c12', name: '重启 Nginx', cmd: 'systemctl restart nginx', category: '服务', uses: 12 }
-    ];
-
-    for (const c of defaultCommands) {
-      await DatabaseHelper.addCommand(c);
+    for (const id of legacyCmdIds) {
+      const predicates = new relationalStore.RdbPredicates('commands');
+      predicates.equalTo('id', id);
+      await store.delete(predicates);
     }
+    console.info('Zhizon: legacy seed data cleaned');
   }
 }

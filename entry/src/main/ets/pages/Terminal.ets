@@ -1,239 +1,343 @@
-// 智子 - SSH 终端页面
+// 智子 - SSH 终端页面（多会话标签页容器）
 import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { SshService, SshEngine } from '../service/SshService';
 import { DataRepository } from '../service/DataRepository';
-import { Server } from '../model/Models';
+import { Server, TerminalSession } from '../model/Models';
+import { TerminalView } from '../terminal/TerminalView';
+
+// 会话状态
+interface SessionState {
+  session: TerminalSession;
+  engine: SshEngine | null;
+  lines: string[];
+  prompt: string;
+  cmdInput: string;
+  isLoading: boolean;
+  isReconnecting: boolean;
+}
 
 @Component
 export struct TerminalPage {
-  @State cmdInput: string = '';
-  @State terminalLines: string[] = [];
-  @State isLoading: boolean = true;
-  @State connected: boolean = false;
+  @State sessions: SessionState[] = [];
+  @State activeIndex: number = 0;
   @State serverName: string = '终端';
   @State serverHost: string = '';
   @StorageLink('isSm') isSm: boolean = false;
   private server: Server | null = null;
-  private engine: SshEngine | null = null;
-  private prompt: string = '$ ';
-  private quickCmds: string[] = ['ls -la', 'cd ~', 'top -bn1', 'df -h', 'free -h', 'docker ps', 'uptime', 'cat /etc/os-release', 'whoami', 'hostname', 'ps aux', 'netstat -tlnp'];
+  private allServers: Server[] = [];
+  private quickCmds: string[] = [
+    'ls -la', 'cd ~', 'top -bn1', 'df -h', 'free -h', 'docker ps',
+    'uptime', 'cat /etc/os-release', 'whoami', 'hostname', 'ps aux', 'netstat -tlnp'
+  ];
+  private sessionCounter: number = 0;
 
   async aboutToAppear(): Promise<void> {
     try {
+      // 预加载服务器列表供会话选择器使用
+      this.allServers = await DataRepository.getServers();
+
       const params = router.getParams() as Record<string, string>;
       const serverId = params?.serverId || '';
 
       if (serverId) {
-        // 从数据库加载真实服务器
         const server = await DataRepository.getServer(serverId);
         if (server) {
           this.server = server;
           this.serverName = server.name;
           this.serverHost = server.host;
-          await this.connectServer();
+          this.addSession(server);
+          await this.connectActiveSession();
         } else {
-          this.terminalLines = ['错误: 未找到服务器 (ID: ' + serverId + ')'];
-          this.isLoading = false;
+          // serverId 无效，弹出选择器
+          this.showServerPicker();
         }
       } else {
-        // 无 serverId，尝试从 AppStorage 获取上次连接的服务器
-        this.terminalLines = ['请从服务器列表选择要连接的服务器'];
-        this.isLoading = false;
+        // 从底部 Tab 进入，弹出服务器选择器
+        this.showServerPicker();
       }
     } catch (e) {
-      this.terminalLines = ['初始化失败: ' + JSON.stringify(e)];
-      this.isLoading = false;
+      console.error('TerminalPage init failed:', JSON.stringify(e));
+      this.showServerPicker();
     }
   }
 
   aboutToDisappear(): void {
-    // 页面销毁时断开连接
+    // 断开所有会话
+    for (const state of this.sessions) {
+      if (state.engine) {
+        state.engine.closeTerminal();
+      }
+    }
     if (this.server) {
       SshService.disconnect(this.server);
     }
   }
 
-  // 连接服务器并获取初始输出
-  private async connectServer(): Promise<void> {
-    if (!this.server) return;
+  // 弹出服务器选择器（独立 Tab 进入或无 serverId 时使用）
+  private showServerPicker(): void {
+    if (this.allServers.length === 0) {
+      promptAction.showToast({ message: '暂无服务器，请先添加 SSH 服务器' });
+      return;
+    }
 
-    this.isLoading = true;
-    this.terminalLines = [`正在连接 ${this.server.name} (${this.server.host}:${this.server.port})...`];
+    // 构建选择器选项（title 前缀状态标识，避免 icon 字段需要图片资源）
+    const sheets: Array<SheetInfo> = [];
+    for (const s of this.allServers) {
+      const statusMark = s.status === 'online' ? '● ' : '○ ';
+      sheets.push({
+        title: statusMark + s.name,
+        action: () => {
+          this.server = s;
+          this.serverName = s.name;
+          this.serverHost = s.host;
+          // 创建该服务器的第一个会话并连接
+          this.sessions = [];
+          this.addSession(s);
+          this.connectActiveSession();
+        }
+      });
+    }
+
+    this.getUIContext().showActionSheet({
+      title: '选择 SSH 服务器',
+      message: `共 ${this.allServers.length} 台服务器`,
+      sheets: sheets
+    });
+  }
+
+  // 获取当前活动会话
+  private get activeSession(): SessionState | null {
+    if (this.activeIndex >= 0 && this.activeIndex < this.sessions.length) {
+      return this.sessions[this.activeIndex];
+    }
+    return null;
+  }
+
+  // 添加新会话（基于服务器对象）
+  private addSession(server: Server): void {
+    this.server = server;
+    this.serverName = server.name;
+    this.serverHost = server.host;
+    this.sessionCounter++;
+    const session: TerminalSession = {
+      id: `session_${Date.now()}_${this.sessionCounter}`,
+      serverId: server.id,
+      serverName: server.name,
+      host: server.host,
+      username: server.username,
+      cwd: '~',
+      history: [],
+      connected: false,
+      reconnecting: false
+    };
+    this.sessions.push({
+      session: session,
+      engine: null,
+      lines: [`终端 ${server.name} - ${server.host}`],
+      prompt: '$ ',
+      cmdInput: '',
+      isLoading: false,
+      isReconnecting: false
+    });
+    this.activeIndex = this.sessions.length - 1;
+  }
+
+  // 关闭会话
+  private closeSession(index: number): void {
+    if (this.sessions.length <= 1) return;
+    const state = this.sessions[index];
+    if (state.engine) {
+      state.engine.closeTerminal();
+    }
+    this.sessions.splice(index, 1);
+    if (this.activeIndex >= this.sessions.length) {
+      this.activeIndex = this.sessions.length - 1;
+    }
+  }
+
+  // 连接当前活动会话
+  private async connectActiveSession(): Promise<void> {
+    if (!this.server) return;
+    const state = this.activeSession;
+    if (!state) return;
+
+    state.isLoading = true;
+    state.lines = [`正在连接 ${state.session.serverName} (${state.session.host})...`];
 
     try {
       const output = await SshService.getTerminalOutput(this.server);
-      this.terminalLines = output;
-
-      // 检查是否连接成功
+      state.lines = output;
       const firstLine = output.length > 0 ? output[0] : '';
-      this.connected = firstLine.includes('连接成功');
+      state.session.connected = firstLine.includes('连接成功');
 
-      if (this.connected) {
-        // 获取提示符
+      if (state.session.connected) {
         const lastLine = output[output.length - 1] || '';
         if (lastLine.includes('#') || lastLine.includes('$')) {
-          this.prompt = lastLine;
+          state.prompt = lastLine;
         }
-
-        // 更新服务器状态和最后连接时间
         await DataRepository.updateServer(this.server.id, {
           status: 'online',
           lastConnected: Date.now()
         });
       }
     } catch (e) {
-      this.terminalLines = [...this.terminalLines, `连接失败: ${JSON.stringify(e)}`];
-      this.connected = false;
+      state.lines = [...state.lines, `连接失败: ${JSON.stringify(e)}`];
+      state.session.connected = false;
     } finally {
-      this.isLoading = false;
+      state.isLoading = false;
     }
   }
 
   // 发送命令
-  private async sendCommand(cmd: string): Promise<void> {
+  private async sendCommand(cmd: string, state: SessionState): Promise<void> {
     if (!cmd.trim() || !this.server) return;
 
-    // 显示输入的命令
-    const cmdLine = `${this.prompt}${cmd}`;
-    this.terminalLines = [...this.terminalLines, cmdLine];
-    this.cmdInput = '';
+    const cmdLine = `${state.prompt}${cmd}`;
+    state.lines = [...state.lines, cmdLine];
+    state.cmdInput = '';
+    state.session.history.push(cmd);
 
-    // 如果未连接，先连接
-    if (!this.connected) {
-      await this.connectServer();
-      if (!this.connected) return;
+    if (!state.session.connected) {
+      await this.connectActiveSession();
+      if (!state.session.connected) return;
     }
 
     try {
       const output = await SshService.exec(this.server, cmd);
-
-      // 解析输出并显示
       if (output.trim()) {
-        const lines = output.split('\n').filter((l: string) => l.trim() !== '');
-        this.terminalLines = [...this.terminalLines, ...lines];
+        const outputLines = output.split('\n').filter((l: string) => l.trim() !== '');
+        state.lines = [...state.lines, ...outputLines];
       }
-
-      // 添加新的提示符
-      this.terminalLines = [...this.terminalLines, this.prompt];
+      state.lines = [...state.lines, state.prompt];
     } catch (e) {
-      this.terminalLines = [...this.terminalLines, `错误: ${JSON.stringify(e)}`, this.prompt];
+      state.lines = [...state.lines, `错误: ${JSON.stringify(e)}`, state.prompt];
     }
   }
 
-  @Builder actionsBuilder() {
-    Button('重连')
-      .fontSize(12)
-      .fontColor(this.connected ? AppTheme.textSecondary : AppTheme.bgBase)
-      .backgroundColor(this.connected ? AppTheme.bgSurface2 : AppTheme.primary)
-      .borderRadius(6)
-      .height(30)
-      .padding({ left: 12, right: 12 })
-      .onClick(() => {
-        this.connectServer();
-      })
+  // 重连
+  private async reconnect(state: SessionState): Promise<void> {
+    state.isReconnecting = true;
+    try {
+      await this.connectActiveSession();
+    } finally {
+      state.isReconnecting = false;
+    }
   }
 
-  // 快捷命令标签
-  @Builder quickCmdTag(cmd: string) {
-    Text(cmd)
-      .fontSize(11)
-      .fontColor(AppTheme.textSecondary)
-      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-      .borderRadius(6)
-      .backgroundColor(AppTheme.bgSurface2)
-      .fontFamily(AppTheme.fontMono)
-      .onClick(() => {
-        this.sendCommand(cmd);
-      })
-  }
-
-  // 判断是否为命令提示符行
-  private isPromptLine(line: string): boolean {
-    return line.includes('root@') || line.includes('#') && !line.includes('错误') && !line.includes('失败') && !line.includes('Error');
-  }
-
-  private isErrorLine(line: string): boolean {
-    return line.includes('错误') || line.includes('失败') || line.includes('Error') || line.includes('error');
+  // 终端尺寸变化
+  private onTerminalResize(cols: number, rows: number): void {
+    const state = this.activeSession;
+    if (state?.engine) {
+      try {
+        // AgentEngine 支持 resizeTerminal，DirectEngine 不支持
+        state.engine.resizeTerminal?.(cols, rows);
+      } catch (e) {
+        // 忽略
+      }
+    }
   }
 
   build() {
     Column() {
-      TopBar({ title: this.serverName, subtitle: this.connected ? `${this.serverHost} · 已连接` : '未连接' }) {
-        this.actionsBuilder()
-      }
-
-      // 终端内容区
-      Scroll() {
-        Column({ space: 0 }) {
-          if (this.isLoading) {
-            Text('加载中...')
-              .fontSize(14)
-              .fontColor('#00D9A3')
-              .fontFamily(AppTheme.fontMono)
-              .width('100%')
-              .textAlign(TextAlign.Center)
-              .padding({ top: 40 })
-          } else {
-            ForEach(this.terminalLines, (line: string) => {
-              Text(line)
-                .fontSize(12)
-                .fontFamily(AppTheme.fontMono)
-                .fontColor(this.isErrorLine(line) ? '#EF4444' : (this.isPromptLine(line) ? '#00FF88' : '#00D9A3'))
-                .width('100%')
-            }, (line: string, idx: number) => `${idx}-${line}`)
-          }
-        }
-        .width('100%')
-        .padding(this.isSm ? 10 : 12)
-      }
-      .layoutWeight(1)
-      .backgroundColor('#000000')
-      .scrollBar(BarState.Auto)
-      .align(Alignment.Top)
-
-      // 快捷命令栏
-      Scroll() {
+      TopBar({
+        title: this.serverName,
+        subtitle: this.activeSession?.session.connected
+          ? `${this.serverHost} · 已连接`
+          : '未连接'
+      }) {
         Row({ space: 8 }) {
-          ForEach(this.quickCmds, (cmd: string) => {
-            this.quickCmdTag(cmd)
-          }, (cmd: string) => cmd)
+          Button('重连')
+            .fontSize(12)
+            .fontColor(this.activeSession?.session.connected ? AppTheme.textSecondary : AppTheme.bgBase)
+            .backgroundColor(this.activeSession?.session.connected ? AppTheme.bgSurface2 : AppTheme.primary)
+            .borderRadius(6)
+            .height(30)
+            .padding({ left: 12, right: 12 })
+            .onClick(() => {
+              const s = this.activeSession;
+              if (s) this.reconnect(s);
+            })
+          Button('+ 新会话')
+            .fontSize(12)
+            .fontColor(AppTheme.textSecondary)
+            .backgroundColor(AppTheme.bgSurface2)
+            .borderRadius(6)
+            .height(30)
+            .padding({ left: 12, right: 12 })
+            .onClick(() => {
+              // 弹出服务器选择器，让用户选择连接到哪个服务器
+              this.showServerPicker();
+            })
         }
-        .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
       }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .width('100%')
-      .backgroundColor(AppTheme.bgSurface)
 
-      // 底部输入栏
-      Row({ space: 8 }) {
-        TextInput({ placeholder: '输入命令...', text: $$this.cmdInput })
-          .fontSize(12)
-          .fontColor(AppTheme.textPrimary)
-          .fontFamily(AppTheme.fontMono)
-          .backgroundColor(AppTheme.bgSurface2)
-          .borderRadius(6)
-          .height(32)
-          .layoutWeight(1)
-          .onSubmit(() => {
-            this.sendCommand(this.cmdInput);
-          })
-        Button('发送')
-          .fontSize(12)
-          .fontColor(AppTheme.bgBase)
-          .backgroundColor(AppTheme.primary)
-          .borderRadius(6)
-          .height(32)
-          .padding({ left: 16, right: 16 })
-          .onClick(() => {
-            this.sendCommand(this.cmdInput);
-          })
+      // 会话标签栏
+      if (this.sessions.length > 1) {
+        Scroll() {
+          Row({ space: 0 }) {
+            ForEach(this.sessions, (state: SessionState, index: number) => {
+              Row({ space: 4 }) {
+                Text(state.session.serverName)
+                  .fontSize(12)
+                  .fontFamily(AppTheme.fontMono)
+                  .fontColor(index === this.activeIndex ? AppTheme.primary : AppTheme.textSecondary)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .constraintSize({ maxWidth: 100 })
+                // 连接状态点
+                Circle({ width: 6, height: 6 })
+                  .fill(state.session.connected ? AppTheme.success : AppTheme.textTertiary)
+                Button({ type: ButtonType.Circle }) {
+                  Text('×')
+                    .fontSize(12)
+                    .fontColor(AppTheme.textTertiary)
+                }
+                .width(16)
+                .height(16)
+                .backgroundColor('transparent')
+                .onClick(() => this.closeSession(index))
+              }
+              .padding({ left: 10, right: 6, top: 6, bottom: 6 })
+              .borderRadius(6)
+              .backgroundColor(index === this.activeIndex ? AppTheme.bgElevated : AppTheme.bgSurface)
+              .margin({ right: 6 })
+              .onClick(() => { this.activeIndex = index; })
+            }, (state: SessionState, idx: number) => state.session.id)
+          }
+          .padding({ left: 12, right: 12 })
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .width('100%')
+        .backgroundColor(AppTheme.bgSurface)
       }
-      .width('100%')
-      .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
-      .backgroundColor(AppTheme.bgSurface)
+
+      // 终端视图
+      if (this.activeSession) {
+        TerminalView({
+          lines: this.activeSession.lines,
+          prompt: this.activeSession.prompt,
+          isConnected: this.activeSession.session.connected,
+          isReconnecting: this.activeSession.isReconnecting,
+          session: this.activeSession.session,
+          cmdInput: $cmdInput,
+          isLoading: this.activeSession.isLoading,
+          quickCmds: this.quickCmds,
+          onSendCommand: (cmd: string) => {
+            const s = this.activeSession;
+            if (s) this.sendCommand(cmd, s);
+          },
+          onResize: (cols: number, rows: number) => {
+            this.onTerminalResize(cols, rows);
+          },
+          onReconnect: () => {
+            const s = this.activeSession;
+            if (s) this.reconnect(s);
+          }
+        })
+      }
     }
     .layoutWeight(1)
     .height('100%')

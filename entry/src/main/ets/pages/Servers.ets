@@ -14,6 +14,7 @@ import { Server, Stats } from '../model/Models';
 export struct ServersPage {
   @State currentGroup: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageProp('serversDirty') @Watch('onServersDirty') serversDirty: number = 0;
   @State loading: boolean = true;
   @State stats: Stats = { total: 0, online: 0, warning: 0, offline: 0, alerts: 0, pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0 };
   @State servers: Server[] = [];
@@ -38,6 +39,11 @@ export struct ServersPage {
   }
 
   refresh(): void {
+    this.loadData();
+  }
+
+  // 服务器数据变更（添加/编辑/删除后）自动刷新
+  private onServersDirty(): void {
     this.loadData();
   }
 
@@ -97,6 +103,100 @@ export struct ServersPage {
     };
 
     promptAction.showToast({ message: ok ? `${s.name} 连接成功` : `${s.name} 无法连接` });
+  }
+
+  // 一键重连：从加密存储加载凭据，直接连接并跳转终端
+  private async quickReconnect(s: Server): Promise<void> {
+    promptAction.showToast({ message: `正在连接 ${s.name}...` });
+    try {
+      // hydrate 凭据后连接
+      const hydrated = await SshService.hydrateCredentials(s);
+      const ok = await SshService.testConnection(hydrated);
+      if (ok) {
+        // 更新状态和最后连接时间
+        const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
+        const updated: Server[] = this.servers.map((item: Server) => {
+          if (item.id === s.id) {
+            const newServer: Server = {
+              id: item.id,
+              name: item.name,
+              host: item.host,
+              port: item.port,
+              username: item.username,
+              authType: item.authType,
+              connectionMode: item.connectionMode,
+              agentToken: item.agentToken,
+              privateKeyPath: item.privateKeyPath,
+              group: item.group,
+              tags: item.tags,
+              os: item.os,
+              status: status,
+              metrics: item.metrics,
+              lastConnected: Date.now(),
+              createdAt: item.createdAt
+            };
+            return newServer;
+          }
+          return item;
+        });
+        this.servers = updated;
+        await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
+        promptAction.showToast({ message: `${s.name} 连接成功，跳转到终端` });
+        router.pushUrl({ url: 'pages/Terminal', params: { serverId: s.id } });
+      } else {
+        promptAction.showToast({ message: `${s.name} 无法连接` });
+      }
+    } catch (e) {
+      promptAction.showToast({ message: `连接失败: ${JSON.stringify(e)}` });
+    }
+  }
+
+  // 删除服务器（含二次确认）
+  private confirmDeleteServer(s: Server): void {
+    AlertDialog.show({
+      title: '确认删除',
+      message: `确定要删除服务器 "${s.name}" (${s.host}) 吗？此操作不可撤销。`,
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      primaryButton: {
+        value: '取消',
+        action: () => {}
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: AppTheme.danger,
+        action: () => {
+          this.deleteServer(s);
+        }
+      }
+    });
+  }
+
+  private async deleteServer(s: Server): Promise<void> {
+    try {
+      await DataRepository.deleteServer(s.id);
+      promptAction.showToast({ message: `${s.name} 已删除` });
+      this.servers = this.servers.filter((item: Server) => item.id !== s.id);
+      // 整体赋值 stats 以触发 @State UI 更新
+      const onlineCount = this.servers.filter(i => i.status === 'online').length;
+      const offlineCount = this.servers.filter(i => i.status === 'offline').length;
+      this.stats = {
+        total: this.servers.length,
+        online: onlineCount,
+        warning: this.stats.warning,
+        offline: offlineCount,
+        alerts: this.stats.alerts,
+        pveNodes: this.stats.pveNodes,
+        vmTotal: this.stats.vmTotal,
+        vmRunning: this.stats.vmRunning,
+        vmStopped: this.stats.vmStopped,
+        ctTotal: this.stats.ctTotal,
+        runningTasks: this.stats.runningTasks
+      };
+      AppStorage.setOrCreate('serversDirty', Date.now());
+    } catch (e) {
+      promptAction.showToast({ message: '删除失败，请重试' });
+    }
   }
 
   // 批量检测所有服务器状态
@@ -193,7 +293,7 @@ export struct ServersPage {
         .height(30)
         .padding({ left: 12, right: 12 })
         .onClick(() => {
-          promptAction.showToast({ message: '添加服务器功能开发中' });
+          router.pushUrl({ url: 'pages/ServerForm' });
         })
     }
   }
@@ -308,13 +408,13 @@ export struct ServersPage {
       }
       .width('100%')
 
-      // 底部行：最后连接时间 + 连接 + 终端 + 详情
+      // 底部行：最后连接时间 + 一键重连 + 终端 + 编辑 + 删除
       Row() {
         Text(`最后连接 ${this.lastConnectText(s)}`)
           .fontSize(10)
           .fontColor(AppTheme.textTertiary)
           .layoutWeight(1)
-        Button('连接')
+        Button('一键重连')
           .fontSize(11)
           .fontColor(AppTheme.bgBase)
           .backgroundColor(AppTheme.primary)
@@ -323,13 +423,16 @@ export struct ServersPage {
           .padding({ left: 10, right: 10 })
           .margin({ right: 6 })
           .onClick(() => {
-            this.testServerConnection(s);
+            this.quickReconnect(s);
           })
         this.secondaryBtn('终端', () => {
           router.pushUrl({ url: 'pages/Terminal', params: { serverId: s.id } }).catch(() => {});
         })
-        this.secondaryBtn('详情', () => {
-          router.pushUrl({ url: 'pages/ServerDetail', params: { serverId: s.id } }).catch(() => {});
+        this.secondaryBtn('编辑', () => {
+          router.pushUrl({ url: 'pages/ServerForm', params: { serverId: s.id } }).catch(() => {});
+        })
+        this.secondaryBtn('删除', () => {
+          this.confirmDeleteServer(s);
         })
       }
       .width('100%')
@@ -375,6 +478,40 @@ export struct ServersPage {
               }, (g: string) => g)
             }
             .width('100%')
+
+            // 最近连接（按 lastConnected 排序，取前 5 台）
+            if (this.servers.filter((s: Server) => s.lastConnected && s.lastConnected > 0).length > 0) {
+              Column({ space: 8 }) {
+                Text('最近连接')
+                  .fontSize(12)
+                  .fontColor(AppTheme.textSecondary)
+                  .fontWeight(FontWeight.Bold)
+                Row({ space: 8 }) {
+                  ForEach(
+                    [...this.servers]
+                      .filter((s: Server) => s.lastConnected && s.lastConnected > 0)
+                      .sort((a: Server, b: Server) => (b.lastConnected || 0) - (a.lastConnected || 0))
+                      .slice(0, 5),
+                    (s: Server) => {
+                      Text(s.name)
+                        .fontSize(11)
+                        .fontColor(AppTheme.primary)
+                        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                        .borderRadius(6)
+                        .backgroundColor(AppTheme.primaryDim)
+                        .fontFamily(AppTheme.fontMono)
+                        .onClick(() => {
+                          this.quickReconnect(s);
+                        })
+                    },
+                    (s: Server) => `recent-${s.id}`
+                  )
+                }
+                .width('100%')
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
 
             // 服务器列表
             if (this.filteredServers().length === 0) {

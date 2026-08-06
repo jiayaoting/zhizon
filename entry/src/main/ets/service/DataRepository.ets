@@ -1,5 +1,5 @@
 // 智子 - 数据仓库（基于数据库持久化）
-import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, FileItem, Stats } from '../model/Models';
+import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, Stats } from '../model/Models';
 import { DatabaseHelper } from './DatabaseHelper';
 import { PveService } from './PveService';
 
@@ -49,6 +49,29 @@ export class DataRepository {
 
   static async deleteServer(id: string): Promise<void> {
     await DatabaseHelper.deleteServer(id);
+  }
+
+  // ========== 凭据管理（加密存储） ==========
+
+  static async saveCredentials(id: string, password?: string, keyContent?: string): Promise<void> {
+    await DatabaseHelper.saveCredentials(id, password, keyContent);
+  }
+
+  static async getPassword(id: string): Promise<string> {
+    return await DatabaseHelper.getPassword(id);
+  }
+
+  static async getKeyContent(id: string): Promise<string> {
+    return await DatabaseHelper.getKeyContent(id);
+  }
+
+  // ========== 连接历史（按最近连接排序） ==========
+
+  static async getConnectionHistory(limit: number = 5): Promise<Server[]> {
+    const servers = await DatabaseHelper.getServers();
+    const connected = servers.filter(s => (s.lastConnected ?? 0) > 0);
+    connected.sort((a, b) => (b.lastConnected ?? 0) - (a.lastConnected ?? 0));
+    return connected.slice(0, limit);
   }
 
   // ========== PVE 集群管理 ==========
@@ -102,10 +125,6 @@ export class DataRepository {
   }
 
   // ========== 文件管理 ==========
-
-  static async getFiles(): Promise<FileItem[]> {
-    return await DatabaseHelper.getFiles();
-  }
 
   // ========== 设置 ==========
 

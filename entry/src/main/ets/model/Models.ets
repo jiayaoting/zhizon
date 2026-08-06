@@ -17,6 +17,9 @@ export interface Server {
   connectionMode: ConnectionMode;
   agentToken?: string;
   privateKeyPath?: string;
+  // 内存态凭据（明文仅存在于运行时，持久化时加密）
+  password?: string;
+  privateKeyContent?: string;
   group?: string;
   tags: string[];
   os?: string;
@@ -24,6 +27,29 @@ export interface Server {
   metrics: ServerMetrics;
   lastConnected?: number;
   createdAt: number;
+}
+
+// 连接事件（直连/Agent 引擎统一对外分发）
+export interface ConnEvent {
+  type: 'connected' | 'disconnected' | 'error' | 'reconnecting';
+  message: string;
+}
+
+// 传输进度
+export interface TransferProgress {
+  transferred: number;
+  total: number;
+  percent: number;
+}
+
+// ANSI 渲染段
+export interface AnsiSegment {
+  text: string;
+  fg?: string;
+  bg?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
 }
 
 export interface ServerMetrics {
@@ -173,10 +199,15 @@ export interface Stats {
   runningTasks: number;
 }
 
-// 终端会话
+// 终端会话（多会话容器中的会话模型）
 export interface TerminalSession {
   id: string;
+  serverId: string;
   serverName: string;
+  host: string;
+  username: string;
   cwd: string;
   history: string[];
+  connected: boolean;
+  reconnecting: boolean;
 }
