@@ -12,6 +12,7 @@ import { CommandsPage } from './Commands';
 import { BatchPage } from './Batch';
 import { AlertsPage } from './Alerts';
 import { SettingsPage } from './Settings';
+import { GamesPage } from './Games';
 
 const BP_SM = 600;
 
@@ -43,6 +44,7 @@ struct AppShell {
     this.allNavItems[5], // 快捷命令
     this.allNavItems[6], // 批量操作
     this.allNavItems[8], // 设置
+    this.allNavItems[9], // 游戏中心
   ];
 
   aboutToAppear() {
@@ -89,6 +91,8 @@ struct AppShell {
       AlertsPage()
     } else if (this.currentPage === 'Settings') {
       SettingsPage()
+    } else if (this.currentPage === 'Games') {
+      GamesPage()
     }
   }
 

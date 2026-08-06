@@ -1,0 +1,520 @@
+// 智子 - 2048
+import { router } from '@kit.ArkUI';
+import { AppTheme } from '../common/Theme';
+import { TopBar } from '../components/TopBar';
+
+const BOARD_SIZE: number = 4;
+const WIN_SCORE: number = 2048;
+
+interface TileStyle {
+  bg: string;
+  fg: string;
+  fontSize: number;
+}
+
+// 瓦片颜色映射
+function tileStyle(value: number): TileStyle {
+  switch (value) {
+    case 2:    return { bg: '#1E293B', fg: AppTheme.textPrimary, fontSize: 24 };
+    case 4:    return { bg: '#334155', fg: AppTheme.textPrimary, fontSize: 24 };
+    case 8:    return { bg: '#3B82F6', fg: '#FFFFFF', fontSize: 24 };
+    case 16:   return { bg: '#2563EB', fg: '#FFFFFF', fontSize: 24 };
+    case 32:   return { bg: '#8B5CF6', fg: '#FFFFFF', fontSize: 24 };
+    case 64:   return { bg: '#7C3AED', fg: '#FFFFFF', fontSize: 24 };
+    case 128:  return { bg: AppTheme.warning, fg: '#FFFFFF', fontSize: 22 };
+    case 256:  return { bg: '#F59E0B', fg: '#FFFFFF', fontSize: 22 };
+    case 512:  return { bg: AppTheme.danger, fg: '#FFFFFF', fontSize: 22 };
+    case 1024: return { bg: '#EF4444', fg: '#FFFFFF', fontSize: 20 };
+    case 2048: return { bg: AppTheme.primary, fg: '#0A0E1A', fontSize: 20 };
+    default:   return { bg: AppTheme.bgSurface2, fg: AppTheme.textSecondary, fontSize: 18 };
+  }
+}
+
+@Entry
+@Component
+export struct Game2048Page {
+  @State board: number[][] = [];
+  @State score: number = 0;
+  @State bestScore: number = 0;
+  @State isGameOver: boolean = false;
+  @State isWin: boolean = false;
+  @State hasWonBefore: boolean = false;
+  @State moveAnimating: boolean = false;
+  @StorageLink('isSm') isSm: boolean = false;
+
+  private titleText: string = '2048';
+
+  // ---- 初始化 ----
+  private initBoard(): void {
+    const b: number[][] = [];
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      const row: number[] = [0, 0, 0, 0];
+      b.push(row);
+    }
+    this.board = b;
+  }
+
+  private addRandomTile(): void {
+    const empty: Array<[number, number]> = [];
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        if (this.board[r][c] === 0) empty.push([r, c]);
+      }
+    }
+    if (empty.length === 0) return;
+    const idx: number = Math.floor(Math.random() * empty.length);
+    const pos: [number, number] = empty[idx];
+    const value: number = Math.random() < 0.9 ? 2 : 4;
+
+    const newBoard: number[][] = [];
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      const row: number[] = [];
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        row.push(this.board[r][c]);
+      }
+      newBoard.push(row);
+    }
+    newBoard[pos[0]][pos[1]] = value;
+    this.board = newBoard;
+  }
+
+  // ---- 核心滑动逻辑 ----
+  private slideRow(row: number[]): number[] {
+    // 去掉0
+    const filtered: number[] = [];
+    for (let i: number = 0; i < row.length; i++) {
+      if (row[i] !== 0) filtered.push(row[i]);
+    }
+    // 合并
+    const merged: number[] = [];
+    let i: number = 0;
+    while (i < filtered.length) {
+      if (i + 1 < filtered.length && filtered[i] === filtered[i + 1]) {
+        const sum: number = filtered[i] * 2;
+        merged.push(sum);
+        this.score += sum;
+        i += 2;
+      } else {
+        merged.push(filtered[i]);
+        i++;
+      }
+    }
+    // 补0
+    while (merged.length < BOARD_SIZE) {
+      merged.push(0);
+    }
+    return merged;
+  }
+
+  private boardEquals(a: number[][], b: number[][]): boolean {
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        if (a[r][c] !== b[r][c]) return false;
+      }
+    }
+    return true;
+  }
+
+  private copyBoard(): number[][] {
+    const copy: number[][] = [];
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      const row: number[] = [];
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        row.push(this.board[r][c]);
+      }
+      copy.push(row);
+    }
+    return copy;
+  }
+
+  private move(direction: string): void {
+    if (this.isGameOver || this.moveAnimating) return;
+
+    const oldBoard: number[][] = this.copyBoard();
+    let newBoard: number[][] = [];
+
+    if (direction === 'left') {
+      for (let r: number = 0; r < BOARD_SIZE; r++) {
+        const row: number[] = [];
+        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(this.board[r][c]);
+        const slid: number[] = this.slideRow(row);
+        newBoard.push(slid);
+      }
+    } else if (direction === 'right') {
+      for (let r: number = 0; r < BOARD_SIZE; r++) {
+        const row: number[] = [];
+        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(this.board[r][c]);
+        const reversed: number[] = [];
+        for (let c: number = BOARD_SIZE - 1; c >= 0; c--) reversed.push(row[c]);
+        const slid: number[] = this.slideRow(reversed);
+        const back: number[] = [];
+        for (let c: number = BOARD_SIZE - 1; c >= 0; c--) back.push(slid[c]);
+        newBoard.push(back);
+      }
+    } else if (direction === 'up') {
+      for (let r: number = 0; r < BOARD_SIZE; r++) {
+        const row: number[] = [0, 0, 0, 0];
+        newBoard.push(row);
+      }
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        const col: number[] = [];
+        for (let r: number = 0; r < BOARD_SIZE; r++) col.push(this.board[r][c]);
+        const slid: number[] = this.slideRow(col);
+        for (let r: number = 0; r < BOARD_SIZE; r++) newBoard[r][c] = slid[r];
+      }
+    } else if (direction === 'down') {
+      for (let r: number = 0; r < BOARD_SIZE; r++) {
+        const row: number[] = [0, 0, 0, 0];
+        newBoard.push(row);
+      }
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        const col: number[] = [];
+        for (let r: number = 0; r < BOARD_SIZE; r++) col.push(this.board[r][c]);
+        const reversed: number[] = [];
+        for (let i: number = col.length - 1; i >= 0; i--) reversed.push(col[i]);
+        const slid: number[] = this.slideRow(reversed);
+        const back: number[] = [];
+        for (let i: number = slid.length - 1; i >= 0; i--) back.push(slid[i]);
+        for (let r: number = 0; r < BOARD_SIZE; r++) newBoard[r][c] = back[r];
+      }
+    }
+
+    if (!this.boardEquals(oldBoard, newBoard)) {
+      this.board = newBoard;
+      this.addRandomTile();
+      this.checkGameOver();
+    }
+  }
+
+  // ---- 胜负判定 ----
+  private checkGameOver(): void {
+    // 检查是否有2048
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        if (this.board[r][c] >= WIN_SCORE && !this.hasWonBefore) {
+          this.isWin = true;
+          this.hasWonBefore = true;
+          return;
+        }
+      }
+    }
+
+    // 检查是否还有空位
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        if (this.board[r][c] === 0) return;
+      }
+    }
+
+    // 检查是否还能合并
+    for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let c: number = 0; c < BOARD_SIZE - 1; c++) {
+        if (this.board[r][c] === this.board[r][c + 1]) return;
+      }
+    }
+    for (let c: number = 0; c < BOARD_SIZE; c++) {
+      for (let r: number = 0; r < BOARD_SIZE - 1; r++) {
+        if (this.board[r][c] === this.board[r + 1][c]) return;
+      }
+    }
+
+    this.isGameOver = true;
+  }
+
+  // ---- 游戏控制 ----
+  restartGame(): void {
+    this.initBoard();
+    this.score = 0;
+    this.isGameOver = false;
+    this.isWin = false;
+    this.hasWonBefore = false;
+    this.addRandomTile();
+    this.addRandomTile();
+  }
+
+  continueGame(): void {
+    this.isWin = false;
+  }
+
+  // ---- 瓦片渲染 ----
+  @Builder
+  tileCell(value: number) {
+    Stack() {
+      Text(value > 0 ? value.toString() : '')
+        .fontSize(tileStyle(value).fontSize)
+        .fontColor(tileStyle(value).fg)
+        .fontWeight(FontWeight.Bold)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(tileStyle(value).bg)
+    .borderRadius(8)
+    .alignContent(Alignment.Center)
+  }
+
+  // ---- 棋盘渲染 ----
+  @Builder
+  gameBoard() {
+    Column({ space: 8 }) {
+      ForEach(this.board, (row: number[], rowIdx: number) => {
+        Row({ space: 8 }) {
+          ForEach(row, (cell: number, colIdx: number) => {
+            Row()
+              .layoutWeight(1)
+              .aspectRatio(1)
+              .borderRadius(8)
+              .backgroundColor(AppTheme.bgSurface2)
+              .overlay(this.tileCell(cell))
+          }, (colIdx: number) => colIdx.toString())
+        }
+        .width('100%')
+      }, (rowIdx: number) => rowIdx.toString())
+    }
+    .width('100%')
+    .padding(8)
+    .backgroundColor(AppTheme.bgSurface)
+    .borderRadius(12)
+    .border({ width: 1, color: AppTheme.borderSubtle })
+    .gesture(
+      PanGesture({ fingers: 1, direction: PanDirection.All, distance: 20 })
+        .onActionEnd((event: GestureEvent) => {
+          if (this.isGameOver || this.isWin) return;
+          const ox: number = event.offsetX;
+          const oy: number = event.offsetY;
+          const absX: number = Math.abs(ox);
+          const absY: number = Math.abs(oy);
+          if (absX > absY) {
+            if (ox > 0) this.move('right');
+            else this.move('left');
+          } else {
+            if (oy > 0) this.move('down');
+            else this.move('up');
+          }
+        })
+    )
+  }
+
+  // ---- 信息面板 ----
+  @Builder
+  scoreBoard() {
+    Row({ space: 12 }) {
+      // 当前分数
+      Column({ space: 2 }) {
+        Text('分数')
+          .fontSize(AppTheme.fsXs)
+          .fontColor(AppTheme.textTertiary)
+        Text(this.score.toString())
+          .fontSize(AppTheme.fs2xl)
+          .fontColor(AppTheme.primary)
+          .fontWeight(FontWeight.Bold)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+      .padding(12)
+      .backgroundColor(AppTheme.bgSurface)
+      .borderRadius(10)
+      .border({ width: 1, color: AppTheme.borderSubtle })
+
+      // 最佳分数
+      Column({ space: 2 }) {
+        Text('最佳')
+          .fontSize(AppTheme.fsXs)
+          .fontColor(AppTheme.textTertiary)
+        Text(this.bestScore.toString())
+          .fontSize(AppTheme.fs2xl)
+          .fontColor(AppTheme.warning)
+          .fontWeight(FontWeight.Bold)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+      .padding(12)
+      .backgroundColor(AppTheme.bgSurface)
+      .borderRadius(10)
+      .border({ width: 1, color: AppTheme.borderSubtle })
+    }
+    .width('100%')
+  }
+
+  // ---- 胜利弹窗 ----
+  @Builder
+  winOverlay() {
+    Stack() {
+      Column({ space: 16 }) {
+        Text('🎉 恭喜！')
+          .fontSize(AppTheme.fs2xl)
+          .fontColor(AppTheme.primary)
+          .fontWeight(FontWeight.Bold)
+        Text('你达到了 2048！')
+          .fontSize(AppTheme.fsMd)
+          .fontColor(AppTheme.textSecondary)
+        Row({ space: 12 }) {
+          Row()
+            .padding({ left: 20, right: 20, top: 10, bottom: 10 })
+            .backgroundColor(AppTheme.bgSurface2)
+            .borderRadius(8)
+            .border({ width: 1, color: AppTheme.borderSubtle })
+            .onClick(() => { this.continueGame(); })
+          Text('继续游戏')
+            .fontSize(AppTheme.fsMd)
+            .fontColor(AppTheme.textSecondary)
+            .fontWeight(FontWeight.Medium)
+
+          Row()
+            .padding({ left: 20, right: 20, top: 10, bottom: 10 })
+            .backgroundColor(AppTheme.primary)
+            .borderRadius(8)
+            .onClick(() => { this.restartGame(); })
+          Text('重新开始')
+            .fontSize(AppTheme.fsMd)
+            .fontColor('#0A0E1A')
+            .fontWeight(FontWeight.Medium)
+        }
+      }
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .position({ x: 0, y: 0 })
+    .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .alignContent(Alignment.Center)
+  }
+
+  // ---- 游戏结束弹窗 ----
+  @Builder
+  gameOverOverlay() {
+    Stack() {
+      Column({ space: 16 }) {
+        Text('游戏结束')
+          .fontSize(AppTheme.fs2xl)
+          .fontColor(AppTheme.danger)
+          .fontWeight(FontWeight.Bold)
+        Text('最终得分: ' + this.score.toString())
+          .fontSize(AppTheme.fsMd)
+          .fontColor(AppTheme.textSecondary)
+        Row()
+          .padding({ left: 24, right: 24, top: 10, bottom: 10 })
+          .backgroundColor(AppTheme.primary)
+          .borderRadius(8)
+          .onClick(() => { this.restartGame(); })
+        Text('重新开始')
+          .fontSize(AppTheme.fsMd)
+          .fontColor('#0A0E1A')
+          .fontWeight(FontWeight.Medium)
+      }
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .position({ x: 0, y: 0 })
+    .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .alignContent(Alignment.Center)
+  }
+
+  // ---- 操作栏 ----
+  @Builder
+  actionsBuilder() {
+    Row({ space: 12 }) {
+      Row() {
+        Text('↺')
+          .fontSize(16)
+          .fontColor(AppTheme.textPrimary)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(AppTheme.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.restartGame(); })
+    }
+  }
+
+  // ---- 生命周期 ----
+  aboutToAppear(): void {
+    const params: Record<string, string> | null = router.getParams() as Record<string, string> | null;
+    if (params !== null && params['title'] !== undefined) {
+      this.titleText = params['title'];
+    }
+    this.restartGame();
+  }
+
+  build() {
+    Column() {
+      TopBar({
+        title: this.titleText,
+        subtitle: '合并数字，达到2048',
+        showBack: true
+      }) {
+        this.actionsBuilder()
+      }
+
+      if (this.isSm) {
+        // 手机端布局
+        Column({ space: 16 }) {
+          this.scoreBoard()
+          Stack() {
+            Column() {
+              this.gameBoard()
+            }
+            if (this.isWin) { this.winOverlay() }
+            if (this.isGameOver) { this.gameOverOverlay() }
+          }
+          .width('100%')
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 16, right: 16 })
+        .justifyContent(FlexAlign.Center)
+      } else {
+        // 平板端布局：棋盘左 + 信息右
+        Row({ space: 20 }) {
+          Column({ space: 16 }) {
+            Stack() {
+              Column() {
+                this.gameBoard()
+              }
+              if (this.isWin) { this.winOverlay() }
+              if (this.isGameOver) { this.gameOverOverlay() }
+            }
+            .width(360)
+          }
+          .alignItems(HorizontalAlign.Center)
+
+          Column({ space: 16 }) {
+            this.scoreBoard()
+            Column({ space: 8 }) {
+              Text('操作提示')
+                .fontSize(AppTheme.fsXs)
+                .fontColor(AppTheme.textTertiary)
+              Column({ space: 6 }) {
+                Text('滑动屏幕 / 方向键按钮')
+                  .fontSize(AppTheme.fsSm)
+                  .fontColor(AppTheme.textSecondary)
+                Text('相同数字会合并相加')
+                  .fontSize(AppTheme.fsSm)
+                  .fontColor(AppTheme.textSecondary)
+                Text('目标：达到 2048！')
+                  .fontSize(AppTheme.fsSm)
+                  .fontColor(AppTheme.primary)
+              }
+              .padding(16)
+              .backgroundColor(AppTheme.bgSurface)
+              .borderRadius(10)
+              .border({ width: 1, color: AppTheme.borderSubtle })
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .layoutWeight(1)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 24, right: 24, top: 8, bottom: 8 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+      }
+    }
+    .layoutWeight(1)
+    .height('100%')
+    .backgroundColor(AppTheme.bgBase)
+  }
+}

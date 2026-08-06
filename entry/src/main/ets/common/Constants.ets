@@ -26,7 +26,8 @@ export class AppConstants {
     { key: 'Commands', label: '快捷命令', icon: '⚡' },
     { key: 'Batch', label: '批量操作', icon: '🔄' },
     { key: 'Alerts', label: '告警中心', icon: '🔔' },
-    { key: 'Settings', label: '设置', icon: '⚙️' }
+    { key: 'Settings', label: '设置', icon: '⚙️' },
+    { key: 'Games', label: '游戏中心', icon: '🎮' }
   ];
 }
 

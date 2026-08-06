@@ -4,6 +4,9 @@
     "pages/ServerDetail",
     "pages/PveNodeDetail",
     "pages/VmDetail",
-    "pages/ServerForm"
+    "pages/ServerForm",
+    "pages/Tetris",
+    "pages/Game2048",
+    "pages/Snake"
   ]
 }
