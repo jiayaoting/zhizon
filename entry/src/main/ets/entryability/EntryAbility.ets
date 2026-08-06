@@ -7,17 +7,10 @@ import { CryptoHelper } from '../common/CryptoHelper';
 const DOMAIN = 0x9201;
 
 export default class EntryAbility extends UIAbility {
+  private initialized: boolean = false;
+
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, 'EntryAbility', '智子应用启动 onCreate');
-    // 串行初始化：先加密再数据库，确保后续任何数据操作时 CryptoHelper 已就绪
-    CryptoHelper.init(this.context).then(() => {
-      hilog.info(DOMAIN, 'EntryAbility', '凭据加密初始化成功');
-      return DatabaseHelper.init(this.context);
-    }).then(() => {
-      hilog.info(DOMAIN, 'EntryAbility', '数据库初始化成功');
-    }).catch((err: Error) => {
-      hilog.error(DOMAIN, 'EntryAbility', '初始化失败: %{public}s', err.message);
-    });
   }
 
   onDestroy(): void {
@@ -25,6 +18,20 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    // 延迟初始化：此时 context 已完全就绪，避免 "build context for init fail"
+    if (!this.initialized) {
+      this.initialized = true;
+      CryptoHelper.init(this.context).then(() => {
+        hilog.info(DOMAIN, 'EntryAbility', '凭据加密初始化成功');
+        return DatabaseHelper.init(this.context);
+      }).then(() => {
+        hilog.info(DOMAIN, 'EntryAbility', '数据库初始化成功');
+      }).catch((err: Error) => {
+        hilog.error(DOMAIN, 'EntryAbility', '初始化失败: %{public}s', err.message);
+        this.initialized = false; // 允许下次重试
+      });
+    }
+
     // 设置深色沉浸式状态栏
     windowStage.getMainWindow().then((win) => {
       win.setWindowLayoutFullScreen(true).catch(() => {});

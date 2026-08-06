@@ -1,4 +1,4 @@
-// 智子 - SSH 服务（双模通信：直连 + Agent）
+﻿// 智子 - SSH 服务（双模通信：直连 + Agent）
 import { http, webSocket } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { fileIo } from '@kit.CoreFileKit';
@@ -25,14 +25,12 @@ export const SSH_ERR_KEY_INVALID = 'SSH_ERR_KEY_INVALID';
 export const AGENT_ERR_UNREACH = 'AGENT_ERR_UNREACH';
 export const AGENT_ERR_TOKEN = 'AGENT_ERR_TOKEN';
 
-// ========== TestResult ==========
+// ========== ServerConfig ==========
 
 export interface TestResult {
   ok: boolean;
   message: string;
 }
-
-// ========== ServerConfig ==========
 
 export interface ServerConfig {
   host: string;
@@ -497,19 +495,23 @@ export class DirectEngine implements SshEngine {
   private terminalPollingTimer: number = -1;
   private keepaliveTimer: number = -1;
 
-  // 等待 callback 触发（原生层在连接成功后进入死循环，Promise 永不 resolve，必须通过 callback 判断结果）
+  // SSH2_START_SUCCESS = 0（callback type=0 表示连接成功）
+  private static readonly SSH2_START_SUCCESS = 0;
+
+  // 基于 callback 的连接等待（不依赖 startSSHClient 的 Promise，原生层死循环永不 resolve）
   // 参考 @ohos/libssh 官方示例 ohos_ssh/entry/src/main/ets/pages/Index.ets
   private static waitForCallback(ssh: libssh, host: string, port: number, keyPath: string, ms: number): Promise<number> {
-    return new Promise<number>((resolve: (value: number) => void, reject: (reason: Error) => void) => {
-      let settled: boolean = false;
-      const timer: number = setTimeout(() => {
+    return new Promise<number>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
         if (!settled) {
           settled = true;
-          reject(new Error(`SSH 连接超时（${ms / 1000}秒）：目标主机不可达或端口被防火墙拦截`));
+          reject(new SshError(SSH_ERR_TIMEOUT,
+            `SSH 连接超时（${ms / 1000}秒）：目标主机不可达或端口被防火墙拦截`));
         }
       }, ms);
 
-      ssh.startSSHClient(host, port, keyPath, (event: number): void => {
+      ssh.startSSHClient(host, port, keyPath, (event: number) => {
         console.info('DirectEngine: startSSHClient callback event:', event);
         if (!settled) {
           settled = true;
@@ -526,22 +528,25 @@ export class DirectEngine implements SshEngine {
     this.shellReady = false;
     try {
       this.ssh = new libssh();
-      const userResult: number = this.ssh.setUser(config.username, config.password || '');
+      // 设置用户名密码
+      const userResult = this.ssh.setUser(config.username, config.password || '');
       console.info('DirectEngine: setUser result:', userResult);
 
-      if (userResult !== 0) {
-        throw new SshError(SSH_ERR_AUTH_FAIL, 'setUser 失败：用户名或密码为空');
-      }
+      // 确定私钥路径（空串表示使用密码认证，底层会先尝试 publickey_auto 再 fallback 到 password）
+      const keyPath = config.authType === 'key' ? (config.privateKeyPath || '') : '';
 
-      const keyPath: string = config.authType === 'key' ? (config.privateKeyPath || '') : '';
+      // startSSHClient 返回 Promise<number>，0 表示成功；15 秒超时兜底
+      const startResult = await DirectEngine.raceTimeout(
+        this.ssh.startSSHClient(config.host, config.port, keyPath,
+          (event: number) => {
+            console.info('DirectEngine: startSSHClient callback event:', event);
+          }),
+        15000);
+      console.info('DirectEngine: startSSHClient result:', startResult);
 
-      // 不 await startSSHClient 的 Promise（原生层死循环永不 resolve），通过 callback 判断结果
-      const connectResult: number = await DirectEngine.waitForCallback(this.ssh, config.host, config.port, keyPath, 15000);
-      console.info('DirectEngine: connectResult:', connectResult);
-
-      if (connectResult !== 0) {
+      if (startResult !== 0) {
         throw new SshError(SSH_ERR_AUTH_FAIL,
-          `SSH 认证失败: ${config.host}:${config.port} (code=${connectResult})`);
+          `SSH 认证失败: ${config.host}:${config.port} (code=${startResult})`);
       }
 
       this.connected = true;
@@ -551,10 +556,8 @@ export class DirectEngine implements SshEngine {
       this.connected = false;
       this.shellReady = false;
       this.stopKeepalive();
-      if (e instanceof SshError) {
-        throw e;
-      }
-      const msg: string = JSON.stringify(e);
+      if (e instanceof SshError) throw e;
+      const msg = JSON.stringify(e);
       if (msg.includes('auth') || msg.includes('password') || msg.includes('key')) {
         throw new SshError(SSH_ERR_AUTH_FAIL, `SSH 认证失败: ${config.host}:${config.port}`);
       }
@@ -874,22 +877,18 @@ export class SshService {
     }
   }
 
-  // 测试连接
-  static async testConnection(server: Server): Promise<boolean> {
-    const result: TestResult = await SshService.testConnectionEx(server);
-    return result.ok;
-  }
-
-  // 测试连接（带详细错误信息）
+  // 测试连接（带超时与详细错误信息）
   static async testConnectionEx(server: Server): Promise<TestResult> {
     let engine: SshEngine | null = null;
     try {
-      const hydrated: Server = await SshService.hydrateCredentials(server);
-      const config: ServerConfig = SshService.toConfig(hydrated);
+      const hydrated = await SshService.hydrateCredentials(server);
+      const config = SshService.toConfig(hydrated);
       engine = SshService.getEngine(server);
-      const ok: boolean = await engine.connect(config);
+      const ok = await SshService.withTimeout(engine.connect(config), 12000,
+        `连接超时（12秒）：无法到达 ${config.host}:${config.port}\n请检查：手机与服务器网络是否互通、SSH 服务是否启动、防火墙是否放行端口`);
       return { ok: ok, message: ok ? '连接成功' : '连接失败，请检查凭据' };
     } catch (e) {
+      // 失败/超时后移除缓存引擎，避免下次复用到卡死的原生连接
       if (engine) {
         SshService.engines.delete(server.id);
         engine.disconnect().catch(() => {});
@@ -900,9 +899,40 @@ export class SshService {
       } else {
         message = `连接异常: ${JSON.stringify(e)}`;
       }
-      console.error('SshService.testConnectionEx failed:', message);
+      console.error('SshService.testConnection failed:', message);
       return { ok: false, message: message };
     }
+  }
+
+  // 测试连接（仅返回布尔值，兼容列表页等调用方）
+  static async testConnection(server: Server): Promise<boolean> {
+    const result = await SshService.testConnectionEx(server);
+    return result.ok;
+  }
+
+  private static withTimeout(promise: Promise<boolean>, ms: number, timeoutMsg: string): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new SshError(SSH_ERR_TIMEOUT, timeoutMsg));
+        }
+      }, ms);
+      promise.then((v: boolean) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(v);
+        }
+      }).catch((e: Error) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(e);
+        }
+      });
+    });
   }
 
   // 执行命令

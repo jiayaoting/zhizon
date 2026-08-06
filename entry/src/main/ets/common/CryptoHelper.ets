@@ -37,28 +37,28 @@ export class CryptoHelper {
     }
   }
 
-  // 加密明文，返回可持久化字符串；失败返回空串
+  // 加密明文，返回可持久化字符串
   static async encrypt(plain: string): Promise<string> {
     if (!plain) return '';
-    try {
-      if (!CryptoHelper.masterKey) throw new Error('CryptoHelper not initialized');
-      const rand = cryptoFramework.createRandom();
-      const ivData = await rand.generateRandom(IV_LEN);
-      const params: cryptoFramework.GcmParamsSpec = {
-        iv: { data: ivData.data },
-        aad: { data: new Uint8Array(0) },
-        authTag: { data: new Uint8Array(0) },
-        algName: 'GCM'
-      };
-      const cipher = cryptoFramework.createCipher(TAG_ALGO);
-      await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, CryptoHelper.masterKey, params);
-      // GCM 组合模式：doFinal 输出 = 密文 + authTag（末尾 16 字节）
-      const out = await cipher.doFinal({ data: CryptoHelper.strToBytes(plain) });
-      return `v1:${CryptoHelper.base64.encodeToStringSync(ivData.data)}:${CryptoHelper.base64.encodeToStringSync(out.data)}`;
-    } catch (e) {
-      console.error('CryptoHelper.encrypt failed:', e);
-      return '';
+    if (!CryptoHelper.masterKey) {
+      throw new Error('CryptoHelper 未初始化，请退出应用后重试');
     }
+    const rand: cryptoFramework.Random = cryptoFramework.createRandom();
+    const ivBlob: cryptoFramework.DataBlob = await rand.generateRandom(IV_LEN);
+    const iv: Uint8Array = new Uint8Array(ivBlob.data);
+    const params: cryptoFramework.GcmParamsSpec = {
+      iv: { data: iv },
+      aad: { data: new Uint8Array(0) },
+      authTag: { data: new Uint8Array(0) },
+      algName: 'GcmParamsSpec'
+    };
+    const cipher: cryptoFramework.Cipher = cryptoFramework.createCipher(TAG_ALGO);
+    await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, CryptoHelper.masterKey, params);
+    const plainBlob: cryptoFramework.DataBlob = { data: CryptoHelper.strToBytes(plain) };
+    const out: cryptoFramework.DataBlob = await cipher.doFinal(plainBlob);
+    const ivB64: string = CryptoHelper.base64.encodeToStringSync(iv);
+    const outB64: string = CryptoHelper.base64.encodeToStringSync(out.data);
+    return `v1:${ivB64}:${outB64}`;
   }
 
   // 解密，失败返回空串
@@ -66,23 +66,23 @@ export class CryptoHelper {
     if (!token) return '';
     try {
       if (!CryptoHelper.masterKey) throw new Error('CryptoHelper not initialized');
-      const parts = token.split(':');
+      const parts: string[] = token.split(':');
       if (parts[0] !== 'v1') throw new Error('Bad cipher format');
       let iv: Uint8Array;
       let ciphertext: Uint8Array;
       let tag: Uint8Array;
       if (parts.length === 3) {
         // v2 组合模式：payload = 密文 + authTag（末尾 16 字节）
-        iv = CryptoHelper.base64.decodeSync(parts[1]);
-        const payload = CryptoHelper.base64.decodeSync(parts[2]);
+        iv = new Uint8Array(CryptoHelper.base64.decodeSync(parts[1]));
+        const payload: Uint8Array = new Uint8Array(CryptoHelper.base64.decodeSync(parts[2]));
         if (payload.length < TAG_LEN) throw new Error('Bad cipher length');
         ciphertext = payload.subarray(0, payload.length - TAG_LEN);
         tag = payload.subarray(payload.length - TAG_LEN);
       } else if (parts.length === 4) {
         // 兼容旧格式：iv / tag / data 分离
-        iv = CryptoHelper.base64.decodeSync(parts[1]);
-        tag = CryptoHelper.base64.decodeSync(parts[2]);
-        ciphertext = CryptoHelper.base64.decodeSync(parts[3]);
+        iv = new Uint8Array(CryptoHelper.base64.decodeSync(parts[1]));
+        tag = new Uint8Array(CryptoHelper.base64.decodeSync(parts[2]));
+        ciphertext = new Uint8Array(CryptoHelper.base64.decodeSync(parts[3]));
       } else {
         throw new Error('Bad cipher format');
       }
@@ -90,14 +90,14 @@ export class CryptoHelper {
         iv: { data: iv },
         aad: { data: new Uint8Array(0) },
         authTag: { data: tag },
-        algName: 'GCM'
+        algName: 'GcmParamsSpec'
       };
-      const cipher = cryptoFramework.createCipher(TAG_ALGO);
+      const cipher: cryptoFramework.Cipher = cryptoFramework.createCipher(TAG_ALGO);
       await cipher.init(cryptoFramework.CryptoMode.DECRYPT_MODE, CryptoHelper.masterKey, params);
-      const out = await cipher.doFinal({ data: ciphertext });
+      const out: cryptoFramework.DataBlob = await cipher.doFinal({ data: ciphertext });
       return CryptoHelper.bytesToStr(out.data);
     } catch (e) {
-      console.error('CryptoHelper.decrypt failed:', e);
+      console.error('CryptoHelper.decrypt failed:', JSON.stringify(e));
       return '';
     }
   }

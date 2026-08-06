@@ -228,16 +228,12 @@ export class DatabaseHelper {
       agent_token: server.agentToken || 'zhizon-agent',
       private_key_path: server.privateKeyPath || ''
     };
-    // 加密凭据落库（明文不持久化）；加密失败则抛异常避免泄露
+    // 加密凭据落库（明文不持久化）
     if (server.password) {
-      const enc = await CryptoHelper.encrypt(server.password);
-      if (!enc) throw new Error('凭据加密失败，请稍后重试');
-      valueBucket['password_enc'] = enc;
+      valueBucket['password_enc'] = await CryptoHelper.encrypt(server.password);
     }
     if (server.privateKeyContent) {
-      const enc = await CryptoHelper.encrypt(server.privateKeyContent);
-      if (!enc) throw new Error('凭据加密失败，请稍后重试');
-      valueBucket['key_content'] = enc;
+      valueBucket['key_content'] = await CryptoHelper.encrypt(server.privateKeyContent);
     }
     await store.insert('servers', valueBucket);
   }
@@ -275,18 +271,14 @@ export class DatabaseHelper {
     const bucket: relationalStore.ValuesBucket = {};
     if (password !== undefined) {
       if (password.length > 0) {
-        const enc = await CryptoHelper.encrypt(password);
-        if (!enc) throw new Error('凭据加密失败，请稍后重试');
-        bucket['password_enc'] = enc;
+        bucket['password_enc'] = await CryptoHelper.encrypt(password);
       } else {
         bucket['password_enc'] = '';
       }
     }
     if (keyContent !== undefined) {
       if (keyContent.length > 0) {
-        const enc = await CryptoHelper.encrypt(keyContent);
-        if (!enc) throw new Error('凭据加密失败，请稍后重试');
-        bucket['key_content'] = enc;
+        bucket['key_content'] = await CryptoHelper.encrypt(keyContent);
       } else {
         bucket['key_content'] = '';
       }

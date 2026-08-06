@@ -8,7 +8,7 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository, generateId } from '../service/DataRepository';
-import { SshService } from '../service/SshService';
+import { SshService, TestResult } from '../service/SshService';
 import { Server, ServerMetrics } from '../model/Models';
 
 const EMPTY_METRICS: ServerMetrics = {
@@ -227,14 +227,14 @@ export struct ServerFormPage {
         metrics: EMPTY_METRICS,
         createdAt: Date.now()
       };
-      const ok = await SshService.testConnection(server);
-      this.testOk = ok;
-      if (ok) {
+      const result: TestResult = await SshService.testConnectionEx(server);
+      this.testOk = result.ok;
+      if (result.ok) {
         this.testResult = '连接成功 ✓';
       } else {
-        this.testResult = '连接失败，请检查：\n1. SSH 服务是否已启动（端口 ' + this.port + '）\n2. 防火墙是否放行该端口\n3. 主机地址、用户名、密码是否正确';
+        this.testResult = result.message + '\n\n排查建议：\n1. 确认手机与服务器在同一网络（或服务器 IP 公网可达）\n2. 服务器上执行 systemctl status sshd 确认 SSH 服务已启动\n3. 确认防火墙/安全组已放行端口 ' + this.port;
       }
-      this.toast(ok ? '连接成功' : '连接失败，请检查 SSH 服务和网络配置');
+      this.toast(result.ok ? '连接成功' : '连接失败，详见页面提示');
     } catch (e) {
       console.error('testConnection failed:', JSON.stringify(e));
       this.testResult = '连接测试异常';
@@ -293,7 +293,11 @@ export struct ServerFormPage {
       router.back();
     } catch (e) {
       console.error('save failed:', JSON.stringify(e));
-      this.toast('保存失败，请重试');
+      let errMsg: string = '保存失败，请重试';
+      if (e instanceof Error) {
+        errMsg = e.message;
+      }
+      this.toast(errMsg);
     } finally {
       this.saving = false;
     }
