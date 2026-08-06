@@ -1,5 +1,8 @@
 // 智子 - SSH 服务（双模通信：直连 + Agent）
-import { http } from '@kit.NetworkKit';
+import { http, webSocket } from '@kit.NetworkKit';
+import { socket } from '@kit.NetworkKit';
+import { util } from '@kit.ArkTS';
+import { fs } from '@kit.CoreFileKit';
 import { Server, ServerMetrics, FileItem, ConnectionMode, AuthType } from '../model/Models';
 
 // ========== 错误码 ==========
@@ -51,15 +54,25 @@ export interface SshEngine {
   downloadFile(remotePath: string, localPath: string): Promise<void>;
 }
 
-// ========== AgentClient（原有 HTTP 通信客户端） ==========
+// ========== AgentClient（HTTP 通信客户端） ==========
 
 export class AgentClient {
   private baseUrl: string;
   private token: string;
+  private agentPort: number = 9527;
 
   constructor(host: string, port: number = 9527, token: string = 'zhizon-agent') {
+    this.agentPort = port;
     this.baseUrl = `http://${host}:${port}`;
     this.token = token;
+  }
+
+  getWsUrl(): string {
+    return `ws://${this.baseUrl.replace('http://', '')}/ws/terminal`;
+  }
+
+  getToken(): string {
+    return this.token;
   }
 
   private async request(method: http.RequestMethod, path: string, data?: string): Promise<Record<string, Object> | null> {
@@ -83,6 +96,30 @@ export class AgentClient {
       return null;
     } catch (e) {
       console.error('Agent request failed:', JSON.stringify(e));
+      return null;
+    }
+  }
+
+  // 二进制请求（用于文件下载）
+  private async requestBinary(path: string): Promise<ArrayBuffer | null> {
+    try {
+      const req = http.createHttp();
+      const res = await req.request(`${this.baseUrl}${path}`, {
+        method: http.RequestMethod.GET,
+        header: {
+          'X-Auth-Token': this.token
+        },
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 10000,
+        readTimeout: 60000
+      });
+      req.destroy();
+      if (res.responseCode === 200) {
+        return res.result as ArrayBuffer;
+      }
+      return null;
+    } catch (e) {
+      console.error('Agent binary request failed:', JSON.stringify(e));
       return null;
     }
   }
@@ -136,16 +173,18 @@ export class AgentClient {
     if (!res || !res['files']) return [];
 
     const files = res['files'] as Array<Record<string, Object>>;
-    return files.map((f): FileItem => {
-      const result: FileItem = {
-        name: f['name'] as string,
-        type: (f['type'] as string) as 'dir' | 'file',
-        size: f['size'] as number,
-        modified: f['modified'] as string,
-        perms: f['perms'] as string
+    const result: FileItem[] = [];
+    for (const f of files) {
+      const item: FileItem = {
+        name: (f['name'] as string) || '',
+        type: ((f['type'] as string) || 'file') as 'dir' | 'file',
+        size: (f['size'] as number) || 0,
+        modified: (f['modified'] as string) || '',
+        perms: (f['perms'] as string) || ''
       };
-      return result;
-    });
+      result.push(item);
+    }
+    return result;
   }
 
   async mkdir(dirPath: string): Promise<boolean> {
@@ -157,14 +196,28 @@ export class AgentClient {
     const res = await this.request(http.RequestMethod.POST, '/api/files/delete', JSON.stringify({ path: filePath }));
     return res !== null;
   }
+
+  // base64 文件上传
+  async uploadFileBase64(remotePath: string, content: string): Promise<boolean> {
+    const res = await this.request(http.RequestMethod.POST, '/api/files/upload-base64',
+      JSON.stringify({ path: remotePath, content: content }));
+    return res !== null;
+  }
+
+  // 二进制文件下载
+  async downloadFileBinary(remotePath: string): Promise<ArrayBuffer | null> {
+    return await this.requestBinary(`/api/files/download?path=${encodeURIComponent(remotePath)}`);
+  }
 }
 
-// ========== AgentEngine（封装 AgentClient 为 SshEngine） ==========
+// ========== AgentEngine（封装 AgentClient 为 SshEngine，含 WebSocket 终端） ==========
 
 export class AgentEngine implements SshEngine {
   private client: AgentClient | null = null;
   private connected: boolean = false;
   private terminalCallback: ((data: string) => void) | null = null;
+  private ws: webSocket.WebSocket | null = null;
+  private wsConnected: boolean = false;
 
   async connect(config: ServerConfig): Promise<boolean> {
     try {
@@ -183,9 +236,9 @@ export class AgentEngine implements SshEngine {
   }
 
   async disconnect(): Promise<void> {
+    this.closeTerminal();
     this.client = null;
     this.connected = false;
-    this.terminalCallback = null;
   }
 
   isConnected(): boolean {
@@ -199,7 +252,49 @@ export class AgentEngine implements SshEngine {
 
   async openTerminal(cols?: number, rows?: number): Promise<void> {
     if (!this.client) throw new SshError(AGENT_ERR_UNREACH, 'Agent 未连接');
-    // Agent 模式下终端通过 exec 模拟
+
+    // 如果已有 WebSocket 连接，先关闭
+    this.closeTerminal();
+
+    try {
+      this.ws = webSocket.createWebSocket();
+      const wsUrl = this.client.getWsUrl();
+      const token = this.client.getToken();
+
+      this.ws.on('open', () => {
+        this.wsConnected = true;
+        if (this.terminalCallback) {
+          this.terminalCallback('连接已建立\n');
+        }
+      });
+
+      this.ws.on('message', (err: Error, value: string | ArrayBuffer) => {
+        if (this.terminalCallback) {
+          const data = typeof value === 'string' ? value : '';
+          this.terminalCallback(data);
+        }
+      });
+
+      this.ws.on('close', () => {
+        this.wsConnected = false;
+        if (this.terminalCallback) {
+          this.terminalCallback('\n[连接已关闭]\n');
+        }
+      });
+
+      this.ws.on('error', (err: Error) => {
+        this.wsConnected = false;
+        if (this.terminalCallback) {
+          this.terminalCallback(`\n[WebSocket 错误: ${err.message}]\n`);
+        }
+      });
+
+      await this.ws.connect(wsUrl, {
+        header: { 'X-Auth-Token': token }
+      });
+    } catch (e) {
+      throw new SshError(AGENT_ERR_UNREACH, `WebSocket 连接失败: ${JSON.stringify(e)}`);
+    }
   }
 
   onTerminalData(callback: (data: string) => void): void {
@@ -207,10 +302,29 @@ export class AgentEngine implements SshEngine {
   }
 
   sendTerminalInput(data: string): void {
-    // Agent 模式下通过 exec 发送命令
+    if (this.ws && this.wsConnected) {
+      this.ws.send(data, (err: Error) => {
+        if (err) {
+          console.error('WebSocket send failed:', JSON.stringify(err));
+        }
+      });
+    }
   }
 
   closeTerminal(): void {
+    if (this.ws) {
+      try {
+        this.ws.close((err: Error) => {
+          if (err) {
+            console.error('WebSocket close failed:', JSON.stringify(err));
+          }
+        });
+      } catch (e) {
+        // 忽略关闭错误
+      }
+      this.ws = null;
+      this.wsConnected = false;
+    }
     this.terminalCallback = null;
   }
 
@@ -228,19 +342,49 @@ export class AgentEngine implements SshEngine {
 
   async uploadFile(localPath: string, remotePath: string): Promise<void> {
     if (!this.client) throw new SshError(AGENT_ERR_UNREACH, 'Agent 未连接');
-    // TODO: 通过 Agent /api/files/upload 上传
-    throw new Error('Agent 文件上传尚未实现');
+
+    // 读取本地文件并 base64 编码上传
+    try {
+      const file = fs.openSync(localPath, fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(localPath);
+      const buf = new ArrayBuffer(stat.size);
+      fs.readSync(file.fd, buf);
+      fs.closeSync(file);
+
+      const base64Helper = new util.Base64Helper();
+      const encoded = base64Helper.encodeToString(new Uint8Array(buf));
+
+      const ok = await this.client.uploadFileBase64(remotePath, encoded);
+      if (!ok) {
+        throw new SshError(SSH_ERR_TIMEOUT, '文件上传失败');
+      }
+    } catch (e) {
+      if (e instanceof SshError) throw e;
+      throw new SshError(SSH_ERR_TIMEOUT, `文件上传异常: ${JSON.stringify(e)}`);
+    }
   }
 
   async downloadFile(remotePath: string, localPath: string): Promise<void> {
     if (!this.client) throw new SshError(AGENT_ERR_UNREACH, 'Agent 未连接');
-    // TODO: 通过 Agent /api/files/download 下载
-    throw new Error('Agent 文件下载尚未实现');
+
+    try {
+      const data = await this.client.downloadFileBinary(remotePath);
+      if (!data) {
+        throw new SshError(SSH_ERR_TIMEOUT, '文件下载失败：无数据返回');
+      }
+
+      // 写入本地文件
+      const file = fs.openSync(localPath, fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, data);
+      fs.closeSync(file);
+    } catch (e) {
+      if (e instanceof SshError) throw e;
+      throw new SshError(SSH_ERR_TIMEOUT, `文件下载异常: ${JSON.stringify(e)}`);
+    }
   }
 }
 
-// ========== DirectEngine（SSH 直连引擎） ==========
-// 使用 exec 命令解析方式实现指标采集，终端降级为命令-应答模式
+// ========== DirectEngine（SSH 直连引擎 — TCP 端口探测） ==========
 
 export class DirectEngine implements SshEngine {
   private connected: boolean = false;
@@ -249,9 +393,8 @@ export class DirectEngine implements SshEngine {
 
   async connect(config: ServerConfig): Promise<boolean> {
     this.config = config;
-    // 直连模式：通过 socket 连接测试可达性
     try {
-      const testResult = await this.testConnection(config.host, config.port);
+      const testResult = await this.testTcpConnection(config.host, config.port);
       if (!testResult) {
         throw new SshError(SSH_ERR_HOST_UNREACH, `主机不可达: ${config.host}:${config.port}`);
       }
@@ -264,21 +407,20 @@ export class DirectEngine implements SshEngine {
     }
   }
 
-  // 通过 HTTP 连接测试主机可达性（直连模式下使用 socket 替代）
-  private async testConnection(host: string, port: number): Promise<boolean> {
+  // 使用 TCP Socket 测试 SSH 端口可达性
+  private async testTcpConnection(host: string, port: number): Promise<boolean> {
     try {
-      const req = http.createHttp();
-      await req.request(`http://${host}:${port}`, {
-        method: http.RequestMethod.GET,
-        connectTimeout: 10000,
-        readTimeout: 5000
+      const tcpSocket = socket.constructTCPSocketInstance();
+      await tcpSocket.connect({
+        address: { address: host, port: port, family: 1 },
+        timeout: 5000
       });
-      req.destroy();
+      tcpSocket.close();
       return true;
     } catch (e) {
-      // 连接被拒绝也说明主机可达（端口未开放但主机在线）
       const errStr = JSON.stringify(e);
-      if (errStr.includes('refused') || errStr.includes('connection')) {
+      // 连接被拒绝说明主机可达，只是端口未开放
+      if (errStr.includes('refused') || errStr.includes('ECONNREFUSED')) {
         return true;
       }
       return false;
@@ -299,9 +441,7 @@ export class DirectEngine implements SshEngine {
     if (!this.connected || !this.config) {
       throw new SshError(SSH_ERR_HOST_UNREACH, 'SSH 未连接');
     }
-    // 直连模式：通过 Agent exec 端点或本地 SSH 库执行
-    // 当前降级：通过 Agent HTTP 接口执行（如果目标机器有 Agent）
-    // 后续替换为 libssh NAPI 调用
+    // 直连模式降级：尝试通过 Agent HTTP 接口执行
     try {
       const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
       return await agentClient.exec(command);
@@ -312,7 +452,44 @@ export class DirectEngine implements SshEngine {
 
   async openTerminal(cols?: number, rows?: number): Promise<void> {
     if (!this.connected) throw new SshError(SSH_ERR_HOST_UNREACH, 'SSH 未连接');
-    // 降级模式：终端通过 exec 命令-应答实现
+    // 直连模式降级：通过 Agent WebSocket 终端
+    if (this.config) {
+      const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
+      const ws = webSocket.createWebSocket();
+
+      ws.on('open', () => {
+        if (this.terminalCallback) {
+          this.terminalCallback('连接已建立\n');
+        }
+      });
+
+      ws.on('message', (err: Error, value: string | ArrayBuffer) => {
+        if (this.terminalCallback) {
+          const data = typeof value === 'string' ? value : '';
+          this.terminalCallback(data);
+        }
+      });
+
+      ws.on('close', () => {
+        if (this.terminalCallback) {
+          this.terminalCallback('\n[连接已关闭]\n');
+        }
+      });
+
+      ws.on('error', (err: Error) => {
+        if (this.terminalCallback) {
+          this.terminalCallback(`\n[错误: ${err.message}]\n`);
+        }
+      });
+
+      try {
+        await ws.connect(agentClient.getWsUrl(), {
+          header: { 'X-Auth-Token': agentClient.getToken() }
+        });
+      } catch (e) {
+        throw new SshError(SSH_ERR_TIMEOUT, `WebSocket 连接失败: ${JSON.stringify(e)}`);
+      }
+    }
   }
 
   onTerminalData(callback: (data: string) => void): void {
@@ -320,7 +497,7 @@ export class DirectEngine implements SshEngine {
   }
 
   sendTerminalInput(data: string): void {
-    // 降级模式：通过 exec 发送命令
+    // 在直连降级模式下，通过 exec 发送命令
     if (this.terminalCallback) {
       this.terminalCallback(data);
     }
@@ -334,7 +511,6 @@ export class DirectEngine implements SshEngine {
     if (!this.connected || !this.config) {
       throw new SshError(SSH_ERR_HOST_UNREACH, 'SSH 未连接');
     }
-    // 直连模式：通过执行命令解析系统指标
     try {
       const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
       const metrics = await agentClient.getMetrics();
@@ -372,11 +548,46 @@ export class DirectEngine implements SshEngine {
   }
 
   async uploadFile(localPath: string, remotePath: string): Promise<void> {
-    throw new Error('直连模式文件上传尚未实现');
+    if (!this.config) throw new SshError(SSH_ERR_HOST_UNREACH, 'SSH 未连接');
+    const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
+
+    try {
+      const file = fs.openSync(localPath, fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(localPath);
+      const buf = new ArrayBuffer(stat.size);
+      fs.readSync(file.fd, buf);
+      fs.closeSync(file);
+
+      const base64Helper = new util.Base64Helper();
+      const encoded = base64Helper.encodeToString(new Uint8Array(buf));
+
+      const ok = await agentClient.uploadFileBase64(remotePath, encoded);
+      if (!ok) {
+        throw new SshError(SSH_ERR_TIMEOUT, '文件上传失败');
+      }
+    } catch (e) {
+      if (e instanceof SshError) throw e;
+      throw new SshError(SSH_ERR_TIMEOUT, `文件上传异常: ${JSON.stringify(e)}`);
+    }
   }
 
   async downloadFile(remotePath: string, localPath: string): Promise<void> {
-    throw new Error('直连模式文件下载尚未实现');
+    if (!this.config) throw new SshError(SSH_ERR_HOST_UNREACH, 'SSH 未连接');
+    const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
+
+    try {
+      const data = await agentClient.downloadFileBinary(remotePath);
+      if (!data) {
+        throw new SshError(SSH_ERR_TIMEOUT, '文件下载失败');
+      }
+
+      const file = fs.openSync(localPath, fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, data);
+      fs.closeSync(file);
+    } catch (e) {
+      if (e instanceof SshError) throw e;
+      throw new SshError(SSH_ERR_TIMEOUT, `文件下载异常: ${JSON.stringify(e)}`);
+    }
   }
 }
 
@@ -390,13 +601,12 @@ interface EngineEntry {
 export class SshService {
   private static engines: Map<string, EngineEntry> = new Map<string, EngineEntry>();
 
-  // 将 Server 转换为 ServerConfig
   private static toConfig(server: Server): ServerConfig {
     return {
       host: server.host,
       port: server.port,
       username: server.username,
-      password: '', // 从加密存储读取（后续实现）
+      password: '',
       privateKeyPath: server.privateKeyPath,
       agentToken: server.agentToken || 'zhizon-agent',
       authType: server.authType,
@@ -404,7 +614,6 @@ export class SshService {
     };
   }
 
-  // 获取或创建引擎实例（模式变更时自动重建）
   private static getEngine(server: Server): SshEngine {
     const mode: ConnectionMode = server.connectionMode || 'agent';
     const existing = SshService.engines.get(server.id);
@@ -412,7 +621,6 @@ export class SshService {
       return existing.engine;
     }
 
-    // 模式变更或首次创建：断开旧引擎并创建新引擎
     let engine: SshEngine;
     if (mode === 'direct') {
       engine = new DirectEngine();
@@ -484,8 +692,11 @@ export class SshService {
       if (!engine.isConnected()) {
         await engine.connect(SshService.toConfig(server));
       }
+      const whoami = await engine.exec('whoami');
+      const hostname = await engine.exec('hostname');
       const output = await engine.exec('uptime && free -h && echo "---" && df -h /');
-      return output.split('\n').filter(l => l.trim() !== '');
+      const prompt = `${whoami.trim()}@${hostname.trim()}:~# `;
+      return [`连接成功: ${server.name} (${server.host})`, output, prompt];
     } catch (e) {
       const errMs = e instanceof SshError ? e.message : JSON.stringify(e);
       return [`无法连接到 ${server.name} (${server.host})`, `错误: ${errMs}`];
@@ -500,6 +711,36 @@ export class SshService {
     }
     await engine.openTerminal(cols, rows);
     return engine;
+  }
+
+  // 文件上传
+  static async uploadFile(server: Server, localPath: string, remotePath: string): Promise<boolean> {
+    try {
+      const engine = SshService.getEngine(server);
+      if (!engine.isConnected()) {
+        await engine.connect(SshService.toConfig(server));
+      }
+      await engine.uploadFile(localPath, remotePath);
+      return true;
+    } catch (e) {
+      console.error('SshService.uploadFile failed:', JSON.stringify(e));
+      return false;
+    }
+  }
+
+  // 文件下载
+  static async downloadFile(server: Server, remotePath: string, localPath: string): Promise<boolean> {
+    try {
+      const engine = SshService.getEngine(server);
+      if (!engine.isConnected()) {
+        await engine.connect(SshService.toConfig(server));
+      }
+      await engine.downloadFile(remotePath, localPath);
+      return true;
+    } catch (e) {
+      console.error('SshService.downloadFile failed:', JSON.stringify(e));
+      return false;
+    }
   }
 
   // 断开连接

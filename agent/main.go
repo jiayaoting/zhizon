@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -405,6 +406,54 @@ func (h *Handlers) uploadFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /api/files/upload-base64
+func (h *Handlers) uploadFileBase64(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var body struct {
+		Path    string `json:"path"`
+		Content string `json:"content"` // base64-encoded file content
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON body: %v", err))
+		return
+	}
+	if body.Path == "" || body.Content == "" {
+		writeError(w, http.StatusBadRequest, "path and content are required")
+		return
+	}
+
+	data, err := base64.StdEncoding.DecodeString(body.Content)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid base64 content: %v", err))
+		return
+	}
+
+	destPath, err := safePath(h.cfg.Root, body.Path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create parent directory: %v", err))
+		return
+	}
+
+	if err := os.WriteFile(destPath, data, 0644); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to write file: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, JSONResponse{
+		"path": body.Path,
+		"size": len(data),
+	})
+}
+
 // GET /api/files/download
 func (h *Handlers) downloadFile(w http.ResponseWriter, r *http.Request) {
 	relPath := r.URL.Query().Get("path")
@@ -618,6 +667,7 @@ func (h *Handlers) setupRoutes() http.Handler {
 		}
 	})
 	mux.HandleFunc("/api/files/upload", h.uploadFile)
+	mux.HandleFunc("/api/files/upload-base64", h.uploadFileBase64)
 	mux.HandleFunc("/api/files/download", h.downloadFile)
 	mux.HandleFunc("/api/files/mkdir", h.mkdir)
 	mux.HandleFunc("/api/files/delete", h.deleteFile)

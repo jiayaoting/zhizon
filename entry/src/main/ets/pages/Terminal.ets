@@ -2,120 +2,137 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
-import { SshService } from '../service/SshService';
+import { SshService, SshEngine } from '../service/SshService';
+import { DataRepository } from '../service/DataRepository';
 import { Server } from '../model/Models';
 
 @Component
 export struct TerminalPage {
-  @State activeSession: number = 0;
   @State cmdInput: string = '';
   @State terminalLines: string[] = [];
   @State isLoading: boolean = true;
+  @State connected: boolean = false;
+  @State serverName: string = '终端';
+  @State serverHost: string = '';
   @StorageLink('isSm') isSm: boolean = false;
-  private sessions: string[] = ['prod-web-01', 'prod-db-master', 'dev-test-01'];
-  private sessionCwds: string[] = ['~/projects', '~/data', '~/test'];
-  private quickCmds: string[] = ['ls -la', 'cd ~', 'top', 'df -h', 'free -h', 'docker ps', 'uptime', 'cat /etc/os-release'];
+  private server: Server | null = null;
+  private engine: SshEngine | null = null;
+  private prompt: string = '$ ';
+  private quickCmds: string[] = ['ls -la', 'cd ~', 'top -bn1', 'df -h', 'free -h', 'docker ps', 'uptime', 'cat /etc/os-release', 'whoami', 'hostname', 'ps aux', 'netstat -tlnp'];
 
-  // 根据当前会话构建 Server 对象
-  private getServer(): Server {
-    return {
-      id: '',
-      name: this.sessions[this.activeSession],
-      host: '',
-      port: 22,
-      username: 'root',
-      authType: 'password',
-      connectionMode: 'agent',
-      tags: [],
-      status: 'online',
-      metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
-      createdAt: 0
-    };
-  }
-
-  // 判断是否为命令提示符行
-  private isPromptLine(line: string): boolean {
-    return line.includes('root@') || (line.includes('#') && !line.includes('错误') && !line.includes('失败'));
-  }
-
-  private isErrorLine(line: string): boolean {
-    return line.includes('错误') || line.includes('失败') || line.includes('Error') || line.includes('error');
-  }
-
-  // 页面即将出现时加载终端输出
   async aboutToAppear(): Promise<void> {
     try {
-      const server = this.getServer();
-      this.terminalLines = await SshService.getTerminalOutput(server);
+      const params = router.getParams() as Record<string, string>;
+      const serverId = params?.serverId || '';
+
+      if (serverId) {
+        // 从数据库加载真实服务器
+        const server = await DataRepository.getServer(serverId);
+        if (server) {
+          this.server = server;
+          this.serverName = server.name;
+          this.serverHost = server.host;
+          await this.connectServer();
+        } else {
+          this.terminalLines = ['错误: 未找到服务器 (ID: ' + serverId + ')'];
+          this.isLoading = false;
+        }
+      } else {
+        // 无 serverId，尝试从 AppStorage 获取上次连接的服务器
+        this.terminalLines = ['请从服务器列表选择要连接的服务器'];
+        this.isLoading = false;
+      }
     } catch (e) {
-      this.terminalLines = [`连接失败: ${JSON.stringify(e)}`];
+      this.terminalLines = ['初始化失败: ' + JSON.stringify(e)];
+      this.isLoading = false;
+    }
+  }
+
+  aboutToDisappear(): void {
+    // 页面销毁时断开连接
+    if (this.server) {
+      SshService.disconnect(this.server);
+    }
+  }
+
+  // 连接服务器并获取初始输出
+  private async connectServer(): Promise<void> {
+    if (!this.server) return;
+
+    this.isLoading = true;
+    this.terminalLines = [`正在连接 ${this.server.name} (${this.server.host}:${this.server.port})...`];
+
+    try {
+      const output = await SshService.getTerminalOutput(this.server);
+      this.terminalLines = output;
+
+      // 检查是否连接成功
+      const firstLine = output.length > 0 ? output[0] : '';
+      this.connected = firstLine.includes('连接成功');
+
+      if (this.connected) {
+        // 获取提示符
+        const lastLine = output[output.length - 1] || '';
+        if (lastLine.includes('#') || lastLine.includes('$')) {
+          this.prompt = lastLine;
+        }
+
+        // 更新服务器状态和最后连接时间
+        await DataRepository.updateServer(this.server.id, {
+          status: 'online',
+          lastConnected: Date.now()
+        });
+      }
+    } catch (e) {
+      this.terminalLines = [...this.terminalLines, `连接失败: ${JSON.stringify(e)}`];
+      this.connected = false;
     } finally {
       this.isLoading = false;
     }
   }
 
   // 发送命令
-  private async sendCommand(cmd: string) {
-    if (!cmd.trim()) return;
-    const server = this.getServer();
-    const prompt = `root@${server.name}:~# ${cmd}`;
-    this.terminalLines = [...this.terminalLines, prompt];
+  private async sendCommand(cmd: string): Promise<void> {
+    if (!cmd.trim() || !this.server) return;
+
+    // 显示输入的命令
+    const cmdLine = `${this.prompt}${cmd}`;
+    this.terminalLines = [...this.terminalLines, cmdLine];
     this.cmdInput = '';
+
+    // 如果未连接，先连接
+    if (!this.connected) {
+      await this.connectServer();
+      if (!this.connected) return;
+    }
+
     try {
-      const output = await SshService.exec(server, cmd);
-      this.terminalLines = [...this.terminalLines, output, `root@${server.name}:~# `];
+      const output = await SshService.exec(this.server, cmd);
+
+      // 解析输出并显示
+      if (output.trim()) {
+        const lines = output.split('\n').filter((l: string) => l.trim() !== '');
+        this.terminalLines = [...this.terminalLines, ...lines];
+      }
+
+      // 添加新的提示符
+      this.terminalLines = [...this.terminalLines, this.prompt];
     } catch (e) {
-      this.terminalLines = [...this.terminalLines, `错误: ${JSON.stringify(e)}`, `root@${server.name}:~# `];
+      this.terminalLines = [...this.terminalLines, `错误: ${JSON.stringify(e)}`, this.prompt];
     }
   }
 
   @Builder actionsBuilder() {
-    Button('新建会话')
+    Button('重连')
       .fontSize(12)
-      .fontColor(AppTheme.bgBase)
-      .backgroundColor(AppTheme.primary)
+      .fontColor(this.connected ? AppTheme.textSecondary : AppTheme.bgBase)
+      .backgroundColor(this.connected ? AppTheme.bgSurface2 : AppTheme.primary)
       .borderRadius(6)
       .height(30)
       .padding({ left: 12, right: 12 })
       .onClick(() => {
-        promptAction.showToast({ message: '新建会话功能开发中' });
+        this.connectServer();
       })
-  }
-
-  // 左侧会话项
-  @Builder sessionItem(name: string, cwd: string, idx: number) {
-    Column({ space: 4 }) {
-      Text(name)
-        .fontSize(12)
-        .fontColor(idx === this.activeSession ? AppTheme.primary : AppTheme.textPrimary)
-        .fontWeight(idx === this.activeSession ? FontWeight.Medium : FontWeight.Regular)
-      Text(cwd)
-        .fontSize(10)
-        .fontColor(AppTheme.textTertiary)
-        .fontFamily(AppTheme.fontMono)
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .borderRadius(6)
-    .backgroundColor(idx === this.activeSession ? AppTheme.primaryDim : Color.Transparent)
-    .alignItems(HorizontalAlign.Start)
-    .onClick(() => { this.activeSession = idx; })
-  }
-
-  // 顶部 Tab 项
-  @Builder tabItem(name: string, idx: number) {
-    Column({ space: 6 }) {
-      Text(name)
-        .fontSize(12)
-        .fontColor(idx === this.activeSession ? AppTheme.primary : AppTheme.textSecondary)
-        .fontWeight(idx === this.activeSession ? FontWeight.Medium : FontWeight.Regular)
-      Column()
-        .width('100%')
-        .height(2)
-        .backgroundColor(idx === this.activeSession ? AppTheme.primary : Color.Transparent)
-    }
-    .padding({ left: 14, right: 14, top: 8, bottom: 0 })
-    .onClick(() => { this.activeSession = idx; })
   }
 
   // 快捷命令标签
@@ -132,113 +149,91 @@ export struct TerminalPage {
       })
   }
 
+  // 判断是否为命令提示符行
+  private isPromptLine(line: string): boolean {
+    return line.includes('root@') || line.includes('#') && !line.includes('错误') && !line.includes('失败') && !line.includes('Error');
+  }
+
+  private isErrorLine(line: string): boolean {
+    return line.includes('错误') || line.includes('失败') || line.includes('Error') || line.includes('error');
+  }
+
   build() {
     Column() {
-      TopBar({ title: 'SSH 终端', subtitle: '多标签会话' }) {
+      TopBar({ title: this.serverName, subtitle: this.connected ? `${this.serverHost} · 已连接` : '未连接' }) {
         this.actionsBuilder()
       }
 
-      // 主区域：左侧会话列表(平板) + 右侧终端
-      Row() {
-        // 左侧会话列表 — 仅平板端显示
-        if (!this.isSm) {
-          Column({ space: 4 }) {
-            ForEach(this.sessions, (name: string, idx: number) => {
-              this.sessionItem(name, this.sessionCwds[idx], idx)
-            }, (name: string) => name)
-          }
-          .width(200)
-          .padding(8)
-          .backgroundColor(AppTheme.bgSurface)
-          .alignItems(HorizontalAlign.Start)
-          .height('100%')
-        }
-
-        // 右侧终端区
-        Column() {
-          // 顶部 Tab 栏
-          Row() {
-            ForEach(this.sessions, (name: string, idx: number) => {
-              this.tabItem(name, idx)
-            }, (name: string) => name)
-          }
-          .width('100%')
-          .border({ width: { bottom: 1 }, color: AppTheme.borderSubtle })
-
-          // 终端内容区
-          Scroll() {
-            Column({ space: 0 }) {
-              if (this.isLoading) {
-                Text('加载中...')
-                  .fontSize(14)
-                  .fontColor('#00D9A3')
-                  .fontFamily(AppTheme.fontMono)
-                  .width('100%')
-                  .textAlign(TextAlign.Center)
-                  .padding({ top: 40 })
-              } else {
-                ForEach(this.terminalLines, (line: string) => {
-                  Text(line)
-                    .fontSize(12)
-                    .fontFamily(AppTheme.fontMono)
-                    .fontColor(this.isErrorLine(line) ? '#EF4444' : (this.isPromptLine(line) ? '#00FF88' : '#00D9A3'))
-                    .width('100%')
-                }, (line: string, idx: number) => `${idx}-${line}`)
-              }
-            }
-            .width('100%')
-            .padding(this.isSm ? 10 : 12)
-          }
-          .layoutWeight(1)
-          .backgroundColor('#000000')
-          .scrollBar(BarState.Auto)
-          .align(Alignment.Top)
-
-          // 快捷命令栏
-          Scroll() {
-            Row({ space: 8 }) {
-              ForEach(this.quickCmds, (cmd: string) => {
-                this.quickCmdTag(cmd)
-              }, (cmd: string) => cmd)
-            }
-            .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
-          }
-          .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Off)
-          .width('100%')
-          .backgroundColor(AppTheme.bgSurface)
-
-          // 底部输入栏
-          Row({ space: 8 }) {
-            TextInput({ placeholder: '输入命令...', text: $$this.cmdInput })
-              .fontSize(12)
-              .fontColor(AppTheme.textPrimary)
+      // 终端内容区
+      Scroll() {
+        Column({ space: 0 }) {
+          if (this.isLoading) {
+            Text('加载中...')
+              .fontSize(14)
+              .fontColor('#00D9A3')
               .fontFamily(AppTheme.fontMono)
-              .backgroundColor(AppTheme.bgSurface2)
-              .borderRadius(6)
-              .height(32)
-              .layoutWeight(1)
-            Button('发送')
-              .fontSize(12)
-              .fontColor(AppTheme.bgBase)
-              .backgroundColor(AppTheme.primary)
-              .borderRadius(6)
-              .height(32)
-              .padding({ left: 16, right: 16 })
-              .onClick(() => {
-                this.sendCommand(this.cmdInput);
-              })
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 40 })
+          } else {
+            ForEach(this.terminalLines, (line: string) => {
+              Text(line)
+                .fontSize(12)
+                .fontFamily(AppTheme.fontMono)
+                .fontColor(this.isErrorLine(line) ? '#EF4444' : (this.isPromptLine(line) ? '#00FF88' : '#00D9A3'))
+                .width('100%')
+            }, (line: string, idx: number) => `${idx}-${line}`)
           }
-          .width('100%')
-          .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
-          .backgroundColor(AppTheme.bgSurface)
         }
-        .layoutWeight(1)
-        .height('100%')
-        .backgroundColor(AppTheme.bgBase)
+        .width('100%')
+        .padding(this.isSm ? 10 : 12)
       }
       .layoutWeight(1)
-      .padding({ bottom: this.isSm ? 68 : 0 })
+      .backgroundColor('#000000')
+      .scrollBar(BarState.Auto)
+      .align(Alignment.Top)
+
+      // 快捷命令栏
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(this.quickCmds, (cmd: string) => {
+            this.quickCmdTag(cmd)
+          }, (cmd: string) => cmd)
+        }
+        .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
+      .backgroundColor(AppTheme.bgSurface)
+
+      // 底部输入栏
+      Row({ space: 8 }) {
+        TextInput({ placeholder: '输入命令...', text: $$this.cmdInput })
+          .fontSize(12)
+          .fontColor(AppTheme.textPrimary)
+          .fontFamily(AppTheme.fontMono)
+          .backgroundColor(AppTheme.bgSurface2)
+          .borderRadius(6)
+          .height(32)
+          .layoutWeight(1)
+          .onSubmit(() => {
+            this.sendCommand(this.cmdInput);
+          })
+        Button('发送')
+          .fontSize(12)
+          .fontColor(AppTheme.bgBase)
+          .backgroundColor(AppTheme.primary)
+          .borderRadius(6)
+          .height(32)
+          .padding({ left: 16, right: 16 })
+          .onClick(() => {
+            this.sendCommand(this.cmdInput);
+          })
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 10 : 12, right: this.isSm ? 10 : 12, top: 8, bottom: 8 })
+      .backgroundColor(AppTheme.bgSurface)
     }
     .layoutWeight(1)
     .height('100%')

@@ -7,6 +7,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
+import { SshService } from '../service/SshService';
 import { Server, Stats } from '../model/Models';
 
 @Component
@@ -40,6 +41,67 @@ export struct ServersPage {
     this.loadData();
   }
 
+  // 测试单台服务器连接
+  private async testServerConnection(s: Server): Promise<void> {
+    promptAction.showToast({ message: `正在连接 ${s.name}...` });
+    const ok = await SshService.testConnection(s);
+    const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
+
+    // 更新内存中的服务器状态（status 不持久化到 DB）
+    const updated: Server[] = this.servers.map((item: Server) => {
+      if (item.id === s.id) {
+        const newServer: Server = {
+          ...item,
+          status: status,
+          lastConnected: ok ? Date.now() : item.lastConnected
+        };
+        return newServer;
+      }
+      return item;
+    });
+    this.servers = updated;
+
+    // 持久化最后连接时间
+    if (ok) {
+      await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
+    }
+
+    // 更新统计
+    this.stats = {
+      ...this.stats,
+      online: updated.filter(i => i.status === 'online').length,
+      offline: updated.filter(i => i.status === 'offline').length
+    };
+
+    promptAction.showToast({ message: ok ? `${s.name} 连接成功` : `${s.name} 无法连接` });
+  }
+
+  // 批量检测所有服务器状态
+  private async checkAllServers(): Promise<void> {
+    promptAction.showToast({ message: '正在检测所有服务器...' });
+    const updated: Server[] = [];
+    for (const s of this.servers) {
+      const ok = await SshService.testConnection(s);
+      const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
+      const newServer: Server = {
+        ...s,
+        status: status,
+        lastConnected: ok ? Date.now() : s.lastConnected
+      };
+      updated.push(newServer);
+      if (ok) {
+        await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
+      }
+    }
+    this.servers = updated;
+    this.stats = {
+      ...this.stats,
+      online: updated.filter(i => i.status === 'online').length,
+      offline: updated.filter(i => i.status === 'offline').length
+    };
+    promptAction.showToast({ message: '检测完成' });
+  }
+
   // 状态点颜色
   private statusDotColor(status: string): string {
     if (status === 'online') return AppTheme.success;
@@ -66,16 +128,28 @@ export struct ServersPage {
   }
 
   @Builder actionsBuilder() {
-    Button('添加服务器')
-      .fontSize(12)
-      .fontColor(AppTheme.bgBase)
-      .backgroundColor(AppTheme.primary)
-      .borderRadius(6)
-      .height(30)
-      .padding({ left: 12, right: 12 })
-      .onClick(() => {
-        promptAction.showToast({ message: '添加服务器功能开发中' });
-      })
+    Row({ space: 8 }) {
+      Button('检测全部')
+        .fontSize(12)
+        .fontColor(AppTheme.textPrimary)
+        .backgroundColor(AppTheme.bgSurface2)
+        .borderRadius(6)
+        .height(30)
+        .padding({ left: 10, right: 10 })
+        .onClick(() => {
+          this.checkAllServers();
+        })
+      Button('添加服务器')
+        .fontSize(12)
+        .fontColor(AppTheme.bgBase)
+        .backgroundColor(AppTheme.primary)
+        .borderRadius(6)
+        .height(30)
+        .padding({ left: 12, right: 12 })
+        .onClick(() => {
+          promptAction.showToast({ message: '添加服务器功能开发中' });
+        })
+    }
   }
 
   // 分组筛选标签
@@ -203,10 +277,10 @@ export struct ServersPage {
           .padding({ left: 10, right: 10 })
           .margin({ right: 6 })
           .onClick(() => {
-            router.pushUrl({ url: 'pages/Terminal', params: { serverName: s.name } }).catch(() => {});
+            this.testServerConnection(s);
           })
         this.secondaryBtn('终端', () => {
-          router.pushUrl({ url: 'pages/Terminal', params: { serverName: s.name } }).catch(() => {});
+          router.pushUrl({ url: 'pages/Terminal', params: { serverId: s.id } }).catch(() => {});
         })
         this.secondaryBtn('详情', () => {
           router.pushUrl({ url: 'pages/ServerDetail', params: { serverId: s.id } }).catch(() => {});

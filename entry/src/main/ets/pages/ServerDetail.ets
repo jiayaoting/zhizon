@@ -7,7 +7,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
-import { Server, Alert } from '../model/Models';
+import { SshService } from '../service/SshService';
+import { Server, Alert, ServerMetrics } from '../model/Models';
 
 interface ServerDetailParams {
   serverId: string;
@@ -42,6 +43,26 @@ struct ServerDetailPage {
     this.server = await DataRepository.getServer(params?.serverId || '') || null;
     this.alerts = await DataRepository.getAlerts();
     this.loading = false;
+
+    // 拉取实时指标
+    if (this.server) {
+      await this.refreshMetrics();
+    }
+  }
+
+  // 从 Agent 拉取实时指标
+  private async refreshMetrics(): Promise<void> {
+    if (!this.server) return;
+    try {
+      const metrics: ServerMetrics = await SshService.getMetrics(this.server);
+      this.server = {
+        ...this.server,
+        metrics: metrics,
+        status: metrics.cpu > 0 ? 'online' : 'offline'
+      };
+    } catch (e) {
+      console.error('Failed to fetch metrics:', JSON.stringify(e));
+    }
   }
 
   // 告警级别颜色
@@ -61,7 +82,9 @@ struct ServerDetailPage {
         .height(28)
         .padding({ left: 10, right: 10 })
         .onClick(() => {
-          promptAction.showToast({ message: '已刷新' });
+          this.refreshMetrics().then(() => {
+            promptAction.showToast({ message: '指标已刷新' });
+          });
         })
       Button('终端')
         .fontSize(12)
@@ -72,7 +95,7 @@ struct ServerDetailPage {
         .padding({ left: 10, right: 10 })
         .onClick(() => {
           if (this.server) {
-            router.pushUrl({ url: 'pages/Terminal', params: { serverName: this.server.name } }).catch(() => {});
+            router.pushUrl({ url: 'pages/Terminal', params: { serverId: this.server.id } }).catch(() => {});
           }
         })
     }
