@@ -543,9 +543,6 @@ export struct FilesPage {
         .align(Alignment.Top)
       }
     }
-    .layoutWeight(1)
-    .height('100%')
-    .backgroundColor(AppTheme.bgBase)
 
     // 自定义服务器选择弹窗
     if (this.showPicker) {
