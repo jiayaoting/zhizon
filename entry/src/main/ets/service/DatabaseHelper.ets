@@ -4,7 +4,7 @@ import { common } from '@kit.AbilityKit';
 import { Server, PveCluster, Command, Alert, FileItem } from '../model/Models';
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // 建表 SQL
 const SQL_CREATE_SERVERS = `
@@ -21,9 +21,19 @@ const SQL_CREATE_SERVERS = `
     tags TEXT,
     os TEXT,
     created_at INTEGER,
-    last_connected INTEGER DEFAULT 0
+    last_connected INTEGER DEFAULT 0,
+    connection_mode TEXT DEFAULT 'agent',
+    agent_token TEXT DEFAULT 'zhizon-agent',
+    private_key_path TEXT
   )
 `;
+
+// v2 迁移：为已有 servers 表新增列
+const SQL_MIGRATE_V2 = [
+  'ALTER TABLE servers ADD COLUMN connection_mode TEXT DEFAULT \'agent\'',
+  'ALTER TABLE servers ADD COLUMN agent_token TEXT DEFAULT \'zhizon-agent\'',
+  'ALTER TABLE servers ADD COLUMN private_key_path TEXT'
+];
 
 const SQL_CREATE_PVE_CLUSTERS = `
   CREATE TABLE IF NOT EXISTS pve_clusters (
@@ -94,6 +104,9 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_ALERTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_SETTINGS);
 
+    // v2 迁移：为已有 servers 表新增列（安全执行，列已存在时忽略错误）
+    await DatabaseHelper.migrateV2();
+
     // 插入默认数据
     await DatabaseHelper.seedDefaults();
   }
@@ -101,6 +114,18 @@ export class DatabaseHelper {
   static getStore(): relationalStore.RdbStore {
     if (!DatabaseHelper.store) throw new Error('Database not initialized');
     return DatabaseHelper.store;
+  }
+
+  // v2 迁移：安全添加列（列已存在时忽略错误）
+  private static async migrateV2(): Promise<void> {
+    for (const sql of SQL_MIGRATE_V2) {
+      try {
+        await DatabaseHelper.store!.executeSql(sql);
+      } catch (e) {
+        // 列已存在，忽略错误
+        console.info('Migration column already exists, skipping:', sql);
+      }
+    }
   }
 
   // ========== 服务器 CRUD ==========
@@ -119,6 +144,9 @@ export class DatabaseHelper {
         port: resultSet.getLong(resultSet.getColumnIndex('port')),
         username: resultSet.getString(resultSet.getColumnIndex('username')),
         authType: (resultSet.getString(resultSet.getColumnIndex('auth_type')) || 'password') as 'password' | 'key',
+        connectionMode: (resultSet.getString(resultSet.getColumnIndex('connection_mode')) || 'agent') as 'direct' | 'agent',
+        agentToken: resultSet.getString(resultSet.getColumnIndex('agent_token')) || undefined,
+        privateKeyPath: resultSet.getString(resultSet.getColumnIndex('private_key_path')) || undefined,
         group: resultSet.getString(resultSet.getColumnIndex('grp')) || undefined,
         tags: DatabaseHelper.parseTags(resultSet.getString(resultSet.getColumnIndex('tags'))),
         os: resultSet.getString(resultSet.getColumnIndex('os')) || undefined,
@@ -145,6 +173,9 @@ export class DatabaseHelper {
         port: resultSet.getLong(resultSet.getColumnIndex('port')),
         username: resultSet.getString(resultSet.getColumnIndex('username')),
         authType: (resultSet.getString(resultSet.getColumnIndex('auth_type')) || 'password') as 'password' | 'key',
+        connectionMode: (resultSet.getString(resultSet.getColumnIndex('connection_mode')) || 'agent') as 'direct' | 'agent',
+        agentToken: resultSet.getString(resultSet.getColumnIndex('agent_token')) || undefined,
+        privateKeyPath: resultSet.getString(resultSet.getColumnIndex('private_key_path')) || undefined,
         group: resultSet.getString(resultSet.getColumnIndex('grp')) || undefined,
         tags: DatabaseHelper.parseTags(resultSet.getString(resultSet.getColumnIndex('tags'))),
         os: resultSet.getString(resultSet.getColumnIndex('os')) || undefined,
@@ -173,7 +204,10 @@ export class DatabaseHelper {
       tags: server.tags.join(','),
       os: server.os || '',
       created_at: server.createdAt,
-      last_connected: server.lastConnected || 0
+      last_connected: server.lastConnected || 0,
+      connection_mode: server.connectionMode || 'agent',
+      agent_token: server.agentToken || 'zhizon-agent',
+      private_key_path: server.privateKeyPath || ''
     };
     await store.insert('servers', valueBucket);
   }
@@ -189,6 +223,9 @@ export class DatabaseHelper {
     if (updates.group !== undefined) bucket['grp'] = updates.group;
     if (updates.tags !== undefined) bucket['tags'] = updates.tags.join(',');
     if (updates.lastConnected !== undefined) bucket['last_connected'] = updates.lastConnected;
+    if (updates.connectionMode !== undefined) bucket['connection_mode'] = updates.connectionMode;
+    if (updates.agentToken !== undefined) bucket['agent_token'] = updates.agentToken;
+    if (updates.privateKeyPath !== undefined) bucket['private_key_path'] = updates.privateKeyPath;
 
     const predicates = new relationalStore.RdbPredicates('servers');
     predicates.equalTo('id', id);
@@ -418,27 +455,27 @@ export class DatabaseHelper {
 
     const defaultServers: Server[] = [
       { id: 'srv-001', name: 'prod-web-01', host: '192.168.1.10', port: 22, username: 'root',
-        authType: 'key', group: '生产', tags: ['web', 'nginx'], os: 'Ubuntu 22.04 LTS',
+        authType: 'key', connectionMode: 'agent', group: '生产', tags: ['web', 'nginx'], os: 'Ubuntu 22.04 LTS',
         status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
         createdAt: now - day * 30 },
       { id: 'srv-002', name: 'prod-db-master', host: '192.168.1.20', port: 22, username: 'root',
-        authType: 'key', group: '生产', tags: ['mysql', 'master'], os: 'Debian 12',
+        authType: 'key', connectionMode: 'agent', group: '生产', tags: ['mysql', 'master'], os: 'Debian 12',
         status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
         createdAt: now - day * 60 },
       { id: 'srv-003', name: 'dev-test-01', host: '192.168.1.30', port: 22, username: 'ubuntu',
-        authType: 'password', group: '测试', tags: ['docker'], os: 'Ubuntu 24.04 LTS',
+        authType: 'password', connectionMode: 'direct', group: '测试', tags: ['docker'], os: 'Ubuntu 24.04 LTS',
         status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
         createdAt: now - day * 10 },
       { id: 'srv-004', name: 'monitor-grafana', host: '192.168.1.40', port: 22, username: 'root',
-        authType: 'key', group: '监控', tags: ['grafana', 'prometheus'], os: 'CentOS Stream 9',
+        authType: 'key', connectionMode: 'agent', group: '监控', tags: ['grafana', 'prometheus'], os: 'CentOS Stream 9',
         status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
         createdAt: now - day * 90 },
       { id: 'srv-005', name: 'backup-storage', host: '192.168.1.50', port: 2222, username: 'backup',
-        authType: 'password', group: '备份', tags: ['minio', 'storage'], os: 'Alpine 3.19',
+        authType: 'password', connectionMode: 'direct', group: '备份', tags: ['minio', 'storage'], os: 'Alpine 3.19',
         status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
         createdAt: now - day * 120 },
       { id: 'srv-006', name: 'ci-runner-01', host: '192.168.1.60', port: 22, username: 'gitlab',
-        authType: 'key', group: 'CI/CD', tags: ['gitlab', 'runner'], os: 'Ubuntu 22.04 LTS',
+        authType: 'key', connectionMode: 'agent', group: 'CI/CD', tags: ['gitlab', 'runner'], os: 'Ubuntu 22.04 LTS',
         status: 'offline', metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },
         createdAt: now - day * 45 }
     ];

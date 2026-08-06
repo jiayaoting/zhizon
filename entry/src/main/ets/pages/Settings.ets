@@ -39,6 +39,8 @@ export struct SettingsPage {
   @State autoReconnect: boolean = true;
   @State defaultSshPort: string = '22';
   @State connectionTimeout: string = '30s';
+  // 连接设置
+  @State defaultConnectionMode: string = 'agent';
   // 外观
   @State theme: string = '深色';
   @State fontSizeSetting: string = '标准';
@@ -87,6 +89,7 @@ export struct SettingsPage {
       // 加载值类设置
       this.defaultSshPort = await DataRepository.getSetting('defaultSshPort', '22');
       this.connectionTimeout = await DataRepository.getSetting('connectionTimeout', '30s');
+      this.defaultConnectionMode = await DataRepository.getSetting('defaultConnectionMode', 'agent');
       this.theme = await DataRepository.getSetting('theme', '深色');
       this.fontSizeSetting = await DataRepository.getSetting('fontSize', '标准');
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'JetBrains Mono');
@@ -167,6 +170,48 @@ export struct SettingsPage {
                   DataRepository.setSetting('autoReconnect', v ? 'true' : 'false');
                   this.toast(`自动重连：${v ? '已开启' : '已关闭'}`);
                 })
+              }
+              .width('100%')
+            }
+
+            // 连接设置
+            GroupCard({ title: '连接设置' }) {
+              Column({ space: 8 }) {
+                this.valueRow('默认连接模式', this.defaultConnectionMode === 'agent' ? 'Agent 模式（推荐）' : '直连模式')
+                Row() {
+                  Text('连接模式')
+                    .fontSize(13)
+                    .fontColor(AppTheme.textPrimary)
+                    .layoutWeight(1)
+                  Row({ space: 6 }) {
+                    Text('Agent')
+                      .fontSize(11)
+                      .fontColor(this.defaultConnectionMode === 'agent' ? AppTheme.bgBase : AppTheme.textSecondary)
+                      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                      .borderRadius(5)
+                      .backgroundColor(this.defaultConnectionMode === 'agent' ? AppTheme.primary : AppTheme.bgSurface2)
+                      .onClick(() => {
+                        this.defaultConnectionMode = 'agent';
+                        DataRepository.setSetting('defaultConnectionMode', 'agent');
+                        this.toast('默认连接模式：Agent');
+                      })
+                    Text('直连')
+                      .fontSize(11)
+                      .fontColor(this.defaultConnectionMode === 'direct' ? AppTheme.bgBase : AppTheme.textSecondary)
+                      .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+                      .borderRadius(5)
+                      .backgroundColor(this.defaultConnectionMode === 'direct' ? AppTheme.primary : AppTheme.bgSurface2)
+                      .onClick(() => {
+                        this.defaultConnectionMode = 'direct';
+                        DataRepository.setSetting('defaultConnectionMode', 'direct');
+                        this.toast('默认连接模式：直连');
+                      })
+                  }
+                }
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+                .borderRadius(6)
+                .backgroundColor(AppTheme.bgSurface2)
               }
               .width('100%')
             }

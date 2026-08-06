@@ -25,6 +25,7 @@ export struct TerminalPage {
       port: 22,
       username: 'root',
       authType: 'password',
+      connectionMode: 'agent',
       tags: [],
       status: 'online',
       metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 },

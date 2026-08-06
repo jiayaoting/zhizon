@@ -7,37 +7,37 @@ export class MockData {
   static readonly servers: Server[] = [
     {
       id: 'srv-001', name: 'prod-web-01', host: '192.168.1.10', port: 22, username: 'root',
-      authType: 'key', group: '生产', tags: ['web', 'nginx'], os: 'Ubuntu 22.04 LTS',
+      authType: 'key', connectionMode: 'agent', group: '生产', tags: ['web', 'nginx'], os: 'Ubuntu 22.04 LTS',
       status: 'online', lastConnected: Date.now() - 3600000, createdAt: Date.now() - 86400000 * 30,
       metrics: { cpu: 18, mem: 45, disk: 62, netIn: 12, netOut: 8, load: 0.42, uptime: 4523600 }
     },
     {
       id: 'srv-002', name: 'prod-db-master', host: '192.168.1.20', port: 22, username: 'root',
-      authType: 'key', group: '生产', tags: ['mysql', 'master'], os: 'Debian 12',
+      authType: 'key', connectionMode: 'agent', group: '生产', tags: ['mysql', 'master'], os: 'Debian 12',
       status: 'warning', lastConnected: Date.now() - 7200000, createdAt: Date.now() - 86400000 * 60,
       metrics: { cpu: 78, mem: 82, disk: 71, netIn: 5, netOut: 2, load: 2.18, uptime: 3892000 }
     },
     {
       id: 'srv-003', name: 'dev-test-01', host: '192.168.1.30', port: 22, username: 'ubuntu',
-      authType: 'password', group: '测试', tags: ['docker'], os: 'Ubuntu 24.04 LTS',
+      authType: 'password', connectionMode: 'direct', group: '测试', tags: ['docker'], os: 'Ubuntu 24.04 LTS',
       status: 'online', lastConnected: Date.now() - 1800000, createdAt: Date.now() - 86400000 * 10,
       metrics: { cpu: 5, mem: 22, disk: 38, netIn: 1, netOut: 1, load: 0.08, uptime: 890000 }
     },
     {
       id: 'srv-004', name: 'monitor-grafana', host: '192.168.1.40', port: 22, username: 'root',
-      authType: 'key', group: '监控', tags: ['grafana', 'prometheus'], os: 'CentOS Stream 9',
+      authType: 'key', connectionMode: 'agent', group: '监控', tags: ['grafana', 'prometheus'], os: 'CentOS Stream 9',
       status: 'online', lastConnected: Date.now() - 5400000, createdAt: Date.now() - 86400000 * 90,
       metrics: { cpu: 32, mem: 56, disk: 48, netIn: 18, netOut: 22, load: 0.85, uptime: 2891000 }
     },
     {
       id: 'srv-005', name: 'backup-storage', host: '192.168.1.50', port: 2222, username: 'backup',
-      authType: 'password', group: '备份', tags: ['minio', 'storage'], os: 'Alpine 3.19',
+      authType: 'password', connectionMode: 'direct', group: '备份', tags: ['minio', 'storage'], os: 'Alpine 3.19',
       status: 'offline', lastConnected: Date.now() - 86400000, createdAt: Date.now() - 86400000 * 120,
       metrics: { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 }
     },
     {
       id: 'srv-006', name: 'ci-runner-01', host: '192.168.1.60', port: 22, username: 'gitlab',
-      authType: 'key', group: 'CI/CD', tags: ['gitlab', 'runner'], os: 'Ubuntu 22.04 LTS',
+      authType: 'key', connectionMode: 'agent', group: 'CI/CD', tags: ['gitlab', 'runner'], os: 'Ubuntu 22.04 LTS',
       status: 'online', lastConnected: Date.now() - 600000, createdAt: Date.now() - 86400000 * 45,
       metrics: { cpu: 65, mem: 48, disk: 55, netIn: 8, netOut: 4, load: 1.22, uptime: 1250000 }
     }

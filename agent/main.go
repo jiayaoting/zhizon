@@ -344,7 +344,7 @@ func (h *Handlers) listFiles(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, JSONResponse{"files": result})
 }
 
 // POST /api/files/upload

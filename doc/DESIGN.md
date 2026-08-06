@@ -1,10 +1,10 @@
 # 智子（Zhizon）详细设计文档
 
-> **版本**：v1.2.0
+> **版本**：v2.0.0
 > **平台**：HarmonyOS NEXT（鸿蒙 6+ / 纯血鸿蒙）
 > **Bundle Name**：`com.zhizon.manager`
 > **开发语言**：ArkTS
-> **文档状态**：v1.2 实现版（MVP + 响应式 + Agent 通信）
+> **文档状态**：v2.0 实现版（MVP + 响应式 + 双模通信）
 
 ---
 
@@ -58,15 +58,21 @@
 │   全异步数据加载 (aboutToAppear + await)         │
 ├─────────────────────────────────────────────────┤
 │                  业务逻辑层                      │
-│   SshService (AgentClient) │ PveService (PveClient) │
+│   SshService (策略门面) │ PveService (PveClient) │
 │   DataRepository (CRUD 门面 + 辅助函数)         │
 ├─────────────────────────────────────────────────┤
-│                  数据访问层                      │
-│   DatabaseHelper (RDB Store) │ 5 张持久化表     │
-│   servers / pve_clusters / commands / alerts / settings │
+│              引擎层 (双模通信)                   │
+│   SshEngine 接口                                │
+│   ├─ AgentEngine (封装 AgentClient)             │
+│   └─ DirectEngine (SSH 直连，降级模式)           │
 ├─────────────────────────────────────────────────┤
-│              远程通信层 (Agent)                  │
-│   Go Agent (HTTP + WebSocket)                   │
+│                  数据访问层                      │
+│   DatabaseHelper (RDB Store v2) │ 5 张持久化表  │
+│   servers(含 connection_mode) / pve_clusters /  │
+│   commands / alerts / settings                  │
+├─────────────────────────────────────────────────┤
+│              远程通信层                          │
+│   Go Agent (HTTP + WebSocket) │ SSH 直连        │
 │   /api/metrics /api/exec /api/files /ws/terminal│
 ├─────────────────────────────────────────────────┤
 │            HarmonyOS 系统能力                    │
@@ -74,25 +80,58 @@
 └─────────────────────────────────────────────────┘
 ```
 
-### 2.2 技术选型
+### 2.2 双模通信架构
+
+智子支持两种 SSH 通信模式，通过 `SshEngine` 接口统一抽象：
+
+| 模式 | 引擎 | 通信方式 | 适用场景 |
+|------|------|---------|---------|
+| **Agent 模式** | `AgentEngine` | HTTP + WebSocket → Go Agent | 已部署 Agent 的服务器 |
+| **直连模式** | `DirectEngine` | SSH 直连（当前降级为 HTTP 测试） | 未部署 Agent 的快速连接 |
+
+**策略门面设计**：
+- `SshService` 根据 `server.connectionMode` 选择引擎
+- 每个服务器独立维护引擎实例（`Map<serverId, SshEngine>`）
+- 引擎懒加载，首次调用时创建
+- 对 UI 层完全透明，切换模式不影响交互
+
+**SshEngine 接口方法**：
+
+| 方法 | 说明 |
+|------|------|
+| `connect(config)` | 建立连接 |
+| `disconnect()` | 断开连接 |
+| `isConnected()` | 查询连接状态 |
+| `exec(cmd, timeout?)` | 执行命令 |
+| `openTerminal(cols?, rows?)` | 开启终端 |
+| `onTerminalData(cb)` | 注册终端数据回调 |
+| `sendTerminalInput(data)` | 发送终端输入 |
+| `closeTerminal()` | 关闭终端 |
+| `getMetrics()` | 获取指标 |
+| `listFiles(path)` | 列出文件 |
+| `uploadFile(local, remote)` | 上传文件 |
+| `downloadFile(remote, local)` | 下载文件 |
+
+### 2.3 技术选型
 
 | 模块 | 技术方案 | 实现状态 |
 |------|---------|---------|
 | 开发语言 | ArkTS + Go (Agent) | ✅ |
 | UI 框架 | ArkUI 声明式 + Stage 模型 | ✅ |
 | 目标 SDK | HarmonyOS 6.1.1 (API 24) | ✅ |
-| 数据存储 | RelationalStore (RDB) + 5 表 | ✅ |
-| SSH 终端 | Go Agent WebSocket 中继 | ✅ |
+| 数据存储 | RelationalStore (RDB v2) + 5 表 | ✅ |
+| SSH 通信 | 双模：AgentEngine + DirectEngine | ✅ |
 | PVE API | `@kit.NetworkKit` HTTP 调 REST API | ✅ |
-| 服务器指标 | Go Agent gopsutil 采集 | ✅ |
+| 服务器指标 | Go Agent gopsutil / 命令解析 | ✅ |
 | 文件管理 | Go Agent HTTP API | ✅ |
-| 命令执行 | Go Agent /api/exec | ✅ |
+| 命令执行 | SshEngine.exec (双模路由) | ✅ |
 | 响应式 | @StorageLink 跨组件状态 + display API | ✅ |
 | 图表渲染 | 自绘 Canvas | 🚧 规划 |
 | 后台保活 | BackgroundTaskKit | 🚧 规划 |
 | 加密存储 | @kit.CryptoArchitectureKit + AES-256-GCM | 🚧 规划 |
+| libssh NAPI | SSH 直连原生库 | 🚧 规划（当前降级） |
 
-### 2.3 PVE API 对接说明
+### 2.4 PVE API 对接说明
 
 PVE 提供 RESTful API，基础信息：
 
@@ -557,7 +596,7 @@ private applyWidth(w: number) {
 
 | 实体 | 说明 | 关键字段 |
 |------|------|---------|
-| `Server` | SSH 服务器 | id, host, port, username, authType, group, tags, os, status, metrics |
+| `Server` | SSH 服务器 | id, host, port, username, authType, connectionMode, agentToken, privateKeyPath, group, tags, os, status, metrics |
 | `ServerMetrics` | 服务器指标 | cpu, mem, disk, netIn, netOut, load, uptime |
 | `SshKey` | SSH 密钥 | id, name, type(rsa/ed25519/ecdsa), fingerprint |
 | `PveCluster` | PVE 集群 | id, host, port, username, authType, verifyTls, version, nodes[] |
@@ -587,7 +626,7 @@ private applyWidth(w: number) {
 
 ### 6.3 数据库表结构
 
-**servers 表**：id(PK), name, host, port, username, auth_type, password_enc, key_id, grp, tags, os, created_at, last_connected
+**servers 表 (v2)**：id(PK), name, host, port, username, auth_type, password_enc, key_id, grp, tags, os, created_at, last_connected, connection_mode, agent_token, private_key_path
 
 **pve_clusters 表**：id(PK), name, host, port, username, auth_type, password_enc, token_id, token_secret_enc, verify_tls, created_at, last_sync
 
@@ -946,6 +985,7 @@ default → '#00D9A3'              // 正常输出青绿色
 | v1.0.0 | 2026-08-04 | 初始版本，对应 MVP 实现 |
 | v1.1.0 | 2026-08-05 | 数据持久化 (RDB)、Go Agent、PVE API 集成、全异步改造 |
 | v1.2.0 | 2026-08-05 | 自适应布局（3 档断点）、响应式安全区域、ArkTS 严格模式合规、终端错误高亮、颜色对比度优化、文档全面更新 |
+| v2.0.0 | 2026-08-05 | 双模通信改造：SshEngine 接口、AgentEngine + DirectEngine、策略门面 SshService、数据库 v2 迁移、Server 模型扩展、Settings 连接设置、Servers 卡片模式标签 |
 
 ---
 

@@ -145,7 +145,7 @@ export struct ServersPage {
         .fontFamily(AppTheme.fontMono)
         .width('100%')
 
-      // OS + 分组 + tags
+      // OS + 分组 + tags + 连接模式
       Row({ space: 6 }) {
         Text(s.os || '-')
           .fontSize(10)
@@ -169,6 +169,13 @@ export struct ServersPage {
             .borderRadius(5)
             .backgroundColor(AppTheme.bgSurface2)
         }, (t: string) => t)
+        // 连接模式标签
+        Text(s.connectionMode === 'direct' ? '直连' : 'Agent')
+          .fontSize(10)
+          .fontColor(s.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .borderRadius(5)
+          .backgroundColor(s.connectionMode === 'direct' ? 'rgba(245, 158, 11, 0.12)' : AppTheme.primaryDim)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)

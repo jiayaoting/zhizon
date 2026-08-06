@@ -3,6 +3,9 @@
 // SSH 服务器认证方式
 export type AuthType = 'password' | 'key';
 
+// 连接模式
+export type ConnectionMode = 'direct' | 'agent';
+
 // SSH 服务器
 export interface Server {
   id: string;
@@ -11,6 +14,9 @@ export interface Server {
   port: number;
   username: string;
   authType: AuthType;
+  connectionMode: ConnectionMode;
+  agentToken?: string;
+  privateKeyPath?: string;
   group?: string;
   tags: string[];
   os?: string;
