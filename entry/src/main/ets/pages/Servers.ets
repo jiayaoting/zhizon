@@ -21,7 +21,12 @@ export struct ServersPage {
   private groups: string[] = ['全部', '生产', '测试', '监控', '备份', 'CI/CD'];
 
   aboutToAppear(): void {
-    this.loadData();
+    this.loadData().then(() => {
+      // 自动检测所有服务器连接状态
+      if (this.servers.length > 0) {
+        this.checkAllServers();
+      }
+    });
   }
 
   private async loadData(): Promise<void> {
@@ -199,53 +204,50 @@ export struct ServersPage {
     }
   }
 
-  // 批量检测所有服务器状态
+  // 批量检测所有服务器状态（并发）
   private async checkAllServers(): Promise<void> {
     promptAction.showToast({ message: '正在检测所有服务器...' });
-    const updated: Server[] = [];
+    const promises: Promise<void>[] = [];
     for (const s of this.servers) {
-      const ok = await SshService.testConnection(s);
-      const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
-      const newServer: Server = {
-        id: s.id,
-        name: s.name,
-        host: s.host,
-        port: s.port,
-        username: s.username,
-        authType: s.authType,
-        connectionMode: s.connectionMode,
-        agentToken: s.agentToken,
-        privateKeyPath: s.privateKeyPath,
-        group: s.group,
-        tags: s.tags,
-        os: s.os,
-        status: status,
-        metrics: s.metrics,
-        lastConnected: ok ? Date.now() : s.lastConnected,
-        createdAt: s.createdAt
-      };
-      updated.push(newServer);
-      if (ok) {
-        await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
-      }
+      promises.push(this.testSingleServer(s));
     }
-    this.servers = updated;
-    const onlineCount = updated.filter(i => i.status === 'online').length;
-    const offlineCount = updated.filter(i => i.status === 'offline').length;
-    this.stats = {
-      total: this.stats.total,
-      online: onlineCount,
-      warning: this.stats.warning,
-      offline: offlineCount,
-      alerts: this.stats.alerts,
-      pveNodes: this.stats.pveNodes,
-      vmTotal: this.stats.vmTotal,
-      vmRunning: this.stats.vmRunning,
-      vmStopped: this.stats.vmStopped,
-      ctTotal: this.stats.ctTotal,
-      runningTasks: this.stats.runningTasks
-    };
+    await Promise.all(promises);
     promptAction.showToast({ message: '检测完成' });
+  }
+
+  // 检测单台服务器（不弹 toast）
+  private async testSingleServer(s: Server): Promise<void> {
+    try {
+      const ok: boolean = await SshService.testConnection(s);
+      const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
+      const idx: number = this.servers.findIndex((item: Server) => item.id === s.id);
+      if (idx >= 0) {
+        const updated: Server = {
+          id: s.id,
+          name: s.name,
+          host: s.host,
+          port: s.port,
+          username: s.username,
+          authType: s.authType,
+          connectionMode: s.connectionMode,
+          agentToken: s.agentToken,
+          privateKeyPath: s.privateKeyPath,
+          group: s.group,
+          tags: s.tags,
+          os: s.os,
+          status: status,
+          metrics: s.metrics,
+          lastConnected: ok ? Date.now() : s.lastConnected,
+          createdAt: s.createdAt
+        };
+        this.servers[idx] = updated;
+        if (ok) {
+          await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
+        }
+      }
+    } catch (e) {
+      // 单台失败不影响其他
+    }
   }
 
   // 状态点颜色

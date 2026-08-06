@@ -30,6 +30,7 @@ export struct FilesPage {
   @State selectedServer: Server | null = null;
   @State isConnected: boolean = false;
   @State transfers: TransferItem[] = [];
+  @State showPicker: boolean = false;
   private breadcrumb: string[] = ['/'];
   private currentPath: string = '/';
   private transferCounter: number = 0;
@@ -211,52 +212,79 @@ export struct FilesPage {
     this.transfers = this.transfers.filter((t: TransferItem) => t.status === 'running');
   }
 
-  // 构建服务器下拉选项（ArkTS 严格模式：对象字面量需显式类型）
-  private buildServerOptions(): SelectOption[] {
-    const options: SelectOption[] = [{ value: '请选择服务器' }];
-    this.servers.forEach((s: Server) => {
-      options.push({ value: `${s.name} (${s.host})` });
-    });
-    return options;
-  }
-
   @Builder actionsBuilder() {
     Row({ space: 8 }) {
-      Button('上传')
+      Button('选择服务器')
         .fontSize(12)
-        .fontColor(AppTheme.primary)
-        .backgroundColor(AppTheme.primaryDim)
+        .fontColor(this.selectedServer ? AppTheme.textSecondary : AppTheme.primary)
+        .backgroundColor(this.selectedServer ? AppTheme.bgSurface2 : AppTheme.primaryDim)
         .borderRadius(6)
         .height(28)
         .padding({ left: 10, right: 10 })
-        .onClick(() => this.uploadFile())
+        .onClick(() => this.showPicker = true)
+      if (this.selectedServer) {
+        Button('上传')
+          .fontSize(12)
+          .fontColor(AppTheme.primary)
+          .backgroundColor(AppTheme.primaryDim)
+          .borderRadius(6)
+          .height(28)
+          .padding({ left: 10, right: 10 })
+          .onClick(() => this.uploadFile())
+      }
     }
   }
 
   // 服务器选择器
   @Builder serverSelector() {
-    Row({ space: 8 }) {
-      Text('服务器:')
-        .fontSize(12)
-        .fontColor(AppTheme.textSecondary)
-      Select(this.buildServerOptions())
-        .font({ size: 12 })
-        .fontColor(AppTheme.textPrimary)
-        .selected(this.selectedServer ? this.servers.indexOf(this.selectedServer) + 1 : 0)
-        .onSelect((index: number) => {
-          if (index > 0) {
-            this.selectServer(this.servers[index - 1]);
-          }
-        })
-        .layoutWeight(1)
+    Row({ space: 10 }) {
       if (this.selectedServer) {
         Circle({ width: 8, height: 8 })
           .fill(this.isConnected ? AppTheme.success : AppTheme.danger)
+        Text(`${this.selectedServer.name}`)
+          .fontSize(13)
+          .fontColor(AppTheme.textPrimary)
+          .fontWeight(FontWeight.Medium)
+        Text(`(${this.selectedServer.host}:${this.selectedServer.port})`)
+          .fontSize(11)
+          .fontColor(AppTheme.textTertiary)
+          .fontFamily(AppTheme.fontMono)
+        Text(this.selectedServer.connectionMode === 'direct' ? '直连' : 'Agent')
+          .fontSize(10)
+          .fontColor(this.selectedServer.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .borderRadius(4)
+          .backgroundColor(this.selectedServer.connectionMode === 'direct' ? 'rgba(245,158,11,0.12)' : AppTheme.primaryDim)
+      } else {
+        Text('请选择服务器')
+          .fontSize(13)
+          .fontColor(AppTheme.textTertiary)
+        Image($r('sys.media.ohos_ic_public_arrow_right'))
+          .width(16)
+          .height(16)
+          .fillColor(AppTheme.textTertiary)
+      }
+      Blank()
+      if (this.selectedServer) {
+        Button('切换')
+          .fontSize(11)
+          .fontColor(AppTheme.textSecondary)
+          .backgroundColor(AppTheme.bgSurface2)
+          .borderRadius(5)
+          .height(26)
+          .padding({ left: 10, right: 10 })
+          .onClick(() => this.showPicker = true)
       }
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 4 })
+    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
     .backgroundColor(AppTheme.bgSurface)
+    .border({ width: { bottom: 0.5 }, color: AppTheme.borderSubtle })
+    .onClick(() => {
+      if (!this.selectedServer) {
+        this.showPicker = true;
+      }
+    })
   }
 
   // 面包屑项
@@ -346,6 +374,7 @@ export struct FilesPage {
   }
 
   build() {
+    Stack() {
     Column() {
       TopBar({ title: '文件管理', subtitle: this.isConnected ? `${this.selectedServer?.host} · 已连接` : 'SFTP 文件浏览' }) {
         this.actionsBuilder()
@@ -517,5 +546,128 @@ export struct FilesPage {
     .layoutWeight(1)
     .height('100%')
     .backgroundColor(AppTheme.bgBase)
+
+    // 自定义服务器选择弹窗
+    if (this.showPicker) {
+      Stack() {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('rgba(0,0,0,0.6)')
+          .onClick(() => {
+            this.showPicker = false;
+          })
+
+        Column({ space: 0 }) {
+          Row() {
+            Text('选择服务器')
+              .fontSize(16)
+              .fontColor(AppTheme.textPrimary)
+              .fontWeight(FontWeight.Bold)
+            Blank()
+            Button({ type: ButtonType.Circle }) {
+              Text('✕')
+                .fontSize(14)
+                .fontColor(AppTheme.textTertiary)
+            }
+            .width(28)
+            .height(28)
+            .backgroundColor(AppTheme.bgSurface2)
+            .onClick(() => {
+              this.showPicker = false;
+            })
+          }
+          .width('100%')
+          .padding({ left: 20, right: 16, top: 16, bottom: 12 })
+          .alignItems(VerticalAlign.Center)
+
+          Text(`共 ${this.servers.length} 台服务器`)
+            .fontSize(12)
+            .fontColor(AppTheme.textTertiary)
+            .width('100%')
+            .padding({ left: 20, right: 20, bottom: 12 })
+
+          Divider()
+            .width('100%')
+            .strokeWidth(0.5)
+            .color(AppTheme.borderSubtle)
+
+          if (this.servers.length === 0) {
+            Column({ space: 8 }) {
+              Text('📡')
+                .fontSize(36)
+              Text('暂无服务器')
+                .fontSize(14)
+                .fontColor(AppTheme.textTertiary)
+            }
+            .width('100%')
+            .padding({ top: 40, bottom: 40 })
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else {
+            Scroll() {
+              Column({ space: 0 }) {
+                ForEach(this.servers, (s: Server) => {
+                  Column() {
+                    Row({ space: 12 }) {
+                      Column() {
+                        Text(s.name)
+                          .fontSize(14)
+                          .fontColor(AppTheme.textPrimary)
+                          .fontWeight(FontWeight.Medium)
+                        Text(`${s.host}:${s.port}`)
+                          .fontSize(11)
+                          .fontColor(AppTheme.textTertiary)
+                          .fontFamily(AppTheme.fontMono)
+                      }
+                      .alignItems(HorizontalAlign.Start)
+                      .layoutWeight(1)
+
+                      Text(s.connectionMode === 'direct' ? '直连' : 'Agent')
+                        .fontSize(10)
+                        .fontColor(s.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+                        .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                        .borderRadius(4)
+                        .backgroundColor(s.connectionMode === 'direct' ? 'rgba(245,158,11,0.12)' : AppTheme.primaryDim)
+                    }
+                    .width('100%')
+                    .padding({ left: 20, right: 16, top: 14, bottom: 14 })
+                    .alignItems(VerticalAlign.Center)
+                    .onClick(() => {
+                      this.showPicker = false;
+                      this.selectServer(s);
+                    })
+
+                    Divider()
+                      .width('100%')
+                      .strokeWidth(0.5)
+                      .color(AppTheme.borderSubtle)
+                      .margin({ left: 20 })
+                  }
+                  .width('100%')
+                }, (s: Server) => s.id)
+              }
+              .width('100%')
+            }
+            .scrollBar(BarState.Off)
+            .constraintSize({ maxHeight: this.isSm ? 380 : 480 })
+          }
+        }
+        .width(this.isSm ? '90%' : '72%')
+        .constraintSize({ maxWidth: 480 })
+        .borderRadius(16)
+        .backgroundColor(AppTheme.bgSurface)
+        .shadow({
+          radius: 24,
+          color: 'rgba(0,0,0,0.4)',
+          offsetY: 8
+        })
+      }
+      .width('100%')
+      .height('100%')
+      .position({ x: 0, y: 0 })
+      .zIndex(999)
+    }
+    }
   }
 }
