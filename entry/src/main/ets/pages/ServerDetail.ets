@@ -56,9 +56,22 @@ struct ServerDetailPage {
     try {
       const metrics: ServerMetrics = await SshService.getMetrics(this.server);
       this.server = {
-        ...this.server,
+        id: this.server.id,
+        name: this.server.name,
+        host: this.server.host,
+        port: this.server.port,
+        username: this.server.username,
+        authType: this.server.authType,
+        connectionMode: this.server.connectionMode,
+        agentToken: this.server.agentToken,
+        privateKeyPath: this.server.privateKeyPath,
+        group: this.server.group,
+        tags: this.server.tags,
+        os: this.server.os,
+        status: metrics.cpu > 0 ? 'online' : 'offline',
         metrics: metrics,
-        status: metrics.cpu > 0 ? 'online' : 'offline'
+        lastConnected: this.server.lastConnected,
+        createdAt: this.server.createdAt
       };
     } catch (e) {
       console.error('Failed to fetch metrics:', JSON.stringify(e));

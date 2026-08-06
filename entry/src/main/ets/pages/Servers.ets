@@ -51,9 +51,22 @@ export struct ServersPage {
     const updated: Server[] = this.servers.map((item: Server) => {
       if (item.id === s.id) {
         const newServer: Server = {
-          ...item,
+          id: item.id,
+          name: item.name,
+          host: item.host,
+          port: item.port,
+          username: item.username,
+          authType: item.authType,
+          connectionMode: item.connectionMode,
+          agentToken: item.agentToken,
+          privateKeyPath: item.privateKeyPath,
+          group: item.group,
+          tags: item.tags,
+          os: item.os,
           status: status,
-          lastConnected: ok ? Date.now() : item.lastConnected
+          metrics: item.metrics,
+          lastConnected: ok ? Date.now() : item.lastConnected,
+          createdAt: item.createdAt
         };
         return newServer;
       }
@@ -67,10 +80,20 @@ export struct ServersPage {
     }
 
     // 更新统计
+    const onlineCount = updated.filter(i => i.status === 'online').length;
+    const offlineCount = updated.filter(i => i.status === 'offline').length;
     this.stats = {
-      ...this.stats,
-      online: updated.filter(i => i.status === 'online').length,
-      offline: updated.filter(i => i.status === 'offline').length
+      total: this.stats.total,
+      online: onlineCount,
+      warning: this.stats.warning,
+      offline: offlineCount,
+      alerts: this.stats.alerts,
+      pveNodes: this.stats.pveNodes,
+      vmTotal: this.stats.vmTotal,
+      vmRunning: this.stats.vmRunning,
+      vmStopped: this.stats.vmStopped,
+      ctTotal: this.stats.ctTotal,
+      runningTasks: this.stats.runningTasks
     };
 
     promptAction.showToast({ message: ok ? `${s.name} 连接成功` : `${s.name} 无法连接` });
@@ -84,9 +107,22 @@ export struct ServersPage {
       const ok = await SshService.testConnection(s);
       const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
       const newServer: Server = {
-        ...s,
+        id: s.id,
+        name: s.name,
+        host: s.host,
+        port: s.port,
+        username: s.username,
+        authType: s.authType,
+        connectionMode: s.connectionMode,
+        agentToken: s.agentToken,
+        privateKeyPath: s.privateKeyPath,
+        group: s.group,
+        tags: s.tags,
+        os: s.os,
         status: status,
-        lastConnected: ok ? Date.now() : s.lastConnected
+        metrics: s.metrics,
+        lastConnected: ok ? Date.now() : s.lastConnected,
+        createdAt: s.createdAt
       };
       updated.push(newServer);
       if (ok) {
@@ -94,10 +130,20 @@ export struct ServersPage {
       }
     }
     this.servers = updated;
+    const onlineCount = updated.filter(i => i.status === 'online').length;
+    const offlineCount = updated.filter(i => i.status === 'offline').length;
     this.stats = {
-      ...this.stats,
-      online: updated.filter(i => i.status === 'online').length,
-      offline: updated.filter(i => i.status === 'offline').length
+      total: this.stats.total,
+      online: onlineCount,
+      warning: this.stats.warning,
+      offline: offlineCount,
+      alerts: this.stats.alerts,
+      pveNodes: this.stats.pveNodes,
+      vmTotal: this.stats.vmTotal,
+      vmRunning: this.stats.vmRunning,
+      vmStopped: this.stats.vmStopped,
+      ctTotal: this.stats.ctTotal,
+      runningTasks: this.stats.runningTasks
     };
     promptAction.showToast({ message: '检测完成' });
   }

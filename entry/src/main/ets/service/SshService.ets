@@ -2,7 +2,7 @@
 import { http, webSocket } from '@kit.NetworkKit';
 import { socket } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
-import { fs } from '@kit.CoreFileKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { Server, ServerMetrics, FileItem, ConnectionMode, AuthType } from '../model/Models';
 
 // ========== 错误码 ==========
@@ -345,14 +345,14 @@ export class AgentEngine implements SshEngine {
 
     // 读取本地文件并 base64 编码上传
     try {
-      const file = fs.openSync(localPath, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(localPath);
+      const file = fileIo.openSync(localPath, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(localPath);
       const buf = new ArrayBuffer(stat.size);
-      fs.readSync(file.fd, buf);
-      fs.closeSync(file);
+      fileIo.readSync(file.fd, buf);
+      fileIo.closeSync(file);
 
       const base64Helper = new util.Base64Helper();
-      const encoded = base64Helper.encodeToString(new Uint8Array(buf));
+      const encoded: string = await base64Helper.encodeToString(new Uint8Array(buf));
 
       const ok = await this.client.uploadFileBase64(remotePath, encoded);
       if (!ok) {
@@ -374,9 +374,9 @@ export class AgentEngine implements SshEngine {
       }
 
       // 写入本地文件
-      const file = fs.openSync(localPath, fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-      fs.writeSync(file.fd, data);
-      fs.closeSync(file);
+      const file = fileIo.openSync(localPath, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, data);
+      fileIo.closeSync(file);
     } catch (e) {
       if (e instanceof SshError) throw e;
       throw new SshError(SSH_ERR_TIMEOUT, `文件下载异常: ${JSON.stringify(e)}`);
@@ -552,14 +552,14 @@ export class DirectEngine implements SshEngine {
     const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
 
     try {
-      const file = fs.openSync(localPath, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(localPath);
+      const file = fileIo.openSync(localPath, fileIo.OpenMode.READ_ONLY);
+      const stat = fileIo.statSync(localPath);
       const buf = new ArrayBuffer(stat.size);
-      fs.readSync(file.fd, buf);
-      fs.closeSync(file);
+      fileIo.readSync(file.fd, buf);
+      fileIo.closeSync(file);
 
       const base64Helper = new util.Base64Helper();
-      const encoded = base64Helper.encodeToString(new Uint8Array(buf));
+      const encoded: string = await base64Helper.encodeToString(new Uint8Array(buf));
 
       const ok = await agentClient.uploadFileBase64(remotePath, encoded);
       if (!ok) {
@@ -581,9 +581,9 @@ export class DirectEngine implements SshEngine {
         throw new SshError(SSH_ERR_TIMEOUT, '文件下载失败');
       }
 
-      const file = fs.openSync(localPath, fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-      fs.writeSync(file.fd, data);
-      fs.closeSync(file);
+      const file = fileIo.openSync(localPath, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fileIo.writeSync(file.fd, data);
+      fileIo.closeSync(file);
     } catch (e) {
       if (e instanceof SshError) throw e;
       throw new SshError(SSH_ERR_TIMEOUT, `文件下载异常: ${JSON.stringify(e)}`);
