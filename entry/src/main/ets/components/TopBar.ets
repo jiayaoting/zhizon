@@ -1,5 +1,5 @@
-// 智子 - 通用组件：顶栏
-import { AppTheme } from '../common/Theme';
+// 智子 - 通用组件：顶栏（沉浸光感版）
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { router } from '@kit.ArkUI';
 
 @Component
@@ -9,24 +9,24 @@ export struct TopBar {
   @Prop showBack: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @BuilderParam actions: () => void = this.emptyActions;
 
   @Builder emptyActions() {}
 
   build() {
     Row({ space: 12 }) {
-      // 返回箭头（可选，用 emoji 避免 sys.symbol 兼容性问题）
       if (this.showBack) {
         Row() {
           Text('‹')
             .fontSize(22)
-            .fontColor(AppTheme.textSecondary)
+            .fontColor(this.palette.textSecondary)
             .fontWeight(FontWeight.Bold)
         }
         .width(32)
         .height(32)
         .borderRadius(8)
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .onClick(() => router.back())
@@ -35,14 +35,14 @@ export struct TopBar {
       Column() {
         Text(this.title)
           .fontSize(20)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.subtitle) {
           Text(this.subtitle)
             .fontSize(11)
-            .fontColor(AppTheme.textTertiary)
+            .fontColor(this.palette.textTertiary)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 2 })

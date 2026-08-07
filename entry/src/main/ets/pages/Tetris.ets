@@ -1,6 +1,6 @@
 // 智子 - 俄罗斯方块
 import { router } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
 
@@ -28,13 +28,13 @@ const SHAPES: Array<Array<Array<[number, number]>>> = [
 ];
 
 const PIECE_COLORS: string[] = [
-  AppTheme.primary,   // I - 青绿
-  AppTheme.warning,   // O - 黄
-  AppTheme.purple,    // T - 紫
-  AppTheme.success,   // S - 绿
-  AppTheme.danger,    // Z - 红
-  AppTheme.info,      // J - 蓝
-  '#F97316'           // L - 橙
+  '#00D4AA',   // I - 青绿
+  '#FBBF24',   // O - 黄
+  '#8B5CF6',   // T - 紫
+  '#10B981',   // S - 绿
+  '#EF4444',   // Z - 红
+  '#3B82F6',   // J - 蓝
+  '#F97316'    // L - 橙
 ];
 
 // 分数规则
@@ -85,17 +85,18 @@ export struct TetrisPage {
   @State difficulty: number = 2; // 0=超简单 1=简单 2=中等 3=困难 4=地狱
   @State gameStarted: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
 
   // 难度配置
   private difficultyConfigs: DifficultyConfigTetris[] = [
-    { label: '超简单', icon: '😊', color: AppTheme.success, desc: '掉落极慢' },
-    { label: '简单', icon: '🙂', color: AppTheme.info, desc: '掉落较慢' },
-    { label: '中等', icon: '🤔', color: AppTheme.warning, desc: '经典体验' },
+    { label: '超简单', icon: '😊', color: this.palette.success, desc: '掉落极慢' },
+    { label: '简单', icon: '🙂', color: this.palette.info, desc: '掉落较慢' },
+    { label: '中等', icon: '🤔', color: this.palette.warning, desc: '经典体验' },
     { label: '困难', icon: '😈', color: '#F97316', desc: '掉落较快' },
-    { label: '地狱', icon: '💀', color: AppTheme.danger, desc: '飞速掉落' }
+    { label: '地狱', icon: '💀', color: this.palette.danger, desc: '飞速掉落' }
   ];
 
   // ---- 棋盘初始化 ----
@@ -392,16 +393,16 @@ export struct TetrisPage {
               .height(this.isSm ? CELL_SIZE_SM : CELL_SIZE_LG)
               .margin(0.5)
               .borderRadius(2)
-              .backgroundColor(cell > 0 ? PIECE_COLORS[cell - 1] : AppTheme.bgSurface2)
+              .backgroundColor(cell > 0 ? PIECE_COLORS[cell - 1] : this.palette.bgSurface2)
               .border({ width: cell > 0 ? 0.5 : 0, color: 'rgba(255,255,255,0.1)' })
           }, (colIdx: number) => colIdx.toString())
         }
       }, (rowIdx: number) => rowIdx.toString())
     }
-    .border({ width: 2, color: AppTheme.borderDefault })
+    .border({ width: 2, color: this.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
-    .backgroundColor(AppTheme.bgSurface)
+    .backgroundColor(this.palette.bgSurface)
   }
 
   // ---- 旋转按钮 ----
@@ -409,15 +410,15 @@ export struct TetrisPage {
   rotateButton() {
     Row() {
       Text('↻ 旋转')
-        .fontSize(AppTheme.fsSm)
-        .fontColor(AppTheme.textSecondary)
+        .fontSize(this.palette.fsSm)
+        .fontColor(this.palette.textSecondary)
     }
     .width('100%')
     .height(this.isSm ? 36 : 48)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface2)
+    .backgroundColor(this.palette.bgSurface2)
     .justifyContent(FlexAlign.Center)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .border({ width: 1, color: this.palette.borderSubtle })
     .onClick(() => { this.rotatePiece(); })
   }
 
@@ -428,16 +429,16 @@ export struct TetrisPage {
       // 下一个方块 — 放最前面确保可见
       Column({ space: 4 }) {
         Text('下一个')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Column() {
           this.previewPiece(this.nextType)
         }
         .width('100%')
         .padding(8)
-        .backgroundColor(AppTheme.bgSurface)
+        .backgroundColor(this.palette.bgSurface)
         .borderRadius(10)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
         .alignItems(HorizontalAlign.Center)
       }
       .width('100%')
@@ -445,53 +446,53 @@ export struct TetrisPage {
       // 分数
       Column({ space: 4 }) {
         Text('分数')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Text(this.score.toString())
-          .fontSize(AppTheme.fsXl)
-          .fontColor(AppTheme.primary)
+          .fontSize(this.palette.fsXl)
+          .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
       .alignItems(HorizontalAlign.Center)
       .width('100%')
       .padding(10)
-      .backgroundColor(AppTheme.bgSurface)
+      .backgroundColor(this.palette.bgSurface)
       .borderRadius(10)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
 
       // 等级 & 行数
       Row({ space: 8 }) {
         Column({ space: 4 }) {
           Text('等级')
-            .fontSize(AppTheme.fsXs)
-            .fontColor(AppTheme.textTertiary)
+            .fontSize(this.palette.fsXs)
+            .fontColor(this.palette.textTertiary)
           Text(this.level.toString())
-            .fontSize(AppTheme.fsMd)
-            .fontColor(AppTheme.warning)
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.warning)
             .fontWeight(FontWeight.Bold)
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Center)
         .padding(10)
-        .backgroundColor(AppTheme.bgSurface)
+        .backgroundColor(this.palette.bgSurface)
         .borderRadius(10)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
 
         Column({ space: 4 }) {
           Text('行数')
-            .fontSize(AppTheme.fsXs)
-            .fontColor(AppTheme.textTertiary)
+            .fontSize(this.palette.fsXs)
+            .fontColor(this.palette.textTertiary)
           Text(this.lines.toString())
-            .fontSize(AppTheme.fsMd)
-            .fontColor(AppTheme.info)
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.info)
             .fontWeight(FontWeight.Bold)
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Center)
         .padding(10)
-        .backgroundColor(AppTheme.bgSurface)
+        .backgroundColor(this.palette.bgSurface)
         .borderRadius(10)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
       }
       .width('100%')
     }
@@ -504,19 +505,19 @@ export struct TetrisPage {
     Stack() {
       Column({ space: 16 }) {
         Text('游戏结束')
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.danger)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
         Text('最终得分: ' + this.score.toString())
-          .fontSize(AppTheme.fsMd)
-          .fontColor(AppTheme.textSecondary)
+          .fontSize(this.palette.fsMd)
+          .fontColor(this.palette.textSecondary)
         Row()
           .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(AppTheme.primary)
+          .backgroundColor(this.palette.primary)
           .borderRadius(8)
           .onClick(() => { this.restartGame(); })
         Text('重新开始')
-          .fontSize(AppTheme.fsMd)
+          .fontSize(this.palette.fsMd)
           .fontColor('#0A0E1A')
           .fontWeight(FontWeight.Medium)
       }
@@ -535,16 +536,16 @@ export struct TetrisPage {
     Stack() {
       Column({ space: 12 }) {
         Text('已暂停')
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.textPrimary)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row()
           .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(AppTheme.primary)
+          .backgroundColor(this.palette.primary)
           .borderRadius(8)
           .onClick(() => { this.togglePause(); })
         Text('继续')
-          .fontSize(AppTheme.fsMd)
+          .fontSize(this.palette.fsMd)
           .fontColor('#0A0E1A')
           .fontWeight(FontWeight.Medium)
       }
@@ -562,8 +563,8 @@ export struct TetrisPage {
   difficultyPicker() {
     Column({ space: 12 }) {
       Text('选择难度')
-        .fontSize(AppTheme.fsXl)
-        .fontColor(AppTheme.textPrimary)
+        .fontSize(this.palette.fsXl)
+        .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
 
       ForEach(this.difficultyConfigs, (cfg: DifficultyConfigTetris, idx: number) => {
@@ -572,19 +573,19 @@ export struct TetrisPage {
             .fontSize(24)
           Column({ space: 2 }) {
             Text(cfg.label)
-              .fontSize(AppTheme.fsMd)
+              .fontSize(this.palette.fsMd)
               .fontColor(cfg.color)
               .fontWeight(FontWeight.Medium)
             Text(cfg.desc)
-              .fontSize(AppTheme.fsXs)
-              .fontColor(AppTheme.textTertiary)
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textTertiary)
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
         }
         .width('100%')
         .padding(14)
-        .backgroundColor(AppTheme.bgSurface)
+        .backgroundColor(this.palette.bgSurface)
         .borderRadius(10)
         .border({ width: 1.5, color: cfg.color + '80' })
         .onClick(() => { this.startWithDifficulty(idx); })
@@ -606,7 +607,7 @@ export struct TetrisPage {
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
         router.pushUrl({ url: 'pages/GameHistory', params: { 'game': 'Tetris' } as Record<string, string> });
@@ -616,12 +617,12 @@ export struct TetrisPage {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
       }
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.togglePause(); })
 
@@ -629,12 +630,12 @@ export struct TetrisPage {
       Row() {
         Text('↺')
           .fontSize(16)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
       }
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.restartGame(); })
     }
@@ -677,67 +678,67 @@ export struct TetrisPage {
           Row({ space: 8 }) {
             Column({ space: 2 }) {
               Text('分数')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
+                .fontSize(this.palette.fsXs)
+                .fontColor(this.palette.textTertiary)
               Text(this.score.toString())
-                .fontSize(AppTheme.fsMd)
-                .fontColor(AppTheme.primary)
+                .fontSize(this.palette.fsMd)
+                .fontColor(this.palette.primary)
                 .fontWeight(FontWeight.Bold)
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Center)
             .padding(6)
-            .backgroundColor(AppTheme.bgSurface)
+            .backgroundColor(this.palette.bgSurface)
             .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
+            .border({ width: 1, color: this.palette.borderSubtle })
 
             Column({ space: 2 }) {
               Text('等级')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
+                .fontSize(this.palette.fsXs)
+                .fontColor(this.palette.textTertiary)
               Text(this.level.toString())
-                .fontSize(AppTheme.fsMd)
-                .fontColor(AppTheme.warning)
+                .fontSize(this.palette.fsMd)
+                .fontColor(this.palette.warning)
                 .fontWeight(FontWeight.Bold)
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Center)
             .padding(6)
-            .backgroundColor(AppTheme.bgSurface)
+            .backgroundColor(this.palette.bgSurface)
             .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
+            .border({ width: 1, color: this.palette.borderSubtle })
 
             Column({ space: 2 }) {
               Text('行数')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
+                .fontSize(this.palette.fsXs)
+                .fontColor(this.palette.textTertiary)
               Text(this.lines.toString())
-                .fontSize(AppTheme.fsMd)
-                .fontColor(AppTheme.info)
+                .fontSize(this.palette.fsMd)
+                .fontColor(this.palette.info)
                 .fontWeight(FontWeight.Bold)
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Center)
             .padding(6)
-            .backgroundColor(AppTheme.bgSurface)
+            .backgroundColor(this.palette.bgSurface)
             .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
+            .border({ width: 1, color: this.palette.borderSubtle })
           }
           .width('100%')
 
           // 下一个方块 — 放在棋盘顶部
           Row({ space: 8 }) {
             Text('下一个')
-              .fontSize(AppTheme.fsXs)
-              .fontColor(AppTheme.textTertiary)
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textTertiary)
             this.previewPiece(this.nextType)
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
           .padding(6)
-          .backgroundColor(AppTheme.bgSurface)
+          .backgroundColor(this.palette.bgSurface)
           .borderRadius(8)
-          .border({ width: 1, color: AppTheme.borderSubtle })
+          .border({ width: 1, color: this.palette.borderSubtle })
 
           // 棋盘
           Stack() {
@@ -813,16 +814,16 @@ export struct TetrisPage {
             // 下一个方块 — 放在顶部
             Column({ space: 4 }) {
               Text('下一个')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
+                .fontSize(this.palette.fsXs)
+                .fontColor(this.palette.textTertiary)
               Column() {
                 this.previewPiece(this.nextType)
               }
               .width('100%')
               .padding(8)
-              .backgroundColor(AppTheme.bgSurface)
+              .backgroundColor(this.palette.bgSurface)
               .borderRadius(10)
-              .border({ width: 1, color: AppTheme.borderSubtle })
+              .border({ width: 1, color: this.palette.borderSubtle })
               .alignItems(HorizontalAlign.Center)
             }
             .width('100%')
@@ -846,6 +847,6 @@ export struct TetrisPage {
     }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

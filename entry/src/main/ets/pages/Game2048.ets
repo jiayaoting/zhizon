@@ -1,6 +1,6 @@
 // 智子 - 2048
 import { router } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
 
@@ -14,20 +14,21 @@ interface TileStyle {
 }
 
 // 瓦片颜色映射
-function tileStyle(value: number): TileStyle {
+// 2048 瓦片颜色（独立函数，使用硬编码颜色避免 arkts-no-standalone-this）
+function tileStyle(value: number, palette: ThemePalette): TileStyle {
   switch (value) {
-    case 2:    return { bg: '#1E293B', fg: AppTheme.textPrimary, fontSize: 24 };
-    case 4:    return { bg: '#334155', fg: AppTheme.textPrimary, fontSize: 24 };
+    case 2:    return { bg: '#1E293B', fg: palette.textPrimary, fontSize: 24 };
+    case 4:    return { bg: '#334155', fg: palette.textPrimary, fontSize: 24 };
     case 8:    return { bg: '#3B82F6', fg: '#FFFFFF', fontSize: 24 };
     case 16:   return { bg: '#2563EB', fg: '#FFFFFF', fontSize: 24 };
     case 32:   return { bg: '#8B5CF6', fg: '#FFFFFF', fontSize: 24 };
     case 64:   return { bg: '#7C3AED', fg: '#FFFFFF', fontSize: 24 };
-    case 128:  return { bg: AppTheme.warning, fg: '#FFFFFF', fontSize: 22 };
+    case 128:  return { bg: palette.warning, fg: '#FFFFFF', fontSize: 22 };
     case 256:  return { bg: '#F59E0B', fg: '#FFFFFF', fontSize: 22 };
-    case 512:  return { bg: AppTheme.danger, fg: '#FFFFFF', fontSize: 22 };
+    case 512:  return { bg: palette.danger, fg: '#FFFFFF', fontSize: 22 };
     case 1024: return { bg: '#EF4444', fg: '#FFFFFF', fontSize: 20 };
-    case 2048: return { bg: AppTheme.primary, fg: '#0A0E1A', fontSize: 20 };
-    default:   return { bg: AppTheme.bgSurface2, fg: AppTheme.textSecondary, fontSize: 18 };
+    case 2048: return { bg: palette.primary, fg: '#0A0E1A', fontSize: 20 };
+    default:   return { bg: palette.bgSurface2, fg: palette.textSecondary, fontSize: 18 };
   }
 }
 
@@ -53,16 +54,17 @@ export struct Game2048Page {
   @State difficulty: number = 2; // 0=超简单 1=简单 2=中等 3=困难 4=地狱
   @State gameStarted: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private titleText: string = '2048';
 
   // 难度对应的4出现概率和初始瓦片数
   private difficultyConfigs: DifficultyConfig2048[] = [
-    { label: '超简单', icon: '😊', color: AppTheme.success, prob4: 0.0, initTiles: 2, desc: '不会出现4' },
-    { label: '简单', icon: '🙂', color: AppTheme.info, prob4: 0.05, initTiles: 2, desc: '很少出现4' },
-    { label: '中等', icon: '🤔', color: AppTheme.warning, prob4: 0.10, initTiles: 2, desc: '经典体验' },
+    { label: '超简单', icon: '😊', color: this.palette.success, prob4: 0.0, initTiles: 2, desc: '不会出现4' },
+    { label: '简单', icon: '🙂', color: this.palette.info, prob4: 0.05, initTiles: 2, desc: '很少出现4' },
+    { label: '中等', icon: '🤔', color: this.palette.warning, prob4: 0.10, initTiles: 2, desc: '经典体验' },
     { label: '困难', icon: '😈', color: '#F97316', prob4: 0.20, initTiles: 2, desc: '经常出现4' },
-    { label: '地狱', icon: '💀', color: AppTheme.danger, prob4: 0.30, initTiles: 4, desc: '遍地都是4' }
+    { label: '地狱', icon: '💀', color: this.palette.danger, prob4: 0.30, initTiles: 4, desc: '遍地都是4' }
   ];
 
   // ---- 初始化 ----
@@ -285,13 +287,13 @@ export struct Game2048Page {
   tileCell(value: number) {
     Stack() {
       Text(value > 0 ? value.toString() : '')
-        .fontSize(tileStyle(value).fontSize)
-        .fontColor(tileStyle(value).fg)
+        .fontSize(tileStyle(value, this.palette).fontSize)
+        .fontColor(tileStyle(value, this.palette).fg)
         .fontWeight(FontWeight.Bold)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(tileStyle(value).bg)
+    .backgroundColor(tileStyle(value, this.palette).bg)
     .borderRadius(8)
     .alignContent(Alignment.Center)
   }
@@ -307,7 +309,7 @@ export struct Game2048Page {
               .layoutWeight(1)
               .aspectRatio(1)
               .borderRadius(8)
-              .backgroundColor(AppTheme.bgSurface2)
+              .backgroundColor(this.palette.bgSurface2)
               .overlay(this.tileCell(cell))
           }, (colIdx: number) => colIdx.toString())
         }
@@ -316,9 +318,9 @@ export struct Game2048Page {
     }
     .width('100%')
     .padding(8)
-    .backgroundColor(AppTheme.bgSurface)
+    .backgroundColor(this.palette.bgSurface)
     .borderRadius(12)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .border({ width: 1, color: this.palette.borderSubtle })
     .gesture(
       PanGesture({ fingers: 1, direction: PanDirection.All, distance: 20 })
         .onActionEnd((event: GestureEvent) => {
@@ -345,36 +347,36 @@ export struct Game2048Page {
       // 当前分数
       Column({ space: 2 }) {
         Text('分数')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Text(this.score.toString())
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.primary)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(12)
-      .backgroundColor(AppTheme.bgSurface)
+      .backgroundColor(this.palette.bgSurface)
       .borderRadius(10)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
 
       // 最佳分数
       Column({ space: 2 }) {
         Text('最佳')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Text(this.bestScore.toString())
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.warning)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(12)
-      .backgroundColor(AppTheme.bgSurface)
+      .backgroundColor(this.palette.bgSurface)
       .borderRadius(10)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
     }
     .width('100%')
   }
@@ -385,31 +387,31 @@ export struct Game2048Page {
     Stack() {
       Column({ space: 16 }) {
         Text('🎉 恭喜！')
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.primary)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
         Text('你达到了 2048！')
-          .fontSize(AppTheme.fsMd)
-          .fontColor(AppTheme.textSecondary)
+          .fontSize(this.palette.fsMd)
+          .fontColor(this.palette.textSecondary)
         Row({ space: 12 }) {
           Row()
             .padding({ left: 20, right: 20, top: 10, bottom: 10 })
-            .backgroundColor(AppTheme.bgSurface2)
+            .backgroundColor(this.palette.bgSurface2)
             .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
+            .border({ width: 1, color: this.palette.borderSubtle })
             .onClick(() => { this.continueGame(); })
           Text('继续游戏')
-            .fontSize(AppTheme.fsMd)
-            .fontColor(AppTheme.textSecondary)
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.textSecondary)
             .fontWeight(FontWeight.Medium)
 
           Row()
             .padding({ left: 20, right: 20, top: 10, bottom: 10 })
-            .backgroundColor(AppTheme.primary)
+            .backgroundColor(this.palette.primary)
             .borderRadius(8)
             .onClick(() => { this.restartGame(); })
           Text('重新开始')
-            .fontSize(AppTheme.fsMd)
+            .fontSize(this.palette.fsMd)
             .fontColor('#0A0E1A')
             .fontWeight(FontWeight.Medium)
         }
@@ -429,19 +431,19 @@ export struct Game2048Page {
     Stack() {
       Column({ space: 16 }) {
         Text('游戏结束')
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.danger)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
         Text('最终得分: ' + this.score.toString())
-          .fontSize(AppTheme.fsMd)
-          .fontColor(AppTheme.textSecondary)
+          .fontSize(this.palette.fsMd)
+          .fontColor(this.palette.textSecondary)
         Row()
           .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(AppTheme.primary)
+          .backgroundColor(this.palette.primary)
           .borderRadius(8)
           .onClick(() => { this.restartGame(); })
         Text('重新开始')
-          .fontSize(AppTheme.fsMd)
+          .fontSize(this.palette.fsMd)
           .fontColor('#0A0E1A')
           .fontWeight(FontWeight.Medium)
       }
@@ -459,8 +461,8 @@ export struct Game2048Page {
   difficultyPicker() {
     Column({ space: 12 }) {
       Text('选择难度')
-        .fontSize(AppTheme.fsXl)
-        .fontColor(AppTheme.textPrimary)
+        .fontSize(this.palette.fsXl)
+        .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
 
       ForEach(this.difficultyConfigs, (cfg: DifficultyConfig2048, idx: number) => {
@@ -469,19 +471,19 @@ export struct Game2048Page {
             .fontSize(24)
           Column({ space: 2 }) {
             Text(cfg.label)
-              .fontSize(AppTheme.fsMd)
+              .fontSize(this.palette.fsMd)
               .fontColor(cfg.color)
               .fontWeight(FontWeight.Medium)
             Text(cfg.desc)
-              .fontSize(AppTheme.fsXs)
-              .fontColor(AppTheme.textTertiary)
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textTertiary)
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
         }
         .width('100%')
         .padding(14)
-        .backgroundColor(AppTheme.bgSurface)
+        .backgroundColor(this.palette.bgSurface)
         .borderRadius(10)
         .border({ width: 1.5, color: cfg.color + '80' })
         .onClick(() => { this.startWithDifficulty(idx); })
@@ -502,7 +504,7 @@ export struct Game2048Page {
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
         router.pushUrl({ url: 'pages/GameHistory', params: { 'game': '2048' } as Record<string, string> });
@@ -511,12 +513,12 @@ export struct Game2048Page {
       Row() {
         Text('↺')
           .fontSize(16)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
       }
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.restartGame(); })
     }
@@ -593,23 +595,23 @@ export struct Game2048Page {
               this.scoreBoard()
               Column({ space: 8 }) {
                 Text('操作提示')
-                  .fontSize(AppTheme.fsXs)
-                  .fontColor(AppTheme.textTertiary)
+                  .fontSize(this.palette.fsXs)
+                  .fontColor(this.palette.textTertiary)
                 Column({ space: 6 }) {
                   Text('滑动屏幕即可操作')
-                    .fontSize(AppTheme.fsSm)
-                    .fontColor(AppTheme.textSecondary)
+                    .fontSize(this.palette.fsSm)
+                    .fontColor(this.palette.textSecondary)
                   Text('相同数字会合并相加')
-                    .fontSize(AppTheme.fsSm)
-                    .fontColor(AppTheme.textSecondary)
+                    .fontSize(this.palette.fsSm)
+                    .fontColor(this.palette.textSecondary)
                   Text('目标：达到 2048！')
-                    .fontSize(AppTheme.fsSm)
-                    .fontColor(AppTheme.primary)
+                    .fontSize(this.palette.fsSm)
+                    .fontColor(this.palette.primary)
                 }
                 .padding(16)
-                .backgroundColor(AppTheme.bgSurface)
+                .backgroundColor(this.palette.bgSurface)
                 .borderRadius(10)
-                .border({ width: 1, color: AppTheme.borderSubtle })
+                .border({ width: 1, color: this.palette.borderSubtle })
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)
@@ -626,6 +628,6 @@ export struct Game2048Page {
     }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

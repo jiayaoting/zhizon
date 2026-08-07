@@ -1,19 +1,19 @@
-// 智子 - 通用组件：状态徽章
-
-import { AppTheme, statusInfo } from '../common/Theme';
+// 智子 - 通用组件：状态徽章（沉浸光感版）
+import { ThemePalette, defaultLightPalette, statusInfo } from '../common/Theme';
 
 @Component
 export struct StatusBadge {
   @Prop status: string;
-  @Prop badgeSize: string = 'normal'; // normal | small
+  @Prop badgeSize: string = 'normal';
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   build() {
     Row({ space: 4 }) {
       Circle({ width: this.badgeSize === 'small' ? 5 : 6, height: this.badgeSize === 'small' ? 5 : 6 })
-        .fill(statusInfo(this.status).dotColor)
-      Text(statusInfo(this.status).text)
+        .fill(statusInfo(this.status, this.palette).dotColor)
+      Text(statusInfo(this.status, this.palette).text)
         .fontSize(this.badgeSize === 'small' ? 10 : 11)
-        .fontColor(statusInfo(this.status).color)
+        .fontColor(statusInfo(this.status, this.palette).color)
         .fontWeight(FontWeight.Medium)
     }
     .padding({

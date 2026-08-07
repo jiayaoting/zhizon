@@ -1,6 +1,5 @@
-// 智子 - 通用组件：指标卡
-
-import { AppTheme } from '../common/Theme';
+// 智子 - 通用组件：指标卡（沉浸光感版）
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 
 @Component
 export struct MetricCard {
@@ -8,23 +7,24 @@ export struct MetricCard {
   @Prop value: string;
   @Prop unit: string = '';
   @Prop sub: string = '';
-  @Prop color: string = AppTheme.primary;
+  @Prop color: string = '#00D9A3';
   @Prop badgeText: string = '';
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   build() {
     Column({ space: 8 }) {
       Row() {
         Text(this.title)
           .fontSize(10)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
           .layoutWeight(1)
         if (this.badgeText) {
           Text(this.badgeText)
             .fontSize(10)
-            .fontColor(AppTheme.textSecondary)
+            .fontColor(this.palette.textSecondary)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(8)
-            .backgroundColor(AppTheme.bgSurface2)
+            .backgroundColor(this.palette.bgSurface2)
         }
       }
       .width('100%')
@@ -34,24 +34,24 @@ export struct MetricCard {
           .fontSize(22)
           .fontColor(this.color)
           .fontWeight(FontWeight.Bold)
-          .fontFamily(AppTheme.fontMono)
+          .fontFamily(this.palette.fontMono)
         if (this.unit) {
           Text(this.unit)
             .fontSize(11)
-            .fontColor(AppTheme.textTertiary)
+            .fontColor(this.palette.textTertiary)
         }
       }
 
       if (this.sub) {
         Text(this.sub)
           .fontSize(10)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
       }
     }
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
     .alignItems(HorizontalAlign.Start)
   }
 }

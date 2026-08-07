@@ -1,6 +1,6 @@
 // 智子 - SSH 服务器列表页面
 import { router, promptAction } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
@@ -14,6 +14,7 @@ import { Server, Stats } from '../model/Models';
 export struct ServersPage {
   @State currentGroup: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageProp('serversDirty') @Watch('onServersDirty') serversDirty: number = 0;
   @State loading: boolean = true;
   @State stats: Stats = { total: 0, online: 0, warning: 0, offline: 0, alerts: 0, pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0 };
@@ -169,7 +170,7 @@ export struct ServersPage {
       },
       secondaryButton: {
         value: '删除',
-        fontColor: AppTheme.danger,
+        fontColor: this.palette.danger,
         action: () => {
           this.deleteServer(s);
         }
@@ -252,9 +253,9 @@ export struct ServersPage {
 
   // 状态点颜色
   private statusDotColor(status: string): string {
-    if (status === 'online') return AppTheme.success;
-    if (status === 'warning') return AppTheme.warning;
-    return AppTheme.textTertiary;
+    if (status === 'online') return this.palette.success;
+    if (status === 'warning') return this.palette.warning;
+    return this.palette.textTertiary;
   }
 
   // 筛选后的服务器
@@ -279,8 +280,8 @@ export struct ServersPage {
     Row({ space: 8 }) {
       Button('检测全部')
         .fontSize(12)
-        .fontColor(AppTheme.textPrimary)
-        .backgroundColor(AppTheme.bgSurface2)
+        .fontColor(this.palette.textPrimary)
+        .backgroundColor(this.palette.bgSurface2)
         .borderRadius(6)
         .height(30)
         .padding({ left: 10, right: 10 })
@@ -289,8 +290,8 @@ export struct ServersPage {
         })
       Button('添加服务器')
         .fontSize(12)
-        .fontColor(AppTheme.bgBase)
-        .backgroundColor(AppTheme.primary)
+        .fontColor(this.palette.bgBase)
+        .backgroundColor(this.palette.primary)
         .borderRadius(6)
         .height(30)
         .padding({ left: 12, right: 12 })
@@ -304,10 +305,10 @@ export struct ServersPage {
   @Builder groupTag(g: string) {
     Text(g)
       .fontSize(12)
-      .fontColor(g === this.currentGroup ? AppTheme.primary : AppTheme.textSecondary)
+      .fontColor(g === this.currentGroup ? this.palette.primary : this.palette.textSecondary)
       .padding({ left: 12, right: 12, top: 5, bottom: 5 })
       .borderRadius(14)
-      .backgroundColor(g === this.currentGroup ? AppTheme.primaryDim : AppTheme.bgSurface2)
+      .backgroundColor(g === this.currentGroup ? this.palette.primaryDim : this.palette.bgSurface2)
       .onClick(() => { this.currentGroup = g; })
   }
 
@@ -316,11 +317,11 @@ export struct ServersPage {
     Column({ space: 4 }) {
       Text(label)
         .fontSize(10)
-        .fontColor(AppTheme.textTertiary)
+        .fontColor(this.palette.textTertiary)
       Text(`${Math.round(value)}%`)
         .fontSize(12)
-        .fontColor(AppTheme.textPrimary)
-        .fontFamily(AppTheme.fontMono)
+        .fontColor(this.palette.textPrimary)
+        .fontFamily(this.palette.fontMono)
       ProgressBar({ value: value, barHeight: 4 })
     }
     .layoutWeight(1)
@@ -331,8 +332,8 @@ export struct ServersPage {
   @Builder secondaryBtn(text: string, onClick: () => void) {
     Button(text)
       .fontSize(11)
-      .fontColor(AppTheme.textSecondary)
-      .backgroundColor(AppTheme.bgSurface2)
+      .fontColor(this.palette.textSecondary)
+      .backgroundColor(this.palette.bgSurface2)
       .borderRadius(5)
       .height(24)
       .padding({ left: 8, right: 8 })
@@ -346,15 +347,15 @@ export struct ServersPage {
       Row() {
         Circle({ width: 8, height: 8 }).fill(this.statusDotColor(s.status))
         Text(s.name)
-          .fontSize(AppTheme.fsLg)
-          .fontColor(AppTheme.textPrimary)
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
           .margin({ left: 6 })
         StatusBadge({ status: s.status, badgeSize: 'small' })
         Text('更多')
           .fontSize(11)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
           .margin({ left: 12 })
       }
       .width('100%')
@@ -363,22 +364,22 @@ export struct ServersPage {
       // 地址行
       Text(`${s.host}:${s.port}`)
         .fontSize(11)
-        .fontColor(AppTheme.textTertiary)
-        .fontFamily(AppTheme.fontMono)
+        .fontColor(this.palette.textTertiary)
+        .fontFamily(this.palette.fontMono)
         .width('100%')
 
       // OS + 分组 + tags + 连接模式
       Row({ space: 6 }) {
         Text(s.os || '-')
           .fontSize(10)
-          .fontColor(AppTheme.info)
+          .fontColor(this.palette.info)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(5)
           .backgroundColor('rgba(59, 130, 246, 0.12)')
         if (s.group) {
           Text(s.group)
             .fontSize(10)
-            .fontColor(AppTheme.purple)
+            .fontColor(this.palette.purple)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(5)
             .backgroundColor('rgba(139, 92, 246, 0.12)')
@@ -386,18 +387,18 @@ export struct ServersPage {
         ForEach(s.tags, (t: string) => {
           Text(t)
             .fontSize(10)
-            .fontColor(AppTheme.textSecondary)
+            .fontColor(this.palette.textSecondary)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(5)
-            .backgroundColor(AppTheme.bgSurface2)
+            .backgroundColor(this.palette.bgSurface2)
         }, (t: string) => t)
         // 连接模式标签
         Text(s.connectionMode === 'direct' ? '直连' : 'Agent')
           .fontSize(10)
-          .fontColor(s.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+          .fontColor(s.connectionMode === 'direct' ? this.palette.warning : this.palette.primary)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(5)
-          .backgroundColor(s.connectionMode === 'direct' ? 'rgba(245, 158, 11, 0.12)' : AppTheme.primaryDim)
+          .backgroundColor(s.connectionMode === 'direct' ? 'rgba(245, 158, 11, 0.12)' : this.palette.primaryDim)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -414,12 +415,12 @@ export struct ServersPage {
       Row() {
         Text(`最后连接 ${this.lastConnectText(s)}`)
           .fontSize(10)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
           .layoutWeight(1)
         Button('一键重连')
           .fontSize(11)
-          .fontColor(AppTheme.bgBase)
-          .backgroundColor(AppTheme.primary)
+          .fontColor(this.palette.bgBase)
+          .backgroundColor(this.palette.primary)
           .borderRadius(5)
           .height(24)
           .padding({ left: 10, right: 10 })
@@ -443,8 +444,8 @@ export struct ServersPage {
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
   }
 
   build() {
@@ -460,10 +461,10 @@ export struct ServersPage {
           LoadingProgress()
             .width(36)
             .height(36)
-            .color(AppTheme.primary)
+            .color(this.palette.primary)
           Text('加载中…')
             .fontSize(12)
-            .fontColor(AppTheme.textTertiary)
+            .fontColor(this.palette.textTertiary)
             .margin({ top: 8 })
         }
         .width('100%')
@@ -486,7 +487,7 @@ export struct ServersPage {
               Column({ space: 8 }) {
                 Text('最近连接')
                   .fontSize(12)
-                  .fontColor(AppTheme.textSecondary)
+                  .fontColor(this.palette.textSecondary)
                   .fontWeight(FontWeight.Bold)
                 Row({ space: 8 }) {
                   ForEach(
@@ -497,11 +498,11 @@ export struct ServersPage {
                     (s: Server) => {
                       Text(s.name)
                         .fontSize(11)
-                        .fontColor(AppTheme.primary)
+                        .fontColor(this.palette.primary)
                         .padding({ left: 8, right: 8, top: 4, bottom: 4 })
                         .borderRadius(6)
-                        .backgroundColor(AppTheme.primaryDim)
-                        .fontFamily(AppTheme.fontMono)
+                        .backgroundColor(this.palette.primaryDim)
+                        .fontFamily(this.palette.fontMono)
                         .onClick(() => {
                           this.quickReconnect(s);
                         })
@@ -533,6 +534,6 @@ export struct ServersPage {
       }
     }
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

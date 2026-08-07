@@ -1,6 +1,6 @@
 // 智子 - SSH 终端页面
 import { router, promptAction } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { SshService } from '../service/SshService';
 import { DataRepository } from '../service/DataRepository';
@@ -18,6 +18,7 @@ interface SessionState {
 @Component
 export struct TerminalPage {
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @State sessions: SessionState[] = [];
   @State activeIndex: number = 0;
   @State serverName: string = '终端';
@@ -208,7 +209,7 @@ export struct TerminalPage {
 
   // 服务器状态点颜色
   private serverStatusColor(s: Server): string {
-    return s.status === 'online' ? AppTheme.success : AppTheme.textTertiary;
+    return s.status === 'online' ? this.palette.success : this.palette.textTertiary;
   }
 
   build() {
@@ -219,10 +220,10 @@ export struct TerminalPage {
           LoadingProgress()
             .width(36)
             .height(36)
-            .color(AppTheme.primary)
+            .color(this.palette.primary)
           Text('加载中...')
             .fontSize(14)
-            .fontColor(AppTheme.textTertiary)
+            .fontColor(this.palette.textTertiary)
             .margin({ top: 12 })
         }
         .layoutWeight(1)
@@ -231,7 +232,7 @@ export struct TerminalPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(AppTheme.bgBase)
+      .backgroundColor(this.palette.bgBase)
     } else {
       Stack() {
         Column() {
@@ -245,8 +246,8 @@ export struct TerminalPage {
             Row({ space: 8 }) {
               Button('+ 会话')
                 .fontSize(12)
-                .fontColor(AppTheme.textSecondary)
-                .backgroundColor(AppTheme.bgSurface2)
+                .fontColor(this.palette.textSecondary)
+                .backgroundColor(this.palette.bgSurface2)
                 .borderRadius(6)
                 .height(30)
                 .padding({ left: 12, right: 12 })
@@ -265,17 +266,17 @@ export struct TerminalPage {
                   Row({ space: 4 }) {
                     Text(state.session.serverName)
                       .fontSize(12)
-                      .fontFamily(AppTheme.fontMono)
-                      .fontColor(index === this.activeIndex ? AppTheme.primary : AppTheme.textSecondary)
+                      .fontFamily(this.palette.fontMono)
+                      .fontColor(index === this.activeIndex ? this.palette.primary : this.palette.textSecondary)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .constraintSize({ maxWidth: 100 })
                     Circle({ width: 6, height: 6 })
-                      .fill(state.session.connected ? AppTheme.success : AppTheme.textTertiary)
+                      .fill(state.session.connected ? this.palette.success : this.palette.textTertiary)
                     Button({ type: ButtonType.Circle }) {
                       Text('×')
                         .fontSize(12)
-                        .fontColor(AppTheme.textTertiary)
+                        .fontColor(this.palette.textTertiary)
                     }
                     .width(16)
                     .height(16)
@@ -284,7 +285,7 @@ export struct TerminalPage {
                   }
                   .padding({ left: 10, right: 6, top: 6, bottom: 6 })
                   .borderRadius(6)
-                  .backgroundColor(index === this.activeIndex ? AppTheme.bgElevated : AppTheme.bgSurface)
+                  .backgroundColor(index === this.activeIndex ? this.palette.bgElevated : this.palette.bgSurface)
                   .margin({ right: 6 })
                   .onClick(() => {
                     this.activeIndex = index;
@@ -296,7 +297,7 @@ export struct TerminalPage {
             .scrollable(ScrollDirection.Horizontal)
             .scrollBar(BarState.Off)
             .width('100%')
-            .backgroundColor(AppTheme.bgSurface)
+            .backgroundColor(this.palette.bgSurface)
           }
 
           // 终端输出区域
@@ -307,8 +308,8 @@ export struct TerminalPage {
                 Row() {
                   Button('重新连接')
                     .fontSize(12)
-                    .fontColor(AppTheme.bgBase)
-                    .backgroundColor(AppTheme.primary)
+                    .fontColor(this.palette.bgBase)
+                    .backgroundColor(this.palette.primary)
                     .borderRadius(6)
                     .height(30)
                     .padding({ left: 16, right: 16 })
@@ -325,10 +326,10 @@ export struct TerminalPage {
                   LoadingProgress()
                     .width(14)
                     .height(14)
-                    .color(AppTheme.primary)
+                    .color(this.palette.primary)
                   Text('连接中...')
                     .fontSize(12)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                 }
                 .width('100%')
                 .padding({ top: 8, bottom: 8 })
@@ -338,8 +339,8 @@ export struct TerminalPage {
               ForEach(this.activeSession?.lines || [], (line: string, index: number) => {
                 Text(line)
                   .fontSize(13)
-                  .fontFamily(AppTheme.fontMono)
-                  .fontColor(AppTheme.textSecondary)
+                  .fontFamily(this.palette.fontMono)
+                  .fontColor(this.palette.textSecondary)
                   .padding({ left: 12, right: 12, top: 1, bottom: 1 })
                   .width('100%')
               }, (line: string, idx: number) => `${idx}_${line.substring(0, 20)}`)
@@ -350,24 +351,24 @@ export struct TerminalPage {
           .layoutWeight(1)
           .scrollable(ScrollDirection.Vertical)
           .scrollBar(BarState.Auto)
-          .backgroundColor(AppTheme.bgBase)
+          .backgroundColor(this.palette.bgBase)
           .align(Alignment.TopStart)
 
           // 命令输入栏
           Row({ space: 8 }) {
             Text(this.activeSession?.prompt || '$ ')
               .fontSize(13)
-              .fontFamily(AppTheme.fontMono)
-              .fontColor(AppTheme.primary)
+              .fontFamily(this.palette.fontMono)
+              .fontColor(this.palette.primary)
               .constraintSize({ maxWidth: '40%' })
               .textOverflow({ overflow: TextOverflow.Ellipsis })
 
             TextInput({ text: this.activeSession?.cmdInput || '', placeholder: '输入命令...' })
               .fontSize(13)
-              .fontFamily(AppTheme.fontMono)
-              .fontColor(AppTheme.textPrimary)
-              .placeholderColor(AppTheme.textTertiary)
-              .backgroundColor(AppTheme.bgSurface)
+              .fontFamily(this.palette.fontMono)
+              .fontColor(this.palette.textPrimary)
+              .placeholderColor(this.palette.textTertiary)
+              .backgroundColor(this.palette.bgSurface)
               .borderRadius(6)
               .height(36)
               .layoutWeight(1)
@@ -386,8 +387,8 @@ export struct TerminalPage {
 
             Button('发送')
               .fontSize(12)
-              .fontColor(AppTheme.bgBase)
-              .backgroundColor(AppTheme.primary)
+              .fontColor(this.palette.bgBase)
+              .backgroundColor(this.palette.primary)
               .borderRadius(6)
               .height(36)
               .padding({ left: 14, right: 14 })
@@ -400,12 +401,12 @@ export struct TerminalPage {
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 8, bottom: 10 })
-          .backgroundColor(AppTheme.bgSurface)
-          .border({ width: { top: 0.5 }, color: AppTheme.borderSubtle })
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: { top: 0.5 }, color: this.palette.borderSubtle })
         }
         .width('100%')
         .height('100%')
-        .backgroundColor(AppTheme.bgBase)
+        .backgroundColor(this.palette.bgBase)
 
         // 自定义服务器选择弹窗
         if (this.showPicker) {
@@ -422,17 +423,17 @@ export struct TerminalPage {
               Row() {
                 Text('选择 SSH 服务器')
                   .fontSize(16)
-                  .fontColor(AppTheme.textPrimary)
+                  .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Bold)
                 Blank()
                 Button({ type: ButtonType.Circle }) {
                   Text('✕')
                     .fontSize(14)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                 }
                 .width(28)
                 .height(28)
-                .backgroundColor(AppTheme.bgSurface2)
+                .backgroundColor(this.palette.bgSurface2)
                 .onClick(() => {
                   this.showPicker = false;
                 })
@@ -443,23 +444,23 @@ export struct TerminalPage {
 
               Text(`共 ${this.pickerServers.length} 台服务器`)
                 .fontSize(12)
-                .fontColor(AppTheme.textTertiary)
+                .fontColor(this.palette.textTertiary)
                 .width('100%')
                 .padding({ left: 20, right: 20, bottom: 12 })
 
               Divider()
                 .width('100%')
                 .strokeWidth(0.5)
-                .color(AppTheme.borderSubtle)
+                .color(this.palette.borderSubtle)
 
               if (this.pickerServers.length === 0) {
                 Column({ space: 8 }) {
                   Text('暂无服务器')
                     .fontSize(14)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                   Text('请先在服务器管理中添加 SSH 服务器')
                     .fontSize(12)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                 }
                 .width('100%')
                 .padding({ top: 40, bottom: 40 })
@@ -474,12 +475,12 @@ export struct TerminalPage {
                           Column() {
                             Text(s.name)
                               .fontSize(14)
-                              .fontColor(AppTheme.textPrimary)
+                              .fontColor(this.palette.textPrimary)
                               .fontWeight(FontWeight.Medium)
                             Text(`${s.host}:${s.port}`)
                               .fontSize(11)
-                              .fontColor(AppTheme.textTertiary)
-                              .fontFamily(AppTheme.fontMono)
+                              .fontColor(this.palette.textTertiary)
+                              .fontFamily(this.palette.fontMono)
                           }
                           .alignItems(HorizontalAlign.Start)
                           .layoutWeight(1)
@@ -489,16 +490,16 @@ export struct TerminalPage {
 
                           Text(s.connectionMode === 'direct' ? '直连' : 'Agent')
                             .fontSize(10)
-                            .fontColor(s.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+                            .fontColor(s.connectionMode === 'direct' ? this.palette.warning : this.palette.primary)
                             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
                             .borderRadius(4)
                             .backgroundColor(s.connectionMode === 'direct'
-                              ? 'rgba(245,158,11,0.12)' : AppTheme.primaryDim)
+                              ? 'rgba(245,158,11,0.12)' : this.palette.primaryDim)
 
                           Image($r('sys.media.ohos_ic_public_arrow_right'))
                             .width(16)
                             .height(16)
-                            .fillColor(AppTheme.textTertiary)
+                            .fillColor(this.palette.textTertiary)
                         }
                         .width('100%')
                         .padding({ left: 20, right: 16, top: 14, bottom: 14 })
@@ -510,7 +511,7 @@ export struct TerminalPage {
                         Divider()
                           .width('100%')
                           .strokeWidth(0.5)
-                          .color(AppTheme.borderSubtle)
+                          .color(this.palette.borderSubtle)
                           .margin({ left: 20 })
                       }
                       .width('100%')
@@ -525,7 +526,7 @@ export struct TerminalPage {
             .width(this.isSm ? '92%' : '76%')
             .constraintSize({ maxWidth: 500 })
             .borderRadius(16)
-            .backgroundColor(AppTheme.bgSurface)
+            .backgroundColor(this.palette.bgSurface)
             .shadow({
               radius: 24,
               color: 'rgba(0,0,0,0.4)',

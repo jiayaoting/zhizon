@@ -1,6 +1,6 @@
 // 智子 - 游戏中心
 import { router } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { PAGE_PADDING, CARD_RADIUS } from '../common/Constants';
 
@@ -17,6 +17,7 @@ export struct GamesPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('isMd') isMd: boolean = false;
   @StorageLink('isLg') isLg: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private games: GameEntry[] = [
     {
@@ -24,21 +25,21 @@ export struct GamesPage {
       name: '俄罗斯方块',
       icon: '🧱',
       desc: '经典方块消除游戏，支持触屏手势和按钮双控制',
-      color: AppTheme.primary
+      color: this.palette.primary
     },
     {
       key: '2048',
       name: '2048',
       icon: '🔢',
       desc: '滑动合并数字，挑战 2048 极限',
-      color: AppTheme.warning
+      color: this.palette.warning
     },
     {
       key: 'Snake',
       name: '贪吃蛇',
       icon: '🐍',
       desc: '经典贪吃蛇，控制方向吃食物不断变长',
-      color: AppTheme.success
+      color: this.palette.success
     }
   ];
 
@@ -74,12 +75,12 @@ export struct GamesPage {
 
         Column({ space: 4 }) {
           Text(game.name)
-            .fontSize(AppTheme.fsLg)
-            .fontColor(AppTheme.textPrimary)
+            .fontSize(this.palette.fsLg)
+            .fontColor(this.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
           Text(game.desc)
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textSecondary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textSecondary)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
@@ -90,9 +91,9 @@ export struct GamesPage {
       .padding(16)
     }
     .width('100%')
-    .backgroundColor(AppTheme.bgSurface)
+    .backgroundColor(this.palette.bgSurface)
     .borderRadius(CARD_RADIUS)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .border({ width: 1, color: this.palette.borderSubtle })
     .onClick(() => { this.openGame(game); })
   }
 
@@ -104,8 +105,8 @@ export struct GamesPage {
         Column({ space: 12 }) {
           // 标题区
           Text('可用游戏')
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textTertiary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
             .fontWeight(FontWeight.Medium)
             .padding({ left: 4, top: 8, bottom: 4 })
             .width('100%')
@@ -129,6 +130,6 @@ export struct GamesPage {
     }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

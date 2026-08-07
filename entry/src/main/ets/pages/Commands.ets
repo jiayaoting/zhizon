@@ -1,7 +1,7 @@
 // 智子 - 快捷命令库页面
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
@@ -11,6 +11,7 @@ import { Command } from '../model/Models';
 export struct CommandsPage {
   @State currentCat: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @State commands: Command[] = [];
   @State loading: boolean = true;
   private categories: string[] = ['全部', '系统', '进程', '网络', 'Docker', '安全', '服务'];
@@ -40,7 +41,7 @@ export struct CommandsPage {
     Button('添加命令')
       .fontSize(12)
       .fontColor(Color.White)
-      .backgroundColor(AppTheme.primary)
+      .backgroundColor(this.palette.primary)
       .borderRadius(6)
       .height(30)
       .onClick(() => {
@@ -55,25 +56,25 @@ export struct CommandsPage {
         Column()
           .width(2)
           .height(14)
-          .backgroundColor(AppTheme.purple)
+          .backgroundColor(this.palette.purple)
       }
       Text(cat)
         .fontSize(13)
-        .fontColor(cat === this.currentCat ? AppTheme.primary : AppTheme.textSecondary)
+        .fontColor(cat === this.currentCat ? this.palette.primary : this.palette.textSecondary)
         .fontWeight(cat === this.currentCat ? FontWeight.Medium : FontWeight.Regular)
         .layoutWeight(1)
       // 命令数小徽章
       Text(`${this.countOf(cat)}`)
         .fontSize(10)
-        .fontColor(AppTheme.textTertiary)
+        .fontColor(this.palette.textTertiary)
         .padding({ left: 6, right: 6, top: 1, bottom: 1 })
         .borderRadius(8)
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 9, bottom: 9 })
     .borderRadius(6)
-    .backgroundColor(cat === this.currentCat ? AppTheme.primaryDim : Color.Transparent)
+    .backgroundColor(cat === this.currentCat ? this.palette.primaryDim : Color.Transparent)
     .onClick(() => {
       this.currentCat = cat;
     })
@@ -84,30 +85,30 @@ export struct CommandsPage {
       // 顶部：命令名 + 使用次数
       Row() {
         Text(cmd.name)
-          .fontSize(AppTheme.fsMd)
-          .fontColor(AppTheme.textPrimary)
+          .fontSize(this.palette.fsMd)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`${cmd.uses} 次`)
           .fontSize(10)
-          .fontColor(AppTheme.primary)
+          .fontColor(this.palette.primary)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(8)
-          .backgroundColor(AppTheme.primaryDim)
+          .backgroundColor(this.palette.primaryDim)
       }
       .width('100%')
 
       // 命令内容（mono 字体，可点击复制）
       Text(cmd.cmd)
-        .fontSize(AppTheme.fsSm)
-        .fontColor(AppTheme.primary)
-        .fontFamily(AppTheme.fontMono)
+        .fontSize(this.palette.fsSm)
+        .fontColor(this.palette.primary)
+        .fontFamily(this.palette.fontMono)
         .width('100%')
         .padding(10)
         .borderRadius(6)
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .onClick(() => {
@@ -118,15 +119,15 @@ export struct CommandsPage {
       Row() {
         Text(cmd.category)
           .fontSize(10)
-          .fontColor(AppTheme.textSecondary)
+          .fontColor(this.palette.textSecondary)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(8)
-          .backgroundColor(AppTheme.bgSurface2)
+          .backgroundColor(this.palette.bgSurface2)
         Blank()
         Button('复制')
           .fontSize(11)
-          .fontColor(AppTheme.textSecondary)
-          .backgroundColor(AppTheme.bgSurface2)
+          .fontColor(this.palette.textSecondary)
+          .backgroundColor(this.palette.bgSurface2)
           .borderRadius(6)
           .height(26)
           .onClick(() => {
@@ -135,7 +136,7 @@ export struct CommandsPage {
         Button('运行')
           .fontSize(11)
           .fontColor(Color.White)
-          .backgroundColor(AppTheme.primary)
+          .backgroundColor(this.palette.primary)
           .borderRadius(6)
           .height(26)
           .onClick(() => {
@@ -148,8 +149,8 @@ export struct CommandsPage {
     .padding(14)
     .margin({ right: this.isSm ? 0 : 12, bottom: 12 })
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
   }
 
   @Builder loadingBuilder() {
@@ -157,10 +158,10 @@ export struct CommandsPage {
       LoadingProgress()
         .width(40)
         .height(40)
-        .color(AppTheme.primary)
+        .color(this.palette.primary)
       Text('加载中...')
         .fontSize(13)
-        .fontColor(AppTheme.textTertiary)
+        .fontColor(this.palette.textTertiary)
         .margin({ top: 12 })
     }
     .width('100%')
@@ -183,11 +184,11 @@ export struct CommandsPage {
               ForEach(this.categories, (cat: string) => {
                 Text(cat)
                   .fontSize(12)
-                  .fontColor(cat === this.currentCat ? Color.White : AppTheme.textSecondary)
+                  .fontColor(cat === this.currentCat ? Color.White : this.palette.textSecondary)
                   .fontWeight(cat === this.currentCat ? FontWeight.Medium : FontWeight.Regular)
                   .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                   .borderRadius(14)
-                  .backgroundColor(cat === this.currentCat ? AppTheme.primary : AppTheme.bgSurface2)
+                  .backgroundColor(cat === this.currentCat ? this.palette.primary : this.palette.bgSurface2)
                   .onClick(() => { this.currentCat = cat; })
               }, (cat: string) => cat)
             }
@@ -196,8 +197,8 @@ export struct CommandsPage {
           .scrollable(ScrollDirection.Horizontal)
           .scrollBar(BarState.Off)
           .width('100%')
-          .backgroundColor(AppTheme.bgSurface)
-          .border({ width: { bottom: 1 }, color: AppTheme.borderSubtle })
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: { bottom: 1 }, color: this.palette.borderSubtle })
 
           // 命令卡片列表
           if (this.loading) {
@@ -238,8 +239,8 @@ export struct CommandsPage {
           }
           .width(180)
           .height('100%')
-          .backgroundColor(AppTheme.bgSurface)
-          .border({ width: { right: 1 }, color: AppTheme.borderSubtle })
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: { right: 1 }, color: this.palette.borderSubtle })
           .scrollBar(BarState.Off)
           .align(Alignment.Top)
 
@@ -271,6 +272,6 @@ export struct CommandsPage {
     }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

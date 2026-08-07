@@ -2,7 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { DataRepository } from '../service/DataRepository';
 import { ScoreEntry } from '../service/DatabaseHelper';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 
 const GAME_ICONS: Record<string, string> = {
@@ -16,12 +16,12 @@ const GAME_NAMES: Record<string, string> = {
   'Tetris': '俄罗斯方块'
 };
 
-const DIFFICULTY_COLORS: Record<string, string> = {
-  '超简单': AppTheme.success,
-  '简单': AppTheme.info,
-  '中等': AppTheme.warning,
+const DIFFICULTY_COLORS_DARK: Record<string, string> = {
+  '超简单': '#10B981',
+  '简单': '#3B82F6',
+  '中等': '#F59E0B',
   '困难': '#F97316',
-  '地狱': AppTheme.danger
+  '地狱': '#EF4444'
 };
 
 function formatTime(ts: number): string {
@@ -47,6 +47,7 @@ export struct GameHistoryPage {
   @State scores: ScoreEntry[] = [];
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private gameKeys: string[] = ['2048', 'Snake', 'Tetris'];
 
@@ -80,16 +81,16 @@ export struct GameHistoryPage {
             Text(GAME_ICONS[key])
               .fontSize(14)
             Text(GAME_NAMES[key])
-              .fontSize(AppTheme.fsSm)
-              .fontColor(this.gameKey === key ? AppTheme.textPrimary : AppTheme.textTertiary)
+              .fontSize(this.palette.fsSm)
+              .fontColor(this.gameKey === key ? this.palette.textPrimary : this.palette.textTertiary)
               .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
           }
           .layoutWeight(1)
           .height(36)
           .justifyContent(FlexAlign.Center)
           .borderRadius(8)
-          .backgroundColor(this.gameKey === key ? AppTheme.primary + '20' : Color.Transparent)
-          .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? AppTheme.primary : Color.Transparent })
+          .backgroundColor(this.gameKey === key ? this.palette.primary + '20' : Color.Transparent)
+          .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? this.palette.primary : Color.Transparent })
           .margin({ right: 8 })
           .onClick(() => {
             this.gameKey = key;
@@ -106,11 +107,11 @@ export struct GameHistoryPage {
           Text('📋')
             .fontSize(48)
           Text('暂无战绩')
-            .fontSize(AppTheme.fsLg)
-            .fontColor(AppTheme.textTertiary)
+            .fontSize(this.palette.fsLg)
+            .fontColor(this.palette.textTertiary)
           Text('快去玩一局吧！')
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textTertiary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
         }
         .layoutWeight(1)
         .width('100%')
@@ -129,12 +130,12 @@ export struct GameHistoryPage {
                 // 分数
                 Column({ space: 2 }) {
                   Text(entry.score.toString())
-                    .fontSize(AppTheme.fsXl)
-                    .fontColor(AppTheme.textPrimary)
+                    .fontSize(this.palette.fsXl)
+                    .fontColor(this.palette.textPrimary)
                     .fontWeight(FontWeight.Bold)
                   Text('分数')
-                    .fontSize(AppTheme.fsXs)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontSize(this.palette.fsXs)
+                    .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
@@ -143,35 +144,35 @@ export struct GameHistoryPage {
                 // 等级
                 Column({ space: 2 }) {
                   Text('Lv.' + entry.level.toString())
-                    .fontSize(AppTheme.fsMd)
-                    .fontColor(AppTheme.warning)
+                    .fontSize(this.palette.fsMd)
+                    .fontColor(this.palette.warning)
                     .fontWeight(FontWeight.Medium)
                   Text('等级')
-                    .fontSize(AppTheme.fsXs)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontSize(this.palette.fsXs)
+                    .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
                 // 难度
                 Column({ space: 2 }) {
                   Text(entry.difficulty)
-                    .fontSize(AppTheme.fsSm)
-                    .fontColor(DIFFICULTY_COLORS[entry.difficulty] || AppTheme.textSecondary)
+                    .fontSize(this.palette.fsSm)
+                    .fontColor(DIFFICULTY_COLORS_DARK[entry.difficulty] || this.palette.textSecondary)
                     .fontWeight(FontWeight.Medium)
                   Text('难度')
-                    .fontSize(AppTheme.fsXs)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontSize(this.palette.fsXs)
+                    .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
                 // 时间
                 Text(formatTime(entry.createdAt))
-                  .fontSize(AppTheme.fsXs)
-                  .fontColor(AppTheme.textTertiary)
+                  .fontSize(this.palette.fsXs)
+                  .fontColor(this.palette.textTertiary)
               }
               .width('100%')
               .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-              .backgroundColor(idx % 2 === 0 ? AppTheme.bgSurface : AppTheme.bgSurface2)
+              .backgroundColor(idx % 2 === 0 ? this.palette.bgSurface : this.palette.bgSurface2)
               .borderRadius(8)
             }
           }, (entry: ScoreEntry) => entry.id)
@@ -185,13 +186,13 @@ export struct GameHistoryPage {
       Row({ space: 12 }) {
         Row() {
           Text('🗑 清空战绩')
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textTertiary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
         }
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
         .borderRadius(8)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
         .onClick(() => { this.clearScores(); })
       }
       .width('100%')
@@ -200,6 +201,6 @@ export struct GameHistoryPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

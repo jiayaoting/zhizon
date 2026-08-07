@@ -1,7 +1,8 @@
-// 智子 - 设置页面
+// 智子 - 设置页面（沉浸光感重构版）
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { picker } from '@kit.CoreFileKit';
+import { ThemePalette, defaultLightPalette, ColorThemeId, COLOR_THEME_NAMES, COLOR_THEME_COLORS, ThemeManager } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 
 import { TopBar } from '../components/TopBar';
@@ -10,6 +11,7 @@ import { TopBar } from '../components/TopBar';
 @Component
 struct GroupCard {
   @Prop title: string;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @BuilderParam content: () => void = this.defaultContent;
 
   @Builder defaultContent() {}
@@ -17,16 +19,16 @@ struct GroupCard {
   build() {
     Column({ space: 12 }) {
       Text(this.title)
-        .fontSize(AppTheme.fsMd)
-        .fontColor(AppTheme.textPrimary)
+        .fontSize(this.palette.fsMd)
+        .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
       this.content()
     }
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
     .alignItems(HorizontalAlign.Start)
   }
 }
@@ -34,6 +36,11 @@ struct GroupCard {
 @Component
 export struct SettingsPage {
   @State loading: boolean = true;
+  @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('isDarkMode') isDarkMode: boolean = true;
+  @StorageLink('followSystemDark') followSystemDark: boolean = true;
+  @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
 
   // 常规
   @State autoReconnect: boolean = true;
@@ -42,7 +49,6 @@ export struct SettingsPage {
   // 连接设置
   @State defaultConnectionMode: string = 'direct';
   // 外观
-  @State theme: string = '深色';
   @State fontSizeSetting: string = '标准';
   @State fontFamily: string = 'JetBrains Mono';
   // 终端
@@ -62,35 +68,36 @@ export struct SettingsPage {
   @State diskThreshold: string = '95%';
   // 数据
   @State autoBackup: boolean = false;
-  @StorageLink('isSm') isSm: boolean = false;
+
+  // 主题颜色选项
+  private themeColors: ColorThemeId[] = [
+    ColorThemeId.CYAN, ColorThemeId.OCEAN, ColorThemeId.SUNSET,
+    ColorThemeId.AURORA, ColorThemeId.SAKURA, ColorThemeId.FOREST
+  ];
+
+  // 背景图设置
+  @State showBgSettings: boolean = false;
+  @State globalBgUri: string = '';
 
   async aboutToAppear(): Promise<void> {
     this.loading = true;
     try {
-      // 加载开关类设置
       const autoReconnectVal = await DataRepository.getSetting('autoReconnect', 'true');
       this.autoReconnect = autoReconnectVal === 'true';
-
       const color256Val = await DataRepository.getSetting('color256', 'true');
       this.color256 = color256Val === 'true';
-
       const biometricUnlockVal = await DataRepository.getSetting('biometricUnlock', 'false');
       this.biometricUnlock = biometricUnlockVal === 'true';
-
       const hostKeyVerifyVal = await DataRepository.getSetting('hostKeyVerify', 'true');
       this.hostKeyVerify = hostKeyVerifyVal === 'true';
-
       const alertPushVal = await DataRepository.getSetting('alertPush', 'true');
       this.alertPush = alertPushVal === 'true';
-
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
 
-      // 加载值类设置
       this.defaultSshPort = await DataRepository.getSetting('defaultSshPort', '22');
       this.connectionTimeout = await DataRepository.getSetting('connectionTimeout', '30s');
       this.defaultConnectionMode = await DataRepository.getSetting('defaultConnectionMode', 'direct');
-      this.theme = await DataRepository.getSetting('theme', '深色');
       this.fontSizeSetting = await DataRepository.getSetting('fontSize', '标准');
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'JetBrains Mono');
       this.defaultFont = await DataRepository.getSetting('defaultFont', 'JetBrains Mono');
@@ -101,6 +108,10 @@ export struct SettingsPage {
       this.cpuThreshold = await DataRepository.getSetting('cpuThreshold', '85%');
       this.memoryThreshold = await DataRepository.getSetting('memoryThreshold', '90%');
       this.diskThreshold = await DataRepository.getSetting('diskThreshold', '95%');
+
+      // 加载背景图配置
+      const bgConfig = ThemeManager.getInstance().getBackgroundConfig();
+      this.globalBgUri = bgConfig.global;
     } finally {
       this.loading = false;
     }
@@ -110,45 +121,156 @@ export struct SettingsPage {
     promptAction.showToast({ message: msg });
   }
 
-  // 普通值/操作项：左标签 + 右值 + 右箭头
+  // 打开系统文件选择器选取背景图
+  private async pickBackgroundImage(): Promise<void> {
+    try {
+      const documentSelectOptions = new picker.PhotoViewPicker();
+      const result = await documentSelectOptions.select({
+        MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE,
+        maxSelectNumber: 1
+      });
+      if (result.photoUris && result.photoUris.length > 0) {
+        const uri = result.photoUris[0];
+        await ThemeManager.getInstance().setGlobalBackground(uri);
+        this.globalBgUri = uri;
+        this.toast('背景图已设置');
+      }
+    } catch (e) {
+      this.toast('选择背景图失败');
+    }
+  }
+
   @Builder valueRow(label: string, value: string) {
     Row() {
       Text(label)
         .fontSize(13)
-        .fontColor(AppTheme.textPrimary)
+        .fontColor(this.palette.textPrimary)
         .layoutWeight(1)
       if (value) {
         Text(value)
           .fontSize(12)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
           .margin({ right: 6 })
       }
       Text('›')
         .fontSize(14)
-        .fontColor(AppTheme.textTertiary)
+        .fontColor(this.palette.textTertiary)
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 11, bottom: 11 })
     .borderRadius(6)
-    .backgroundColor(AppTheme.bgSurface2)
+    .backgroundColor(this.palette.bgSurface2)
     .onClick(() => this.toast(value ? `${label}：${value}` : label))
   }
 
-  // 开关项（使用 $state 双向绑定）
   @Builder toggleRow(label: string, isOn: boolean, onChange: (v: boolean) => void) {
     Row() {
       Text(label)
         .fontSize(13)
-        .fontColor(AppTheme.textPrimary)
+        .fontColor(this.palette.textPrimary)
         .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: isOn })
-        .selectedColor(AppTheme.primary)
+        .selectedColor(this.palette.primary)
         .onChange(onChange)
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 11, bottom: 11 })
     .borderRadius(6)
-    .backgroundColor(AppTheme.bgSurface2)
+    .backgroundColor(this.palette.bgSurface2)
+  }
+
+  // 颜色主题选择器
+  @Builder colorThemeSelector() {
+    Row({ space: 10 }) {
+      ForEach(this.themeColors, (themeId: ColorThemeId) => {
+        Column() {
+          Stack() {
+            Circle({ width: 36, height: 36 })
+              .fill(COLOR_THEME_COLORS[themeId])
+            if (this.colorThemeId === themeId) {
+              Text('✓')
+                .fontSize(14)
+                .fontColor(Color.White)
+                .fontWeight(FontWeight.Bold)
+            }
+          }
+          Text(COLOR_THEME_NAMES[themeId])
+            .fontSize(9)
+            .fontColor(this.palette.textTertiary)
+            .margin({ top: 4 })
+            .maxLines(1)
+        }
+        .alignItems(HorizontalAlign.Center)
+        .onClick(() => {
+          ThemeManager.getInstance().setColorTheme(themeId);
+        })
+      }, (themeId: ColorThemeId) => themeId)
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.SpaceEvenly)
+  }
+
+  // 深色模式设置
+  @Builder darkModeSettings() {
+    Column({ space: 8 }) {
+      this.toggleRow('跟随系统深色模式', this.followSystemDark, async (v: boolean) => {
+        await ThemeManager.getInstance().setFollowSystem(v);
+        this.toast(v ? '已开启跟随系统深色模式' : '已切换为手动模式');
+      })
+      if (!this.followSystemDark) {
+        this.toggleRow('深色模式', this.isDarkMode, async (v: boolean) => {
+          await ThemeManager.getInstance().setManualDarkMode(v);
+          this.toast(v ? '已切换为深色模式' : '已切换为浅色模式');
+        })
+      }
+    }
+    .width('100%')
+  }
+
+  // 背景图设置
+  @Builder backgroundSettings() {
+    Column({ space: 8 }) {
+      Row() {
+        Text('全局背景图')
+          .fontSize(13)
+          .fontColor(this.palette.textPrimary)
+          .layoutWeight(1)
+        if (this.globalBgUri) {
+          Text('已设置')
+            .fontSize(12)
+            .fontColor(this.palette.success)
+        } else {
+          Text('未设置')
+            .fontSize(12)
+            .fontColor(this.palette.textTertiary)
+        }
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+      .borderRadius(6)
+      .backgroundColor(this.palette.bgSurface2)
+      .onClick(() => {
+        this.pickBackgroundImage();
+      })
+
+      if (this.globalBgUri) {
+        Row() {
+          Text('清除背景图')
+            .fontSize(13)
+            .fontColor(this.palette.danger)
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+        .borderRadius(6)
+        .backgroundColor(this.palette.bgSurface2)
+        .onClick(async () => {
+          await ThemeManager.getInstance().clearAllBackgrounds();
+          this.globalBgUri = '';
+          this.toast('背景图已清除');
+        })
+      }
+    }
+    .width('100%')
   }
 
   @Builder actionsBuilder() {}
@@ -180,31 +302,51 @@ export struct SettingsPage {
                 Row() {
                   Text('连接模式')
                     .fontSize(13)
-                    .fontColor(AppTheme.textPrimary)
+                    .fontColor(this.palette.textPrimary)
                     .layoutWeight(1)
                   Text('直连模式')
                     .fontSize(11)
-                    .fontColor(AppTheme.bgBase)
+                    .fontColor('#FFFFFF')
                     .padding({ left: 10, right: 10, top: 4, bottom: 4 })
                     .borderRadius(5)
-                    .backgroundColor(AppTheme.primary)
+                    .backgroundColor(this.palette.primary)
                 }
                 .width('100%')
                 .padding({ left: 12, right: 12, top: 11, bottom: 11 })
                 .borderRadius(6)
-                .backgroundColor(AppTheme.bgSurface2)
+                .backgroundColor(this.palette.bgSurface2)
                 Text('直连模式在设备端直接发起 SSH 连接。Agent 模式暂不可用。')
                   .fontSize(10)
-                  .fontColor(AppTheme.textTertiary)
+                  .fontColor(this.palette.textTertiary)
                   .width('100%')
               }
               .width('100%')
             }
 
-            // 外观
+            // 外观（新设计）
             GroupCard({ title: '外观' }) {
-              Column({ space: 8 }) {
-                this.valueRow('主题', this.theme)
+              Column({ space: 12 }) {
+                // 颜色主题选择器
+                Text('颜色主题')
+                  .fontSize(13)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                this.colorThemeSelector()
+
+                // 深色模式
+                Text('深色模式')
+                  .fontSize(13)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                this.darkModeSettings()
+
+                // 背景图
+                Text('背景图')
+                  .fontSize(13)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                this.backgroundSettings()
+
                 this.valueRow('字号', this.fontSizeSetting)
                 this.valueRow('字体', this.fontFamily)
               }
@@ -289,15 +431,14 @@ export struct SettingsPage {
               .width('100%')
             }
           }
-          .padding(this.isSm ? 16 : 24)
-          .width('100%')
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .align(Alignment.Top)
+        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 0, bottom: 80 })
+        .width('100%')
       }
-    .layoutWeight(1)
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+      .align(Alignment.Top)
+    }
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

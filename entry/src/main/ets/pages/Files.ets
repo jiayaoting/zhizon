@@ -1,7 +1,7 @@
 // 智子 - SFTP 文件管理页面
 import { router, promptAction } from '@kit.ArkUI';
 import { picker } from '@kit.CoreFileKit';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusBadge } from '../components/StatusBadge';
@@ -24,6 +24,7 @@ interface TransferItem {
 @Component
 export struct FilesPage {
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @State files: FileItem[] = [];
   @State servers: Server[] = [];
   @State loading: boolean = true;
@@ -216,8 +217,8 @@ export struct FilesPage {
     Row({ space: 8 }) {
       Button('选择服务器')
         .fontSize(12)
-        .fontColor(this.selectedServer ? AppTheme.textSecondary : AppTheme.primary)
-        .backgroundColor(this.selectedServer ? AppTheme.bgSurface2 : AppTheme.primaryDim)
+        .fontColor(this.selectedServer ? this.palette.textSecondary : this.palette.primary)
+        .backgroundColor(this.selectedServer ? this.palette.bgSurface2 : this.palette.primaryDim)
         .borderRadius(6)
         .height(28)
         .padding({ left: 10, right: 10 })
@@ -225,8 +226,8 @@ export struct FilesPage {
       if (this.selectedServer) {
         Button('上传')
           .fontSize(12)
-          .fontColor(AppTheme.primary)
-          .backgroundColor(AppTheme.primaryDim)
+          .fontColor(this.palette.primary)
+          .backgroundColor(this.palette.primaryDim)
           .borderRadius(6)
           .height(28)
           .padding({ left: 10, right: 10 })
@@ -240,36 +241,36 @@ export struct FilesPage {
     Row({ space: 10 }) {
       if (this.selectedServer) {
         Circle({ width: 8, height: 8 })
-          .fill(this.isConnected ? AppTheme.success : AppTheme.danger)
+          .fill(this.isConnected ? this.palette.success : this.palette.danger)
         Text(`${this.selectedServer.name}`)
           .fontSize(13)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
         Text(`(${this.selectedServer.host}:${this.selectedServer.port})`)
           .fontSize(11)
-          .fontColor(AppTheme.textTertiary)
-          .fontFamily(AppTheme.fontMono)
+          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontMono)
         Text(this.selectedServer.connectionMode === 'direct' ? '直连' : 'Agent')
           .fontSize(10)
-          .fontColor(this.selectedServer.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+          .fontColor(this.selectedServer.connectionMode === 'direct' ? this.palette.warning : this.palette.primary)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(4)
-          .backgroundColor(this.selectedServer.connectionMode === 'direct' ? 'rgba(245,158,11,0.12)' : AppTheme.primaryDim)
+          .backgroundColor(this.selectedServer.connectionMode === 'direct' ? 'rgba(245,158,11,0.12)' : this.palette.primaryDim)
       } else {
         Text('请选择服务器')
           .fontSize(13)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
         Image($r('sys.media.ohos_ic_public_arrow_right'))
           .width(16)
           .height(16)
-          .fillColor(AppTheme.textTertiary)
+          .fillColor(this.palette.textTertiary)
       }
       Blank()
       if (this.selectedServer) {
         Button('切换')
           .fontSize(11)
-          .fontColor(AppTheme.textSecondary)
-          .backgroundColor(AppTheme.bgSurface2)
+          .fontColor(this.palette.textSecondary)
+          .backgroundColor(this.palette.bgSurface2)
           .borderRadius(5)
           .height(26)
           .padding({ left: 10, right: 10 })
@@ -278,8 +279,8 @@ export struct FilesPage {
     }
     .width('100%')
     .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: { bottom: 0.5 }, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: { bottom: 0.5 }, color: this.palette.borderSubtle })
     .onClick(() => {
       if (!this.selectedServer) {
         this.showPicker = true;
@@ -292,12 +293,12 @@ export struct FilesPage {
     Row({ space: 4 }) {
       Text(c)
         .fontSize(12)
-        .fontColor(idx === this.breadcrumb.length - 1 ? AppTheme.textPrimary : AppTheme.primary)
+        .fontColor(idx === this.breadcrumb.length - 1 ? this.palette.textPrimary : this.palette.primary)
         .onClick(() => this.onBreadcrumbClick(idx))
       if (idx < this.breadcrumb.length - 1) {
         Text('>')
           .fontSize(12)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
       }
     }
     .alignItems(VerticalAlign.Center)
@@ -310,7 +311,7 @@ export struct FilesPage {
         .fontSize(14)
       Text(f.name)
         .fontSize(12)
-        .fontColor(AppTheme.textPrimary)
+        .fontColor(this.palette.textPrimary)
         .layoutWeight(1)
         .margin({ left: 8 })
         .onClick(() => {
@@ -322,24 +323,24 @@ export struct FilesPage {
         })
       Text(f.modified)
         .fontSize(10)
-        .fontColor(AppTheme.textTertiary)
+        .fontColor(this.palette.textTertiary)
         .width(100)
       Text(f.type === 'file' && f.size > 0 ? formatSize(f.size) : '-')
         .fontSize(10)
-        .fontColor(AppTheme.textTertiary)
-        .fontFamily(AppTheme.fontMono)
+        .fontColor(this.palette.textTertiary)
+        .fontFamily(this.palette.fontMono)
         .width(60)
       Text(f.perms)
         .fontSize(10)
-        .fontColor(AppTheme.textTertiary)
-        .fontFamily(AppTheme.fontMono)
+        .fontColor(this.palette.textTertiary)
+        .fontFamily(this.palette.fontMono)
         .width(80)
     }
     .width('100%')
     .padding({ top: 8, bottom: 8 })
     .border({
       width: { bottom: 0.5 },
-      color: AppTheme.borderSubtle
+      color: this.palette.borderSubtle
     })
     .alignItems(VerticalAlign.Center)
   }
@@ -350,16 +351,16 @@ export struct FilesPage {
       Row() {
         Text(t.direction === 'upload' ? '⬆' : '⬇')
           .fontSize(14)
-          .fontColor(t.direction === 'upload' ? AppTheme.info : AppTheme.success)
+          .fontColor(t.direction === 'upload' ? this.palette.info : this.palette.success)
         Text(t.name)
           .fontSize(12)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
           .margin({ left: 6 })
         Text(t.speed)
           .fontSize(10)
-          .fontColor(AppTheme.textTertiary)
-          .fontFamily(AppTheme.fontMono)
+          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontMono)
           .margin({ right: 8 })
         StatusBadge({ status: t.status, badgeSize: 'small' })
       }
@@ -370,7 +371,7 @@ export struct FilesPage {
     .width('100%')
     .padding(12)
     .borderRadius(8)
-    .backgroundColor(AppTheme.bgSurface2)
+    .backgroundColor(this.palette.bgSurface2)
   }
 
   build() {
@@ -388,10 +389,10 @@ export struct FilesPage {
           LoadingProgress()
             .width(36)
             .height(36)
-            .color(AppTheme.primary)
+            .color(this.palette.primary)
           Text('加载中...')
             .fontSize(12)
-            .fontColor(AppTheme.textTertiary)
+            .fontColor(this.palette.textTertiary)
             .margin({ top: 12 })
         }
         .layoutWeight(1)
@@ -417,18 +418,18 @@ export struct FilesPage {
               Column({ space: 8 }) {
                 Text('本地')
                   .fontSize(12)
-                  .fontColor(AppTheme.textPrimary)
+                  .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Bold)
                 Column({ space: 6 }) {
                   Text('📂')
                     .fontSize(28)
                   Text('选择文件上传')
                     .fontSize(12)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                   Button('选择文件')
                     .fontSize(11)
-                    .fontColor(AppTheme.bgBase)
-                    .backgroundColor(AppTheme.primary)
+                    .fontColor(this.palette.bgBase)
+                    .backgroundColor(this.palette.primary)
                     .borderRadius(4)
                     .height(28)
                     .margin({ top: 8 })
@@ -441,9 +442,9 @@ export struct FilesPage {
               }
               .layoutWeight(1)
               .padding(12)
-              .backgroundColor(AppTheme.bgSurface)
+              .backgroundColor(this.palette.bgSurface)
               .borderRadius(10)
-              .border({ width: 1, color: AppTheme.borderSubtle })
+              .border({ width: 1, color: this.palette.borderSubtle })
               .alignItems(HorizontalAlign.Start)
 
               // 中间分隔线
@@ -451,13 +452,13 @@ export struct FilesPage {
                 .vertical(true)
                 .height('100%')
                 .strokeWidth(1)
-                .color(AppTheme.borderSubtle)
+                .color(this.palette.borderSubtle)
 
               // 右栏：远程目录
               Column({ space: 8 }) {
                 Text(`远程${this.isConnected ? ` - ${this.currentPath}` : ' - 未连接'}`)
                   .fontSize(12)
-                  .fontColor(AppTheme.textPrimary)
+                  .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Bold)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -468,7 +469,7 @@ export struct FilesPage {
                       .fontSize(28)
                     Text('请先选择并连接服务器')
                       .fontSize(12)
-                      .fontColor(AppTheme.textTertiary)
+                      .fontColor(this.palette.textTertiary)
                   }
                   .width('100%')
                   .padding({ top: 24, bottom: 24 })
@@ -480,7 +481,7 @@ export struct FilesPage {
                       .fontSize(28)
                     Text('目录为空')
                       .fontSize(12)
-                      .fontColor(AppTheme.textTertiary)
+                      .fontColor(this.palette.textTertiary)
                   }
                   .width('100%')
                   .padding({ top: 24, bottom: 24 })
@@ -494,9 +495,9 @@ export struct FilesPage {
               }
               .layoutWeight(1)
               .padding(12)
-              .backgroundColor(AppTheme.bgSurface)
+              .backgroundColor(this.palette.bgSurface)
               .borderRadius(10)
-              .border({ width: 1, color: AppTheme.borderSubtle })
+              .border({ width: 1, color: this.palette.borderSubtle })
               .alignItems(HorizontalAlign.Start)
             }
             .layoutWeight(1)
@@ -506,14 +507,14 @@ export struct FilesPage {
             Column({ space: 8 }) {
               Row() {
                 Text('传输队列')
-                  .fontSize(AppTheme.fsMd)
-                  .fontColor(AppTheme.textPrimary)
+                  .fontSize(this.palette.fsMd)
+                  .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Bold)
                 Blank()
                 if (this.transfers.some((t: TransferItem) => t.status !== 'running')) {
                   Button('清除已完成')
                     .fontSize(10)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                     .backgroundColor('transparent')
                     .height(24)
                     .onClick(() => this.clearCompleted())
@@ -524,7 +525,7 @@ export struct FilesPage {
               if (this.transfers.length === 0) {
                 Text('暂无传输任务')
                   .fontSize(11)
-                  .fontColor(AppTheme.textTertiary)
+                  .fontColor(this.palette.textTertiary)
                   .padding({ top: 8, bottom: 8 })
               } else {
                 ForEach(this.transfers, (t: TransferItem) => {
@@ -559,17 +560,17 @@ export struct FilesPage {
           Row() {
             Text('选择服务器')
               .fontSize(16)
-              .fontColor(AppTheme.textPrimary)
+              .fontColor(this.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
             Blank()
             Button({ type: ButtonType.Circle }) {
               Text('✕')
                 .fontSize(14)
-                .fontColor(AppTheme.textTertiary)
+                .fontColor(this.palette.textTertiary)
             }
             .width(28)
             .height(28)
-            .backgroundColor(AppTheme.bgSurface2)
+            .backgroundColor(this.palette.bgSurface2)
             .onClick(() => {
               this.showPicker = false;
             })
@@ -580,14 +581,14 @@ export struct FilesPage {
 
           Text(`共 ${this.servers.length} 台服务器`)
             .fontSize(12)
-            .fontColor(AppTheme.textTertiary)
+            .fontColor(this.palette.textTertiary)
             .width('100%')
             .padding({ left: 20, right: 20, bottom: 12 })
 
           Divider()
             .width('100%')
             .strokeWidth(0.5)
-            .color(AppTheme.borderSubtle)
+            .color(this.palette.borderSubtle)
 
           if (this.servers.length === 0) {
             Column({ space: 8 }) {
@@ -595,7 +596,7 @@ export struct FilesPage {
                 .fontSize(36)
               Text('暂无服务器')
                 .fontSize(14)
-                .fontColor(AppTheme.textTertiary)
+                .fontColor(this.palette.textTertiary)
             }
             .width('100%')
             .padding({ top: 40, bottom: 40 })
@@ -610,22 +611,22 @@ export struct FilesPage {
                       Column() {
                         Text(s.name)
                           .fontSize(14)
-                          .fontColor(AppTheme.textPrimary)
+                          .fontColor(this.palette.textPrimary)
                           .fontWeight(FontWeight.Medium)
                         Text(`${s.host}:${s.port}`)
                           .fontSize(11)
-                          .fontColor(AppTheme.textTertiary)
-                          .fontFamily(AppTheme.fontMono)
+                          .fontColor(this.palette.textTertiary)
+                          .fontFamily(this.palette.fontMono)
                       }
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
 
                       Text(s.connectionMode === 'direct' ? '直连' : 'Agent')
                         .fontSize(10)
-                        .fontColor(s.connectionMode === 'direct' ? AppTheme.warning : AppTheme.primary)
+                        .fontColor(s.connectionMode === 'direct' ? this.palette.warning : this.palette.primary)
                         .padding({ left: 8, right: 8, top: 3, bottom: 3 })
                         .borderRadius(4)
-                        .backgroundColor(s.connectionMode === 'direct' ? 'rgba(245,158,11,0.12)' : AppTheme.primaryDim)
+                        .backgroundColor(s.connectionMode === 'direct' ? 'rgba(245,158,11,0.12)' : this.palette.primaryDim)
                     }
                     .width('100%')
                     .padding({ left: 20, right: 16, top: 14, bottom: 14 })
@@ -638,7 +639,7 @@ export struct FilesPage {
                     Divider()
                       .width('100%')
                       .strokeWidth(0.5)
-                      .color(AppTheme.borderSubtle)
+                      .color(this.palette.borderSubtle)
                       .margin({ left: 20 })
                   }
                   .width('100%')
@@ -653,7 +654,7 @@ export struct FilesPage {
         .width(this.isSm ? '90%' : '72%')
         .constraintSize({ maxWidth: 480 })
         .borderRadius(16)
-        .backgroundColor(AppTheme.bgSurface)
+        .backgroundColor(this.palette.bgSurface)
         .shadow({
           radius: 24,
           color: 'rgba(0,0,0,0.4)',

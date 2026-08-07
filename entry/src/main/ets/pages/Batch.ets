@@ -1,7 +1,7 @@
 // 智子 - 批量操作页面
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
@@ -23,6 +23,7 @@ interface BatchResult {
 @Component
 struct SectionCard {
   @Prop title: string;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @BuilderParam content: () => void = this.defaultContent;
 
   @Builder defaultContent() {}
@@ -30,16 +31,16 @@ struct SectionCard {
   build() {
     Column({ space: 12 }) {
       Text(this.title)
-        .fontSize(AppTheme.fsMd)
-        .fontColor(AppTheme.textPrimary)
+        .fontSize(this.palette.fsMd)
+        .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
       this.content()
     }
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
     .alignItems(HorizontalAlign.Start)
   }
 }
@@ -55,6 +56,7 @@ export struct BatchPage {
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('isMd') isMd: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   private templates: string[] = ['系统信息', '磁盘检查', '服务重启', '日志查看'];
   private textareaController: TextAreaController = new TextAreaController();
 
@@ -170,7 +172,7 @@ export struct BatchPage {
     Button('执行')
       .fontSize(12)
       .fontColor(Color.White)
-      .backgroundColor(AppTheme.primary)
+      .backgroundColor(this.palette.primary)
       .borderRadius(6)
       .height(30)
       .onClick(() => this.runBatch())
@@ -189,8 +191,8 @@ export struct BatchPage {
     .width(16)
     .height(16)
     .borderRadius(3)
-    .backgroundColor(checked ? AppTheme.primary : Color.Transparent)
-    .border({ width: 1, color: checked ? AppTheme.primary : AppTheme.textTertiary })
+    .backgroundColor(checked ? this.palette.primary : Color.Transparent)
+    .border({ width: 1, color: checked ? this.palette.primary : this.palette.textTertiary })
   }
 
   @Builder serverRow(srv: Server) {
@@ -199,14 +201,14 @@ export struct BatchPage {
       Column({ space: 2 }) {
         Text(srv.name)
           .fontSize(this.isSm || this.isMd ? 12 : 13)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`${srv.host}:${srv.port}`)
           .fontSize(this.isSm || this.isMd ? 10 : 11)
-          .fontColor(AppTheme.textTertiary)
-          .fontFamily(AppTheme.fontMono)
+          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontMono)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -217,18 +219,18 @@ export struct BatchPage {
     .width('100%')
     .padding({ left: this.isSm || this.isMd ? 8 : 12, right: this.isSm || this.isMd ? 8 : 12, top: 10, bottom: 10 })
     .borderRadius(6)
-    .backgroundColor(AppTheme.bgSurface2)
+    .backgroundColor(this.palette.bgSurface2)
     .onClick(() => this.toggleServer(srv.id))
   }
 
   @Builder templateTag(name: string) {
     Text(name)
       .fontSize(11)
-      .fontColor(AppTheme.textSecondary)
+      .fontColor(this.palette.textSecondary)
       .padding({ left: 10, right: 10, top: 5, bottom: 5 })
       .borderRadius(14)
-      .backgroundColor(AppTheme.bgSurface2)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .backgroundColor(this.palette.bgSurface2)
+      .border({ width: 1, color: this.palette.borderSubtle })
       .onClick(() => this.insertTemplate(name))
   }
 
@@ -237,7 +239,7 @@ export struct BatchPage {
       Row({ space: this.isSm || this.isMd ? 8 : 12 }) {
         Text(r.serverName)
           .fontSize(this.isSm || this.isMd ? 12 : 13)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
           .layoutWeight(1)
           .maxLines(1)
@@ -245,11 +247,11 @@ export struct BatchPage {
         StatusBadge({ status: r.status, badgeSize: 'small' })
         Text(r.duration)
           .fontSize(this.isSm || this.isMd ? 10 : 11)
-          .fontColor(AppTheme.textTertiary)
-          .fontFamily(AppTheme.fontMono)
+          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontMono)
         Text('查看详情')
           .fontSize(this.isSm || this.isMd ? 10 : 11)
-          .fontColor(AppTheme.primary)
+          .fontColor(this.palette.primary)
           .onClick(() => {
             this.expandedId = this.expandedId === r.serverId ? '' : r.serverId;
           })
@@ -260,18 +262,18 @@ export struct BatchPage {
       if (this.expandedId === r.serverId) {
         Text(r.output)
           .fontSize(12)
-          .fontColor(r.status === 'success' ? AppTheme.primary : AppTheme.danger)
-          .fontFamily(AppTheme.fontMono)
+          .fontColor(r.status === 'success' ? this.palette.primary : this.palette.danger)
+          .fontFamily(this.palette.fontMono)
           .width('100%')
           .padding(10)
           .borderRadius(6)
-          .backgroundColor(AppTheme.bgSurface2)
+          .backgroundColor(this.palette.bgSurface2)
       }
     }
     .width('100%')
     .padding(12)
     .borderRadius(6)
-    .backgroundColor(AppTheme.bgSurface2)
+    .backgroundColor(this.palette.bgSurface2)
   }
 
   build() {
@@ -287,11 +289,11 @@ export struct BatchPage {
                 Row() {
                   Text(`已选 ${this.selectedServers.length}/${this.servers.length} 台`)
                     .fontSize(11)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                     .layoutWeight(1)
                   Text(this.allSelected() ? '取消全选' : '全选')
                     .fontSize(11)
-                    .fontColor(AppTheme.primary)
+                    .fontColor(this.palette.primary)
                     .onClick(() => this.toggleAll())
                 }
                 .width('100%')
@@ -310,16 +312,16 @@ export struct BatchPage {
                   .width('100%')
                   .height(120)
                   .fontSize(12)
-                  .fontFamily(AppTheme.fontMono)
-                  .fontColor(AppTheme.textPrimary)
-                  .backgroundColor(AppTheme.bgSurface2)
+                  .fontFamily(this.palette.fontMono)
+                  .fontColor(this.palette.textPrimary)
+                  .backgroundColor(this.palette.bgSurface2)
                   .borderRadius(6)
                   .onChange((val: string) => { this.commandInput = val; })
 
                 Row({ space: 8 }) {
                   Text('常用模板：')
                     .fontSize(11)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                   ForEach(this.templates, (t: string) => {
                     this.templateTag(t)
                   }, (t: string) => t)
@@ -337,7 +339,7 @@ export struct BatchPage {
                     ? `${this.results.filter(r => r.status === 'success').length}/${this.results.length} 完成`
                     : '尚未执行')
                     .fontSize(11)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                     .layoutWeight(1)
                 }
                 .width('100%')
@@ -345,7 +347,7 @@ export struct BatchPage {
                 if (this.results.length === 0) {
                   Text('点击右上角"执行"按钮开始批量执行')
                     .fontSize(11)
-                    .fontColor(AppTheme.textTertiary)
+                    .fontColor(this.palette.textTertiary)
                     .width('100%')
                     .textAlign(TextAlign.Center)
                     .padding(16)
@@ -367,6 +369,6 @@ export struct BatchPage {
       }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

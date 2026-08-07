@@ -1,8 +1,8 @@
-// 智子 - 自适应主框架（手机底部Tab / 平板侧边栏）
+// 智子 - 自适应主框架（沉浸光感重构版）
 import { display } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette, ThemeManager } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
-import { AppConstants, NavItem } from '../common/Constants';
+import { AppConstants, NavItem, ToolboxItem } from '../common/Constants';
 import { IndexPage } from './Index';
 import { ServersPage } from './Servers';
 import { PvePage } from './Pve';
@@ -27,24 +27,17 @@ struct AppShell {
   @StorageLink('isLg') isLg: boolean = false;
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
-  private allNavItems: NavItem[] = AppConstants.navItems;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
-  // 手机端 5 个主 Tab
+  // 新版导航：5 主 Tab
+  private mainNavItems: NavItem[] = AppConstants.navItems;
+
+  // 手机端 4 个主 Tab
   private smPrimaryTabs: NavItem[] = [
-    this.allNavItems[0], // 总览
-    this.allNavItems[1], // SSH 服务器
-    this.allNavItems[2], // PVE 集群
-    this.allNavItems[3], // SSH 终端
-    this.allNavItems[7], // 告警中心
-  ];
-
-  // 更多菜单中的项
-  private smMoreTabs: NavItem[] = [
-    this.allNavItems[4], // 文件管理
-    this.allNavItems[5], // 快捷命令
-    this.allNavItems[6], // 批量操作
-    this.allNavItems[8], // 设置
-    this.allNavItems[9], // 游戏中心
+    this.mainNavItems[0], // 首页
+    this.mainNavItems[1], // 服务器
+    this.mainNavItems[2], // PVE 集群
+    this.mainNavItems[3], // 工具箱
   ];
 
   aboutToAppear() {
@@ -54,7 +47,6 @@ struct AppShell {
       this.winWidth = vpWidth;
       this.applyWidth(vpWidth);
     } catch (e) {
-      // 兜底：默认手机布局，等 onAreaChange 更新
       this.winWidth = 0;
       this.applyWidth(0);
     }
@@ -74,11 +66,13 @@ struct AppShell {
   @Builder
   renderPage() {
     if (this.currentPage === 'Index') {
-      IndexPage()
+      IndexPage({ onNavigate: (key: string): void => { this.selectPage(key); } })
     } else if (this.currentPage === 'Servers') {
       ServersPage()
     } else if (this.currentPage === 'Pve') {
       PvePage()
+    } else if (this.currentPage === 'Toolbox') {
+      this.toolboxPage()
     } else if (this.currentPage === 'Terminal') {
       TerminalPage()
     } else if (this.currentPage === 'Files') {
@@ -96,14 +90,73 @@ struct AppShell {
     }
   }
 
+  // 工具箱页面
   @Builder
-  tabItem(item: NavItem, isActive: boolean, isMore: boolean) {
+  toolboxPage() {
+    Column() {
+      // 顶部标题
+      Row() {
+        Text('工具箱')
+          .fontSize(20)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: this.statusBarHeight + 16, bottom: 16 })
+
+      Scroll() {
+        Column({ space: 12 }) {
+          ForEach(AppConstants.toolboxItems, (item: NavItem, idx: number) => {
+            Row({ space: 12 }) {
+              Text(item.icon)
+                .fontSize(24)
+              Column() {
+                Text(item.label)
+                  .fontSize(14)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                if ((item as ToolboxItem).desc) {
+                  Text((item as ToolboxItem).desc)
+                    .fontSize(11)
+                    .fontColor(this.palette.textTertiary)
+                    .margin({ top: 2 })
+                }
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              Text('›')
+                .fontSize(18)
+                .fontColor(this.palette.textTertiary)
+            }
+            .width('100%')
+            .padding(14)
+            .borderRadius(10)
+            .backgroundColor(this.palette.bgSurface)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .onClick(() => {
+              this.selectPage(item.key);
+            })
+          }, (item: NavItem) => item.key)
+        }
+        .padding(this.isSm ? 16 : 24)
+        .width('100%')
+      }
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(this.palette.bgBase)
+  }
+
+  @Builder
+  tabItem(item: NavItem, isActive: boolean) {
     Column({ space: 2 }) {
-      Text(isMore ? '⋯' : item.icon)
-        .fontSize(isMore ? 20 : 18)
-      Text(isMore ? '更多' : item.label)
+      Text(item.icon)
+        .fontSize(20)
+      Text(item.label)
         .fontSize(10)
-        .fontColor(isActive ? AppTheme.primary : AppTheme.textTertiary)
+        .fontColor(isActive ? this.palette.primary : this.palette.textTertiary)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
@@ -112,85 +165,119 @@ struct AppShell {
     .justifyContent(FlexAlign.Center)
     .padding({ top: 4, bottom: 4 })
     .onClick(() => {
-      if (isMore) {
-        this.showMoreMenu = !this.showMoreMenu;
-      } else {
-        this.selectPage(item.key);
-      }
+      this.selectPage(item.key);
     })
+  }
+
+  // 更多菜单面板
+  @Builder
+  moreMenuPanel() {
+    Column({ space: 0 }) {
+      Text('更多')
+        .fontSize(14)
+        .fontColor(this.palette.textSecondary)
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 16, bottom: 10 })
+
+      ForEach(AppConstants.moreItems, (item: NavItem) => {
+        Row({ space: 12 }) {
+          Text(item.icon).fontSize(20)
+          Text(item.label)
+            .fontSize(14)
+            .fontColor(this.palette.textPrimary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 12, bottom: 12 })
+        .onClick(() => {
+          this.selectPage(item.key);
+          this.showMoreMenu = false;
+        })
+      }, (item: NavItem) => item.key)
+
+      // 取消按钮
+      Row() {
+        Text('取消')
+          .fontSize(14)
+          .fontColor(this.palette.textSecondary)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 12, bottom: 12 })
+      }
+      .width('100%')
+      .border({ width: { top: 1 }, color: this.palette.borderSubtle })
+      .onClick(() => { this.showMoreMenu = false; })
+    }
+    .width('100%')
+    .backgroundColor(this.palette.bgSurface)
+    .borderRadius({ topLeft: 16, topRight: 16 })
+    .padding({ bottom: this.navBarHeight })
   }
 
   @Builder
   bottomTabBar() {
-    Column() {
-      // 更多菜单弹出层
-      if (this.showMoreMenu) {
-        Column({ space: 0 }) {
-          ForEach(this.smMoreTabs, (item: NavItem, idx: number) => {
-            Row({ space: 10 }) {
-              Text(item.icon).fontSize(16)
-              Text(item.label)
-                .fontSize(14)
-                .fontColor(this.currentPage === item.key ? AppTheme.primary : AppTheme.textPrimary)
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .padding({ left: 20, right: 20, top: 12, bottom: 12 })
-            .backgroundColor(this.currentPage === item.key ? AppTheme.primaryDim : Color.Transparent)
-            .onClick(() => this.selectPage(item.key))
-          }, (item: NavItem) => item.key)
-        }
-        .width('100%')
-        .backgroundColor(AppTheme.bgElevated)
-        .borderRadius({ topLeft: 12, topRight: 12 })
-        .padding({ top: 4, bottom: 8 })
-      }
-
-      // 主 Tab 栏
+    Stack({ alignContent: Alignment.Bottom }) {
+      // Tab 栏
       Row() {
         ForEach(this.smPrimaryTabs, (item: NavItem) => {
-          this.tabItem(item, item.key === this.currentPage, false)
+          this.tabItem(item, item.key === this.currentPage)
         }, (item: NavItem) => item.key)
 
         // 更多按钮
-        this.tabItem({ key: 'more', label: '更多', icon: '⋯' },
-          this.smMoreTabs.some(t => t.key === this.currentPage), true)
+        Column({ space: 2 }) {
+          Text('⋯')
+            .fontSize(20)
+            .fontColor(this.palette.textTertiary)
+          Text('更多')
+            .fontSize(10)
+            .fontColor(this.palette.textTertiary)
+            .maxLines(1)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Center)
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: 4, bottom: 4 })
+        .onClick(() => { this.showMoreMenu = !this.showMoreMenu; })
       }
       .width('100%')
       .height(56)
-      .backgroundColor(AppTheme.bgSurface)
-      .border({ width: { top: 1 }, color: AppTheme.borderSubtle })
+      .backgroundColor(this.palette.bgSurface)
+      .border({ width: { top: 1 }, color: this.palette.borderSubtle })
+      .padding({ bottom: this.navBarHeight })
+
+      // 更多菜单弹出层（浮在 Tab 上方）
+      if (this.showMoreMenu) {
+        this.moreMenuPanel()
+      }
     }
     .width('100%')
-    .backgroundColor(AppTheme.bgSurface)
-    .padding({ bottom: this.navBarHeight })
-  }
-
-  // 半透明遮罩：点击关闭更多菜单
-  @Builder
-  overlayMask() {
-    Column()
-      .width('100%')
-      .height('100%')
-      .backgroundColor('rgba(0,0,0,0.4)')
-      .position({ x: 0, y: 0 })
-      .onClick(() => { this.showMoreMenu = false; })
   }
 
   build() {
     Column() {
       if (this.isSm) {
-        // 手机：内容 + 底部Tab
+        // 手机：内容 + 底部Tab（带背景图）
         Stack({ alignContent: Alignment.Bottom }) {
+          // 背景图层
+          Stack() {
+            // 背景图
+            Image(ThemeManager.getInstance().getPageBackground(this.currentPage))
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Cover)
+              .visibility(ThemeManager.getInstance().getPageBackground(this.currentPage) ? Visibility.Visible : Visibility.None)
+            // 半透明遮罩
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(this.palette.isDark ? 'rgba(10, 14, 26, 0.85)' : 'rgba(245, 246, 250, 0.85)')
+          }
+          .width('100%')
+          .height('100%')
+
+          // 内容层
           Column() {
-            // 更多菜单遮罩（仅覆盖页面内容区，不影响底部 Tab 栏和弹出菜单）
-            Stack() {
-              this.renderPage()
-              if (this.showMoreMenu) {
-                this.overlayMask()
-              }
-            }
-            .layoutWeight(1)
+            this.renderPage()
           }
           .layoutWeight(1)
 
@@ -198,7 +285,7 @@ struct AppShell {
         }
         .layoutWeight(1)
       } else {
-        // 平板+：侧边栏 + 内容
+        // 平板+：侧边栏 + 内容（带背景图）
         Row() {
           NavSidebar({
             activeKey: this.currentPage,
@@ -209,8 +296,27 @@ struct AppShell {
           })
           .width(this.isLg ? 220 : 160)
 
-          Column() {
-            this.renderPage()
+          Stack() {
+            // 背景图层
+            Stack() {
+              Image(ThemeManager.getInstance().getPageBackground(this.currentPage))
+                .width('100%')
+                .height('100%')
+                .objectFit(ImageFit.Cover)
+                .visibility(ThemeManager.getInstance().getPageBackground(this.currentPage) ? Visibility.Visible : Visibility.None)
+              Column()
+                .width('100%')
+                .height('100%')
+                .backgroundColor(this.palette.isDark ? 'rgba(10, 14, 26, 0.85)' : 'rgba(245, 246, 250, 0.85)')
+            }
+            .width('100%')
+            .height('100%')
+
+            Column() {
+              this.renderPage()
+            }
+            .layoutWeight(1)
+            .height('100%')
           }
           .layoutWeight(1)
           .height('100%')
@@ -220,7 +326,7 @@ struct AppShell {
       }
     }
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
     .onAreaChange((oldArea: Area, newArea: Area) => {
       const w = newArea.width as number;
       if (w > 0 && Math.abs(w - this.winWidth) > 10) {

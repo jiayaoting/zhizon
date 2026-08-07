@@ -1,6 +1,6 @@
 // 智子 - 贪吃蛇
 import { router } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
 
@@ -37,6 +37,7 @@ export struct SnakePage {
   @State difficulty: number = 1; // 0=简单 1=中等 2=困难
   @State gameStarted: boolean = false; // 是否已选择难度开始
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private timerId: number = -1;
   private titleText: string = '贪吃蛇';
@@ -228,26 +229,26 @@ export struct SnakePage {
         }
       }, (rowIdx: number) => rowIdx.toString())
     }
-    .border({ width: 2, color: AppTheme.borderDefault })
+    .border({ width: 2, color: this.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
-    .backgroundColor(AppTheme.bgSurface)
+    .backgroundColor(this.palette.bgSurface)
   }
 
   private cellColor(cell: number, x: number, y: number): string {
     if (cell === 1) {
       // 蛇头
-      return AppTheme.primary;
+      return this.palette.primary;
     }
     if (cell === 2) {
       // 蛇身 - 渐变效果
-      return AppTheme.primaryDim;
+      return this.palette.primaryDim;
     }
     if (cell === 3) {
       // 食物
-      return AppTheme.danger;
+      return this.palette.danger;
     }
-    return AppTheme.bgSurface2;
+    return this.palette.bgSurface2;
   }
 
   private getDisplayGrid(): number[][] {
@@ -284,14 +285,14 @@ export struct SnakePage {
       Row() {
         Text('▲')
           .fontSize(20)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
       }
       .width(this.isSm ? 48 : 56)
       .height(this.isSm ? 48 : 56)
       .borderRadius(12)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
       .onClick(() => { this.changeDirection(Direction.UP); })
 
       // 左右下
@@ -299,40 +300,40 @@ export struct SnakePage {
         Row() {
           Text('◀')
             .fontSize(20)
-            .fontColor(AppTheme.textPrimary)
+            .fontColor(this.palette.textPrimary)
         }
         .width(this.isSm ? 48 : 56)
         .height(this.isSm ? 48 : 56)
         .borderRadius(12)
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
         .onClick(() => { this.changeDirection(Direction.LEFT); })
 
         Row() {
           Text('▼')
             .fontSize(20)
-            .fontColor(AppTheme.textPrimary)
+            .fontColor(this.palette.textPrimary)
         }
         .width(this.isSm ? 48 : 56)
         .height(this.isSm ? 48 : 56)
         .borderRadius(12)
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
         .onClick(() => { this.changeDirection(Direction.DOWN); })
 
         Row() {
           Text('▶')
             .fontSize(20)
-            .fontColor(AppTheme.textPrimary)
+            .fontColor(this.palette.textPrimary)
         }
         .width(this.isSm ? 48 : 56)
         .height(this.isSm ? 48 : 56)
         .borderRadius(12)
-        .backgroundColor(AppTheme.bgSurface2)
+        .backgroundColor(this.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: AppTheme.borderSubtle })
+        .border({ width: 1, color: this.palette.borderSubtle })
         .onClick(() => { this.changeDirection(Direction.RIGHT); })
       }
       .justifyContent(FlexAlign.Center)
@@ -347,53 +348,53 @@ export struct SnakePage {
       // 分数
       Column({ space: 2 }) {
         Text('分数')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Text(this.score.toString())
-          .fontSize(AppTheme.fsLg)
-          .fontColor(AppTheme.primary)
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(AppTheme.bgSurface)
+      .backgroundColor(this.palette.bgSurface)
       .borderRadius(8)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
 
       // 等级
       Column({ space: 2 }) {
         Text('等级')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Text(this.level.toString())
-          .fontSize(AppTheme.fsLg)
-          .fontColor(AppTheme.warning)
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(AppTheme.bgSurface)
+      .backgroundColor(this.palette.bgSurface)
       .borderRadius(8)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
 
       // 最佳
       Column({ space: 2 }) {
         Text('最佳')
-          .fontSize(AppTheme.fsXs)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
         Text(this.bestScore.toString())
-          .fontSize(AppTheme.fsLg)
-          .fontColor(AppTheme.info)
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.info)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(AppTheme.bgSurface)
+      .backgroundColor(this.palette.bgSurface)
       .borderRadius(8)
-      .border({ width: 1, color: AppTheme.borderSubtle })
+      .border({ width: 1, color: this.palette.borderSubtle })
     }
     .width('100%')
   }
@@ -404,22 +405,22 @@ export struct SnakePage {
     Stack() {
       Column({ space: 16 }) {
         Text('游戏结束')
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.danger)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
         Text('最终得分: ' + this.score.toString())
-          .fontSize(AppTheme.fsMd)
-          .fontColor(AppTheme.textSecondary)
+          .fontSize(this.palette.fsMd)
+          .fontColor(this.palette.textSecondary)
         Text('蛇身长度: ' + this.snake.length.toString())
-          .fontSize(AppTheme.fsSm)
-          .fontColor(AppTheme.textTertiary)
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textTertiary)
         Row()
           .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(AppTheme.primary)
+          .backgroundColor(this.palette.primary)
           .borderRadius(8)
           .onClick(() => { this.restartGame(); })
         Text('重新开始')
-          .fontSize(AppTheme.fsMd)
+          .fontSize(this.palette.fsMd)
           .fontColor('#0A0E1A')
           .fontWeight(FontWeight.Medium)
       }
@@ -438,16 +439,16 @@ export struct SnakePage {
     Stack() {
       Column({ space: 12 }) {
         Text('已暂停')
-          .fontSize(AppTheme.fs2xl)
-          .fontColor(AppTheme.textPrimary)
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row()
           .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(AppTheme.primary)
+          .backgroundColor(this.palette.primary)
           .borderRadius(8)
           .onClick(() => { this.togglePause(); })
         Text('继续')
-          .fontSize(AppTheme.fsMd)
+          .fontSize(this.palette.fsMd)
           .fontColor('#0A0E1A')
           .fontWeight(FontWeight.Medium)
       }
@@ -465,23 +466,23 @@ export struct SnakePage {
   difficultyPicker() {
     Column({ space: 16 }) {
       Text('选择难度')
-        .fontSize(AppTheme.fsXl)
-        .fontColor(AppTheme.textPrimary)
+        .fontSize(this.palette.fsXl)
+        .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
       Row({ space: 12 }) {
         Column() {
           Text('🐢')
             .fontSize(28)
           Text('简单')
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textSecondary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textSecondary)
             .margin({ top: 4 })
         }
         .layoutWeight(1)
         .padding(16)
-        .backgroundColor(AppTheme.success + '20')
+        .backgroundColor(this.palette.success + '20')
         .borderRadius(10)
-        .border({ width: 2, color: AppTheme.success })
+        .border({ width: 2, color: this.palette.success })
         .alignItems(HorizontalAlign.Center)
         .onClick(() => { this.startWithDifficulty(0); })
 
@@ -489,15 +490,15 @@ export struct SnakePage {
           Text('🐍')
             .fontSize(28)
           Text('中等')
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textSecondary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textSecondary)
             .margin({ top: 4 })
         }
         .layoutWeight(1)
         .padding(16)
-        .backgroundColor(AppTheme.warning + '20')
+        .backgroundColor(this.palette.warning + '20')
         .borderRadius(10)
-        .border({ width: 2, color: AppTheme.warning })
+        .border({ width: 2, color: this.palette.warning })
         .alignItems(HorizontalAlign.Center)
         .onClick(() => { this.startWithDifficulty(1); })
 
@@ -505,15 +506,15 @@ export struct SnakePage {
           Text('⚡')
             .fontSize(28)
           Text('困难')
-            .fontSize(AppTheme.fsSm)
-            .fontColor(AppTheme.textSecondary)
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textSecondary)
             .margin({ top: 4 })
         }
         .layoutWeight(1)
         .padding(16)
-        .backgroundColor(AppTheme.danger + '20')
+        .backgroundColor(this.palette.danger + '20')
         .borderRadius(10)
-        .border({ width: 2, color: AppTheme.danger })
+        .border({ width: 2, color: this.palette.danger })
         .alignItems(HorizontalAlign.Center)
         .onClick(() => { this.startWithDifficulty(2); })
       }
@@ -535,7 +536,7 @@ export struct SnakePage {
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
         router.pushUrl({ url: 'pages/GameHistory', params: { 'game': 'Snake' } as Record<string, string> });
@@ -545,12 +546,12 @@ export struct SnakePage {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
       }
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.togglePause(); })
 
@@ -558,12 +559,12 @@ export struct SnakePage {
       Row() {
         Text('↺')
           .fontSize(16)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
       }
       .width(32)
       .height(32)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.restartGame(); })
     }
@@ -702,6 +703,6 @@ export struct SnakePage {
     }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

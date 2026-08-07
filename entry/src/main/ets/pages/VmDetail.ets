@@ -1,6 +1,6 @@
 // 智子 - 虚拟机详情页
 import { router, promptAction } from '@kit.ArkUI';
-import { AppTheme, progressColor } from '../common/Theme';
+import { ThemePalette, defaultLightPalette, progressColor } from '../common/Theme';
 import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
@@ -28,6 +28,7 @@ interface HwGroup {
 @Entry
 @Component
 struct VmDetailPage {
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @State activeNav: string = 'Pve';
   @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State activeTab: string = 'overview'; // overview | snapshot | hardware | history
@@ -110,8 +111,8 @@ struct VmDetailPage {
   @Builder topActions() {
     Button('控制台')
       .fontSize(12)
-      .fontColor(AppTheme.bgBase)
-      .backgroundColor(AppTheme.primary)
+      .fontColor(this.palette.bgBase)
+      .backgroundColor(this.palette.primary)
       .borderRadius(6)
       .height(30)
       .padding({ left: 12, right: 12 })
@@ -127,12 +128,12 @@ struct VmDetailPage {
     Column({ space: 6 }) {
       Text(label)
         .fontSize(13)
-        .fontColor(this.activeTab === key ? AppTheme.primary : AppTheme.textSecondary)
+        .fontColor(this.activeTab === key ? this.palette.primary : this.palette.textSecondary)
         .fontWeight(this.activeTab === key ? FontWeight.Medium : FontWeight.Regular)
       Column()
         .width('100%')
         .height(2)
-        .backgroundColor(this.activeTab === key ? AppTheme.primary : Color.Transparent)
+        .backgroundColor(this.activeTab === key ? this.palette.primary : Color.Transparent)
     }
     .padding({ left: 14, right: 14, top: 8, bottom: 0 })
     .onClick(() => { this.activeTab = key; })
@@ -141,9 +142,9 @@ struct VmDetailPage {
   // 信息行（左右布局）
   @Builder infoRow(label: string, value: string) {
     Row() {
-      Text(label).fontSize(12).fontColor(AppTheme.textTertiary)
+      Text(label).fontSize(12).fontColor(this.palette.textTertiary)
       Blank()
-      Text(value).fontSize(12).fontColor(AppTheme.textPrimary).fontFamily(AppTheme.fontMono)
+      Text(value).fontSize(12).fontColor(this.palette.textPrimary).fontFamily(this.palette.fontMono)
     }
     .width('100%')
     .padding({ top: 8, bottom: 8 })
@@ -153,10 +154,10 @@ struct VmDetailPage {
   @Builder tagChip(tag: string) {
     Text(tag)
       .fontSize(10)
-      .fontColor(AppTheme.primary)
+      .fontColor(this.palette.primary)
       .padding({ left: 8, right: 8, top: 3, bottom: 3 })
       .borderRadius(6)
-      .backgroundColor(AppTheme.primaryDim)
+      .backgroundColor(this.palette.primaryDim)
   }
 
   // 操作按钮
@@ -193,29 +194,29 @@ struct VmDetailPage {
       Column({ space: 4 }) {
         Text(s.name)
           .fontSize(12)
-          .fontColor(AppTheme.textPrimary)
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
-          .fontFamily(AppTheme.fontMono)
+          .fontFamily(this.palette.fontMono)
         Text(s.desc)
           .fontSize(10)
-          .fontColor(AppTheme.textTertiary)
+          .fontColor(this.palette.textTertiary)
         Row({ space: 16 }) {
-          Text(s.date).fontSize(10).fontColor(AppTheme.textTertiary)
-          Text(s.size).fontSize(10).fontColor(AppTheme.textSecondary)
+          Text(s.date).fontSize(10).fontColor(this.palette.textTertiary)
+          Text(s.size).fontSize(10).fontColor(this.palette.textSecondary)
         }
         .width('100%')
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      this.snapshotActionBtn('回滚', AppTheme.bgSurface2, AppTheme.textSecondary, s)
-      this.snapshotActionBtn('删除', AppTheme.bgSurface2, AppTheme.danger, s)
+      this.snapshotActionBtn('回滚', this.palette.bgSurface2, this.palette.textSecondary, s)
+      this.snapshotActionBtn('删除', this.palette.bgSurface2, this.palette.danger, s)
     }
     .width('100%')
     .padding(12)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -224,19 +225,19 @@ struct VmDetailPage {
     Row() {
       Text(t.type)
         .fontSize(11)
-        .fontColor(AppTheme.textPrimary)
-        .fontFamily(AppTheme.fontMono)
+        .fontColor(this.palette.textPrimary)
+        .fontFamily(this.palette.fontMono)
         .layoutWeight(1)
       // 状态
       Row({ space: 4 }) {
         Circle({ width: 6, height: 6 })
-          .fill(t.status === 'running' ? AppTheme.info : t.status === 'success' ? AppTheme.success : AppTheme.danger)
+          .fill(t.status === 'running' ? this.palette.info : t.status === 'success' ? this.palette.success : this.palette.danger)
         Text(t.status === 'running' ? '执行中' : t.status === 'success' ? '成功' : '失败')
           .fontSize(10)
-          .fontColor(t.status === 'running' ? AppTheme.info : t.status === 'success' ? AppTheme.success : AppTheme.danger)
+          .fontColor(t.status === 'running' ? this.palette.info : t.status === 'success' ? this.palette.success : this.palette.danger)
       }
-      Text(t.startTime).fontSize(10).fontColor(AppTheme.textTertiary)
-      Text(t.user).fontSize(10).fontColor(AppTheme.textTertiary)
+      Text(t.startTime).fontSize(10).fontColor(this.palette.textTertiary)
+      Text(t.user).fontSize(10).fontColor(this.palette.textTertiary)
     }
     .width('100%')
     .padding({ top: 8, bottom: 8 })
@@ -268,10 +269,10 @@ struct VmDetailPage {
             LoadingProgress()
               .width(48)
               .height(48)
-              .color(AppTheme.primary)
+              .color(this.palette.primary)
             Text('加载中...')
               .fontSize(13)
-              .fontColor(AppTheme.textSecondary)
+              .fontColor(this.palette.textSecondary)
               .margin({ top: 12 })
           }
           .layoutWeight(1)
@@ -297,22 +298,22 @@ struct VmDetailPage {
                 .linearGradient({
                   angle: 135,
                   colors: this.vm.type === 'qemu'
-                    ? [[AppTheme.purple, 0], ['#7C3AED', 1]]
-                    : [[AppTheme.primary, 0], ['#00B88A', 1]]
+                    ? [[this.palette.purple, 0], ['#7C3AED', 1]]
+                    : [[this.palette.primary, 0], ['#00B88A', 1]]
                 })
 
                 // 中间信息
                 Column({ space: 6 }) {
                   Text(this.vm.name)
                     .fontSize(26)
-                    .fontColor(AppTheme.textPrimary)
+                    .fontColor(this.palette.textPrimary)
                     .fontWeight(FontWeight.Bold)
                   Row({ space: 8 }) {
                     StatusBadge({ status: this.vm.status })
-                    Text(`VMID ${this.vm.vmid}`).fontSize(10).fontColor(AppTheme.textTertiary).fontFamily(AppTheme.fontMono)
-                    Text(`节点 ${this.vm.node}`).fontSize(10).fontColor(AppTheme.textTertiary)
-                    Text(`OS ${this.vm.os}`).fontSize(10).fontColor(AppTheme.textTertiary)
-                    Text(`运行 ${formatUptime(this.vm.uptime)}`).fontSize(10).fontColor(AppTheme.textTertiary)
+                    Text(`VMID ${this.vm.vmid}`).fontSize(10).fontColor(this.palette.textTertiary).fontFamily(this.palette.fontMono)
+                    Text(`节点 ${this.vm.node}`).fontSize(10).fontColor(this.palette.textTertiary)
+                    Text(`OS ${this.vm.os}`).fontSize(10).fontColor(this.palette.textTertiary)
+                    Text(`运行 ${formatUptime(this.vm.uptime)}`).fontSize(10).fontColor(this.palette.textTertiary)
                   }
                   .alignItems(VerticalAlign.Center)
                 }
@@ -323,25 +324,25 @@ struct VmDetailPage {
                 Column({ space: 6 }) {
                   if (this.vm.status === 'running') {
                     Row({ space: 6 }) {
-                      this.actionBtn('停止', AppTheme.bgSurface2, AppTheme.danger)
-                      this.actionBtn('重启', AppTheme.bgSurface2, AppTheme.warning)
+                      this.actionBtn('停止', this.palette.bgSurface2, this.palette.danger)
+                      this.actionBtn('重启', this.palette.bgSurface2, this.palette.warning)
                     }
                     Row({ space: 6 }) {
-                      this.actionBtn('暂停', AppTheme.bgSurface2, AppTheme.textSecondary)
-                      this.actionBtn('控制台', AppTheme.primary, AppTheme.bgBase)
+                      this.actionBtn('暂停', this.palette.bgSurface2, this.palette.textSecondary)
+                      this.actionBtn('控制台', this.palette.primary, this.palette.bgBase)
                     }
                   } else if (this.vm.status === 'stopped') {
                     Row({ space: 6 }) {
-                      this.actionBtn('启动', AppTheme.success, AppTheme.bgBase)
-                      this.actionBtn('克隆', AppTheme.bgSurface2, AppTheme.textSecondary)
+                      this.actionBtn('启动', this.palette.success, this.palette.bgBase)
+                      this.actionBtn('克隆', this.palette.bgSurface2, this.palette.textSecondary)
                     }
                     Row({ space: 6 }) {
-                      this.actionBtn('删除', AppTheme.bgSurface2, AppTheme.danger)
+                      this.actionBtn('删除', this.palette.bgSurface2, this.palette.danger)
                     }
                   } else if (this.vm.status === 'paused') {
                     Row({ space: 6 }) {
-                      this.actionBtn('恢复', AppTheme.success, AppTheme.bgBase)
-                      this.actionBtn('停止', AppTheme.bgSurface2, AppTheme.danger)
+                      this.actionBtn('恢复', this.palette.success, this.palette.bgBase)
+                      this.actionBtn('停止', this.palette.bgSurface2, this.palette.danger)
                     }
                   }
                 }
@@ -350,8 +351,8 @@ struct VmDetailPage {
               .width('100%')
               .padding(16)
               .borderRadius(10)
-              .backgroundColor(AppTheme.bgSurface)
-              .border({ width: 1, color: AppTheme.borderSubtle })
+              .backgroundColor(this.palette.bgSurface)
+              .border({ width: 1, color: this.palette.borderSubtle })
               .alignItems(VerticalAlign.Center)
 
               // 4 指标卡
@@ -360,26 +361,26 @@ struct VmDetailPage {
                   title: 'CPU',
                   value: (this.vm.cpu * 100).toFixed(1),
                   unit: '%',
-                  color: progressColor(this.vm.cpu * 100)
+                  color: progressColor(this.vm.cpu * 100, this.palette)
                 })
                 MetricCard({
                   title: '内存',
                   value: this.vm.mem.toFixed(1),
                   unit: 'GB',
-                  color: AppTheme.info,
+                  color: this.palette.info,
                   badgeText: `${this.vm.maxmem} GB`
                 })
                 MetricCard({
                   title: '磁盘 IO',
                   value: this.vm.diskread.toFixed(1),
                   sub: `写 ${this.vm.diskwrite} MB/s`,
-                  color: AppTheme.warning
+                  color: this.palette.warning
                 })
                 MetricCard({
                   title: '网络',
                   value: this.vm.netin.toFixed(1),
                   sub: `出 ${this.vm.netout} Mbps`,
-                  color: AppTheme.success
+                  color: this.palette.success
                 })
               }
               .width('100%')
@@ -392,7 +393,7 @@ struct VmDetailPage {
                 this.tabItem('history', '历史')
               }
               .width('100%')
-              .border({ width: { bottom: 1 }, color: AppTheme.borderSubtle })
+              .border({ width: { bottom: 1 }, color: this.palette.borderSubtle })
 
               // ===== Tab 概览 =====
               if (this.activeTab === 'overview') {
@@ -401,40 +402,40 @@ struct VmDetailPage {
                   Column({ space: 0 }) {
                     Text('系统信息')
                       .fontSize(12)
-                      .fontColor(AppTheme.textSecondary)
+                      .fontColor(this.palette.textSecondary)
                       .fontWeight(FontWeight.Medium)
                       .width('100%')
                       .padding({ top: 12, bottom: 4 })
                     this.infoRow('操作系统', this.vm.os)
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('VMID', String(this.vm.vmid))
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('类型', this.vm.type.toUpperCase())
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('节点', this.vm.node)
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('运行时长', formatUptime(this.vm.uptime))
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('CPU', `${(this.vm.cpu * 100).toFixed(1)}%`)
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('内存', `${this.vm.mem.toFixed(1)} / ${this.vm.maxmem} GB`)
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('磁盘', formatSize(this.vm.maxdisk))
-                    Divider().color(AppTheme.borderSubtle)
+                    Divider().color(this.palette.borderSubtle)
                     this.infoRow('网络', `${this.vm.netin} / ${this.vm.netout} Mbps`)
                   }
                   .width('100%')
                   .padding({ left: 16, right: 16, bottom: 12 })
                   .borderRadius(10)
-                  .backgroundColor(AppTheme.bgSurface)
-                  .border({ width: 1, color: AppTheme.borderSubtle })
+                  .backgroundColor(this.palette.bgSurface)
+                  .border({ width: 1, color: this.palette.borderSubtle })
                   .alignItems(HorizontalAlign.Start)
 
                   // 标签卡
                   Column({ space: 8 }) {
                     Text('标签')
                       .fontSize(12)
-                      .fontColor(AppTheme.textSecondary)
+                      .fontColor(this.palette.textSecondary)
                       .fontWeight(FontWeight.Medium)
                       .width('100%')
                     if (this.vm.tags.length > 0) {
@@ -445,21 +446,21 @@ struct VmDetailPage {
                       }
                       .width('100%')
                     } else {
-                      Text('暂无标签').fontSize(10).fontColor(AppTheme.textTertiary)
+                      Text('暂无标签').fontSize(10).fontColor(this.palette.textTertiary)
                     }
                   }
                   .width('100%')
                   .padding(16)
                   .borderRadius(10)
-                  .backgroundColor(AppTheme.bgSurface)
-                  .border({ width: 1, color: AppTheme.borderSubtle })
+                  .backgroundColor(this.palette.bgSurface)
+                  .border({ width: 1, color: this.palette.borderSubtle })
                   .alignItems(HorizontalAlign.Start)
 
                   // 最近操作
                   Column({ space: 0 }) {
                     Text('最近操作')
                       .fontSize(12)
-                      .fontColor(AppTheme.textSecondary)
+                      .fontColor(this.palette.textSecondary)
                       .fontWeight(FontWeight.Medium)
                       .width('100%')
                       .padding({ top: 12, bottom: 4 })
@@ -474,8 +475,8 @@ struct VmDetailPage {
                   .width('100%')
                   .padding({ left: 16, right: 16, bottom: 12 })
                   .borderRadius(10)
-                  .backgroundColor(AppTheme.bgSurface)
-                  .border({ width: 1, color: AppTheme.borderSubtle })
+                  .backgroundColor(this.palette.bgSurface)
+                  .border({ width: 1, color: this.palette.borderSubtle })
                   .alignItems(HorizontalAlign.Start)
                 }
                 .width('100%')
@@ -489,8 +490,8 @@ struct VmDetailPage {
                     Blank()
                     Button('创建快照')
                       .fontSize(12)
-                      .fontColor(AppTheme.bgBase)
-                      .backgroundColor(AppTheme.primary)
+                      .fontColor(this.palette.bgBase)
+                      .backgroundColor(this.palette.primary)
                       .borderRadius(6)
                       .height(30)
                       .padding({ left: 12, right: 12 })
@@ -519,7 +520,7 @@ struct VmDetailPage {
                     Column({ space: 0 }) {
                       Text(g.title)
                         .fontSize(12)
-                        .fontColor(AppTheme.textSecondary)
+                        .fontColor(this.palette.textSecondary)
                         .fontWeight(FontWeight.Medium)
                         .width('100%')
                         .padding({ top: 12, bottom: 4 })
@@ -530,8 +531,8 @@ struct VmDetailPage {
                     .width('100%')
                     .padding({ left: 16, right: 16, bottom: 12 })
                     .borderRadius(10)
-                    .backgroundColor(AppTheme.bgSurface)
-                    .border({ width: 1, color: AppTheme.borderSubtle })
+                    .backgroundColor(this.palette.bgSurface)
+                    .border({ width: 1, color: this.palette.borderSubtle })
                     .alignItems(HorizontalAlign.Start)
                   }, (g: HwGroup) => g.title)
                 }
@@ -560,8 +561,8 @@ struct VmDetailPage {
                 .width('100%')
                 .padding({ left: 16, right: 16, top: 12, bottom: 12 })
                 .borderRadius(10)
-                .backgroundColor(AppTheme.bgSurface)
-                .border({ width: 1, color: AppTheme.borderSubtle })
+                .backgroundColor(this.palette.bgSurface)
+                .border({ width: 1, color: this.palette.borderSubtle })
                 .alignItems(HorizontalAlign.Start)
               }
             }
@@ -575,10 +576,10 @@ struct VmDetailPage {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(AppTheme.bgBase)
+      .backgroundColor(this.palette.bgBase)
     }
     .height('100%')
     .padding({ bottom: this.navBarHeight })
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

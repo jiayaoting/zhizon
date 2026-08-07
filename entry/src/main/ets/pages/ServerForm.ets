@@ -5,7 +5,7 @@ import { picker, fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository, generateId } from '../service/DataRepository';
 import { SshService, TestResult } from '../service/SshService';
@@ -19,6 +19,7 @@ const EMPTY_METRICS: ServerMetrics = {
 @Component
 struct FormCard {
   @Prop title: string;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @BuilderParam content: () => void = this.defaultContent;
 
   @Builder defaultContent() {}
@@ -26,16 +27,16 @@ struct FormCard {
   build() {
     Column({ space: 12 }) {
       Text(this.title)
-        .fontSize(AppTheme.fsMd)
-        .fontColor(AppTheme.textPrimary)
+        .fontSize(this.palette.fsMd)
+        .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
       this.content()
     }
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
     .alignItems(HorizontalAlign.Start)
   }
 }
@@ -45,6 +46,7 @@ struct FormCard {
 export struct ServerFormPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   // 编辑模式
   private serverId: string = '';
@@ -311,12 +313,12 @@ export struct ServerFormPage {
     Column({ space: 6 }) {
       Text(label)
         .fontSize(12)
-        .fontColor(AppTheme.textSecondary)
+        .fontColor(this.palette.textSecondary)
       TextInput({ text: value, placeholder: placeholder })
         .fontSize(13)
-        .fontColor(AppTheme.textPrimary)
-        .placeholderColor(AppTheme.textTertiary)
-        .backgroundColor(AppTheme.bgSurface2)
+        .fontColor(this.palette.textPrimary)
+        .placeholderColor(this.palette.textTertiary)
+        .backgroundColor(this.palette.bgSurface2)
         .borderRadius(6)
         .height(42)
         .type(type)
@@ -332,25 +334,25 @@ export struct ServerFormPage {
     Column({ space: 6 }) {
       Text(label)
         .fontSize(12)
-        .fontColor(AppTheme.textSecondary)
+        .fontColor(this.palette.textSecondary)
       Row({ space: 4 }) {
         ForEach(options, (opt: string, idx: number) => {
           Text(opt)
             .fontSize(12)
-            .fontColor(selected === idx ? AppTheme.bgBase : AppTheme.textPrimary)
+            .fontColor(selected === idx ? this.palette.bgBase : this.palette.textPrimary)
             .fontWeight(selected === idx ? FontWeight.Bold : FontWeight.Normal)
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
             .borderRadius(6)
-            .backgroundColor(selected === idx ? AppTheme.primary : AppTheme.bgSurface2)
+            .backgroundColor(selected === idx ? this.palette.primary : this.palette.bgSurface2)
             .onClick(() => onSelect(idx))
         }, (opt: string) => opt)
       }
       .width('100%')
       .padding(4)
       .borderRadius(8)
-      .backgroundColor(AppTheme.bgSurface2)
+      .backgroundColor(this.palette.bgSurface2)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -360,8 +362,8 @@ export struct ServerFormPage {
     Row({ space: 8 }) {
       Button(this.testing ? '测试中…' : '测试连接')
         .fontSize(12)
-        .fontColor(this.testing ? AppTheme.textTertiary : AppTheme.primary)
-        .backgroundColor(this.testing ? AppTheme.bgSurface2 : AppTheme.primaryDim)
+        .fontColor(this.testing ? this.palette.textTertiary : this.palette.primary)
+        .backgroundColor(this.testing ? this.palette.bgSurface2 : this.palette.primaryDim)
         .borderRadius(6)
         .height(28)
         .padding({ left: 10, right: 10 })
@@ -371,8 +373,8 @@ export struct ServerFormPage {
         })
       Button(this.saving ? '保存中…' : this.isEdit ? '保存' : '添加')
         .fontSize(12)
-        .fontColor(AppTheme.bgBase)
-        .backgroundColor(AppTheme.primary)
+        .fontColor(this.palette.bgBase)
+        .backgroundColor(this.palette.primary)
         .borderRadius(6)
         .height(28)
         .padding({ left: 12, right: 12 })
@@ -422,20 +424,20 @@ export struct ServerFormPage {
                 Column({ space: 6 }) {
                   Text('私钥内容（PEM）')
                     .fontSize(12)
-                    .fontColor(AppTheme.textSecondary)
+                    .fontColor(this.palette.textSecondary)
                   TextArea({ text: this.pemContent, placeholder: '粘贴 PEM 私钥内容，或以 -----BEGIN OPENSSH PRIVATE KEY----- 开头' })
                     .fontSize(12)
-                    .fontColor(AppTheme.textPrimary)
-                    .placeholderColor(AppTheme.textTertiary)
-                    .backgroundColor(AppTheme.bgSurface2)
+                    .fontColor(this.palette.textPrimary)
+                    .placeholderColor(this.palette.textTertiary)
+                    .backgroundColor(this.palette.bgSurface2)
                     .borderRadius(6)
                     .height(140)
-                    .fontFamily(AppTheme.fontMono)
+                    .fontFamily(this.palette.fontMono)
                     .onChange((v: string) => { this.pemContent = v; })
                   Row({ space: 8 }) {
                     Button('📄 从文件导入')
                       .fontSize(11)
-                      .fontColor(AppTheme.info)
+                      .fontColor(this.palette.info)
                       .backgroundColor('rgba(59, 130, 246, 0.12)')
                       .borderRadius(6)
                       .height(30)
@@ -446,8 +448,8 @@ export struct ServerFormPage {
                     if (this.pemFileHint) {
                       Text(this.pemFileHint)
                         .fontSize(10)
-                        .fontColor(AppTheme.success)
-                        .fontFamily(AppTheme.fontMono)
+                        .fontColor(this.palette.success)
+                        .fontFamily(this.palette.fontMono)
                         .layoutWeight(1)
                         .maxLines(2)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -469,23 +471,23 @@ export struct ServerFormPage {
               Row() {
                 Text('直连模式')
                   .fontSize(12)
-                  .fontColor(AppTheme.bgBase)
+                  .fontColor(this.palette.bgBase)
                   .fontWeight(FontWeight.Bold)
                   .padding({ left: 12, right: 12, top: 8, bottom: 8 })
                   .borderRadius(6)
-                  .backgroundColor(AppTheme.primary)
+                  .backgroundColor(this.palette.primary)
               }
               .width('100%')
               .padding(4)
               .borderRadius(8)
-              .backgroundColor(AppTheme.bgSurface2)
+              .backgroundColor(this.palette.bgSurface2)
               Text('直连模式在设备端直接发起 SSH 连接，无需在目标服务器部署额外服务。')
                 .fontSize(10)
-                .fontColor(AppTheme.textTertiary)
+                .fontColor(this.palette.textTertiary)
                 .width('100%')
               Text('提示：请确保目标服务器 SSH 服务已启动，且防火墙放行了对应端口。')
                 .fontSize(10)
-                .fontColor(AppTheme.info)
+                .fontColor(this.palette.info)
                 .width('100%')
             }
             .width('100%')
@@ -498,7 +500,7 @@ export struct ServerFormPage {
                 .fontSize(14)
               Text(this.testResult)
                 .fontSize(12)
-                .fontColor(this.testOk ? AppTheme.success : AppTheme.danger)
+                .fontColor(this.testOk ? this.palette.success : this.palette.danger)
             }
             .width('100%')
             .padding(12)
@@ -513,8 +515,8 @@ export struct ServerFormPage {
             .height(44)
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
-            .fontColor(AppTheme.bgBase)
-            .backgroundColor(AppTheme.primary)
+            .fontColor(this.palette.bgBase)
+            .backgroundColor(this.palette.primary)
             .borderRadius(8)
             .enabled(!this.testing && !this.saving)
             .onClick(() => {
@@ -531,6 +533,6 @@ export struct ServerFormPage {
     }
     .height('100%')
     .padding({ bottom: this.navBarHeight })
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

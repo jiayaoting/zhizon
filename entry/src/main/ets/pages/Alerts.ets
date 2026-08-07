@@ -1,7 +1,7 @@
 // 智子 - 告警中心页面
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
-import { AppTheme } from '../common/Theme';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
@@ -17,6 +17,7 @@ export struct AlertsPage {
   @State alerts: Alert[] = [];
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   private filters: string[] = ['全部', '未处理', '严重', '警告', '信息'];
 
   aboutToAppear(): void {
@@ -30,9 +31,9 @@ export struct AlertsPage {
 
   // 级别颜色
   private levelColor(level: string): string {
-    if (level === 'critical') return AppTheme.danger;
-    if (level === 'warning') return AppTheme.warning;
-    return AppTheme.info;
+    if (level === 'critical') return this.palette.danger;
+    if (level === 'warning') return this.palette.warning;
+    return this.palette.info;
   }
 
   // 级别文本
@@ -94,8 +95,8 @@ export struct AlertsPage {
   @Builder actionsBuilder() {
     Button('全部标记已读')
       .fontSize(12)
-      .fontColor(AppTheme.textSecondary)
-      .backgroundColor(AppTheme.bgSurface2)
+      .fontColor(this.palette.textSecondary)
+      .backgroundColor(this.palette.bgSurface2)
       .borderRadius(6)
       .height(30)
       .onClick(() => this.markAllRead())
@@ -104,11 +105,11 @@ export struct AlertsPage {
   @Builder filterTag(f: string) {
     Text(f)
       .fontSize(12)
-      .fontColor(f === this.alertFilter ? Color.White : AppTheme.textSecondary)
+      .fontColor(f === this.alertFilter ? Color.White : this.palette.textSecondary)
       .padding({ left: 12, right: 12, top: 5, bottom: 5 })
       .borderRadius(14)
-      .backgroundColor(f === this.alertFilter ? AppTheme.primary : AppTheme.bgSurface2)
-      .border({ width: 1, color: f === this.alertFilter ? AppTheme.primary : AppTheme.borderSubtle })
+      .backgroundColor(f === this.alertFilter ? this.palette.primary : this.palette.bgSurface2)
+      .border({ width: 1, color: f === this.alertFilter ? this.palette.primary : this.palette.borderSubtle })
       .onClick(() => { this.alertFilter = f; })
   }
 
@@ -125,8 +126,8 @@ export struct AlertsPage {
         // 标题行：标题 + 级别徽章 + 时间
         Row() {
           Text(a.title)
-            .fontSize(AppTheme.fsMd)
-            .fontColor(AppTheme.textPrimary)
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
             .layoutWeight(1)
             .maxLines(1)
@@ -140,27 +141,27 @@ export struct AlertsPage {
             .margin({ right: 8 })
           Text(a.time)
             .fontSize(11)
-            .fontColor(AppTheme.textTertiary)
-            .fontFamily(AppTheme.fontMono)
+            .fontColor(this.palette.textTertiary)
+            .fontFamily(this.palette.fontMono)
         }
         .width('100%')
 
         // 详情
-        Text(a.detail)
+          Text(a.detail)
           .fontSize(12)
-          .fontColor(AppTheme.textSecondary)
+          .fontColor(this.palette.textSecondary)
           .width('100%')
 
         // 来源行：source + 查看 + 标记已处理
         Row() {
           Text(a.source)
             .fontSize(11)
-            .fontColor(AppTheme.textTertiary)
-            .fontFamily(AppTheme.fontMono)
+            .fontColor(this.palette.textTertiary)
+            .fontFamily(this.palette.fontMono)
             .layoutWeight(1)
           Text('查看')
             .fontSize(11)
-            .fontColor(AppTheme.primary)
+            .fontColor(this.palette.primary)
             .margin({ right: 12 })
             .onClick(() => {
               promptAction.showToast({ message: `查看 ${a.source}` });
@@ -168,7 +169,7 @@ export struct AlertsPage {
           if (!this.isResolved(a)) {
             Text('标记已处理')
               .fontSize(11)
-              .fontColor(AppTheme.warning)
+              .fontColor(this.palette.warning)
               .onClick(() => this.markResolved(a))
           }
         }
@@ -180,8 +181,8 @@ export struct AlertsPage {
     }
     .width('100%')
     .borderRadius(10)
-    .backgroundColor(AppTheme.bgSurface)
-    .border({ width: 1, color: AppTheme.borderSubtle })
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
     .opacity(this.isResolved(a) ? 0.5 : 1)
   }
 
@@ -190,10 +191,10 @@ export struct AlertsPage {
       LoadingProgress()
         .width(40)
         .height(40)
-        .color(AppTheme.primary)
+        .color(this.palette.primary)
       Text('加载中...')
         .fontSize(13)
-        .fontColor(AppTheme.textTertiary)
+        .fontColor(this.palette.textTertiary)
         .margin({ top: 12 })
     }
     .width('100%')
@@ -219,21 +220,21 @@ export struct AlertsPage {
                 value: `${this.alerts.filter(a => a.level === 'critical').length}`,
                 unit: '条',
                 sub: `未处理 ${this.alerts.filter(a => a.level === 'critical' && !this.isResolved(a)).length}`,
-                color: AppTheme.danger
+                color: this.palette.danger
               })
               MetricCard({
                 title: '警告',
                 value: `${this.alerts.filter(a => a.level === 'warning').length}`,
                 unit: '条',
                 sub: `未处理 ${this.alerts.filter(a => a.level === 'warning' && !this.isResolved(a)).length}`,
-                color: AppTheme.warning
+                color: this.palette.warning
               })
               MetricCard({
                 title: '信息',
                 value: `${this.alerts.filter(a => a.level === 'info').length}`,
                 unit: '条',
                 sub: `未处理 ${this.alerts.filter(a => a.level === 'info' && !this.isResolved(a)).length}`,
-                color: AppTheme.info
+                color: this.palette.info
               })
             }
             .width('100%')
@@ -264,6 +265,6 @@ export struct AlertsPage {
       }
     .layoutWeight(1)
     .height('100%')
-    .backgroundColor(AppTheme.bgBase)
+    .backgroundColor(this.palette.bgBase)
   }
 }

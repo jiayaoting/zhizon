@@ -1,8 +1,9 @@
-import { UIAbility, AbilityConstant, Want } from '@kit.AbilityKit';
+import { UIAbility, AbilityConstant, Want, Configuration } from '@kit.AbilityKit';
 import { window, display } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper } from '../service/DatabaseHelper';
 import { CryptoHelper } from '../common/CryptoHelper';
+import { ThemeManager, ThemePalette } from '../common/Theme';
 
 const DOMAIN = 0x9201;
 
@@ -17,35 +18,52 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'EntryAbility', '智子应用 onDestroy');
   }
 
+  // 监听系统配置变化（深色模式切换）
+  onConfigurationUpdate(newConfig: Configuration): void {
+    const colorMode = newConfig.colorMode;
+    // colorMode: 0=未设置, 1=深色, 2=浅色
+    const isDark = colorMode === 1;
+    hilog.info(DOMAIN, 'EntryAbility', '系统配置变更: colorMode=%{public}d isDark=%{public}s',
+      colorMode, isDark ? 'true' : 'false');
+    ThemeManager.getInstance().onSystemDarkModeChange(isDark);
+    this.updateStatusBarColor();
+  }
+
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // 延迟初始化：此时 context 已完全就绪，避免 "build context for init fail"
+    // 延迟初始化：此时 context 已完全就绪
     if (!this.initialized) {
       this.initialized = true;
+
+      // 读取当前系统深色模式状态
+      const sysColorMode = this.context.config.colorMode;
+      const sysIsDark = sysColorMode === 1;
+      hilog.info(DOMAIN, 'EntryAbility', '系统深色模式: %{public}d isDark=%{public}s',
+        sysColorMode, sysIsDark ? 'true' : 'false');
+
       CryptoHelper.init(this.context).then(() => {
         hilog.info(DOMAIN, 'EntryAbility', '凭据加密初始化成功');
         return DatabaseHelper.init(this.context);
       }).then(() => {
         hilog.info(DOMAIN, 'EntryAbility', '数据库初始化成功');
+        // 初始化主题管理器，传入系统深色模式状态
+        return ThemeManager.getInstance().init(this.context, sysIsDark);
+      }).then(() => {
+        hilog.info(DOMAIN, 'EntryAbility', '主题系统初始化成功');
+        this.updateStatusBarColor();
       }).catch((err: Error) => {
         hilog.error(DOMAIN, 'EntryAbility', '初始化失败: %{public}s', err.message);
-        this.initialized = false; // 允许下次重试
+        this.initialized = false;
       });
     }
 
-    // 设置深色沉浸式状态栏
     windowStage.getMainWindow().then((win) => {
       win.setWindowLayoutFullScreen(true).catch(() => {});
-      win.setWindowSystemBarProperties({
-        statusBarContentColor: '#E2E8F0',
-        navigationBarContentColor: '#E2E8F0'
-      }).catch(() => {});
+      this.updateStatusBarColor();
 
-      // 兜底最小安全区（vp），任何设备都不会被状态栏/挖孔/手势条压住
+      // 兜底最小安全区
       const SAFE_TOP_MIN: number = 44;
       const SAFE_BOTTOM_MIN: number = 24;
 
-      // 统一刷新安全区：合并 TYPE_SYSTEM + TYPE_CUTOUT + TYPE_NAVIGATION_INDICATOR，
-      // 取各方向最大值写入 AppStorage，供 TopBar/NavSidebar/AppShell 等动态避让
       const refreshSafeArea = (): void => {
         try {
           const density: number = display.getDefaultDisplaySync().densityPixels;
@@ -71,9 +89,7 @@ export default class EntryAbility extends UIAbility {
       };
 
       try {
-        // 尽早读取一次，保证页面首帧有兜底值
         refreshSafeArea();
-        // 避让区变化（旋转/刘海变更/导航方式切换）时重新读取全部区域
         win.on('avoidAreaChange', () => {
           refreshSafeArea();
         });
@@ -81,7 +97,6 @@ export default class EntryAbility extends UIAbility {
         hilog.error(DOMAIN, 'EntryAbility', '注册安全区监听失败: %{public}s', JSON.stringify(e));
       }
 
-      // 加载首页，加载完成后再刷新一次确保数据就绪
       windowStage.loadContent('pages/AppShell', (err) => {
         if (err.code) {
           hilog.error(DOMAIN, 'EntryAbility', '加载首页失败: %{public}s', JSON.stringify(err));
@@ -89,8 +104,25 @@ export default class EntryAbility extends UIAbility {
         }
         hilog.info(DOMAIN, 'EntryAbility', '首页加载成功');
         refreshSafeArea();
+        this.updateStatusBarColor();
       });
     });
+  }
+
+  // 根据当前主题动态设置状态栏颜色
+  private updateStatusBarColor(): void {
+    try {
+      const palette: ThemePalette = ThemeManager.getInstance().getPalette();
+      const mainWindow = window.getLastWindow(this.context);
+      mainWindow.then((win) => {
+        win.setWindowSystemBarProperties({
+          statusBarContentColor: palette.statusBarContentColor,
+          navigationBarContentColor: palette.navBarContentColor
+        }).catch(() => {});
+      }).catch(() => {});
+    } catch (e) {
+      // 忽略窗口未就绪的情况
+    }
   }
 
   onWindowStageDestroy(): void {
