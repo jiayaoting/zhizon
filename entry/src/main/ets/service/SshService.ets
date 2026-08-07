@@ -81,6 +81,10 @@ export class AgentClient {
     return `ws://${this.baseUrl.replace('http://', '')}/ws/terminal`;
   }
 
+  getSshWsUrl(): string {
+    return `ws://${this.baseUrl.replace('http://', '')}/ws/ssh`;
+  }
+
   getToken(): string {
     return this.token;
   }
@@ -282,7 +286,7 @@ export class AgentEngine implements SshEngine {
     try {
       this.ws = webSocket.createWebSocket();
       // 使用 /ws/ssh 网关端点，支持 SSH 远程连接
-      const wsUrl = this.client.getWsUrl().replace('/ws/terminal', '/ws/ssh');
+      const wsUrl = this.client.getSshWsUrl();
       const token = this.client.getToken();
 
       this.ws.on('open', () => {
@@ -732,8 +736,20 @@ export class DirectEngine implements SshEngine {
 
   async listFiles(path: string): Promise<FileItem[]> {
     if (!this.config) throw new SshError(SSH_ERR_HOST_UNREACH, 'SSH 未连接');
+
+    // sftpRequestRead 只支持密钥认证，密码认证时降级到 Agent
+    if (this.config.authType === 'password') {
+      console.warn('DirectEngine listFiles: password auth not supported, falling back to Agent');
+      const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
+      return await agentClient.listFiles(path);
+    }
+
     try {
-      const keyPath = this.config.authType === 'key' ? (this.config.privateKeyPath || '') : '';
+      const keyPath = this.config.privateKeyPath || '';
+      if (!keyPath) {
+        console.warn('DirectEngine listFiles: no private key path provided');
+        return [];
+      }
       // sftpRequestRead 每次独立创建新连接，返回逗号分隔的文件名列表
       const raw = await this.ssh!.sftpRequestRead(this.config.host, this.config.port, keyPath, path);
       if (!raw) return [];

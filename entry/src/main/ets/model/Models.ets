@@ -83,6 +83,10 @@ export interface PveCluster {
   version: string;
   lastSync: string;
   nodes: PveNode[];
+  // 内存态凭据（明文仅存在于运行时，持久化时加密）
+  password?: string;
+  tokenId?: string;
+  tokenSecret?: string;
 }
 
 // PVE 集群内的物理节点

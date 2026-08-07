@@ -84,8 +84,61 @@ export class DataRepository {
     await DatabaseHelper.addPveCluster(cluster);
   }
 
+  static async updatePveCluster(id: string, updates: Partial<PveCluster>): Promise<void> {
+    await DatabaseHelper.updatePveCluster(id, updates);
+  }
+
   static async deletePveCluster(id: string): Promise<void> {
     await DatabaseHelper.deletePveCluster(id);
+  }
+
+  // ========== PVE 凭据管理（加密存储） ==========
+
+  static async savePveCredentials(id: string, password?: string, tokenSecret?: string): Promise<void> {
+    await DatabaseHelper.savePveCredentials(id, password, tokenSecret);
+  }
+
+  static async getPvePassword(id: string): Promise<string> {
+    return await DatabaseHelper.getPvePassword(id);
+  }
+
+  static async getPveTokenId(id: string): Promise<string> {
+    return await DatabaseHelper.getPveTokenId(id);
+  }
+
+  static async getPveTokenSecret(id: string): Promise<string> {
+    return await DatabaseHelper.getPveTokenSecret(id);
+  }
+
+  // 从加密存储加载 PVE 凭据到内存态（列表页连接/测试前调用，凭据不落库）
+  static async hydratePveCredentials(cluster: PveCluster): Promise<PveCluster> {
+    // 内存态已有明文凭据（表单测试/新建场景）则直接复用
+    if (cluster.password || cluster.tokenSecret) return cluster;
+    try {
+      const password = await DataRepository.getPvePassword(cluster.id);
+      const tokenSecret = await DataRepository.getPveTokenSecret(cluster.id);
+      const tokenId = await DataRepository.getPveTokenId(cluster.id);
+      if (!password && !tokenSecret) return cluster;
+      const hydrated: PveCluster = {
+        id: cluster.id,
+        name: cluster.name,
+        host: cluster.host,
+        port: cluster.port,
+        username: cluster.username,
+        authType: cluster.authType,
+        verifyTls: cluster.verifyTls,
+        version: cluster.version,
+        lastSync: cluster.lastSync,
+        nodes: cluster.nodes,
+        password: password || undefined,
+        tokenId: tokenId || undefined,
+        tokenSecret: tokenSecret || undefined
+      };
+      return hydrated;
+    } catch (e) {
+      console.error('hydratePveCredentials failed:', JSON.stringify(e));
+      return cluster;
+    }
   }
 
   // ========== 快捷命令 ==========

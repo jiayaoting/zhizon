@@ -310,12 +310,35 @@ export class PveService {
     return await DataRepository.getPveClusters();
   }
 
+  // 登录 PVE 客户端（根据认证类型选择登录方式）
+  private static async loginClient(client: PveClient, cluster: PveCluster): Promise<boolean> {
+    if (cluster.authType === 'token') {
+      const tokenId = cluster.tokenId || '';
+      const tokenSecret = cluster.tokenSecret || '';
+      if (!tokenId || !tokenSecret) {
+        console.error('PVE token auth failed: missing tokenId or tokenSecret');
+        return false;
+      }
+      return await client.loginWithToken(tokenId, tokenSecret);
+    } else {
+      const password = cluster.password || '';
+      if (!password) {
+        console.error('PVE password auth failed: missing password');
+        return false;
+      }
+      return await client.login(cluster.username, password);
+    }
+  }
+
   // 同步单个集群数据
   static async syncCluster(cluster: PveCluster): Promise<PveCluster> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
 
+    // 加载凭据
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+
     // 登录
-    const loggedIn = await client.login(cluster.username, '');
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) {
       const failedCluster: PveCluster = {
         id: cluster.id,
@@ -364,7 +387,8 @@ export class PveService {
   // 获取 VM 列表
   static async getVms(cluster: PveCluster, node?: string): Promise<Vm[]> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const loggedIn = await client.login(cluster.username, '');
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) return [];
 
     const targetNodes = node ? [node] : cluster.nodes.map(n => n.node);
@@ -382,7 +406,8 @@ export class PveService {
   // 获取存储池
   static async getStorages(cluster: PveCluster, node: string): Promise<Storage[]> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const loggedIn = await client.login(cluster.username, '');
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) return [];
     return await client.getStorages(node);
   }
@@ -390,7 +415,8 @@ export class PveService {
   // 获取任务
   static async getTasks(cluster: PveCluster, node: string): Promise<PveTask[]> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const loggedIn = await client.login(cluster.username, '');
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) return [];
     return await client.getTasks(node);
   }
@@ -398,7 +424,8 @@ export class PveService {
   // VM 操作
   static async vmAction(cluster: PveCluster, node: string, vmid: number, type: 'qemu' | 'lxc', action: string): Promise<boolean> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const loggedIn = await client.login(cluster.username, '');
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) return false;
 
     if (type === 'qemu') {
@@ -411,14 +438,16 @@ export class PveService {
   // 快照操作
   static async createSnapshot(cluster: PveCluster, node: string, vmid: number, name: string, desc: string = ''): Promise<boolean> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const loggedIn = await client.login(cluster.username, '');
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) return false;
     return await client.createSnapshot(node, vmid, name, desc);
   }
 
   static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<Snapshot[]> {
     const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const loggedIn = await client.login(cluster.username, '');
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const loggedIn = await PveService.loginClient(client, hydrated);
     if (!loggedIn) return [];
     return await client.getSnapshots(node, vmid);
   }

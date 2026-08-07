@@ -387,7 +387,116 @@ export class DatabaseHelper {
       verify_tls: cluster.verifyTls ? 1 : 0,
       created_at: Date.now()
     };
+    // 加密凭据落库（明文不持久化）
+    if (cluster.password) {
+      valueBucket['password_enc'] = await CryptoHelper.encrypt(cluster.password);
+    }
+    if (cluster.tokenId) {
+      valueBucket['token_id'] = cluster.tokenId;
+    }
+    if (cluster.tokenSecret) {
+      valueBucket['token_secret_enc'] = await CryptoHelper.encrypt(cluster.tokenSecret);
+    }
     await store.insert('pve_clusters', valueBucket);
+  }
+
+  static async updatePveCluster(id: string, updates: Partial<PveCluster>): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const bucket: relationalStore.ValuesBucket = {};
+    if (updates.name !== undefined) bucket['name'] = updates.name;
+    if (updates.host !== undefined) bucket['host'] = updates.host;
+    if (updates.port !== undefined) bucket['port'] = updates.port;
+    if (updates.username !== undefined) bucket['username'] = updates.username;
+    if (updates.authType !== undefined) bucket['auth_type'] = updates.authType;
+    if (updates.verifyTls !== undefined) bucket['verify_tls'] = updates.verifyTls ? 1 : 0;
+    if (updates.tokenId !== undefined) bucket['token_id'] = updates.tokenId;
+    // 凭据更新：显式传入明文时加密落库
+    if (updates.password !== undefined && updates.password.length > 0) {
+      bucket['password_enc'] = await CryptoHelper.encrypt(updates.password);
+    }
+    if (updates.tokenSecret !== undefined && updates.tokenSecret.length > 0) {
+      bucket['token_secret_enc'] = await CryptoHelper.encrypt(updates.tokenSecret);
+    }
+
+    const predicates = new relationalStore.RdbPredicates('pve_clusters');
+    predicates.equalTo('id', id);
+    await store.update(bucket, predicates);
+  }
+
+  // 保存 PVE 密码/Token Secret（加密后落库）；传空字符串则清除
+  static async savePveCredentials(id: string, password?: string, tokenSecret?: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const bucket: relationalStore.ValuesBucket = {};
+    if (password !== undefined) {
+      if (password.length > 0) {
+        bucket['password_enc'] = await CryptoHelper.encrypt(password);
+      } else {
+        bucket['password_enc'] = '';
+      }
+    }
+    if (tokenSecret !== undefined) {
+      if (tokenSecret.length > 0) {
+        bucket['token_secret_enc'] = await CryptoHelper.encrypt(tokenSecret);
+      } else {
+        bucket['token_secret_enc'] = '';
+      }
+    }
+    if (Object.keys(bucket).length === 0) return;
+    const predicates = new relationalStore.RdbPredicates('pve_clusters');
+    predicates.equalTo('id', id);
+    await store.update(bucket, predicates);
+  }
+
+  // 读取解密后的 PVE 密码（无则返回空串）
+  static async getPvePassword(id: string): Promise<string> {
+    const enc = await DatabaseHelper.getPveEncColumn(id, 'password_enc');
+    if (!enc) return '';
+    return await CryptoHelper.decrypt(enc);
+  }
+
+  // 读取解密后的 PVE Token Secret（无则返回空串）
+  static async getPveTokenSecret(id: string): Promise<string> {
+    const enc = await DatabaseHelper.getPveEncColumn(id, 'token_secret_enc');
+    if (!enc) return '';
+    return await CryptoHelper.decrypt(enc);
+  }
+
+  // 读取 PVE Token ID（不加密）
+  static async getPveTokenId(id: string): Promise<string> {
+    try {
+      const store = DatabaseHelper.getStore();
+      const predicates = new relationalStore.RdbPredicates('pve_clusters');
+      predicates.equalTo('id', id);
+      const resultSet = await store.query(predicates);
+      let val = '';
+      if (resultSet.goToNextRow()) {
+        val = resultSet.getString(resultSet.getColumnIndex('token_id')) || '';
+      }
+      resultSet.close();
+      return val;
+    } catch (e) {
+      console.error('getPveTokenId failed:', e);
+      return '';
+    }
+  }
+
+  // 读取 PVE 单个加密列（按 id）
+  private static async getPveEncColumn(id: string, column: string): Promise<string> {
+    try {
+      const store = DatabaseHelper.getStore();
+      const predicates = new relationalStore.RdbPredicates('pve_clusters');
+      predicates.equalTo('id', id);
+      const resultSet = await store.query(predicates);
+      let val = '';
+      if (resultSet.goToNextRow()) {
+        val = resultSet.getString(resultSet.getColumnIndex(column)) || '';
+      }
+      resultSet.close();
+      return val;
+    } catch (e) {
+      console.error('getPveEncColumn failed:', column, e);
+      return '';
+    }
   }
 
   static async deletePveCluster(id: string): Promise<void> {
