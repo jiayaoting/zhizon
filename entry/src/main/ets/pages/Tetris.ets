@@ -3,6 +3,8 @@ import { router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
+import { DifficultyLevel, DIFFICULTY_DEFINITIONS, DifficultyDefinition, difficultyLabel } from '../common/Difficulty';
+import { DifficultyOption } from '../components/DifficultyOption';
 
 const COLS: number = 10;
 const ROWS: number = 20;
@@ -47,10 +49,13 @@ function scoreForLines(lines: number): number {
 }
 
 // 下落间隔（毫秒），随等级递减
-function dropInterval(level: number, difficulty: number): number {
+function dropInterval(level: number, difficulty: DifficultyLevel): number {
   // 难度影响基础速度：超简单=1000, 简单=800, 中等=600, 困难=450, 地狱=300
-  const baseSpeeds: number[] = [1000, 800, 600, 450, 300];
-  const base: number = baseSpeeds[difficulty];
+  let base: number = 600;
+  if (difficulty === DifficultyLevel.VERY_EASY) base = 1000;
+  else if (difficulty === DifficultyLevel.EASY) base = 800;
+  else if (difficulty === DifficultyLevel.HARD) base = 450;
+  else if (difficulty === DifficultyLevel.HELL) base = 300;
   const min: number = 60;
   const interval: number = base - (level - 1) * 50;
   return Math.max(interval, min);
@@ -61,13 +66,6 @@ interface Piece {
   rotation: number;
   x: number;
   y: number;
-}
-
-interface DifficultyConfigTetris {
-  label: string;
-  icon: string;
-  color: string;
-  desc: string;
 }
 
 @Entry
@@ -82,22 +80,13 @@ export struct TetrisPage {
   @State isGameOver: boolean = false;
   @State isPaused: boolean = false;
   @State clearedRows: number[] = [];
-  @State difficulty: number = 2; // 0=超简单 1=简单 2=中等 3=困难 4=地狱
+  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
-
-  // 难度配置
-  private difficultyConfigs: DifficultyConfigTetris[] = [
-    { label: '超简单', icon: '😊', color: this.palette.success, desc: '掉落极慢' },
-    { label: '简单', icon: '🙂', color: this.palette.info, desc: '掉落较慢' },
-    { label: '中等', icon: '🤔', color: this.palette.warning, desc: '经典体验' },
-    { label: '困难', icon: '😈', color: '#F97316', desc: '掉落较快' },
-    { label: '地狱', icon: '💀', color: this.palette.danger, desc: '飞速掉落' }
-  ];
 
   // ---- 棋盘初始化 ----
   private initBoard(): void {
@@ -292,8 +281,8 @@ export struct TetrisPage {
   }
 
   // ---- 游戏控制 ----
-  private startWithDifficulty(diff: number): void {
-    this.difficulty = diff;
+  private startWithDifficulty(level: DifficultyLevel): void {
+    this.difficulty = level;
     this.gameStarted = true;
     this.initBoard();
     this.score = 0;
@@ -321,8 +310,7 @@ export struct TetrisPage {
   }
 
   private saveScore(): void {
-    const config = this.difficultyConfigs[this.difficulty];
-    DataRepository.addGameScore('Tetris', this.score, this.level, config.label);
+    DataRepository.addGameScore('Tetris', this.score, this.level, difficultyLabel(this.difficulty));
   }
 
   togglePause(): void {
@@ -567,29 +555,13 @@ export struct TetrisPage {
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
 
-      ForEach(this.difficultyConfigs, (cfg: DifficultyConfigTetris, idx: number) => {
-        Row({ space: 10 }) {
-          Text(cfg.icon)
-            .fontSize(24)
-          Column({ space: 2 }) {
-            Text(cfg.label)
-              .fontSize(this.palette.fsMd)
-              .fontColor(cfg.color)
-              .fontWeight(FontWeight.Medium)
-            Text(cfg.desc)
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textTertiary)
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-        }
-        .width('100%')
-        .padding(14)
-        .backgroundColor(this.palette.bgSurface)
-        .borderRadius(10)
-        .border({ width: 1.5, color: cfg.color + '80' })
-        .onClick(() => { this.startWithDifficulty(idx); })
-      }, (idx: number) => idx.toString())
+      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
+        DifficultyOption({
+          definition: definition,
+          selected: this.difficulty === definition.level,
+          onSelect: (level: DifficultyLevel): void => { this.startWithDifficulty(level); }
+        })
+      }, (definition: DifficultyDefinition) => definition.level)
     }
     .width('100%')
     .padding(16)

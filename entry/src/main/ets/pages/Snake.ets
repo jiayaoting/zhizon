@@ -3,6 +3,8 @@ import { router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
+import { DifficultyLevel, DIFFICULTY_DEFINITIONS, DifficultyDefinition, difficultyLabel } from '../common/Difficulty';
+import { DifficultyOption } from '../components/DifficultyOption';
 
 const COLS: number = 16;
 const ROWS: number = 16;
@@ -34,7 +36,7 @@ export struct SnakePage {
   @State isGameOver: boolean = false;
   @State isPaused: boolean = false;
   @State isStarted: boolean = false;
-  @State difficulty: number = 1; // 0=简单 1=中等 2=困难
+  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false; // 是否已选择难度开始
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
@@ -44,9 +46,11 @@ export struct SnakePage {
 
   // ---- 下落速度（基于难度） ----
   private dropInterval(): number {
-    // 简单: 300ms, 中等: 200ms, 困难: 120ms
-    const baseSpeeds: number[] = [300, 200, 120];
-    const base: number = baseSpeeds[this.difficulty];
+    let base: number = 200;
+    if (this.difficulty === DifficultyLevel.VERY_EASY) base = 400;
+    else if (this.difficulty === DifficultyLevel.EASY) base = 300;
+    else if (this.difficulty === DifficultyLevel.HARD) base = 120;
+    else if (this.difficulty === DifficultyLevel.HELL) base = 80;
     const min: number = 50;
     const interval: number = base - (this.level - 1) * 10;
     return Math.max(interval, min);
@@ -186,8 +190,8 @@ export struct SnakePage {
   }
 
   // ---- 游戏控制 ----
-  private startWithDifficulty(diff: number): void {
-    this.difficulty = diff;
+  private startWithDifficulty(level: DifficultyLevel): void {
+    this.difficulty = level;
     this.gameStarted = true;
     this.initGame();
     this.isStarted = true;
@@ -202,9 +206,7 @@ export struct SnakePage {
   }
 
   private saveScore(): void {
-    const labels: string[] = ['简单', '中等', '困难'];
-    const label: string = labels[this.difficulty] || '中等';
-    DataRepository.addGameScore('Snake', this.score, this.level, label);
+    DataRepository.addGameScore('Snake', this.score, this.level, difficultyLabel(this.difficulty));
   }
 
   togglePause(): void {
@@ -469,56 +471,13 @@ export struct SnakePage {
         .fontSize(this.palette.fsXl)
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
-      Row({ space: 12 }) {
-        Column() {
-          Text('🐢')
-            .fontSize(28)
-          Text('简单')
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textSecondary)
-            .margin({ top: 4 })
-        }
-        .layoutWeight(1)
-        .padding(16)
-        .backgroundColor(this.palette.success + '20')
-        .borderRadius(10)
-        .border({ width: 2, color: this.palette.success })
-        .alignItems(HorizontalAlign.Center)
-        .onClick(() => { this.startWithDifficulty(0); })
-
-        Column() {
-          Text('🐍')
-            .fontSize(28)
-          Text('中等')
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textSecondary)
-            .margin({ top: 4 })
-        }
-        .layoutWeight(1)
-        .padding(16)
-        .backgroundColor(this.palette.warning + '20')
-        .borderRadius(10)
-        .border({ width: 2, color: this.palette.warning })
-        .alignItems(HorizontalAlign.Center)
-        .onClick(() => { this.startWithDifficulty(1); })
-
-        Column() {
-          Text('⚡')
-            .fontSize(28)
-          Text('困难')
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textSecondary)
-            .margin({ top: 4 })
-        }
-        .layoutWeight(1)
-        .padding(16)
-        .backgroundColor(this.palette.danger + '20')
-        .borderRadius(10)
-        .border({ width: 2, color: this.palette.danger })
-        .alignItems(HorizontalAlign.Center)
-        .onClick(() => { this.startWithDifficulty(2); })
-      }
-      .width('100%')
+      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
+        DifficultyOption({
+          definition: definition,
+          selected: this.difficulty === definition.level,
+          onSelect: (level: DifficultyLevel): void => { this.startWithDifficulty(level); }
+        })
+      }, (definition: DifficultyDefinition) => definition.level)
     }
     .width('100%')
     .padding(20)

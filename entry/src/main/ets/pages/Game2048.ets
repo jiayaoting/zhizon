@@ -3,6 +3,8 @@ import { router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
+import { DifficultyLevel, DIFFICULTY_DEFINITIONS, DifficultyDefinition, difficultyLabel } from '../common/Difficulty';
+import { DifficultyOption } from '../components/DifficultyOption';
 
 const BOARD_SIZE: number = 4;
 const WIN_SCORE: number = 2048;
@@ -33,12 +35,9 @@ function tileStyle(value: number, palette: ThemePalette): TileStyle {
 }
 
 interface DifficultyConfig2048 {
-  label: string;
-  icon: string;
-  color: string;
+  level: DifficultyLevel;
   prob4: number;
   initTiles: number;
-  desc: string;
 }
 
 @Entry
@@ -51,7 +50,7 @@ export struct Game2048Page {
   @State isWin: boolean = false;
   @State hasWonBefore: boolean = false;
   @State moveAnimating: boolean = false;
-  @State difficulty: number = 2; // 0=超简单 1=简单 2=中等 3=困难 4=地狱
+  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
@@ -60,12 +59,19 @@ export struct Game2048Page {
 
   // 难度对应的4出现概率和初始瓦片数
   private difficultyConfigs: DifficultyConfig2048[] = [
-    { label: '超简单', icon: '😊', color: this.palette.success, prob4: 0.0, initTiles: 2, desc: '不会出现4' },
-    { label: '简单', icon: '🙂', color: this.palette.info, prob4: 0.05, initTiles: 2, desc: '很少出现4' },
-    { label: '中等', icon: '🤔', color: this.palette.warning, prob4: 0.10, initTiles: 2, desc: '经典体验' },
-    { label: '困难', icon: '😈', color: '#F97316', prob4: 0.20, initTiles: 2, desc: '经常出现4' },
-    { label: '地狱', icon: '💀', color: this.palette.danger, prob4: 0.30, initTiles: 4, desc: '遍地都是4' }
+    { level: DifficultyLevel.VERY_EASY, prob4: 0.0, initTiles: 2 },
+    { level: DifficultyLevel.EASY, prob4: 0.05, initTiles: 2 },
+    { level: DifficultyLevel.MEDIUM, prob4: 0.10, initTiles: 2 },
+    { level: DifficultyLevel.HARD, prob4: 0.20, initTiles: 2 },
+    { level: DifficultyLevel.HELL, prob4: 0.30, initTiles: 4 }
   ];
+
+  private difficultyConfig(level: DifficultyLevel): DifficultyConfig2048 {
+    for (const config of this.difficultyConfigs) {
+      if (config.level === level) return config;
+    }
+    return this.difficultyConfigs[2];
+  }
 
   // ---- 初始化 ----
   private initBoard(): void {
@@ -87,7 +93,7 @@ export struct Game2048Page {
     if (empty.length === 0) return;
     const idx: number = Math.floor(Math.random() * empty.length);
     const pos: [number, number] = empty[idx];
-    const config = this.difficultyConfigs[this.difficulty];
+    const config = this.difficultyConfig(this.difficulty);
     const value: number = Math.random() < config.prob4 ? 4 : 2;
 
     const newBoard: number[][] = [];
@@ -247,20 +253,19 @@ export struct Game2048Page {
   }
 
   private saveScore(): void {
-    const config = this.difficultyConfigs[this.difficulty];
-    DataRepository.addGameScore('2048', this.score, 1, config.label);
+    DataRepository.addGameScore('2048', this.score, 1, difficultyLabel(this.difficulty));
   }
 
   // ---- 游戏控制 ----
-  private startWithDifficulty(diff: number): void {
-    this.difficulty = diff;
+  private startWithDifficulty(level: DifficultyLevel): void {
+    this.difficulty = level;
     this.gameStarted = true;
     this.initBoard();
     this.score = 0;
     this.isGameOver = false;
     this.isWin = false;
     this.hasWonBefore = false;
-    const config = this.difficultyConfigs[this.difficulty];
+    const config = this.difficultyConfig(this.difficulty);
     for (let i: number = 0; i < config.initTiles; i++) {
       this.addRandomTile();
     }
@@ -272,7 +277,7 @@ export struct Game2048Page {
     this.isGameOver = false;
     this.isWin = false;
     this.hasWonBefore = false;
-    const config = this.difficultyConfigs[this.difficulty];
+    const config = this.difficultyConfig(this.difficulty);
     for (let i: number = 0; i < config.initTiles; i++) {
       this.addRandomTile();
     }
@@ -465,29 +470,13 @@ export struct Game2048Page {
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
 
-      ForEach(this.difficultyConfigs, (cfg: DifficultyConfig2048, idx: number) => {
-        Row({ space: 10 }) {
-          Text(cfg.icon)
-            .fontSize(24)
-          Column({ space: 2 }) {
-            Text(cfg.label)
-              .fontSize(this.palette.fsMd)
-              .fontColor(cfg.color)
-              .fontWeight(FontWeight.Medium)
-            Text(cfg.desc)
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textTertiary)
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-        }
-        .width('100%')
-        .padding(14)
-        .backgroundColor(this.palette.bgSurface)
-        .borderRadius(10)
-        .border({ width: 1.5, color: cfg.color + '80' })
-        .onClick(() => { this.startWithDifficulty(idx); })
-      }, (idx: number) => idx.toString())
+      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
+        DifficultyOption({
+          definition: definition,
+          selected: this.difficulty === definition.level,
+          onSelect: (level: DifficultyLevel): void => { this.startWithDifficulty(level); }
+        })
+      }, (definition: DifficultyDefinition) => definition.level)
     }
     .width('100%')
     .padding(16)

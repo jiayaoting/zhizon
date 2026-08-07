@@ -1,0 +1,13 @@
+{
+  "dti_type": "COMMAND_INVOCATION",
+  "build_cmd": "",
+  "run_cmd": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\devlop\\devecostudio\\workspace\\zhizon\\.bugfix\\arkts-detail-braces-20260807\\reproduction\\static_brace_scan.ps1\"",
+  "artifacts": [
+    "C:\\devlop\\devecostudio\\workspace\\zhizon\\entry\\src\\main\\ets\\pages\\PveNodeDetail.ets",
+    "C:\\devlop\\devecostudio\\workspace\\zhizon\\entry\\src\\main\\ets\\pages\\ServerDetail.ets",
+    "C:\\devlop\\devecostudio\\workspace\\zhizon\\entry\\src\\main\\ets\\pages\\VmDetail.ets"
+  ],
+  "configs": [],
+  "env": [],
+  "evidence": "用户明确禁止编译、构建、测试和设备运行，因此执行只读静态分隔符扫描载体。"
+}

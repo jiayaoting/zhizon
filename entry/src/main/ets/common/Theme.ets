@@ -1,6 +1,7 @@
 // 智子 - 响应式多主题系统（沉浸光感版）
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DataRepository } from '../service/DataRepository';
+import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
 
 const DOMAIN = 0x9201;
 
@@ -235,16 +236,90 @@ function buildPalette(themeId: ColorThemeId, isDark: boolean): ThemePalette {
 export const defaultLightPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, false);
 export const defaultDarkPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, true);
 
-// ============================================================
-// 背景图配置
-// ============================================================
-export interface BackgroundConfig {
-  global: string;   // 全局默认背景图 URI，空字符串表示无
-  pages: Record<string, string>;  // 分页面背景图 { 'Index': 'file://...', 'Servers': 'file://...' }
+export enum ThemeMode {
+  LIGHT = 'light',
+  DARK = 'dark'
 }
 
-export function emptyBackgroundConfig(): BackgroundConfig {
-  return { global: '', pages: {} };
+export enum PreferenceFailureReason {
+  INVALID_VALUE = 'INVALID_VALUE',
+  INVALID_STRENGTH = 'INVALID_STRENGTH',
+  PERSISTENCE_FAILED = 'PERSISTENCE_FAILED',
+  SYSTEM_MODE_UNAVAILABLE = 'SYSTEM_MODE_UNAVAILABLE',
+  BACKGROUND_LOAD_FAILED = 'BACKGROUND_LOAD_FAILED',
+  BACKGROUND_IMPORT_FAILED = 'BACKGROUND_IMPORT_FAILED'
+}
+
+export enum BackgroundDisplayState {
+  LOADING = 'loading',
+  READY = 'ready',
+  INVALID = 'invalid'
+}
+
+export class ThemePreference {
+  followSystem: boolean;
+  manualMode: ThemeMode;
+
+  constructor(followSystem: boolean, manualMode: ThemeMode) {
+    this.followSystem = followSystem;
+    this.manualMode = manualMode;
+  }
+}
+
+export class EffectiveThemeState {
+  followSystem: boolean;
+  manualMode: ThemeMode;
+  effectiveMode: ThemeMode;
+
+  constructor(followSystem: boolean, manualMode: ThemeMode, effectiveMode: ThemeMode) {
+    this.followSystem = followSystem;
+    this.manualMode = manualMode;
+    this.effectiveMode = effectiveMode;
+  }
+}
+
+export class GlobalBackgroundPreference {
+  globalUri: string;
+  visibleStrength: number;
+
+  constructor(globalUri: string, visibleStrength: number) {
+    this.globalUri = globalUri;
+    this.visibleStrength = visibleStrength;
+  }
+}
+
+export class ThemeMutationResult {
+  success: boolean;
+  reason: PreferenceFailureReason | null;
+  operationVersion: number;
+  snapshot: EffectiveThemeState;
+  rollbackSnapshot: EffectiveThemeState;
+
+  constructor(success: boolean, reason: PreferenceFailureReason | null, operationVersion: number,
+    snapshot: EffectiveThemeState, rollbackSnapshot: EffectiveThemeState) {
+    this.success = success;
+    this.reason = reason;
+    this.operationVersion = operationVersion;
+    this.snapshot = snapshot;
+    this.rollbackSnapshot = rollbackSnapshot;
+  }
+}
+
+export class BackgroundMutationResult {
+  success: boolean;
+  reason: PreferenceFailureReason | null;
+  operationVersion: number;
+  snapshot: GlobalBackgroundPreference;
+  rollbackSnapshot: GlobalBackgroundPreference;
+
+  constructor(success: boolean, reason: PreferenceFailureReason | null, operationVersion: number,
+    snapshot: GlobalBackgroundPreference, rollbackSnapshot: GlobalBackgroundPreference) {
+    this.success = success;
+    this.reason = reason;
+    this.operationVersion = operationVersion;
+    this.snapshot = snapshot;
+    this.rollbackSnapshot = rollbackSnapshot;
+  }
 }
 
 // ============================================================
@@ -255,10 +330,16 @@ export class ThemeManager {
   private currentColorTheme: ColorThemeId = ColorThemeId.CYAN;
   private isSystemDark: boolean = true;
   private followSystem: boolean = true;
-  private manualDarkMode: boolean = true;
-  private backgroundConfig: BackgroundConfig = emptyBackgroundConfig();
+  private manualMode: ThemeMode = ThemeMode.DARK;
+  private backgroundPreference: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
   private context: Context | null = null;
   private initialized: boolean = false;
+  private themeOperationVersion: number = 0;
+  private lastSuccessfulThemeVersion: number = 0;
+  private lastSuccessfulTheme: EffectiveThemeState = new EffectiveThemeState(true, ThemeMode.DARK, ThemeMode.DARK);
+  private backgroundOperationVersion: number = 0;
+  private lastSuccessfulBackgroundVersion: number = 0;
+  private lastSuccessfulBackground: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
 
   static getInstance(): ThemeManager {
     if (!ThemeManager.instance) {
@@ -278,22 +359,12 @@ export class ThemeManager {
       const savedTheme = await DataRepository.getSetting('colorTheme', 'cyan');
       this.currentColorTheme = savedTheme as ColorThemeId;
 
-      // 加载深色模式偏好
-      const followSys = await DataRepository.getSetting('followSystemDark', 'true');
-      this.followSystem = followSys === 'true';
-
-      const manualDark = await DataRepository.getSetting('manualDarkMode', 'true');
-      this.manualDarkMode = manualDark === 'true';
-
-      // 加载背景图配置
-      const bgJson = await DataRepository.getSetting('backgroundConfig', '');
-      if (bgJson) {
-        try {
-          this.backgroundConfig = JSON.parse(bgJson) as BackgroundConfig;
-        } catch (e) {
-          this.backgroundConfig = emptyBackgroundConfig();
-        }
-      }
+      const themePreference = await DataRepository.getThemePreference();
+      this.followSystem = themePreference.followSystem;
+      this.manualMode = themePreference.manualMode;
+      this.backgroundPreference = await DataRepository.getGlobalBackground();
+      this.lastSuccessfulBackground = this.getGlobalBackground();
+      this.lastSuccessfulTheme = this.getThemeState();
 
       // 加载字号配置
       const fontSize = await DataRepository.getSetting('fontSizeScale', 'standard');
@@ -305,10 +376,13 @@ export class ThemeManager {
 
       // 首次写入 AppStorage
       this.applyTheme();
+      this.publishInitialBackground();
     } catch (e) {
-      hilog.error(DOMAIN, 'Theme', '主题管理器初始化失败');
+      hilog.error(DOMAIN, 'Theme', '主题读取失败 reason=%{public}s fallback=%{public}s',
+        PreferenceFailureReason.PERSISTENCE_FAILED, 'true');
       this.initialized = true;
       this.applyTheme(); // 使用默认值
+      this.publishInitialBackground();
     }
   }
 
@@ -329,18 +403,54 @@ export class ThemeManager {
   }
 
   // 设置是否跟随系统深色模式
-  async setFollowSystem(follow: boolean): Promise<void> {
+  async setFollowSystem(follow: boolean): Promise<ThemeMutationResult> {
+    const rollbackSnapshot = this.lastSuccessfulTheme;
+    const operationVersion = ++this.themeOperationVersion;
+    const next = new ThemePreference(follow, this.manualMode);
     this.followSystem = follow;
-    await DataRepository.setSetting('followSystemDark', follow ? 'true' : 'false');
     this.applyTheme();
+    const operationSnapshot = this.getThemeState();
+    try {
+      await DataRepository.saveThemePreference(next);
+      if (operationVersion > this.lastSuccessfulThemeVersion) {
+        this.lastSuccessfulThemeVersion = operationVersion;
+        this.lastSuccessfulTheme = operationSnapshot;
+      }
+      return new ThemeMutationResult(true, null, operationVersion, this.getThemeState(), rollbackSnapshot);
+    } catch (e) {
+      if (operationVersion === this.themeOperationVersion) {
+        this.restoreTheme(rollbackSnapshot);
+      }
+      hilog.error(DOMAIN, 'Theme', '主题写入失败 reason=%{public}s rollback=%{public}s',
+        PreferenceFailureReason.PERSISTENCE_FAILED, 'true');
+      return new ThemeMutationResult(false, PreferenceFailureReason.PERSISTENCE_FAILED, operationVersion,
+        this.getThemeState(), rollbackSnapshot);
+    }
   }
 
   // 设置手动深色/浅色模式（仅在 followSystem=false 时生效）
-  async setManualDarkMode(isDark: boolean): Promise<void> {
-    this.manualDarkMode = isDark;
-    await DataRepository.setSetting('manualDarkMode', isDark ? 'true' : 'false');
-    if (!this.followSystem) {
-      this.applyTheme();
+  async setManualMode(mode: ThemeMode): Promise<ThemeMutationResult> {
+    const rollbackSnapshot = this.lastSuccessfulTheme;
+    const operationVersion = ++this.themeOperationVersion;
+    const next = new ThemePreference(this.followSystem, mode);
+    this.manualMode = mode;
+    this.applyTheme();
+    const operationSnapshot = this.getThemeState();
+    try {
+      await DataRepository.saveThemePreference(next);
+      if (operationVersion > this.lastSuccessfulThemeVersion) {
+        this.lastSuccessfulThemeVersion = operationVersion;
+        this.lastSuccessfulTheme = operationSnapshot;
+      }
+      return new ThemeMutationResult(true, null, operationVersion, this.getThemeState(), rollbackSnapshot);
+    } catch (e) {
+      if (operationVersion === this.themeOperationVersion) {
+        this.restoreTheme(rollbackSnapshot);
+      }
+      hilog.error(DOMAIN, 'Theme', '主题写入失败 reason=%{public}s rollback=%{public}s',
+        PreferenceFailureReason.PERSISTENCE_FAILED, 'true');
+      return new ThemeMutationResult(false, PreferenceFailureReason.PERSISTENCE_FAILED, operationVersion,
+        this.getThemeState(), rollbackSnapshot);
     }
   }
 
@@ -349,7 +459,7 @@ export class ThemeManager {
     if (this.followSystem) {
       return this.isSystemDark;
     }
-    return this.manualDarkMode;
+    return this.manualMode === ThemeMode.DARK;
   }
 
   // 获取当前颜色主题
@@ -388,54 +498,129 @@ export class ThemeManager {
     AppStorage.setOrCreate('isDarkMode', palette.isDark);
     AppStorage.setOrCreate('colorThemeId', this.currentColorTheme);
     AppStorage.setOrCreate('followSystemDark', this.followSystem);
+    AppStorage.setOrCreate('manualThemeMode', this.manualMode);
+    AppStorage.setOrCreate('effectiveThemeMode', this.getIsDark() ? ThemeMode.DARK : ThemeMode.LIGHT);
+    AppStorage.setOrCreate('globalBackgroundUri', this.backgroundPreference.globalUri);
+    AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundPreference.visibleStrength);
   }
 
-  // ==================== 背景图管理 ====================
-
-  getBackgroundConfig(): BackgroundConfig {
-    return this.backgroundConfig;
+  private publishInitialBackground(): void {
+    AppStorage.setOrCreate('backgroundCandidateUri', '');
+    AppStorage.setOrCreate('backgroundDisplayState', this.backgroundPreference.globalUri.length > 0 ?
+      BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
   }
 
-  // 获取指定页面的背景图（优先页面级，fallback 到全局）
-  getPageBackground(pageKey: string): string {
-    const pageBg = this.backgroundConfig.pages[pageKey];
-    if (pageBg && pageBg.length > 0) {
-      return pageBg;
+  getThemeState(): EffectiveThemeState {
+    const effectiveMode = this.getIsDark() ? ThemeMode.DARK : ThemeMode.LIGHT;
+    return new EffectiveThemeState(this.followSystem, this.manualMode, effectiveMode);
+  }
+
+  private restoreTheme(snapshot: EffectiveThemeState): void {
+    this.followSystem = snapshot.followSystem;
+    this.manualMode = snapshot.manualMode;
+    this.applyTheme();
+  }
+
+  getGlobalBackground(): GlobalBackgroundPreference {
+    return new GlobalBackgroundPreference(this.backgroundPreference.globalUri,
+      this.backgroundPreference.visibleStrength);
+  }
+
+  async setGlobalBackground(uri: string): Promise<BackgroundMutationResult> {
+    return await this.saveBackground(new GlobalBackgroundPreference(uri,
+      this.backgroundPreference.visibleStrength));
+  }
+
+  beginBackgroundCandidate(uri: string): void {
+    AppStorage.setOrCreate('backgroundCandidateUri', uri);
+    AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.LOADING);
+  }
+
+  async importBackgroundCandidate(sourceUri: string): Promise<BackgroundMutationResult> {
+    const rollback = this.copyBackground(this.lastSuccessfulBackground);
+    if (this.context === null) {
+      this.restoreBackground(rollback, rollback.globalUri.length > 0 ? BackgroundDisplayState.READY :
+        BackgroundDisplayState.INVALID);
+      return new BackgroundMutationResult(false, PreferenceFailureReason.BACKGROUND_IMPORT_FAILED,
+        this.backgroundOperationVersion, this.getGlobalBackground(), rollback);
     }
-    return this.backgroundConfig.global;
+    const imported: BackgroundImportResult = BackgroundImporter.importToSandbox(this.context, sourceUri);
+    if (!imported.success) {
+      this.restoreBackground(rollback, rollback.globalUri.length > 0 ? BackgroundDisplayState.READY :
+        BackgroundDisplayState.INVALID);
+      hilog.error(DOMAIN, 'Theme', '背景导入失败 reason=%{public}s rollback=%{public}s',
+        PreferenceFailureReason.BACKGROUND_IMPORT_FAILED, 'true');
+      return new BackgroundMutationResult(false, PreferenceFailureReason.BACKGROUND_IMPORT_FAILED,
+        this.backgroundOperationVersion, this.getGlobalBackground(), rollback);
+    }
+    return await this.saveBackground(new GlobalBackgroundPreference(imported.sandboxUri,
+      this.backgroundPreference.visibleStrength));
   }
 
-  // 设置全局背景
-  async setGlobalBackground(uri: string): Promise<void> {
-    this.backgroundConfig.global = uri;
-    await this.saveBackgroundConfig();
+  async clearGlobalBackground(): Promise<BackgroundMutationResult> {
+    return await this.saveBackground(new GlobalBackgroundPreference('',
+      this.backgroundPreference.visibleStrength));
   }
 
-  // 设置页面背景
-  async setPageBackground(pageKey: string, uri: string): Promise<void> {
-    if (uri.length === 0) {
-      const newPages: Record<string, string> = {};
-      for (const k of Object.keys(this.backgroundConfig.pages)) {
-        if (k !== pageKey) {
-          newPages[k] = this.backgroundConfig.pages[k];
-        }
+  async setBackgroundStrength(strength: number): Promise<BackgroundMutationResult> {
+    if (!Number.isInteger(strength) || strength < 0 || strength > 100) {
+      return new BackgroundMutationResult(false, PreferenceFailureReason.INVALID_STRENGTH,
+        this.backgroundOperationVersion, this.getGlobalBackground(), this.copyBackground(this.lastSuccessfulBackground));
+    }
+    return await this.saveBackground(new GlobalBackgroundPreference(this.backgroundPreference.globalUri, strength));
+  }
+
+  reportBackgroundLoadFailure(): void {
+    hilog.warn(DOMAIN, 'Theme', '背景加载失败 reason=%{public}s fallback=%{public}s',
+      PreferenceFailureReason.BACKGROUND_LOAD_FAILED, 'true');
+    AppStorage.setOrCreate('globalBackgroundUri', '');
+    AppStorage.setOrCreate('backgroundCandidateUri', '');
+    AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.INVALID);
+  }
+
+  reportBackgroundReady(): void {
+    if (this.backgroundPreference.globalUri.length > 0) {
+      AppStorage.setOrCreate('backgroundCandidateUri', '');
+      AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.READY);
+    }
+  }
+
+  private async saveBackground(next: GlobalBackgroundPreference): Promise<BackgroundMutationResult> {
+    const rollback = this.copyBackground(this.lastSuccessfulBackground);
+    const operationVersion = ++this.backgroundOperationVersion;
+    this.backgroundPreference = this.copyBackground(next);
+    AppStorage.setOrCreate('globalBackgroundUri', next.globalUri);
+    AppStorage.setOrCreate('backgroundCandidateUri', '');
+    AppStorage.setOrCreate('backgroundVisibleStrength', next.visibleStrength);
+    AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.READY);
+    try {
+      await DataRepository.saveGlobalBackground(next);
+      if (operationVersion > this.lastSuccessfulBackgroundVersion) {
+        this.lastSuccessfulBackgroundVersion = operationVersion;
+        this.lastSuccessfulBackground = this.copyBackground(next);
       }
-      this.backgroundConfig.pages = newPages;
-    } else {
-      this.backgroundConfig.pages[pageKey] = uri;
+      return new BackgroundMutationResult(true, null, operationVersion, this.getGlobalBackground(), rollback);
+    } catch (e) {
+      if (operationVersion === this.backgroundOperationVersion) {
+        this.restoreBackground(rollback, BackgroundDisplayState.READY);
+      }
+      hilog.error(DOMAIN, 'Theme', '背景写入失败 reason=%{public}s rollback=%{public}s strength=%{public}d',
+        PreferenceFailureReason.PERSISTENCE_FAILED, 'true', rollback.visibleStrength);
+      return new BackgroundMutationResult(false, PreferenceFailureReason.PERSISTENCE_FAILED, operationVersion,
+        this.getGlobalBackground(), rollback);
     }
-    await this.saveBackgroundConfig();
   }
 
-  // 清除所有背景
-  async clearAllBackgrounds(): Promise<void> {
-    this.backgroundConfig = emptyBackgroundConfig();
-    await this.saveBackgroundConfig();
+  private copyBackground(source: GlobalBackgroundPreference): GlobalBackgroundPreference {
+    return new GlobalBackgroundPreference(source.globalUri, source.visibleStrength);
   }
 
-  private async saveBackgroundConfig(): Promise<void> {
-    const json = JSON.stringify(this.backgroundConfig);
-    await DataRepository.setSetting('backgroundConfig', json);
+  private restoreBackground(snapshot: GlobalBackgroundPreference, state: BackgroundDisplayState): void {
+    this.backgroundPreference = this.copyBackground(snapshot);
+    AppStorage.setOrCreate('globalBackgroundUri', snapshot.globalUri);
+    AppStorage.setOrCreate('backgroundCandidateUri', '');
+    AppStorage.setOrCreate('backgroundVisibleStrength', snapshot.visibleStrength);
+    AppStorage.setOrCreate('backgroundDisplayState', state);
   }
 }
 

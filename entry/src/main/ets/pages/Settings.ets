@@ -2,7 +2,9 @@
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { picker } from '@kit.CoreFileKit';
-import { ThemePalette, defaultLightPalette, ColorThemeId, COLOR_THEME_NAMES, COLOR_THEME_COLORS, ThemeManager } from '../common/Theme';
+import { ThemePalette, defaultLightPalette, ColorThemeId, COLOR_THEME_NAMES, COLOR_THEME_COLORS,
+  ThemeManager, ThemeMode, ThemeMutationResult, BackgroundMutationResult } from '../common/Theme';
+import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 
 import { TopBar } from '../components/TopBar';
@@ -41,6 +43,7 @@ export struct SettingsPage {
   @StorageLink('isDarkMode') isDarkMode: boolean = true;
   @StorageLink('followSystemDark') followSystemDark: boolean = true;
   @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
+  @StorageLink('backgroundDisplayState') backgroundDisplayState: BackgroundDisplayState = BackgroundDisplayState.INVALID;
 
   // 常规
   @State autoReconnect: boolean = true;
@@ -78,6 +81,7 @@ export struct SettingsPage {
   // 背景图设置
   @State showBgSettings: boolean = false;
   @State globalBgUri: string = '';
+  @State backgroundStrength: number = 50;
 
   async aboutToAppear(): Promise<void> {
     this.loading = true;
@@ -110,8 +114,9 @@ export struct SettingsPage {
       this.diskThreshold = await DataRepository.getSetting('diskThreshold', '95%');
 
       // 加载背景图配置
-      const bgConfig = ThemeManager.getInstance().getBackgroundConfig();
-      this.globalBgUri = bgConfig.global;
+      const background = ThemeManager.getInstance().getGlobalBackground();
+      this.globalBgUri = background.globalUri;
+      this.backgroundStrength = background.visibleStrength;
     } finally {
       this.loading = false;
     }
@@ -130,13 +135,58 @@ export struct SettingsPage {
         maxSelectNumber: 1
       });
       if (result.photoUris && result.photoUris.length > 0) {
-        const uri = result.photoUris[0];
-        await ThemeManager.getInstance().setGlobalBackground(uri);
-        this.globalBgUri = uri;
-        this.toast('背景图已设置');
+        const sourceUri = result.photoUris[0];
+        const manager = ThemeManager.getInstance();
+        manager.beginBackgroundCandidate(sourceUri);
+        const mutation = await manager.importBackgroundCandidate(sourceUri);
+        this.globalBgUri = mutation.snapshot.globalUri;
+        this.backgroundStrength = mutation.snapshot.visibleStrength;
+        if (mutation.success) {
+          this.toast('背景图已设置');
+        } else {
+          this.toast('无法读取所选图片，请重新选择');
+        }
       }
     } catch (e) {
       this.toast('选择背景图失败');
+    }
+  }
+
+  private async updateFollowSystem(follow: boolean): Promise<void> {
+    const result: ThemeMutationResult = await ThemeManager.getInstance().setFollowSystem(follow);
+    if (result.success) {
+      this.toast(follow ? '已开启跟随系统深色模式' : '已切换为手动模式');
+    } else {
+      this.toast('主题设置未生效，请重试');
+    }
+  }
+
+  private async updateManualMode(isDark: boolean): Promise<void> {
+    const mode = isDark ? ThemeMode.DARK : ThemeMode.LIGHT;
+    const result: ThemeMutationResult = await ThemeManager.getInstance().setManualMode(mode);
+    if (result.success) {
+      this.toast(isDark ? '已切换为深色模式' : '已切换为浅色模式');
+    } else {
+      this.toast('主题设置未生效，请重试');
+    }
+  }
+
+  private async clearBackground(): Promise<void> {
+    const result: BackgroundMutationResult = await ThemeManager.getInstance().clearGlobalBackground();
+    this.globalBgUri = result.snapshot.globalUri;
+    if (result.success) {
+      this.toast('背景图已清除');
+    } else {
+      this.toast('背景图清除未生效');
+    }
+  }
+
+  private async saveBackgroundStrength(value: number): Promise<void> {
+    const strength = Math.round(value);
+    const result: BackgroundMutationResult = await ThemeManager.getInstance().setBackgroundStrength(strength);
+    this.backgroundStrength = result.snapshot.visibleStrength;
+    if (!result.success) {
+      this.toast('背景强度设置未生效');
     }
   }
 
@@ -214,13 +264,11 @@ export struct SettingsPage {
   @Builder darkModeSettings() {
     Column({ space: 8 }) {
       this.toggleRow('跟随系统深色模式', this.followSystemDark, async (v: boolean) => {
-        await ThemeManager.getInstance().setFollowSystem(v);
-        this.toast(v ? '已开启跟随系统深色模式' : '已切换为手动模式');
+        await this.updateFollowSystem(v);
       })
       if (!this.followSystemDark) {
         this.toggleRow('深色模式', this.isDarkMode, async (v: boolean) => {
-          await ThemeManager.getInstance().setManualDarkMode(v);
-          this.toast(v ? '已切换为深色模式' : '已切换为浅色模式');
+          await this.updateManualMode(v);
         })
       }
     }
@@ -235,7 +283,15 @@ export struct SettingsPage {
           .fontSize(13)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
-        if (this.globalBgUri) {
+        if (this.backgroundDisplayState === BackgroundDisplayState.LOADING) {
+          Text('正在应用')
+            .fontSize(12)
+            .fontColor(this.palette.primary)
+        } else if (this.backgroundDisplayState === BackgroundDisplayState.INVALID && this.globalBgUri) {
+          Text('背景失效，请重新选择')
+            .fontSize(12)
+            .fontColor(this.palette.warning)
+        } else if (this.globalBgUri) {
           Text('已设置')
             .fontSize(12)
             .fontColor(this.palette.success)
@@ -264,11 +320,30 @@ export struct SettingsPage {
         .borderRadius(6)
         .backgroundColor(this.palette.bgSurface2)
         .onClick(async () => {
-          await ThemeManager.getInstance().clearAllBackgrounds();
-          this.globalBgUri = '';
-          this.toast('背景图已清除');
+          await this.clearBackground();
         })
       }
+
+      Row() {
+        Text('可见强度')
+          .fontSize(13)
+          .fontColor(this.palette.textPrimary)
+          .layoutWeight(1)
+        Text(`${this.backgroundStrength}%`)
+          .fontSize(12)
+          .fontColor(this.palette.textTertiary)
+      }
+      .width('100%')
+      Slider({ value: this.backgroundStrength, min: 0, max: 100, step: 1, style: SliderStyle.OutSet })
+        .width('100%')
+        .selectedColor(this.palette.primary)
+        .onChange((value: number, mode: SliderChangeMode) => {
+          this.backgroundStrength = Math.round(value);
+          AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundStrength);
+          if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+            this.saveBackgroundStrength(this.backgroundStrength);
+          }
+        })
     }
     .width('100%')
   }

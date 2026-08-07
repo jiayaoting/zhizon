@@ -1,13 +1,15 @@
 // 智子 - 虚拟机详情页
 import { router, promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette, progressColor } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime, formatSize } from '../service/DataRepository';
 import { Vm, PveTask, Snapshot, PveCluster } from '../model/Models';
+import { FixedBottomNav } from '../components/FixedBottomNav';
+import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
+import { MainNavKey, mainPage } from '../common/Navigation';
 
 interface VmDetailParams {
   clusterId: string;
@@ -29,8 +31,6 @@ interface HwGroup {
 @Component
 struct VmDetailPage {
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @State activeNav: string = 'Pve';
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State activeTab: string = 'overview'; // overview | snapshot | hardware | history
   @State clusterId: string = '';
   @State nodeName: string = '';
@@ -53,6 +53,12 @@ struct VmDetailPage {
       this.snapshots = await DataRepository.getSnapshots(cluster, this.nodeName, this.vmid);
     }
     this.loading = false;
+  }
+
+  private selectMain(key: MainNavKey): void {
+    router.replaceUrl({ url: 'pages/AppShell', params: { page: mainPage(key) } }).catch(() => {
+      promptAction.showToast({ message: '页面打开失败，请重试' });
+    });
   }
 
   // 硬件配置分组（硬编码示例）
@@ -245,17 +251,11 @@ struct VmDetailPage {
   }
 
   build() {
-    Row() {
-      if (!this.isSm) {
-        NavSidebar({
-          activeKey: this.activeNav,
-          onSelect: (key: string) => {
-            router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-          }
-        })
-      }
-
-      Column() {
+    Column() {
+      Stack() {
+        GlobalBackgroundLayer()
+        Row() {
+        Column() {
         TopBar({
           title: this.vm ? this.vm.name : '-',
           subtitle: this.vm ? `VMID ${this.vm.vmid} · ${this.vm.node} · ${this.vm.type.toUpperCase()}` : '',
@@ -573,13 +573,22 @@ struct VmDetailPage {
           .scrollBar(BarState.Auto)
           .align(Alignment.Top)
         }
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(Color.Transparent)
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(this.palette.bgBase)
+      .width('100%')
+      .backgroundColor(Color.Transparent)
+      }
+      FixedBottomNav({
+        selectedKey: MainNavKey.Pve,
+        onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+      })
     }
+    .width('100%')
     .height('100%')
-    .padding({ bottom: this.navBarHeight })
     .backgroundColor(this.palette.bgBase)
   }
 }

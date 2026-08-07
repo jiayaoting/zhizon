@@ -1,7 +1,6 @@
 // 智子 - PVE 节点详情页
 import { router, promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette, progressColor } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
@@ -9,6 +8,9 @@ import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime, formatSize } from '../service/DataRepository';
 import { PveCluster, PveNode, Vm, Storage, PveTask } from '../model/Models';
+import { FixedBottomNav } from '../components/FixedBottomNav';
+import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
+import { MainNavKey, mainPage } from '../common/Navigation';
 
 interface NodeDetailParams {
   clusterId: string;
@@ -18,7 +20,6 @@ interface NodeDetailParams {
 @Entry
 @Component
 struct PveNodeDetailPage {
-  @State activeNav: string = 'Pve';
   @State activeTab: string = 'vm'; // vm | storage | task | system
   @State vmFilter: string = 'all'; // all | running | stopped | qemu | lxc
   @State vmSearch: string = '';
@@ -28,7 +29,6 @@ struct PveNodeDetailPage {
   @State pveNode: PveNode | undefined = undefined;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State loading: boolean = true;
   @State vms: Vm[] = [];
   @State storages: Storage[] = [];
@@ -62,6 +62,12 @@ struct PveNodeDetailPage {
       vms = vms.filter(v => v.name.includes(this.vmSearch) || String(v.vmid).includes(this.vmSearch));
     }
     return vms;
+  }
+
+  private selectMain(key: MainNavKey): void {
+    router.replaceUrl({ url: 'pages/AppShell', params: { page: mainPage(key) } }).catch(() => {
+      promptAction.showToast({ message: '页面打开失败，请重试' });
+    });
   }
 
   // 顶栏操作：刷新 + SSH 连接
@@ -341,17 +347,11 @@ struct PveNodeDetailPage {
   }
 
   build() {
-    Row() {
-      if (!this.isSm) {
-        NavSidebar({
-          activeKey: this.activeNav,
-          onSelect: (key: string) => {
-            router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-          }
-        })
-      }
-
-      Column() {
+    Column() {
+      Stack() {
+        GlobalBackgroundLayer()
+        Row() {
+        Column() {
         TopBar({
           title: this.pveNode ? this.pveNode.node : '-',
           subtitle: this.cluster ? `${this.cluster.name} · ${this.cluster.host}:${this.cluster.port}` : '',
@@ -544,13 +544,22 @@ struct PveNodeDetailPage {
           .scrollBar(BarState.Auto)
           .align(Alignment.Top)
         }
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(Color.Transparent)
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(this.palette.bgBase)
+      .width('100%')
+      .backgroundColor(Color.Transparent)
+      }
+      FixedBottomNav({
+        selectedKey: MainNavKey.Pve,
+        onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+      })
     }
+    .width('100%')
     .height('100%')
-    .padding({ bottom: this.navBarHeight })
     .backgroundColor(this.palette.bgBase)
   }
 }

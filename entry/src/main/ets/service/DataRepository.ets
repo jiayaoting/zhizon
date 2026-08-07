@@ -2,6 +2,28 @@
 import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, Stats } from '../model/Models';
 import { DatabaseHelper, ScoreEntry } from './DatabaseHelper';
 import { PveService } from './PveService';
+import { ThemePreference, ThemeMode, GlobalBackgroundPreference } from '../common/Theme';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+const SETTINGS_DOMAIN = 0x9201;
+
+class StoredThemePreference {
+  followSystem: boolean = true;
+  manualMode: string = ThemeMode.DARK;
+}
+
+class StoredBackgroundPreference {
+  globalUri: string = '';
+  visibleStrength: number = 50;
+}
+
+class LegacyBackgroundConfig {
+  global: string = '';
+}
+
+function isSandboxBackgroundReference(uri: string): boolean {
+  return uri.length === 0 || uri.indexOf('://') < 0;
+}
 
 // 格式化运行时间
 export function formatUptime(seconds: number): string {
@@ -209,6 +231,92 @@ export class DataRepository {
 
   static async setSetting(key: string, value: string): Promise<void> {
     await DatabaseHelper.setSetting(key, value);
+  }
+
+  static async getThemePreference(): Promise<ThemePreference> {
+    const raw = await DatabaseHelper.getSetting('themePreference', '');
+    if (raw.length > 0) {
+      try {
+        const stored = JSON.parse(raw) as StoredThemePreference;
+        let followSystem = true;
+        if (stored.followSystem === false) {
+          followSystem = false;
+        }
+        let manualMode = ThemeMode.DARK;
+        if (stored.manualMode === ThemeMode.LIGHT) {
+          manualMode = ThemeMode.LIGHT;
+        }
+        return new ThemePreference(followSystem, manualMode);
+      } catch (e) {
+        return new ThemePreference(true, ThemeMode.DARK);
+      }
+    }
+    const legacyFollow = await DatabaseHelper.getSetting('followSystemDark', 'true');
+    const legacyManual = await DatabaseHelper.getSetting('manualDarkMode', 'true');
+    const preference = new ThemePreference(legacyFollow === 'true',
+      legacyManual === 'false' ? ThemeMode.LIGHT : ThemeMode.DARK);
+    await DataRepository.saveThemePreference(preference);
+    return preference;
+  }
+
+  static async saveThemePreference(preference: ThemePreference): Promise<void> {
+    const stored = new StoredThemePreference();
+    stored.followSystem = preference.followSystem;
+    stored.manualMode = preference.manualMode;
+    await DatabaseHelper.setSetting('themePreference', JSON.stringify(stored));
+  }
+
+  static async getGlobalBackground(): Promise<GlobalBackgroundPreference> {
+    const raw = await DatabaseHelper.getSetting('globalBackgroundPreference', '');
+    if (raw.length > 0) {
+      try {
+        const stored = JSON.parse(raw) as StoredBackgroundPreference;
+        const globalUri = stored.globalUri && isSandboxBackgroundReference(stored.globalUri) ? stored.globalUri : '';
+        let strength = Number.isInteger(stored.visibleStrength) ? stored.visibleStrength : 50;
+        if (strength < 0 || strength > 100) {
+          strength = 50;
+        }
+        return new GlobalBackgroundPreference(globalUri, strength);
+      } catch (e) {
+        hilog.warn(SETTINGS_DOMAIN, 'DataRepository',
+          '背景配置读取失败 source=%{public}s fallback=%{public}s', 'globalBackgroundPreference', 'true');
+        return new GlobalBackgroundPreference('', 50);
+      }
+    }
+    let migratedUri = '';
+    const legacyRaw = await DatabaseHelper.getSetting('backgroundConfig', '');
+    if (legacyRaw.length > 0) {
+      try {
+        const legacy = JSON.parse(legacyRaw) as LegacyBackgroundConfig;
+        if (legacy.global && isSandboxBackgroundReference(legacy.global)) {
+          migratedUri = legacy.global;
+        }
+        hilog.info(SETTINGS_DOMAIN, 'DataRepository',
+          '背景配置迁移完成 source=%{public}s pagesIgnored=%{public}s', 'backgroundConfig', 'true');
+      } catch (e) {
+        migratedUri = '';
+        hilog.warn(SETTINGS_DOMAIN, 'DataRepository',
+          '背景配置迁移失败 source=%{public}s fallback=%{public}s', 'backgroundConfig', 'true');
+      }
+    }
+    const migrated = new GlobalBackgroundPreference(migratedUri, 50);
+    await DataRepository.saveGlobalBackground(migrated);
+    await DatabaseHelper.setSetting('backgroundConfig', '');
+    return migrated;
+  }
+
+  static async saveGlobalBackground(preference: GlobalBackgroundPreference): Promise<void> {
+    if (!isSandboxBackgroundReference(preference.globalUri)) {
+      throw new Error('EXTERNAL_URI_NOT_ALLOWED');
+    }
+    if (!Number.isInteger(preference.visibleStrength) || preference.visibleStrength < 0 ||
+      preference.visibleStrength > 100) {
+      throw new Error('INVALID_STRENGTH');
+    }
+    const stored = new StoredBackgroundPreference();
+    stored.globalUri = preference.globalUri;
+    stored.visibleStrength = preference.visibleStrength;
+    await DatabaseHelper.setSetting('globalBackgroundPreference', JSON.stringify(stored));
   }
 
   // ========== 统计 ==========

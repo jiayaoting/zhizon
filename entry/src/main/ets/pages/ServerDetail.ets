@@ -1,7 +1,6 @@
 // 智子 - 服务器监控详情页
 import { router, promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette, progressColor } from '../common/Theme';
-import { NavSidebar } from '../components/NavSidebar';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
@@ -9,6 +8,9 @@ import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { Server, Alert, ServerMetrics } from '../model/Models';
+import { FixedBottomNav } from '../components/FixedBottomNav';
+import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
+import { MainNavKey, mainPage } from '../common/Navigation';
 
 interface ServerDetailParams {
   serverId: string;
@@ -25,8 +27,6 @@ interface TopProcess {
 @Entry
 @Component
 struct ServerDetailPage {
-  @State activeNav: string = 'Servers';
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State server: Server | null = null;
   @State alerts: Alert[] = [];
   @State loading: boolean = true;
@@ -79,6 +79,12 @@ struct ServerDetailPage {
     if (level === 'critical') return this.palette.danger;
     if (level === 'warning') return this.palette.warning;
     return this.palette.info;
+  }
+
+  private selectMain(key: MainNavKey): void {
+    router.replaceUrl({ url: 'pages/AppShell', params: { page: mainPage(key) } }).catch(() => {
+      promptAction.showToast({ message: '页面打开失败，请重试' });
+    });
   }
 
   @Builder actionsBuilder() {
@@ -168,16 +174,11 @@ struct ServerDetailPage {
   }
 
   build() {
-    Row() {
-      if (!this.isSm) {
-        NavSidebar({
-          activeKey: this.activeNav,
-          onSelect: (key: string) => {
-            router.replaceUrl({ url: `pages/${key}` }).catch(() => {});
-          }
-        })
-      }
-      Column() {
+    Column() {
+      Stack() {
+        GlobalBackgroundLayer()
+        Row() {
+        Column() {
         if (this.loading) {
           Column() {
             LoadingProgress()
@@ -381,13 +382,22 @@ struct ServerDetailPage {
           .justifyContent(FlexAlign.Center)
           .alignItems(HorizontalAlign.Center)
         }
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .backgroundColor(Color.Transparent)
       }
       .layoutWeight(1)
-      .height('100%')
-      .backgroundColor(this.palette.bgBase)
+      .width('100%')
+      .backgroundColor(Color.Transparent)
+      }
+      FixedBottomNav({
+        selectedKey: MainNavKey.Servers,
+        onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+      })
     }
+    .width('100%')
     .height('100%')
-    .padding({ bottom: this.navBarHeight })
     .backgroundColor(this.palette.bgBase)
   }
 }

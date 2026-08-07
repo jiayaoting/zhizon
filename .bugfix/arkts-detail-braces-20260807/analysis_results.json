@@ -1,0 +1,34 @@
+{
+  "preconditions": {
+    "inputs": {
+      "dataset_or_case": "静态检查 entry/src/main/ets/pages/PveNodeDetail.ets、ServerDetail.ets、VmDetail.ets 的完整 ArkTS/ArkUI 声明式结构，并结合 .codeartsdoer/specs/theme_nav_polish/ 下的 spec.md、design.md、tasks.md、plan.md 以及最近接入的 GlobalBackgroundLayer/FixedBottomNav 代码核对闭合关系。",
+      "size_or_boundary": "PveNodeDetail.ets 565:1、ServerDetail.ets 403:1、VmDetail.ets 594:1。",
+      "other": "只做静态括号与结构核对；不执行编译、构建、测试或设备运行；不改变业务行为；不添加注释；不提交 Git。"
+    },
+    "environments": {
+      "version": "HarmonyOS Stage 模型、ArkTS、ArkUI 声明式 DSL、DevEco Studio/hvigor 工具链。",
+      "other": "用户自行编译验证。"
+    }
+  },
+  "expected_behavior": {
+    "description": "三个详情页的页面组件、build() 方法以及 Stack、Column 等 ArkUI DSL 容器均应正确配对闭合，源码可被 ArkTS 编译器完成语法解析，且原有业务行为保持不变。"
+  },
+  "actual_behavior": {
+    "description": "ArkTS 编译器分别在 PveNodeDetail.ets 565:1、ServerDetail.ets 403:1、VmDetail.ets 594:1 报闭合花括号缺失错误，其中 PveNodeDetail.ets 的核心错误为“}” expected，三个详情页无法完成语法解析。"
+  },
+  "possible_root_cause": "问题报告指向三个详情页最近接入 GlobalBackgroundLayer/FixedBottomNav 后可能存在缺失或错位的闭合花括号，或 Stack/Column 等 ArkUI DSL 容器闭合关系错误。",
+  "reproduction_seed_snippet": "",
+  "minimal_reproduction_steps": "1. 读取 .codeartsdoer/specs/theme_nav_polish/spec.md、design.md、tasks.md、plan.md。\n2. 静态展开并核对 PveNodeDetail.ets、ServerDetail.ets、VmDetail.ets 的页面组件、build()、Stack/Column 及 GlobalBackgroundLayer/FixedBottomNav 接入结构。\n3. 在报告行附近核对花括号和 ArkUI DSL 容器闭合配对，确认编译器所报告的缺失或错位闭合。",
+  "log_excerpt": "PveNodeDetail.ets:565:1: “}” expected；ServerDetail.ets:403:1 报错；VmDetail.ets:594:1 报错。",
+  "log_evidence": {
+    "log_path": "用户提供的问题描述",
+    "start_line": "",
+    "end_line": "",
+    "summary": "用户直接提供了三个 ArkTS 详情页的编译错误位置，其中明确给出 PveNodeDetail.ets 的“}” expected 错误文本。",
+    "content": "entry/src/main/ets/pages/PveNodeDetail.ets 在 565:1 报“}” expected；ServerDetail.ets 在 403:1 报错；VmDetail.ets 在 594:1 报错。"
+  },
+  "workflow_readiness": {
+    "decision": "PASS",
+    "missing_or_insufficient_information": ""
+  }
+}

@@ -1,5 +1,46 @@
 // 智子 - 全局常量（沉浸光感重构版）
 import { ColorThemeId } from './Theme';
+import { MainNavKey, PageKey } from './Navigation';
+
+export class NavItem {
+  key: MainNavKey;
+  label: string;
+  icon: string;
+
+  constructor(key: MainNavKey, label: string, icon: string) {
+    this.key = key;
+    this.label = label;
+    this.icon = icon;
+  }
+}
+
+export class ToolboxItem {
+  key: PageKey;
+  label: string;
+  icon: string;
+  desc: string;
+
+  constructor(key: PageKey, label: string, icon: string, desc: string) {
+    this.key = key;
+    this.label = label;
+    this.icon = icon;
+    this.desc = desc;
+  }
+}
+
+export class MoreItem {
+  key: PageKey;
+  label: string;
+  icon: string;
+  desc: string;
+
+  constructor(key: PageKey, label: string, icon: string, desc: string) {
+    this.key = key;
+    this.label = label;
+    this.icon = icon;
+    this.desc = desc;
+  }
+}
 
 export class AppConstants {
   // 应用信息
@@ -17,43 +58,27 @@ export class AppConstants {
   static readonly connectTimeout = 30000;
   static readonly keepAliveInterval = 30;
 
-  // 新版导航：精简为 5 主 + 1 更多结构
   static readonly navItems: NavItem[] = [
-    { key: 'Index', label: '首页', icon: '🏠' },
-    { key: 'Servers', label: '服务器', icon: '🖥️' },
-    { key: 'Pve', label: 'PVE 集群', icon: '🗂️' },
-    { key: 'Toolbox', label: '工具箱', icon: '🧰' },
-    { key: 'Alerts', label: '告警', icon: '🔔' },
-    { key: 'Settings', label: '设置', icon: '⚙️' }
+    new NavItem(MainNavKey.Index, '首页', '🏠'),
+    new NavItem(MainNavKey.Servers, '服务器', '🖥️'),
+    new NavItem(MainNavKey.Pve, 'PVE', '🗂️'),
+    new NavItem(MainNavKey.Toolbox, '工具箱', '🧰'),
+    new NavItem(MainNavKey.More, '更多', '⋯')
   ];
 
   // 工具箱子页面
   static readonly toolboxItems: ToolboxItem[] = [
-    { key: 'Terminal', label: 'SSH 终端', icon: '⌨️', desc: '远程终端连接' },
-    { key: 'Files', label: '文件管理', icon: '📁', desc: 'SFTP 文件传输' },
-    { key: 'Commands', label: '快捷命令', icon: '⚡', desc: '命令库管理' },
-    { key: 'Batch', label: '批量操作', icon: '🔄', desc: '多服务器执行' },
-    { key: 'Games', label: '游戏中心', icon: '🎮', desc: '休闲小游戏' }
+    new ToolboxItem(PageKey.Terminal, 'SSH 终端', '⌨️', '远程终端连接'),
+    new ToolboxItem(PageKey.Files, '文件管理', '📁', 'SFTP 文件传输'),
+    new ToolboxItem(PageKey.Commands, '快捷命令', '⚡', '命令库管理'),
+    new ToolboxItem(PageKey.Batch, '批量操作', '🔄', '多服务器执行'),
+    new ToolboxItem(PageKey.Games, '游戏中心', '🎮', '休闲小游戏')
   ];
 
-  // 更多菜单项（手机端）
-  static readonly moreItems: NavItem[] = [
-    { key: 'Alerts', label: '告警', icon: '🔔' },
-    { key: 'Settings', label: '设置', icon: '⚙️' }
+  static readonly moreItems: MoreItem[] = [
+    new MoreItem(PageKey.Alerts, '告警', '🔔', '查看和处理系统告警'),
+    new MoreItem(PageKey.Settings, '设置', '⚙️', '主题、背景与应用设置')
   ];
-}
-
-export interface NavItem {
-  key: string;
-  label: string;
-  icon: string;
-}
-
-export interface ToolboxItem {
-  key: string;
-  label: string;
-  icon: string;
-  desc: string;
 }
 
 // 通用尺寸

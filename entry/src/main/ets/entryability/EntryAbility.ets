@@ -1,9 +1,9 @@
-import { UIAbility, AbilityConstant, Want, Configuration } from '@kit.AbilityKit';
+import { UIAbility, AbilityConstant, Want, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
 import { window, display } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper } from '../service/DatabaseHelper';
 import { CryptoHelper } from '../common/CryptoHelper';
-import { ThemeManager, ThemePalette } from '../common/Theme';
+import { ThemeManager, ThemePalette, PreferenceFailureReason } from '../common/Theme';
 
 const DOMAIN = 0x9201;
 
@@ -21,8 +21,13 @@ export default class EntryAbility extends UIAbility {
   // 监听系统配置变化（深色模式切换）
   onConfigurationUpdate(newConfig: Configuration): void {
     const colorMode = newConfig.colorMode;
-    // colorMode: 0=未设置, 1=深色, 2=浅色
-    const isDark = colorMode === 1;
+    if (colorMode !== ConfigurationConstant.ColorMode.COLOR_MODE_DARK &&
+      colorMode !== ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT) {
+      hilog.warn(DOMAIN, 'EntryAbility', '系统主题不可读 reason=%{public}s fallback=%{public}s colorMode=%{public}d',
+        PreferenceFailureReason.SYSTEM_MODE_UNAVAILABLE, 'true', colorMode);
+      return;
+    }
+    const isDark = colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
     hilog.info(DOMAIN, 'EntryAbility', '系统配置变更: colorMode=%{public}d isDark=%{public}s',
       colorMode, isDark ? 'true' : 'false');
     ThemeManager.getInstance().onSystemDarkModeChange(isDark);
@@ -36,7 +41,13 @@ export default class EntryAbility extends UIAbility {
 
       // 读取当前系统深色模式状态
       const sysColorMode = this.context.config.colorMode;
-      const sysIsDark = sysColorMode === 1;
+      let sysIsDark = true;
+      if (sysColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT) {
+        sysIsDark = false;
+      } else if (sysColorMode !== ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
+        hilog.warn(DOMAIN, 'EntryAbility', '系统主题不可读 reason=%{public}s fallback=%{public}s colorMode=%{public}d',
+          PreferenceFailureReason.SYSTEM_MODE_UNAVAILABLE, 'true', sysColorMode);
+      }
       hilog.info(DOMAIN, 'EntryAbility', '系统深色模式: %{public}d isDark=%{public}s',
         sysColorMode, sysIsDark ? 'true' : 'false');
 
