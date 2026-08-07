@@ -2,6 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
+import { DataRepository } from '../service/DataRepository';
 
 const BOARD_SIZE: number = 4;
 const WIN_SCORE: number = 2048;
@@ -30,6 +31,15 @@ function tileStyle(value: number): TileStyle {
   }
 }
 
+interface DifficultyConfig2048 {
+  label: string;
+  icon: string;
+  color: string;
+  prob4: number;
+  initTiles: number;
+  desc: string;
+}
+
 @Entry
 @Component
 export struct Game2048Page {
@@ -40,9 +50,20 @@ export struct Game2048Page {
   @State isWin: boolean = false;
   @State hasWonBefore: boolean = false;
   @State moveAnimating: boolean = false;
+  @State difficulty: number = 2; // 0=超简单 1=简单 2=中等 3=困难 4=地狱
+  @State gameStarted: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
 
   private titleText: string = '2048';
+
+  // 难度对应的4出现概率和初始瓦片数
+  private difficultyConfigs: DifficultyConfig2048[] = [
+    { label: '超简单', icon: '😊', color: AppTheme.success, prob4: 0.0, initTiles: 2, desc: '不会出现4' },
+    { label: '简单', icon: '🙂', color: AppTheme.info, prob4: 0.05, initTiles: 2, desc: '很少出现4' },
+    { label: '中等', icon: '🤔', color: AppTheme.warning, prob4: 0.10, initTiles: 2, desc: '经典体验' },
+    { label: '困难', icon: '😈', color: '#F97316', prob4: 0.20, initTiles: 2, desc: '经常出现4' },
+    { label: '地狱', icon: '💀', color: AppTheme.danger, prob4: 0.30, initTiles: 4, desc: '遍地都是4' }
+  ];
 
   // ---- 初始化 ----
   private initBoard(): void {
@@ -64,7 +85,8 @@ export struct Game2048Page {
     if (empty.length === 0) return;
     const idx: number = Math.floor(Math.random() * empty.length);
     const pos: [number, number] = empty[idx];
-    const value: number = Math.random() < 0.9 ? 2 : 4;
+    const config = this.difficultyConfigs[this.difficulty];
+    const value: number = Math.random() < config.prob4 ? 4 : 2;
 
     const newBoard: number[][] = [];
     for (let r: number = 0; r < BOARD_SIZE; r++) {
@@ -219,17 +241,39 @@ export struct Game2048Page {
     }
 
     this.isGameOver = true;
+    this.saveScore();
+  }
+
+  private saveScore(): void {
+    const config = this.difficultyConfigs[this.difficulty];
+    DataRepository.addGameScore('2048', this.score, 1, config.label);
   }
 
   // ---- 游戏控制 ----
+  private startWithDifficulty(diff: number): void {
+    this.difficulty = diff;
+    this.gameStarted = true;
+    this.initBoard();
+    this.score = 0;
+    this.isGameOver = false;
+    this.isWin = false;
+    this.hasWonBefore = false;
+    const config = this.difficultyConfigs[this.difficulty];
+    for (let i: number = 0; i < config.initTiles; i++) {
+      this.addRandomTile();
+    }
+  }
+
   restartGame(): void {
     this.initBoard();
     this.score = 0;
     this.isGameOver = false;
     this.isWin = false;
     this.hasWonBefore = false;
-    this.addRandomTile();
-    this.addRandomTile();
+    const config = this.difficultyConfigs[this.difficulty];
+    for (let i: number = 0; i < config.initTiles; i++) {
+      this.addRandomTile();
+    }
   }
 
   continueGame(): void {
@@ -410,10 +454,60 @@ export struct Game2048Page {
     .alignContent(Alignment.Center)
   }
 
+  // ---- 难度选择 ----
+  @Builder
+  difficultyPicker() {
+    Column({ space: 12 }) {
+      Text('选择难度')
+        .fontSize(AppTheme.fsXl)
+        .fontColor(AppTheme.textPrimary)
+        .fontWeight(FontWeight.Bold)
+
+      ForEach(this.difficultyConfigs, (cfg: DifficultyConfig2048, idx: number) => {
+        Row({ space: 10 }) {
+          Text(cfg.icon)
+            .fontSize(24)
+          Column({ space: 2 }) {
+            Text(cfg.label)
+              .fontSize(AppTheme.fsMd)
+              .fontColor(cfg.color)
+              .fontWeight(FontWeight.Medium)
+            Text(cfg.desc)
+              .fontSize(AppTheme.fsXs)
+              .fontColor(AppTheme.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor(AppTheme.bgSurface)
+        .borderRadius(10)
+        .border({ width: 1.5, color: cfg.color + '80' })
+        .onClick(() => { this.startWithDifficulty(idx); })
+      }, (idx: number) => idx.toString())
+    }
+    .width('100%')
+    .padding(16)
+  }
+
   // ---- 操作栏 ----
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      Row() {
+        Text('🏆')
+          .fontSize(14)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(AppTheme.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        router.pushUrl({ url: 'pages/GameHistory', params: { 'game': '2048' } as Record<string, string> });
+      })
+
       Row() {
         Text('↺')
           .fontSize(16)
@@ -434,7 +528,6 @@ export struct Game2048Page {
     if (params !== null && params['title'] !== undefined) {
       this.titleText = params['title'];
     }
-    this.restartGame();
   }
 
   build() {
@@ -449,25 +542,16 @@ export struct Game2048Page {
 
       if (this.isSm) {
         // 手机端布局
-        Column({ space: 16 }) {
-          this.scoreBoard()
-          Stack() {
-            Column() {
-              this.gameBoard()
-            }
-            if (this.isWin) { this.winOverlay() }
-            if (this.isGameOver) { this.gameOverOverlay() }
+        if (!this.gameStarted) {
+          Column() {
+            this.difficultyPicker()
           }
+          .layoutWeight(1)
           .width('100%')
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .padding({ left: 16, right: 16 })
-        .justifyContent(FlexAlign.Center)
-      } else {
-        // 平板端布局：棋盘左 + 信息右
-        Row({ space: 20 }) {
+          .justifyContent(FlexAlign.Center)
+        } else {
           Column({ space: 16 }) {
+            this.scoreBoard()
             Stack() {
               Column() {
                 this.gameBoard()
@@ -475,42 +559,69 @@ export struct Game2048Page {
               if (this.isWin) { this.winOverlay() }
               if (this.isGameOver) { this.gameOverOverlay() }
             }
-            .width(360)
-          }
-          .alignItems(HorizontalAlign.Center)
-
-          Column({ space: 16 }) {
-            this.scoreBoard()
-            Column({ space: 8 }) {
-              Text('操作提示')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
-              Column({ space: 6 }) {
-                Text('滑动屏幕 / 方向键按钮')
-                  .fontSize(AppTheme.fsSm)
-                  .fontColor(AppTheme.textSecondary)
-                Text('相同数字会合并相加')
-                  .fontSize(AppTheme.fsSm)
-                  .fontColor(AppTheme.textSecondary)
-                Text('目标：达到 2048！')
-                  .fontSize(AppTheme.fsSm)
-                  .fontColor(AppTheme.primary)
-              }
-              .padding(16)
-              .backgroundColor(AppTheme.bgSurface)
-              .borderRadius(10)
-              .border({ width: 1, color: AppTheme.borderSubtle })
-            }
             .width('100%')
-            .alignItems(HorizontalAlign.Start)
           }
           .layoutWeight(1)
+          .width('100%')
+          .padding({ left: 16, right: 16 })
+          .justifyContent(FlexAlign.Center)
         }
-        .layoutWeight(1)
-        .width('100%')
-        .padding({ left: 24, right: 24, top: 8, bottom: 8 })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
+      } else {
+        // 平板端布局
+        if (!this.gameStarted) {
+          Column() {
+            this.difficultyPicker()
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+        } else {
+          Row({ space: 20 }) {
+            Column({ space: 16 }) {
+              Stack() {
+                Column() {
+                  this.gameBoard()
+                }
+                if (this.isWin) { this.winOverlay() }
+                if (this.isGameOver) { this.gameOverOverlay() }
+              }
+              .width(360)
+            }
+            .alignItems(HorizontalAlign.Center)
+
+            Column({ space: 16 }) {
+              this.scoreBoard()
+              Column({ space: 8 }) {
+                Text('操作提示')
+                  .fontSize(AppTheme.fsXs)
+                  .fontColor(AppTheme.textTertiary)
+                Column({ space: 6 }) {
+                  Text('滑动屏幕即可操作')
+                    .fontSize(AppTheme.fsSm)
+                    .fontColor(AppTheme.textSecondary)
+                  Text('相同数字会合并相加')
+                    .fontSize(AppTheme.fsSm)
+                    .fontColor(AppTheme.textSecondary)
+                  Text('目标：达到 2048！')
+                    .fontSize(AppTheme.fsSm)
+                    .fontColor(AppTheme.primary)
+                }
+                .padding(16)
+                .backgroundColor(AppTheme.bgSurface)
+                .borderRadius(10)
+                .border({ width: 1, color: AppTheme.borderSubtle })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            .layoutWeight(1)
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .padding({ left: 24, right: 24, top: 8, bottom: 8 })
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+        }
       }
     }
     .layoutWeight(1)

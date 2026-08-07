@@ -2,6 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
+import { DataRepository } from '../service/DataRepository';
 
 const COLS: number = 16;
 const ROWS: number = 16;
@@ -85,6 +86,7 @@ export struct SnakePage {
     if (available.length === 0) {
       // 无可用位置 = 胜利
       this.isGameOver = true;
+      this.saveScore();
       return;
     }
     const idx: number = Math.floor(Math.random() * available.length);
@@ -110,6 +112,7 @@ export struct SnakePage {
     if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
       this.isGameOver = true;
       this.stopTimer();
+      this.saveScore();
       return;
     }
 
@@ -118,6 +121,7 @@ export struct SnakePage {
       if (this.snake[i].x === newHead.x && this.snake[i].y === newHead.y) {
         this.isGameOver = true;
         this.stopTimer();
+        this.saveScore();
         return;
       }
     }
@@ -194,6 +198,12 @@ export struct SnakePage {
     this.initGame();
     this.isStarted = true;
     this.startTimer();
+  }
+
+  private saveScore(): void {
+    const labels: string[] = ['简单', '中等', '困难'];
+    const label: string = labels[this.difficulty] || '中等';
+    DataRepository.addGameScore('Snake', this.score, this.level, label);
   }
 
   togglePause(): void {
@@ -517,6 +527,20 @@ export struct SnakePage {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 战绩
+      Row() {
+        Text('🏆')
+          .fontSize(14)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(AppTheme.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        router.pushUrl({ url: 'pages/GameHistory', params: { 'game': 'Snake' } as Record<string, string> });
+      })
+
       // 暂停
       Row() {
         Text(this.isPaused ? '▶' : '⏸')

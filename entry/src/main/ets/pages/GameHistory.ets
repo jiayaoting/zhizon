@@ -1,0 +1,205 @@
+// 智子 - 游戏历史战绩
+import { router } from '@kit.ArkUI';
+import { DataRepository } from '../service/DataRepository';
+import { ScoreEntry } from '../service/DatabaseHelper';
+import { AppTheme } from '../common/Theme';
+import { TopBar } from '../components/TopBar';
+
+const GAME_ICONS: Record<string, string> = {
+  '2048': '🔢',
+  'Snake': '🐍',
+  'Tetris': '🧱'
+};
+const GAME_NAMES: Record<string, string> = {
+  '2048': '2048',
+  'Snake': '贪吃蛇',
+  'Tetris': '俄罗斯方块'
+};
+
+const DIFFICULTY_COLORS: Record<string, string> = {
+  '超简单': AppTheme.success,
+  '简单': AppTheme.info,
+  '中等': AppTheme.warning,
+  '困难': '#F97316',
+  '地狱': AppTheme.danger
+};
+
+function formatTime(ts: number): string {
+  const d: Date = new Date(ts);
+  const m: string = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day: string = d.getDate().toString().padStart(2, '0');
+  const h: string = d.getHours().toString().padStart(2, '0');
+  const min: string = d.getMinutes().toString().padStart(2, '0');
+  return `${m}-${day} ${h}:${min}`;
+}
+
+function medalIcon(rank: number): string {
+  if (rank === 0) return '🥇';
+  if (rank === 1) return '🥈';
+  if (rank === 2) return '🥉';
+  return (rank + 1).toString();
+}
+
+@Entry
+@Component
+export struct GameHistoryPage {
+  @State gameKey: string = '2048';
+  @State scores: ScoreEntry[] = [];
+  @State loading: boolean = true;
+  @StorageLink('isSm') isSm: boolean = false;
+
+  private gameKeys: string[] = ['2048', 'Snake', 'Tetris'];
+
+  aboutToAppear(): void {
+    const params: Record<string, string> | null = router.getParams() as Record<string, string> | null;
+    if (params !== null && params['game'] !== undefined) {
+      this.gameKey = params['game'];
+    }
+    this.loadScores();
+  }
+
+  async loadScores(): Promise<void> {
+    this.loading = true;
+    this.scores = await DataRepository.getGameScores(this.gameKey);
+    this.loading = false;
+  }
+
+  async clearScores(): Promise<void> {
+    await DataRepository.clearGameScores(this.gameKey);
+    this.scores = [];
+  }
+
+  build() {
+    Column() {
+      TopBar({ title: '游戏战绩', showBack: true })
+
+      // 游戏切换标签
+      Row({ space: 0 }) {
+        ForEach(this.gameKeys, (key: string) => {
+          Row({ space: 4 }) {
+            Text(GAME_ICONS[key])
+              .fontSize(14)
+            Text(GAME_NAMES[key])
+              .fontSize(AppTheme.fsSm)
+              .fontColor(this.gameKey === key ? AppTheme.textPrimary : AppTheme.textTertiary)
+              .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
+          }
+          .layoutWeight(1)
+          .height(36)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(8)
+          .backgroundColor(this.gameKey === key ? AppTheme.primary + '20' : Color.Transparent)
+          .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? AppTheme.primary : Color.Transparent })
+          .margin({ right: 8 })
+          .onClick(() => {
+            this.gameKey = key;
+            this.loadScores();
+          })
+        })
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+
+      // 排行列表
+      if (this.scores.length === 0 && !this.loading) {
+        Column({ space: 8 }) {
+          Text('📋')
+            .fontSize(48)
+          Text('暂无战绩')
+            .fontSize(AppTheme.fsLg)
+            .fontColor(AppTheme.textTertiary)
+          Text('快去玩一局吧！')
+            .fontSize(AppTheme.fsSm)
+            .fontColor(AppTheme.textTertiary)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+      } else {
+        List({ space: 6 }) {
+          ForEach(this.scores, (entry: ScoreEntry, idx: number) => {
+            ListItem() {
+              Row({ space: 10 }) {
+                // 排名
+                Text(medalIcon(idx))
+                  .fontSize(20)
+                  .width(32)
+                  .textAlign(TextAlign.Center)
+
+                // 分数
+                Column({ space: 2 }) {
+                  Text(entry.score.toString())
+                    .fontSize(AppTheme.fsXl)
+                    .fontColor(AppTheme.textPrimary)
+                    .fontWeight(FontWeight.Bold)
+                  Text('分数')
+                    .fontSize(AppTheme.fsXs)
+                    .fontColor(AppTheme.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Center)
+
+                Blank()
+
+                // 等级
+                Column({ space: 2 }) {
+                  Text('Lv.' + entry.level.toString())
+                    .fontSize(AppTheme.fsMd)
+                    .fontColor(AppTheme.warning)
+                    .fontWeight(FontWeight.Medium)
+                  Text('等级')
+                    .fontSize(AppTheme.fsXs)
+                    .fontColor(AppTheme.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Center)
+
+                // 难度
+                Column({ space: 2 }) {
+                  Text(entry.difficulty)
+                    .fontSize(AppTheme.fsSm)
+                    .fontColor(DIFFICULTY_COLORS[entry.difficulty] || AppTheme.textSecondary)
+                    .fontWeight(FontWeight.Medium)
+                  Text('难度')
+                    .fontSize(AppTheme.fsXs)
+                    .fontColor(AppTheme.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Center)
+
+                // 时间
+                Text(formatTime(entry.createdAt))
+                  .fontSize(AppTheme.fsXs)
+                  .fontColor(AppTheme.textTertiary)
+              }
+              .width('100%')
+              .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+              .backgroundColor(idx % 2 === 0 ? AppTheme.bgSurface : AppTheme.bgSurface2)
+              .borderRadius(8)
+            }
+          }, (entry: ScoreEntry) => entry.id)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 12, right: 12 })
+      }
+
+      // 底部操作栏
+      Row({ space: 12 }) {
+        Row() {
+          Text('🗑 清空战绩')
+            .fontSize(AppTheme.fsSm)
+            .fontColor(AppTheme.textTertiary)
+        }
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .backgroundColor(AppTheme.bgSurface2)
+        .borderRadius(8)
+        .border({ width: 1, color: AppTheme.borderSubtle })
+        .onClick(() => { this.clearScores(); })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ bottom: 12 })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(AppTheme.bgBase)
+  }
+}

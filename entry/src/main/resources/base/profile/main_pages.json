@@ -7,6 +7,7 @@
     "pages/ServerForm",
     "pages/Tetris",
     "pages/Game2048",
-    "pages/Snake"
+    "pages/Snake",
+    "pages/GameHistory"
   ]
 }

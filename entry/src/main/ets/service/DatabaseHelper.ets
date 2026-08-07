@@ -4,6 +4,14 @@ import { common } from '@kit.AbilityKit';
 import { Server, PveCluster, Command, Alert, FileItem } from '../model/Models';
 import { CryptoHelper } from '../common/CryptoHelper';
 
+export interface ScoreEntry {
+  id: string;
+  score: number;
+  level: number;
+  difficulty: string;
+  createdAt: number;
+}
+
 const DB_NAME = 'zhizon.db';
 const DB_VERSION = 3;
 
@@ -89,6 +97,17 @@ const SQL_CREATE_SETTINGS = `
   )
 `;
 
+const SQL_CREATE_GAME_SCORES = `
+  CREATE TABLE IF NOT EXISTS game_scores (
+    id TEXT PRIMARY KEY,
+    game TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    level INTEGER DEFAULT 1,
+    difficulty TEXT DEFAULT '中等',
+    created_at INTEGER
+  )
+`;
+
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
 
@@ -109,6 +128,7 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_COMMANDS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_ALERTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_SETTINGS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_GAME_SCORES);
 
     // v2 迁移：为已有 servers 表新增列（安全执行，列已存在时忽略错误）
     await DatabaseHelper.migrateV2();
@@ -480,6 +500,80 @@ export class DatabaseHelper {
     predicates.equalTo('resolved', 0);
     const bucket: relationalStore.ValuesBucket = { resolved: 1 };
     await store.update(bucket, predicates);
+  }
+
+  // ========== 游戏战绩 ==========
+
+  static async addGameScore(game: string, score: number, level: number, difficulty: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const id: string = 'gs-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+    const valueBucket: relationalStore.ValuesBucket = {
+      id: id,
+      game: game,
+      score: score,
+      level: level,
+      difficulty: difficulty,
+      created_at: Date.now()
+    };
+    await store.insert('game_scores', valueBucket);
+  }
+
+  static async getGameScores(game: string, limit: number = 50): Promise<ScoreEntry[]> {
+    const store = DatabaseHelper.getStore();
+    const results: ScoreEntry[] = [];
+    try {
+      const predicates = new relationalStore.RdbPredicates('game_scores');
+      predicates.equalTo('game', game);
+      predicates.orderByDesc('score');
+      predicates.limitAs(limit);
+      const resultSet = await store.query(predicates);
+      while (resultSet.goToNextRow()) {
+        results.push({
+          id: resultSet.getString(resultSet.getColumnIndex('id')),
+          score: resultSet.getLong(resultSet.getColumnIndex('score')),
+          level: resultSet.getLong(resultSet.getColumnIndex('level')),
+          difficulty: resultSet.getString(resultSet.getColumnIndex('difficulty')),
+          createdAt: resultSet.getLong(resultSet.getColumnIndex('created_at'))
+        } as ScoreEntry);
+      }
+      resultSet.close();
+    } catch (e) {
+      console.error('getGameScores failed:', e);
+    }
+    return results;
+  }
+
+  static async getGameHighScore(game: string): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('game_scores');
+      predicates.equalTo('game', game);
+      predicates.orderByDesc('score');
+      predicates.limitAs(1);
+      const resultSet = await store.query(predicates);
+      let high: number = 0;
+      if (resultSet.goToNextRow()) {
+        high = resultSet.getLong(resultSet.getColumnIndex('score'));
+      }
+      resultSet.close();
+      return high;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  static async deleteGameScore(id: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const predicates = new relationalStore.RdbPredicates('game_scores');
+    predicates.equalTo('id', id);
+    await store.delete(predicates);
+  }
+
+  static async clearGameScores(game: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const predicates = new relationalStore.RdbPredicates('game_scores');
+    predicates.equalTo('game', game);
+    await store.delete(predicates);
   }
 
   // ========== 设置 ==========

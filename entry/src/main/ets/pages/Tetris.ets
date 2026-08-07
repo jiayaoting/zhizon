@@ -2,6 +2,7 @@
 import { router } from '@kit.ArkUI';
 import { AppTheme } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
+import { DataRepository } from '../service/DataRepository';
 
 const COLS: number = 10;
 const ROWS: number = 20;
@@ -46,10 +47,12 @@ function scoreForLines(lines: number): number {
 }
 
 // 下落间隔（毫秒），随等级递减
-function dropInterval(level: number): number {
-  const base: number = 800;
-  const min: number = 80;
-  const interval: number = base - (level - 1) * 70;
+function dropInterval(level: number, difficulty: number): number {
+  // 难度影响基础速度：超简单=1000, 简单=800, 中等=600, 困难=450, 地狱=300
+  const baseSpeeds: number[] = [1000, 800, 600, 450, 300];
+  const base: number = baseSpeeds[difficulty];
+  const min: number = 60;
+  const interval: number = base - (level - 1) * 50;
   return Math.max(interval, min);
 }
 
@@ -58,6 +61,13 @@ interface Piece {
   rotation: number;
   x: number;
   y: number;
+}
+
+interface DifficultyConfigTetris {
+  label: string;
+  icon: string;
+  color: string;
+  desc: string;
 }
 
 @Entry
@@ -72,10 +82,21 @@ export struct TetrisPage {
   @State isGameOver: boolean = false;
   @State isPaused: boolean = false;
   @State clearedRows: number[] = [];
+  @State difficulty: number = 2; // 0=超简单 1=简单 2=中等 3=困难 4=地狱
+  @State gameStarted: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
+
+  // 难度配置
+  private difficultyConfigs: DifficultyConfigTetris[] = [
+    { label: '超简单', icon: '😊', color: AppTheme.success, desc: '掉落极慢' },
+    { label: '简单', icon: '🙂', color: AppTheme.info, desc: '掉落较慢' },
+    { label: '中等', icon: '🤔', color: AppTheme.warning, desc: '经典体验' },
+    { label: '困难', icon: '😈', color: '#F97316', desc: '掉落较快' },
+    { label: '地狱', icon: '💀', color: AppTheme.danger, desc: '飞速掉落' }
+  ];
 
   // ---- 棋盘初始化 ----
   private initBoard(): void {
@@ -235,6 +256,7 @@ export struct TetrisPage {
       this.isGameOver = true;
       this.currentPiece = null;
       this.stopTimer();
+      this.saveScore();
     }
   }
 
@@ -252,7 +274,7 @@ export struct TetrisPage {
   // ---- 定时器 ----
   private startTimer(): void {
     this.stopTimer();
-    const interval: number = dropInterval(this.level);
+    const interval: number = dropInterval(this.level, this.difficulty);
     this.timerId = setInterval(() => { this.drop(); }, interval);
   }
 
@@ -269,6 +291,21 @@ export struct TetrisPage {
   }
 
   // ---- 游戏控制 ----
+  private startWithDifficulty(diff: number): void {
+    this.difficulty = diff;
+    this.gameStarted = true;
+    this.initBoard();
+    this.score = 0;
+    this.level = 1;
+    this.lines = 0;
+    this.isGameOver = false;
+    this.isPaused = false;
+    this.clearedRows = [];
+    this.nextType = this.randomType();
+    this.spawnPiece();
+    this.startTimer();
+  }
+
   restartGame(): void {
     this.initBoard();
     this.score = 0;
@@ -280,6 +317,11 @@ export struct TetrisPage {
     this.nextType = this.randomType();
     this.spawnPiece();
     this.startTimer();
+  }
+
+  private saveScore(): void {
+    const config = this.difficultyConfigs[this.difficulty];
+    DataRepository.addGameScore('Tetris', this.score, this.level, config.label);
   }
 
   togglePause(): void {
@@ -362,70 +404,21 @@ export struct TetrisPage {
     .backgroundColor(AppTheme.bgSurface)
   }
 
-  // ---- 控制按钮 ----
+  // ---- 旋转按钮 ----
   @Builder
-  controlButtons() {
-    Column({ space: 6 }) {
-      // 旋转
-      Row() {
-        Text('↻ 旋转')
-          .fontSize(AppTheme.fsSm)
-          .fontColor(AppTheme.textSecondary)
-      }
-      .width('100%')
-      .height(this.isSm ? 36 : 48)
-      .borderRadius(10)
-      .backgroundColor(AppTheme.bgSurface2)
-      .justifyContent(FlexAlign.Center)
-      .border({ width: 1, color: AppTheme.borderSubtle })
-      .onClick(() => { this.rotatePiece(); })
-
-      // 左右 + 下落
-      Row({ space: 6 }) {
-        // 左
-        Row() {
-          Text('◀')
-            .fontSize(18)
-            .fontColor(AppTheme.textPrimary)
-        }
-        .layoutWeight(1)
-        .height(this.isSm ? 36 : 48)
-        .borderRadius(10)
-        .backgroundColor(AppTheme.bgSurface2)
-        .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: AppTheme.borderSubtle })
-        .onClick(() => { this.moveLeft(); })
-
-        // 下
-        Row() {
-          Text('▼')
-            .fontSize(18)
-            .fontColor(AppTheme.primary)
-        }
-        .layoutWeight(1)
-        .height(this.isSm ? 36 : 48)
-        .borderRadius(10)
-        .backgroundColor(AppTheme.primaryDim)
-        .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: AppTheme.primary })
-        .onClick(() => { this.hardDrop(); })
-
-        // 右
-        Row() {
-          Text('▶')
-            .fontSize(18)
-            .fontColor(AppTheme.textPrimary)
-        }
-        .layoutWeight(1)
-        .height(this.isSm ? 36 : 48)
-        .borderRadius(10)
-        .backgroundColor(AppTheme.bgSurface2)
-        .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: AppTheme.borderSubtle })
-        .onClick(() => { this.moveRight(); })
-      }
-      .width('100%')
+  rotateButton() {
+    Row() {
+      Text('↻ 旋转')
+        .fontSize(AppTheme.fsSm)
+        .fontColor(AppTheme.textSecondary)
     }
+    .width('100%')
+    .height(this.isSm ? 36 : 48)
+    .borderRadius(10)
+    .backgroundColor(AppTheme.bgSurface2)
+    .justifyContent(FlexAlign.Center)
+    .border({ width: 1, color: AppTheme.borderSubtle })
+    .onClick(() => { this.rotatePiece(); })
   }
 
   // ---- 信息面板 ----
@@ -564,10 +557,61 @@ export struct TetrisPage {
     .alignContent(Alignment.Center)
   }
 
+  // ---- 难度选择 ----
+  @Builder
+  difficultyPicker() {
+    Column({ space: 12 }) {
+      Text('选择难度')
+        .fontSize(AppTheme.fsXl)
+        .fontColor(AppTheme.textPrimary)
+        .fontWeight(FontWeight.Bold)
+
+      ForEach(this.difficultyConfigs, (cfg: DifficultyConfigTetris, idx: number) => {
+        Row({ space: 10 }) {
+          Text(cfg.icon)
+            .fontSize(24)
+          Column({ space: 2 }) {
+            Text(cfg.label)
+              .fontSize(AppTheme.fsMd)
+              .fontColor(cfg.color)
+              .fontWeight(FontWeight.Medium)
+            Text(cfg.desc)
+              .fontSize(AppTheme.fsXs)
+              .fontColor(AppTheme.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding(14)
+        .backgroundColor(AppTheme.bgSurface)
+        .borderRadius(10)
+        .border({ width: 1.5, color: cfg.color + '80' })
+        .onClick(() => { this.startWithDifficulty(idx); })
+      }, (idx: number) => idx.toString())
+    }
+    .width('100%')
+    .padding(16)
+  }
+
   // ---- 顶栏操作按钮 ----
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 战绩
+      Row() {
+        Text('🏆')
+          .fontSize(14)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(AppTheme.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => {
+        router.pushUrl({ url: 'pages/GameHistory', params: { 'game': 'Tetris' } as Record<string, string> });
+      })
+
       // 暂停/继续
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
@@ -602,7 +646,6 @@ export struct TetrisPage {
     if (params !== null && params['title'] !== undefined) {
       this.titleText = params['title'];
     }
-    this.restartGame();
   }
 
   aboutToDisappear(): void {
@@ -620,9 +663,83 @@ export struct TetrisPage {
       }
 
       if (this.isSm) {
-        // ---- 手机端：棋盘左 + (下一个+按钮+信息)右 ----
-        Row({ space: 10 }) {
-          // 左侧：棋盘
+        if (!this.gameStarted) {
+          Column() {
+            this.difficultyPicker()
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+        } else {
+          // ---- 手机端：顶部信息 → 下一个 → 棋盘 → 旋转按钮 ----
+          Column({ space: 8 }) {
+          // 顶部信息栏：分数 | 等级 | 行数
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text('分数')
+                .fontSize(AppTheme.fsXs)
+                .fontColor(AppTheme.textTertiary)
+              Text(this.score.toString())
+                .fontSize(AppTheme.fsMd)
+                .fontColor(AppTheme.primary)
+                .fontWeight(FontWeight.Bold)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Center)
+            .padding(6)
+            .backgroundColor(AppTheme.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: AppTheme.borderSubtle })
+
+            Column({ space: 2 }) {
+              Text('等级')
+                .fontSize(AppTheme.fsXs)
+                .fontColor(AppTheme.textTertiary)
+              Text(this.level.toString())
+                .fontSize(AppTheme.fsMd)
+                .fontColor(AppTheme.warning)
+                .fontWeight(FontWeight.Bold)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Center)
+            .padding(6)
+            .backgroundColor(AppTheme.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: AppTheme.borderSubtle })
+
+            Column({ space: 2 }) {
+              Text('行数')
+                .fontSize(AppTheme.fsXs)
+                .fontColor(AppTheme.textTertiary)
+              Text(this.lines.toString())
+                .fontSize(AppTheme.fsMd)
+                .fontColor(AppTheme.info)
+                .fontWeight(FontWeight.Bold)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Center)
+            .padding(6)
+            .backgroundColor(AppTheme.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: AppTheme.borderSubtle })
+          }
+          .width('100%')
+
+          // 下一个方块 — 放在棋盘顶部
+          Row({ space: 8 }) {
+            Text('下一个')
+              .fontSize(AppTheme.fsXs)
+              .fontColor(AppTheme.textTertiary)
+            this.previewPiece(this.nextType)
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .padding(6)
+          .backgroundColor(AppTheme.bgSurface)
+          .borderRadius(8)
+          .border({ width: 1, color: AppTheme.borderSubtle })
+
+          // 棋盘
           Stack() {
             Column() {
               this.gameBoard()
@@ -648,10 +765,53 @@ export struct TetrisPage {
           }
           .alignContent(Alignment.Center)
 
-          // 右侧：信息+按钮
-          Column({ space: 8 }) {
-            // 下一个方块
-            Column({ space: 2 }) {
+          // 旋转按钮
+          this.rotateButton()
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        }
+      } else {
+        if (!this.gameStarted) {
+          Column() {
+            this.difficultyPicker()
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+        } else {
+          // ---- 平板端：棋盘左 + (下一个+旋转+信息)右 ----
+          Row({ space: 20 }) {
+          // 左侧：棋盘
+          Stack() {
+            Column() {
+              this.gameBoard()
+            }
+            .gesture(
+              PanGesture({ fingers: 1, direction: PanDirection.All, distance: 5 })
+                .onActionEnd((event: GestureEvent) => {
+                  if (this.isGameOver || this.isPaused) return;
+                  const offsetX: number = event.offsetX;
+                  const offsetY: number = event.offsetY;
+                  if (Math.abs(offsetX) > Math.abs(offsetY)) {
+                    if (offsetX > 0) this.moveRight();
+                    else this.moveLeft();
+                  } else {
+                    if (offsetY < -20) this.rotatePiece();
+                    else if (offsetY > 20) this.hardDrop();
+                  }
+                })
+            )
+
+            if (this.isGameOver) { this.gameOverOverlay() }
+            if (this.isPaused) { this.pauseOverlay() }
+          }
+
+          // 右侧：下一个 + 旋转 + 信息
+          Column({ space: 12 }) {
+            // 下一个方块 — 放在顶部
+            Column({ space: 4 }) {
               Text('下一个')
                 .fontSize(AppTheme.fsXs)
                 .fontColor(AppTheme.textTertiary)
@@ -659,121 +819,29 @@ export struct TetrisPage {
                 this.previewPiece(this.nextType)
               }
               .width('100%')
-              .padding(6)
+              .padding(8)
               .backgroundColor(AppTheme.bgSurface)
-              .borderRadius(8)
+              .borderRadius(10)
               .border({ width: 1, color: AppTheme.borderSubtle })
               .alignItems(HorizontalAlign.Center)
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
 
-            // 分数
-            Column({ space: 2 }) {
-              Text('分数')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
-              Text(this.score.toString())
-                .fontSize(AppTheme.fsLg)
-                .fontColor(AppTheme.primary)
-                .fontWeight(FontWeight.Bold)
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Center)
-            .padding(6)
-            .backgroundColor(AppTheme.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
+            // 旋转按钮
+            this.rotateButton()
 
-            // 等级
-            Column({ space: 2 }) {
-              Text('等级')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
-              Text(this.level.toString())
-                .fontSize(AppTheme.fsMd)
-                .fontColor(AppTheme.warning)
-                .fontWeight(FontWeight.Bold)
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Center)
-            .padding(6)
-            .backgroundColor(AppTheme.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
-
-            // 行数
-            Column({ space: 2 }) {
-              Text('行数')
-                .fontSize(AppTheme.fsXs)
-                .fontColor(AppTheme.textTertiary)
-              Text(this.lines.toString())
-                .fontSize(AppTheme.fsMd)
-                .fontColor(AppTheme.info)
-                .fontWeight(FontWeight.Bold)
-            }
-            .width('100%')
-            .alignItems(HorizontalAlign.Center)
-            .padding(6)
-            .backgroundColor(AppTheme.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: AppTheme.borderSubtle })
-
-            // 控制按钮
-            this.controlButtons()
-          }
-          .layoutWeight(1)
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-      } else {
-        // ---- 平板端布局：棋盘左 + 信息右 ----
-        Row({ space: 20 }) {
-          // 左侧：棋盘 + 按钮
-          Column({ space: 12 }) {
-            Stack() {
-              Column() {
-                this.gameBoard()
-              }
-              .gesture(
-                PanGesture({ fingers: 1, direction: PanDirection.All, distance: 5 })
-                  .onActionEnd((event: GestureEvent) => {
-                    if (this.isGameOver || this.isPaused) return;
-                    const offsetX: number = event.offsetX;
-                    const offsetY: number = event.offsetY;
-                    if (Math.abs(offsetX) > Math.abs(offsetY)) {
-                      if (offsetX > 0) this.moveRight();
-                      else this.moveLeft();
-                    } else {
-                      if (offsetY < -20) this.rotatePiece();
-                      else if (offsetY > 20) this.hardDrop();
-                    }
-                  })
-              )
-
-              if (this.isGameOver) { this.gameOverOverlay() }
-              if (this.isPaused) { this.pauseOverlay() }
-            }
-
-            this.controlButtons()
-          }
-          .alignItems(HorizontalAlign.Center)
-
-          // 右侧：信息面板
-          Scroll() {
+            // 信息面板
             this.infoPanel()
           }
           .layoutWeight(1)
-          .scrollBar(BarState.Off)
         }
         .layoutWeight(1)
         .width('100%')
         .padding({ left: 24, right: 24, top: 8, bottom: 8 })
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        }
       }
     }
     .layoutWeight(1)

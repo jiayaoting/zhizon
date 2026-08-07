@@ -1,6 +1,6 @@
 // 智子 - 数据仓库（基于数据库持久化）
 import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, Stats } from '../model/Models';
-import { DatabaseHelper } from './DatabaseHelper';
+import { DatabaseHelper, ScoreEntry } from './DatabaseHelper';
 import { PveService } from './PveService';
 
 // 格式化运行时间
@@ -122,6 +122,28 @@ export class DataRepository {
 
   static async resolveAllAlerts(): Promise<void> {
     await DatabaseHelper.resolveAllAlerts();
+  }
+
+  // ========== 游戏战绩 ==========
+
+  static async addGameScore(game: string, score: number, level: number, difficulty: string): Promise<void> {
+    await DatabaseHelper.addGameScore(game, score, level, difficulty);
+  }
+
+  static async getGameScores(game: string, limit?: number): Promise<ScoreEntry[]> {
+    return await DatabaseHelper.getGameScores(game, limit);
+  }
+
+  static async getGameHighScore(game: string): Promise<number> {
+    return await DatabaseHelper.getGameHighScore(game);
+  }
+
+  static async deleteGameScore(id: string): Promise<void> {
+    await DatabaseHelper.deleteGameScore(id);
+  }
+
+  static async clearGameScores(game: string): Promise<void> {
+    await DatabaseHelper.clearGameScores(game);
   }
 
   // ========== 文件管理 ==========
