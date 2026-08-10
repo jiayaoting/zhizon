@@ -359,6 +359,7 @@ export class ThemeManager {
   private isSystemDark: boolean = true;
   private followSystem: boolean = true;
   private manualMode: ThemeMode = ThemeMode.DARK;
+  private effectiveMode: ThemeMode = ThemeMode.DARK;
   private backgroundPreference: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
   private fontSizeScale: string = 'standard';
   private context: Context | null = null;
@@ -371,6 +372,7 @@ export class ThemeManager {
   private lastSuccessfulBackground: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
   private operationVersion: number = 0;
   private mutationQueue: Promise<PreferenceMutationResult> | null = null;
+  private pendingFollowSystemVersion: number = 0;
 
   static getInstance(): ThemeManager {
     if (!ThemeManager.instance) {
@@ -393,6 +395,8 @@ export class ThemeManager {
       const themePreference = await DataRepository.getThemePreference();
       this.followSystem = themePreference.followSystem;
       this.manualMode = themePreference.manualMode;
+      this.effectiveMode = this.followSystem ?
+        (this.isSystemDark ? ThemeMode.DARK : ThemeMode.LIGHT) : this.manualMode;
       this.backgroundPreference = await DataRepository.getGlobalBackground();
       this.lastSuccessfulBackground = this.getGlobalBackground();
       this.lastSuccessfulTheme = this.getThemeState();
@@ -422,7 +426,8 @@ export class ThemeManager {
   // 系统深色模式变化回调（由 EntryAbility.onConfigurationUpdate 触发）
   onSystemDarkModeChange(isDark: boolean): void {
     this.isSystemDark = isDark;
-    if (this.followSystem) {
+    if (this.followSystem && this.pendingFollowSystemVersion === 0) {
+      this.effectiveMode = isDark ? ThemeMode.DARK : ThemeMode.LIGHT;
       this.applyTheme();
       hilog.info(DOMAIN, 'Theme', '系统深色模式变更: dark=%{public}s', isDark ? 'true' : 'false');
     }
@@ -448,10 +453,7 @@ export class ThemeManager {
 
   // 获取当前是否为深色模式
   getIsDark(): boolean {
-    if (this.followSystem) {
-      return this.isSystemDark;
-    }
-    return this.manualMode === ThemeMode.DARK;
+    return this.effectiveMode === ThemeMode.DARK;
   }
 
   // 获取当前颜色主题
@@ -484,13 +486,13 @@ export class ThemeManager {
 
   // 应用主题到 AppStorage
   private applyTheme(): void {
-    const palette = this.getPalette();
+    const palette = buildPalette(this.currentColorTheme, this.effectiveMode === ThemeMode.DARK);
     AppStorage.setOrCreate('themePalette', palette);
     AppStorage.setOrCreate('isDarkMode', palette.isDark);
     AppStorage.setOrCreate('colorThemeId', this.currentColorTheme);
     AppStorage.setOrCreate('followSystemDark', this.followSystem);
     AppStorage.setOrCreate('manualThemeMode', this.manualMode);
-    AppStorage.setOrCreate('effectiveThemeMode', this.getIsDark() ? ThemeMode.DARK : ThemeMode.LIGHT);
+    AppStorage.setOrCreate('effectiveThemeMode', this.effectiveMode);
     AppStorage.setOrCreate('globalBackgroundUri', this.backgroundPreference.globalUri);
     AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundPreference.visibleStrength);
   }
@@ -502,8 +504,7 @@ export class ThemeManager {
   }
 
   getThemeState(): EffectiveThemeState {
-    const effectiveMode = this.getIsDark() ? ThemeMode.DARK : ThemeMode.LIGHT;
-    return new EffectiveThemeState(this.followSystem, this.manualMode, effectiveMode);
+    return new EffectiveThemeState(this.followSystem, this.manualMode, this.effectiveMode);
   }
 
   private restoreTheme(snapshot: EffectiveThemeState): void {
@@ -583,6 +584,9 @@ export class ThemeManager {
     reservedVersion: number = 0): Promise<PreferenceMutationResult> {
     const operationVersion = reservedVersion > 0 ? reservedVersion : ++this.operationVersion;
     mutation.operationVersion = operationVersion;
+    if (mutation.type === PreferenceMutationType.FOLLOW_SYSTEM) {
+      this.pendingFollowSystemVersion = operationVersion;
+    }
     let queued: Promise<PreferenceMutationResult>;
     if (this.mutationQueue === null) {
       queued = this.executeMutation(mutation, operationVersion);
@@ -610,6 +614,7 @@ export class ThemeManager {
     const rollback = DataRepository.getPreferenceSnapshot();
     const candidate = this.buildCandidate(rollback, mutation, operationVersion);
     if (candidate === null) {
+      this.completeFollowSystemMutation(mutation, operationVersion);
       if (mutation.importedFile.length > 0) BackgroundImporter.removeSandboxFile(mutation.importedFile);
       return new PreferenceMutationResult(false, false, false, PreferenceFailureReason.INVALID_VALUE,
         operationVersion, rollback, rollback);
@@ -618,13 +623,16 @@ export class ThemeManager {
     if (!persisted.success) {
       if (mutation.importedFile.length > 0) BackgroundImporter.removeSandboxFile(mutation.importedFile);
       const latest = operationVersion === this.operationVersion;
-      if (latest) this.publishPreferenceSnapshot(persisted.rollbackSnapshot);
+      this.completeFollowSystemMutation(mutation, operationVersion);
+      if (latest) this.publishPreferenceSnapshot(persisted.rollbackSnapshot,
+        mutation.type === PreferenceMutationType.FOLLOW_SYSTEM && persisted.rollbackSnapshot.followSystem);
       hilog.error(DOMAIN, 'Theme', '偏好写入失败 version=%{public}d reason=%{public}s rollback=%{public}s',
         operationVersion, persisted.code, latest ? 'true' : 'false');
       return new PreferenceMutationResult(false, latest, latest, PreferenceFailureReason.PERSISTENCE_FAILED,
         operationVersion, persisted.rollbackSnapshot, persisted.rollbackSnapshot);
     }
     const latest = operationVersion === this.operationVersion;
+    this.completeFollowSystemMutation(mutation, operationVersion);
     if (latest) this.publishPreferenceSnapshot(persisted.snapshot);
     if (mutation.type === PreferenceMutationType.BACKGROUND && rollback.backgroundUri.length > 0 &&
       rollback.backgroundUri !== persisted.snapshot.backgroundUri) {
@@ -638,7 +646,10 @@ export class ThemeManager {
     operationVersion: number): PreferenceSnapshot | null {
     const candidate = new PreferenceSnapshot(base.followSystem, base.manualThemeMode, base.colorThemeId,
       base.fontSizeScale, base.backgroundUri, base.backgroundStrength, operationVersion);
-    if (mutation.type === PreferenceMutationType.FOLLOW_SYSTEM) candidate.followSystem = mutation.booleanValue;
+    if (mutation.type === PreferenceMutationType.FOLLOW_SYSTEM) {
+      candidate.followSystem = mutation.booleanValue;
+      if (!mutation.booleanValue) candidate.manualThemeMode = this.effectiveMode;
+    }
     else if (mutation.type === PreferenceMutationType.MANUAL_MODE) candidate.manualThemeMode = mutation.stringValue;
     else if (mutation.type === PreferenceMutationType.COLOR_THEME) candidate.colorThemeId = mutation.stringValue;
     else if (mutation.type === PreferenceMutationType.FONT_SIZE) candidate.fontSizeScale = mutation.stringValue;
@@ -648,9 +659,14 @@ export class ThemeManager {
     return candidate;
   }
 
-  private publishPreferenceSnapshot(snapshot: PreferenceSnapshot): void {
+  private publishPreferenceSnapshot(snapshot: PreferenceSnapshot, syncFollowingSystem: boolean = false): void {
     this.followSystem = snapshot.followSystem;
     this.manualMode = snapshot.manualThemeMode === ThemeMode.LIGHT ? ThemeMode.LIGHT : ThemeMode.DARK;
+    if (!this.followSystem) {
+      this.effectiveMode = this.manualMode;
+    } else if (syncFollowingSystem) {
+      this.effectiveMode = this.isSystemDark ? ThemeMode.DARK : ThemeMode.LIGHT;
+    }
     this.currentColorTheme = this.isColorTheme(snapshot.colorThemeId) ?
       snapshot.colorThemeId as ColorThemeId : ColorThemeId.CYAN;
     this.fontSizeScale = snapshot.fontSizeScale;
@@ -668,6 +684,13 @@ export class ThemeManager {
     return new PreferenceSnapshot(this.followSystem, this.manualMode, this.currentColorTheme,
       this.fontSizeScale, this.backgroundPreference.globalUri, this.backgroundPreference.visibleStrength,
       operationVersion);
+  }
+
+  private completeFollowSystemMutation(mutation: PreferenceMutation, operationVersion: number): void {
+    if (mutation.type === PreferenceMutationType.FOLLOW_SYSTEM &&
+      this.pendingFollowSystemVersion === operationVersion) {
+      this.pendingFollowSystemVersion = 0;
+    }
   }
 
   private backgroundFromSnapshot(snapshot: PreferenceSnapshot): GlobalBackgroundPreference {

@@ -313,16 +313,17 @@ export class DataRepository {
     if (raw.length > 0) {
       try {
         const stored = JSON.parse(raw) as StoredThemePreference;
-        let followSystem = true;
-        if (stored.followSystem === false) {
-          followSystem = false;
+        if ((stored.followSystem !== true && stored.followSystem !== false) ||
+          (stored.manualMode !== ThemeMode.DARK && stored.manualMode !== ThemeMode.LIGHT)) {
+          hilog.warn(SETTINGS_DOMAIN, 'DataRepository',
+            '主题偏好无效 source=%{public}s fallback=%{public}s', 'themePreference', 'true');
+          return new ThemePreference(true, ThemeMode.DARK);
         }
-        let manualMode = ThemeMode.DARK;
-        if (stored.manualMode === ThemeMode.LIGHT) {
-          manualMode = ThemeMode.LIGHT;
-        }
-        return new ThemePreference(followSystem, manualMode);
+        const manualMode = stored.manualMode === ThemeMode.LIGHT ? ThemeMode.LIGHT : ThemeMode.DARK;
+        return new ThemePreference(stored.followSystem, manualMode);
       } catch (e) {
+        hilog.warn(SETTINGS_DOMAIN, 'DataRepository',
+          '主题偏好读取失败 source=%{public}s fallback=%{public}s', 'themePreference', 'true');
         return new ThemePreference(true, ThemeMode.DARK);
       }
     }

@@ -152,6 +152,8 @@ export struct SettingsPage {
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(follow ? '已开启跟随系统深色模式' : '已切换为手动模式');
+    } else if (!follow) {
+      this.toast('跟随系统深色模式未关闭，请重试');
     } else {
       this.toast('设置未保存，请重试');
     }
@@ -199,6 +201,8 @@ export struct SettingsPage {
       this.backgroundStrength = result.snapshot.backgroundStrength;
       this.followSystemDark = result.snapshot.followSystem;
       this.colorThemeId = result.snapshot.colorThemeId;
+      this.isDarkMode = result.snapshot.followSystem ? this.isDarkMode :
+        result.snapshot.manualThemeMode === ThemeMode.DARK;
     }
   }
 
