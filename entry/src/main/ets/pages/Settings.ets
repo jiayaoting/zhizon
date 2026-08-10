@@ -1,11 +1,11 @@
 // 智子 - 设置页面（沉浸光感重构版）
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
-import { picker } from '@kit.CoreFileKit';
-import { ThemePalette, defaultLightPalette, ColorThemeId, COLOR_THEME_NAMES, COLOR_THEME_COLORS,
-  ThemeManager, ThemeMode, ThemeMutationResult, BackgroundMutationResult } from '../common/Theme';
+import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorThemeColor,
+  ThemeManager, ThemeMode, PreferenceMutationResult, PreferenceFailureReason } from '../common/Theme';
 import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
+import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
 
 import { TopBar } from '../components/TopBar';
 
@@ -128,65 +128,77 @@ export struct SettingsPage {
 
   // 打开系统文件选择器选取背景图
   private async pickBackgroundImage(): Promise<void> {
-    try {
-      const documentSelectOptions = new picker.PhotoViewPicker();
-      const result = await documentSelectOptions.select({
-        MIMEType: picker.PhotoViewMIMETypes.IMAGE_TYPE,
-        maxSelectNumber: 1
-      });
-      if (result.photoUris && result.photoUris.length > 0) {
-        const sourceUri = result.photoUris[0];
-        const manager = ThemeManager.getInstance();
-        manager.beginBackgroundCandidate(sourceUri);
-        const mutation = await manager.importBackgroundCandidate(sourceUri);
-        this.globalBgUri = mutation.snapshot.globalUri;
-        this.backgroundStrength = mutation.snapshot.visibleStrength;
-        if (mutation.success) {
-          this.toast('背景图已设置');
-        } else {
-          this.toast('无法读取所选图片，请重新选择');
-        }
-      }
-    } catch (e) {
+    const picked: ImagePickResult = await PickerAdapter.pickSingleImage();
+    if (picked.state === ImagePickState.CANCELLED) return;
+    if (picked.state === ImagePickState.FAILED) {
       this.toast('选择背景图失败');
+      return;
+    }
+    const manager = ThemeManager.getInstance();
+    manager.beginBackgroundCandidate(picked.uri);
+    const mutation: PreferenceMutationResult = await manager.importBackgroundCandidate(picked.uri);
+    this.applyPreferenceResult(mutation);
+    if (mutation.success) {
+      this.toast('背景图已设置');
+    } else if (mutation.reason === PreferenceFailureReason.PERSISTENCE_FAILED) {
+      this.toast('设置未保存，请重试');
+    } else {
+      this.toast('无法读取所选图片，请重新选择');
     }
   }
 
   private async updateFollowSystem(follow: boolean): Promise<void> {
-    const result: ThemeMutationResult = await ThemeManager.getInstance().setFollowSystem(follow);
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setFollowSystem(follow);
+    this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(follow ? '已开启跟随系统深色模式' : '已切换为手动模式');
     } else {
-      this.toast('主题设置未生效，请重试');
+      this.toast('设置未保存，请重试');
     }
   }
 
   private async updateManualMode(isDark: boolean): Promise<void> {
     const mode = isDark ? ThemeMode.DARK : ThemeMode.LIGHT;
-    const result: ThemeMutationResult = await ThemeManager.getInstance().setManualMode(mode);
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setManualMode(mode);
+    this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(isDark ? '已切换为深色模式' : '已切换为浅色模式');
     } else {
-      this.toast('主题设置未生效，请重试');
+      this.toast('设置未保存，请重试');
     }
   }
 
   private async clearBackground(): Promise<void> {
-    const result: BackgroundMutationResult = await ThemeManager.getInstance().clearGlobalBackground();
-    this.globalBgUri = result.snapshot.globalUri;
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().clearGlobalBackground();
+    this.applyPreferenceResult(result);
     if (result.success) {
       this.toast('背景图已清除');
     } else {
-      this.toast('背景图清除未生效');
+      this.toast('设置未保存，请重试');
     }
   }
 
   private async saveBackgroundStrength(value: number): Promise<void> {
     const strength = Math.round(value);
-    const result: BackgroundMutationResult = await ThemeManager.getInstance().setBackgroundStrength(strength);
-    this.backgroundStrength = result.snapshot.visibleStrength;
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setBackgroundStrength(strength);
+    this.applyPreferenceResult(result);
     if (!result.success) {
-      this.toast('背景强度设置未生效');
+      this.toast('设置未保存，请重试');
+    }
+  }
+
+  private async updateColorTheme(themeId: ColorThemeId): Promise<void> {
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setColorTheme(themeId);
+    this.applyPreferenceResult(result);
+    if (!result.success) this.toast('设置未保存，请重试');
+  }
+
+  private applyPreferenceResult(result: PreferenceMutationResult): void {
+    if (result.published || result.restored) {
+      this.globalBgUri = result.snapshot.backgroundUri;
+      this.backgroundStrength = result.snapshot.backgroundStrength;
+      this.followSystemDark = result.snapshot.followSystem;
+      this.colorThemeId = result.snapshot.colorThemeId;
     }
   }
 
@@ -236,7 +248,7 @@ export struct SettingsPage {
         Column() {
           Stack() {
             Circle({ width: 36, height: 36 })
-              .fill(COLOR_THEME_COLORS[themeId])
+              .fill(colorThemeColor(themeId))
             if (this.colorThemeId === themeId) {
               Text('✓')
                 .fontSize(14)
@@ -244,15 +256,15 @@ export struct SettingsPage {
                 .fontWeight(FontWeight.Bold)
             }
           }
-          Text(COLOR_THEME_NAMES[themeId])
+          Text(colorThemeName(themeId))
             .fontSize(9)
             .fontColor(this.palette.textTertiary)
             .margin({ top: 4 })
             .maxLines(1)
         }
         .alignItems(HorizontalAlign.Center)
-        .onClick(() => {
-          ThemeManager.getInstance().setColorTheme(themeId);
+        .onClick(async () => {
+          await this.updateColorTheme(themeId);
         })
       }, (themeId: ColorThemeId) => themeId)
     }
@@ -339,7 +351,6 @@ export struct SettingsPage {
         .selectedColor(this.palette.primary)
         .onChange((value: number, mode: SliderChangeMode) => {
           this.backgroundStrength = Math.round(value);
-          AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundStrength);
           if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
             this.saveBackgroundStrength(this.backgroundStrength);
           }

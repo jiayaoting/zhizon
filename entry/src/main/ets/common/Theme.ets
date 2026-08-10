@@ -2,6 +2,10 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DataRepository } from '../service/DataRepository';
 import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
+import { PreferenceSnapshot, PreferencePersistenceResult } from '../model/GovernanceModels';
+import { ThemeMode, ThemePreference, GlobalBackgroundPreference } from './ThemeContracts';
+
+export { ThemeMode, ThemePreference, GlobalBackgroundPreference } from './ThemeContracts';
 
 const DOMAIN = 0x9201;
 
@@ -17,23 +21,23 @@ export enum ColorThemeId {
   FOREST = 'forest'    // 自然绿
 }
 
-export const COLOR_THEME_NAMES: Record<string, string> = {
-  'cyan': '终端青绿',
-  'ocean': '海洋蓝',
-  'sunset': '日落橙',
-  'aurora': '极光紫',
-  'sakura': '樱花粉',
-  'forest': '自然绿'
-};
+export function colorThemeName(themeId: ColorThemeId): string {
+  if (themeId === ColorThemeId.CYAN) return '终端青绿';
+  if (themeId === ColorThemeId.OCEAN) return '海洋蓝';
+  if (themeId === ColorThemeId.SUNSET) return '日落橙';
+  if (themeId === ColorThemeId.AURORA) return '极光紫';
+  if (themeId === ColorThemeId.SAKURA) return '樱花粉';
+  return '自然绿';
+}
 
-export const COLOR_THEME_COLORS: Record<string, string> = {
-  'cyan': '#00D9A3',
-  'ocean': '#3B82F6',
-  'sunset': '#F59E0B',
-  'aurora': '#8B5CF6',
-  'sakura': '#EC4899',
-  'forest': '#10B981'
-};
+export function colorThemeColor(themeId: ColorThemeId): string {
+  if (themeId === ColorThemeId.CYAN) return '#00D9A3';
+  if (themeId === ColorThemeId.OCEAN) return '#3B82F6';
+  if (themeId === ColorThemeId.SUNSET) return '#F59E0B';
+  if (themeId === ColorThemeId.AURORA) return '#8B5CF6';
+  if (themeId === ColorThemeId.SAKURA) return '#EC4899';
+  return '#10B981';
+}
 
 // ============================================================
 // 完整色板接口
@@ -236,11 +240,6 @@ function buildPalette(themeId: ColorThemeId, isDark: boolean): ThemePalette {
 export const defaultLightPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, false);
 export const defaultDarkPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, true);
 
-export enum ThemeMode {
-  LIGHT = 'light',
-  DARK = 'dark'
-}
-
 export enum PreferenceFailureReason {
   INVALID_VALUE = 'INVALID_VALUE',
   INVALID_STRENGTH = 'INVALID_STRENGTH',
@@ -256,13 +255,52 @@ export enum BackgroundDisplayState {
   INVALID = 'invalid'
 }
 
-export class ThemePreference {
-  followSystem: boolean;
-  manualMode: ThemeMode;
+export enum PreferenceMutationType {
+  FOLLOW_SYSTEM = 'FOLLOW_SYSTEM',
+  MANUAL_MODE = 'MANUAL_MODE',
+  COLOR_THEME = 'COLOR_THEME',
+  FONT_SIZE = 'FONT_SIZE',
+  BACKGROUND = 'BACKGROUND',
+  BACKGROUND_STRENGTH = 'BACKGROUND_STRENGTH'
+}
 
-  constructor(followSystem: boolean, manualMode: ThemeMode) {
-    this.followSystem = followSystem;
-    this.manualMode = manualMode;
+export class PreferenceMutation {
+  operationVersion: number;
+  type: PreferenceMutationType;
+  booleanValue: boolean;
+  stringValue: string;
+  numberValue: number;
+  importedFile: string;
+
+  constructor(type: PreferenceMutationType, booleanValue: boolean, stringValue: string, numberValue: number,
+    importedFile: string = '') {
+    this.operationVersion = 0;
+    this.type = type;
+    this.booleanValue = booleanValue;
+    this.stringValue = stringValue;
+    this.numberValue = numberValue;
+    this.importedFile = importedFile;
+  }
+}
+
+export class PreferenceMutationResult {
+  success: boolean;
+  restored: boolean;
+  published: boolean;
+  reason: PreferenceFailureReason | null;
+  operationVersion: number;
+  snapshot: PreferenceSnapshot;
+  rollbackSnapshot: PreferenceSnapshot;
+
+  constructor(success: boolean, restored: boolean, published: boolean, reason: PreferenceFailureReason | null,
+    operationVersion: number, snapshot: PreferenceSnapshot, rollbackSnapshot: PreferenceSnapshot) {
+    this.success = success;
+    this.restored = restored;
+    this.published = published;
+    this.reason = reason;
+    this.operationVersion = operationVersion;
+    this.snapshot = snapshot;
+    this.rollbackSnapshot = rollbackSnapshot;
   }
 }
 
@@ -275,16 +313,6 @@ export class EffectiveThemeState {
     this.followSystem = followSystem;
     this.manualMode = manualMode;
     this.effectiveMode = effectiveMode;
-  }
-}
-
-export class GlobalBackgroundPreference {
-  globalUri: string;
-  visibleStrength: number;
-
-  constructor(globalUri: string, visibleStrength: number) {
-    this.globalUri = globalUri;
-    this.visibleStrength = visibleStrength;
   }
 }
 
@@ -332,6 +360,7 @@ export class ThemeManager {
   private followSystem: boolean = true;
   private manualMode: ThemeMode = ThemeMode.DARK;
   private backgroundPreference: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
+  private fontSizeScale: string = 'standard';
   private context: Context | null = null;
   private initialized: boolean = false;
   private themeOperationVersion: number = 0;
@@ -340,6 +369,8 @@ export class ThemeManager {
   private backgroundOperationVersion: number = 0;
   private lastSuccessfulBackgroundVersion: number = 0;
   private lastSuccessfulBackground: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
+  private operationVersion: number = 0;
+  private mutationQueue: Promise<PreferenceMutationResult> | null = null;
 
   static getInstance(): ThemeManager {
     if (!ThemeManager.instance) {
@@ -357,7 +388,7 @@ export class ThemeManager {
     try {
       // 加载颜色主题偏好
       const savedTheme = await DataRepository.getSetting('colorTheme', 'cyan');
-      this.currentColorTheme = savedTheme as ColorThemeId;
+      this.currentColorTheme = this.isColorTheme(savedTheme) ? savedTheme as ColorThemeId : ColorThemeId.CYAN;
 
       const themePreference = await DataRepository.getThemePreference();
       this.followSystem = themePreference.followSystem;
@@ -368,7 +399,9 @@ export class ThemeManager {
 
       // 加载字号配置
       const fontSize = await DataRepository.getSetting('fontSizeScale', 'standard');
-      this.applyFontSize(fontSize);
+      this.fontSizeScale = this.isFontSizeScale(fontSize) ? fontSize : 'standard';
+      this.applyFontSize(this.fontSizeScale);
+      DataRepository.initializePreferenceSnapshot(this.createPreferenceSnapshot(0));
 
       this.initialized = true;
       hilog.info(DOMAIN, 'Theme', '主题管理器初始化完成: color=%{public}s dark=%{public}s followSys=%{public}s',
@@ -396,62 +429,21 @@ export class ThemeManager {
   }
 
   // 设置颜色主题
-  async setColorTheme(themeId: ColorThemeId): Promise<void> {
-    this.currentColorTheme = themeId;
-    await DataRepository.setSetting('colorTheme', themeId);
-    this.applyTheme();
+  async setColorTheme(themeId: ColorThemeId): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.COLOR_THEME,
+      false, themeId, 0));
   }
 
   // 设置是否跟随系统深色模式
-  async setFollowSystem(follow: boolean): Promise<ThemeMutationResult> {
-    const rollbackSnapshot = this.lastSuccessfulTheme;
-    const operationVersion = ++this.themeOperationVersion;
-    const next = new ThemePreference(follow, this.manualMode);
-    this.followSystem = follow;
-    this.applyTheme();
-    const operationSnapshot = this.getThemeState();
-    try {
-      await DataRepository.saveThemePreference(next);
-      if (operationVersion > this.lastSuccessfulThemeVersion) {
-        this.lastSuccessfulThemeVersion = operationVersion;
-        this.lastSuccessfulTheme = operationSnapshot;
-      }
-      return new ThemeMutationResult(true, null, operationVersion, this.getThemeState(), rollbackSnapshot);
-    } catch (e) {
-      if (operationVersion === this.themeOperationVersion) {
-        this.restoreTheme(rollbackSnapshot);
-      }
-      hilog.error(DOMAIN, 'Theme', '主题写入失败 reason=%{public}s rollback=%{public}s',
-        PreferenceFailureReason.PERSISTENCE_FAILED, 'true');
-      return new ThemeMutationResult(false, PreferenceFailureReason.PERSISTENCE_FAILED, operationVersion,
-        this.getThemeState(), rollbackSnapshot);
-    }
+  async setFollowSystem(follow: boolean): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.FOLLOW_SYSTEM,
+      follow, '', 0));
   }
 
   // 设置手动深色/浅色模式（仅在 followSystem=false 时生效）
-  async setManualMode(mode: ThemeMode): Promise<ThemeMutationResult> {
-    const rollbackSnapshot = this.lastSuccessfulTheme;
-    const operationVersion = ++this.themeOperationVersion;
-    const next = new ThemePreference(this.followSystem, mode);
-    this.manualMode = mode;
-    this.applyTheme();
-    const operationSnapshot = this.getThemeState();
-    try {
-      await DataRepository.saveThemePreference(next);
-      if (operationVersion > this.lastSuccessfulThemeVersion) {
-        this.lastSuccessfulThemeVersion = operationVersion;
-        this.lastSuccessfulTheme = operationSnapshot;
-      }
-      return new ThemeMutationResult(true, null, operationVersion, this.getThemeState(), rollbackSnapshot);
-    } catch (e) {
-      if (operationVersion === this.themeOperationVersion) {
-        this.restoreTheme(rollbackSnapshot);
-      }
-      hilog.error(DOMAIN, 'Theme', '主题写入失败 reason=%{public}s rollback=%{public}s',
-        PreferenceFailureReason.PERSISTENCE_FAILED, 'true');
-      return new ThemeMutationResult(false, PreferenceFailureReason.PERSISTENCE_FAILED, operationVersion,
-        this.getThemeState(), rollbackSnapshot);
-    }
+  async setManualMode(mode: ThemeMode): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.MANUAL_MODE,
+      false, mode, 0));
   }
 
   // 获取当前是否为深色模式
@@ -473,10 +465,9 @@ export class ThemeManager {
   }
 
   // 应用字号缩放
-  async setFontSize(scale: string): Promise<void> {
-    await DataRepository.setSetting('fontSizeScale', scale);
-    this.applyFontSize(scale);
-    this.applyTheme();
+  async setFontSize(scale: string): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.FONT_SIZE,
+      false, scale, 0));
   }
 
   private applyFontSize(scale: string): void {
@@ -526,89 +517,170 @@ export class ThemeManager {
       this.backgroundPreference.visibleStrength);
   }
 
-  async setGlobalBackground(uri: string): Promise<BackgroundMutationResult> {
-    return await this.saveBackground(new GlobalBackgroundPreference(uri,
-      this.backgroundPreference.visibleStrength));
+  async setGlobalBackground(uri: string): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.BACKGROUND,
+      false, uri, 0));
   }
 
   beginBackgroundCandidate(uri: string): void {
-    AppStorage.setOrCreate('backgroundCandidateUri', uri);
+    AppStorage.setOrCreate('backgroundCandidateUri', '');
     AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.LOADING);
   }
 
-  async importBackgroundCandidate(sourceUri: string): Promise<BackgroundMutationResult> {
-    const rollback = this.copyBackground(this.lastSuccessfulBackground);
+  async importBackgroundCandidate(sourceUri: string): Promise<PreferenceMutationResult> {
+    const operationVersion = ++this.operationVersion;
+    const rollback = DataRepository.getPreferenceSnapshot();
     if (this.context === null) {
-      this.restoreBackground(rollback, rollback.globalUri.length > 0 ? BackgroundDisplayState.READY :
+      this.restoreBackground(this.backgroundFromSnapshot(rollback), rollback.backgroundUri.length > 0 ? BackgroundDisplayState.READY :
         BackgroundDisplayState.INVALID);
-      return new BackgroundMutationResult(false, PreferenceFailureReason.BACKGROUND_IMPORT_FAILED,
-        this.backgroundOperationVersion, this.getGlobalBackground(), rollback);
+      return new PreferenceMutationResult(false, true, true, PreferenceFailureReason.BACKGROUND_IMPORT_FAILED,
+        operationVersion, rollback, rollback);
     }
-    const imported: BackgroundImportResult = BackgroundImporter.importToSandbox(this.context, sourceUri);
+    const imported: BackgroundImportResult = await BackgroundImporter.importToSandbox(this.context, sourceUri);
     if (!imported.success) {
-      this.restoreBackground(rollback, rollback.globalUri.length > 0 ? BackgroundDisplayState.READY :
-        BackgroundDisplayState.INVALID);
+      const currentSnapshot = DataRepository.getPreferenceSnapshot();
+      if (operationVersion === this.operationVersion) {
+        this.publishPreferenceSnapshot(currentSnapshot);
+        this.restoreBackground(this.backgroundFromSnapshot(currentSnapshot), currentSnapshot.backgroundUri.length > 0 ?
+          BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
+      }
       hilog.error(DOMAIN, 'Theme', '背景导入失败 reason=%{public}s rollback=%{public}s',
         PreferenceFailureReason.BACKGROUND_IMPORT_FAILED, 'true');
-      return new BackgroundMutationResult(false, PreferenceFailureReason.BACKGROUND_IMPORT_FAILED,
-        this.backgroundOperationVersion, this.getGlobalBackground(), rollback);
+      return new PreferenceMutationResult(false, operationVersion === this.operationVersion,
+        operationVersion === this.operationVersion, PreferenceFailureReason.BACKGROUND_IMPORT_FAILED,
+        operationVersion, currentSnapshot, rollback);
     }
-    return await this.saveBackground(new GlobalBackgroundPreference(imported.sandboxUri,
-      this.backgroundPreference.visibleStrength));
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.BACKGROUND,
+      false, imported.sandboxUri, 0, imported.sandboxUri), operationVersion);
   }
 
-  async clearGlobalBackground(): Promise<BackgroundMutationResult> {
-    return await this.saveBackground(new GlobalBackgroundPreference('',
-      this.backgroundPreference.visibleStrength));
+  async clearGlobalBackground(): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.BACKGROUND,
+      false, '', 0));
   }
 
-  async setBackgroundStrength(strength: number): Promise<BackgroundMutationResult> {
-    if (!Number.isInteger(strength) || strength < 0 || strength > 100) {
-      return new BackgroundMutationResult(false, PreferenceFailureReason.INVALID_STRENGTH,
-        this.backgroundOperationVersion, this.getGlobalBackground(), this.copyBackground(this.lastSuccessfulBackground));
-    }
-    return await this.saveBackground(new GlobalBackgroundPreference(this.backgroundPreference.globalUri, strength));
+  async setBackgroundStrength(strength: number): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.BACKGROUND_STRENGTH,
+      false, '', strength));
   }
 
-  reportBackgroundLoadFailure(): void {
+  reportBackgroundLoadFailure(uri: string): void {
+    if (uri !== this.backgroundPreference.globalUri) return;
     hilog.warn(DOMAIN, 'Theme', '背景加载失败 reason=%{public}s fallback=%{public}s',
       PreferenceFailureReason.BACKGROUND_LOAD_FAILED, 'true');
-    AppStorage.setOrCreate('globalBackgroundUri', '');
     AppStorage.setOrCreate('backgroundCandidateUri', '');
     AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.INVALID);
   }
 
-  reportBackgroundReady(): void {
-    if (this.backgroundPreference.globalUri.length > 0) {
+  reportBackgroundReady(uri: string): void {
+    if (uri === this.backgroundPreference.globalUri && this.backgroundPreference.globalUri.length > 0) {
       AppStorage.setOrCreate('backgroundCandidateUri', '');
       AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.READY);
     }
   }
 
-  private async saveBackground(next: GlobalBackgroundPreference): Promise<BackgroundMutationResult> {
-    const rollback = this.copyBackground(this.lastSuccessfulBackground);
-    const operationVersion = ++this.backgroundOperationVersion;
-    this.backgroundPreference = this.copyBackground(next);
-    AppStorage.setOrCreate('globalBackgroundUri', next.globalUri);
-    AppStorage.setOrCreate('backgroundCandidateUri', '');
-    AppStorage.setOrCreate('backgroundVisibleStrength', next.visibleStrength);
-    AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.READY);
-    try {
-      await DataRepository.saveGlobalBackground(next);
-      if (operationVersion > this.lastSuccessfulBackgroundVersion) {
-        this.lastSuccessfulBackgroundVersion = operationVersion;
-        this.lastSuccessfulBackground = this.copyBackground(next);
-      }
-      return new BackgroundMutationResult(true, null, operationVersion, this.getGlobalBackground(), rollback);
-    } catch (e) {
-      if (operationVersion === this.backgroundOperationVersion) {
-        this.restoreBackground(rollback, BackgroundDisplayState.READY);
-      }
-      hilog.error(DOMAIN, 'Theme', '背景写入失败 reason=%{public}s rollback=%{public}s strength=%{public}d',
-        PreferenceFailureReason.PERSISTENCE_FAILED, 'true', rollback.visibleStrength);
-      return new BackgroundMutationResult(false, PreferenceFailureReason.PERSISTENCE_FAILED, operationVersion,
-        this.getGlobalBackground(), rollback);
+  private async enqueueMutation(mutation: PreferenceMutation,
+    reservedVersion: number = 0): Promise<PreferenceMutationResult> {
+    const operationVersion = reservedVersion > 0 ? reservedVersion : ++this.operationVersion;
+    mutation.operationVersion = operationVersion;
+    let queued: Promise<PreferenceMutationResult>;
+    if (this.mutationQueue === null) {
+      queued = this.executeMutation(mutation, operationVersion);
+    } else {
+      queued = this.mutationQueue.then(
+        this.continueMutation.bind(this, mutation, operationVersion),
+        this.continueMutationAfterFailure.bind(this, mutation, operationVersion));
     }
+    this.mutationQueue = queued;
+    return await queued;
+  }
+
+  private async continueMutation(mutation: PreferenceMutation,
+    operationVersion: number): Promise<PreferenceMutationResult> {
+    return await this.executeMutation(mutation, operationVersion);
+  }
+
+  private async continueMutationAfterFailure(mutation: PreferenceMutation,
+    operationVersion: number): Promise<PreferenceMutationResult> {
+    return await this.executeMutation(mutation, operationVersion);
+  }
+
+  private async executeMutation(mutation: PreferenceMutation,
+    operationVersion: number): Promise<PreferenceMutationResult> {
+    const rollback = DataRepository.getPreferenceSnapshot();
+    const candidate = this.buildCandidate(rollback, mutation, operationVersion);
+    if (candidate === null) {
+      if (mutation.importedFile.length > 0) BackgroundImporter.removeSandboxFile(mutation.importedFile);
+      return new PreferenceMutationResult(false, false, false, PreferenceFailureReason.INVALID_VALUE,
+        operationVersion, rollback, rollback);
+    }
+    const persisted: PreferencePersistenceResult = await DataRepository.persistPreferenceCandidate(candidate);
+    if (!persisted.success) {
+      if (mutation.importedFile.length > 0) BackgroundImporter.removeSandboxFile(mutation.importedFile);
+      const latest = operationVersion === this.operationVersion;
+      if (latest) this.publishPreferenceSnapshot(persisted.rollbackSnapshot);
+      hilog.error(DOMAIN, 'Theme', '偏好写入失败 version=%{public}d reason=%{public}s rollback=%{public}s',
+        operationVersion, persisted.code, latest ? 'true' : 'false');
+      return new PreferenceMutationResult(false, latest, latest, PreferenceFailureReason.PERSISTENCE_FAILED,
+        operationVersion, persisted.rollbackSnapshot, persisted.rollbackSnapshot);
+    }
+    const latest = operationVersion === this.operationVersion;
+    if (latest) this.publishPreferenceSnapshot(persisted.snapshot);
+    if (mutation.type === PreferenceMutationType.BACKGROUND && rollback.backgroundUri.length > 0 &&
+      rollback.backgroundUri !== persisted.snapshot.backgroundUri) {
+      BackgroundImporter.removeSandboxFile(rollback.backgroundUri);
+    }
+    return new PreferenceMutationResult(true, false, latest, null, operationVersion,
+      persisted.snapshot, persisted.rollbackSnapshot);
+  }
+
+  private buildCandidate(base: PreferenceSnapshot, mutation: PreferenceMutation,
+    operationVersion: number): PreferenceSnapshot | null {
+    const candidate = new PreferenceSnapshot(base.followSystem, base.manualThemeMode, base.colorThemeId,
+      base.fontSizeScale, base.backgroundUri, base.backgroundStrength, operationVersion);
+    if (mutation.type === PreferenceMutationType.FOLLOW_SYSTEM) candidate.followSystem = mutation.booleanValue;
+    else if (mutation.type === PreferenceMutationType.MANUAL_MODE) candidate.manualThemeMode = mutation.stringValue;
+    else if (mutation.type === PreferenceMutationType.COLOR_THEME) candidate.colorThemeId = mutation.stringValue;
+    else if (mutation.type === PreferenceMutationType.FONT_SIZE) candidate.fontSizeScale = mutation.stringValue;
+    else if (mutation.type === PreferenceMutationType.BACKGROUND) candidate.backgroundUri = mutation.stringValue;
+    else if (mutation.type === PreferenceMutationType.BACKGROUND_STRENGTH) candidate.backgroundStrength = mutation.numberValue;
+    else return null;
+    return candidate;
+  }
+
+  private publishPreferenceSnapshot(snapshot: PreferenceSnapshot): void {
+    this.followSystem = snapshot.followSystem;
+    this.manualMode = snapshot.manualThemeMode === ThemeMode.LIGHT ? ThemeMode.LIGHT : ThemeMode.DARK;
+    this.currentColorTheme = this.isColorTheme(snapshot.colorThemeId) ?
+      snapshot.colorThemeId as ColorThemeId : ColorThemeId.CYAN;
+    this.fontSizeScale = snapshot.fontSizeScale;
+    this.backgroundPreference = this.backgroundFromSnapshot(snapshot);
+    this.lastSuccessfulTheme = this.getThemeState();
+    this.lastSuccessfulBackground = this.copyBackground(this.backgroundPreference);
+    this.applyFontSize(this.fontSizeScale);
+    this.applyTheme();
+    AppStorage.setOrCreate('backgroundCandidateUri', '');
+    AppStorage.setOrCreate('backgroundDisplayState', snapshot.backgroundUri.length > 0 ?
+      BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
+  }
+
+  private createPreferenceSnapshot(operationVersion: number): PreferenceSnapshot {
+    return new PreferenceSnapshot(this.followSystem, this.manualMode, this.currentColorTheme,
+      this.fontSizeScale, this.backgroundPreference.globalUri, this.backgroundPreference.visibleStrength,
+      operationVersion);
+  }
+
+  private backgroundFromSnapshot(snapshot: PreferenceSnapshot): GlobalBackgroundPreference {
+    return new GlobalBackgroundPreference(snapshot.backgroundUri, snapshot.backgroundStrength);
+  }
+
+  private isFontSizeScale(value: string): boolean {
+    return value === 'small' || value === 'standard' || value === 'large';
+  }
+
+  private isColorTheme(value: string): boolean {
+    return value === ColorThemeId.CYAN || value === ColorThemeId.OCEAN || value === ColorThemeId.SUNSET ||
+      value === ColorThemeId.AURORA || value === ColorThemeId.SAKURA || value === ColorThemeId.FOREST;
   }
 
   private copyBackground(source: GlobalBackgroundPreference): GlobalBackgroundPreference {

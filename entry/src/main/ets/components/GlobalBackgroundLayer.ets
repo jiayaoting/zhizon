@@ -29,10 +29,10 @@ export struct GlobalBackgroundLayer {
           .objectFit(ImageFit.Cover)
           .opacity(this.visibleStrength / 100)
           .onComplete(() => {
-            ThemeManager.getInstance().reportBackgroundReady();
+            ThemeManager.getInstance().reportBackgroundReady(this.displayUri());
           })
           .onError(() => {
-            ThemeManager.getInstance().reportBackgroundLoadFailure();
+            ThemeManager.getInstance().reportBackgroundLoadFailure(this.displayUri());
           })
       }
       Column()

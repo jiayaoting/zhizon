@@ -1,10 +1,11 @@
 // 智子 - 俄罗斯方块
-import { router } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
-import { DifficultyLevel, DIFFICULTY_DEFINITIONS, DifficultyDefinition, difficultyLabel } from '../common/Difficulty';
-import { DifficultyOption } from '../components/DifficultyOption';
+import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
+  GameRouteParams } from '../common/Difficulty';
+import { GameHistoryRouteParams } from '../common/Navigation';
 
 const COLS: number = 10;
 const ROWS: number = 20;
@@ -546,27 +547,6 @@ export struct TetrisPage {
     .alignContent(Alignment.Center)
   }
 
-  // ---- 难度选择 ----
-  @Builder
-  difficultyPicker() {
-    Column({ space: 12 }) {
-      Text('选择难度')
-        .fontSize(this.palette.fsXl)
-        .fontColor(this.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-
-      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
-        DifficultyOption({
-          definition: definition,
-          selected: this.difficulty === definition.level,
-          onSelect: (level: DifficultyLevel): void => { this.startWithDifficulty(level); }
-        })
-      }, (definition: DifficultyDefinition) => definition.level)
-    }
-    .width('100%')
-    .padding(16)
-  }
-
   // ---- 顶栏操作按钮 ----
   @Builder
   actionsBuilder() {
@@ -582,7 +562,7 @@ export struct TetrisPage {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-        router.pushUrl({ url: 'pages/GameHistory', params: { 'game': 'Tetris' } as Record<string, string> });
+         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('Tetris') });
       })
 
       // 暂停/继续
@@ -615,10 +595,14 @@ export struct TetrisPage {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: Record<string, string> | null = router.getParams() as Record<string, string> | null;
-    if (params !== null && params['title'] !== undefined) {
-      this.titleText = params['title'];
+    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.TETRIS);
+    if (!result.success || result.request === null) {
+      promptAction.showToast({ message: result.message });
+      router.back();
+      return;
     }
+    this.startWithDifficulty(result.request.difficulty);
   }
 
   aboutToDisappear(): void {
@@ -636,14 +620,7 @@ export struct TetrisPage {
       }
 
       if (this.isSm) {
-        if (!this.gameStarted) {
-          Column() {
-            this.difficultyPicker()
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        } else {
+        if (this.gameStarted) {
           // ---- 手机端：顶部信息 → 下一个 → 棋盘 → 旋转按钮 ----
           Column({ space: 8 }) {
           // 顶部信息栏：分数 | 等级 | 行数
@@ -746,14 +723,7 @@ export struct TetrisPage {
         .padding({ left: 8, right: 8, top: 4, bottom: 4 })
         }
       } else {
-        if (!this.gameStarted) {
-          Column() {
-            this.difficultyPicker()
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        } else {
+        if (this.gameStarted) {
           // ---- 平板端：棋盘左 + (下一个+旋转+信息)右 ----
           Row({ space: 20 }) {
           // 左侧：棋盘

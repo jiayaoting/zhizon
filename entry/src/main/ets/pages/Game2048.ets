@@ -1,10 +1,11 @@
 // 智子 - 2048
-import { router } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
-import { DifficultyLevel, DIFFICULTY_DEFINITIONS, DifficultyDefinition, difficultyLabel } from '../common/Difficulty';
-import { DifficultyOption } from '../components/DifficultyOption';
+import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
+  GameRouteParams } from '../common/Difficulty';
+import { GameHistoryRouteParams } from '../common/Navigation';
 
 const BOARD_SIZE: number = 4;
 const WIN_SCORE: number = 2048;
@@ -461,27 +462,6 @@ export struct Game2048Page {
     .alignContent(Alignment.Center)
   }
 
-  // ---- 难度选择 ----
-  @Builder
-  difficultyPicker() {
-    Column({ space: 12 }) {
-      Text('选择难度')
-        .fontSize(this.palette.fsXl)
-        .fontColor(this.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-
-      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
-        DifficultyOption({
-          definition: definition,
-          selected: this.difficulty === definition.level,
-          onSelect: (level: DifficultyLevel): void => { this.startWithDifficulty(level); }
-        })
-      }, (definition: DifficultyDefinition) => definition.level)
-    }
-    .width('100%')
-    .padding(16)
-  }
-
   // ---- 操作栏 ----
   @Builder
   actionsBuilder() {
@@ -496,7 +476,7 @@ export struct Game2048Page {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-        router.pushUrl({ url: 'pages/GameHistory', params: { 'game': '2048' } as Record<string, string> });
+         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('2048') });
       })
 
       Row() {
@@ -515,10 +495,14 @@ export struct Game2048Page {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: Record<string, string> | null = router.getParams() as Record<string, string> | null;
-    if (params !== null && params['title'] !== undefined) {
-      this.titleText = params['title'];
+    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.GAME_2048);
+    if (!result.success || result.request === null) {
+      promptAction.showToast({ message: result.message });
+      router.back();
+      return;
     }
+    this.startWithDifficulty(result.request.difficulty);
   }
 
   build() {
@@ -533,14 +517,7 @@ export struct Game2048Page {
 
       if (this.isSm) {
         // 手机端布局
-        if (!this.gameStarted) {
-          Column() {
-            this.difficultyPicker()
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        } else {
+        if (this.gameStarted) {
           Column({ space: 16 }) {
             this.scoreBoard()
             Stack() {
@@ -559,14 +536,7 @@ export struct Game2048Page {
         }
       } else {
         // 平板端布局
-        if (!this.gameStarted) {
-          Column() {
-            this.difficultyPicker()
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        } else {
+        if (this.gameStarted) {
           Row({ space: 20 }) {
             Column({ space: 16 }) {
               Stack() {

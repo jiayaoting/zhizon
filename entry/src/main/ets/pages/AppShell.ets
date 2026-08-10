@@ -1,10 +1,10 @@
-import { display, promptAction, router } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { FixedBottomNav } from '../components/FixedBottomNav';
 import { AppConstants, ToolboxItem } from '../common/Constants';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
-  NavigationFailure, NavigationFailureReason, pageFromString, pageOwner, mainPage } from '../common/Navigation';
+  NavigationFailure, NavigationSource, NavigationFacade, mainPage, AppShellRouteParams } from '../common/Navigation';
 import { IndexPage } from './Index';
 import { ServersPage } from './Servers';
 import { PvePage } from './Pve';
@@ -17,65 +17,29 @@ import { SettingsPage } from './Settings';
 import { GamesPage } from './Games';
 import { MorePage } from './More';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
+import { StartupState } from '../entryability/EntryAbility';
+import { WindowEnvironmentConfidence, WindowEnvironmentSnapshot, WindowDeviceType,
+  WindowOrientation } from '../service/WindowEnvironmentProvider';
 
-const BP_SM = 600;
 const DOMAIN = 0x9201;
 
 @Entry
 @Component
 struct AppShell {
   @State navigation: NavigationState = new NavigationState(PageKey.Index, MainNavKey.Index);
-  @State winWidth: number = 0;
-  @StorageLink('isSm') isSm: boolean = true;
-  @StorageLink('isMd') isMd: boolean = false;
-  @StorageLink('isLg') isLg: boolean = false;
-  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @StorageLink('startupState') startupState: StartupState = StartupState.INITIALIZING;
+  @StorageLink('windowEnvironmentSnapshot') environment: WindowEnvironmentSnapshot =
+    new WindowEnvironmentSnapshot(WindowDeviceType.PHONE, 0, 0, WindowOrientation.PORTRAIT, 1, 44, 24,
+      WindowEnvironmentConfidence.FALLBACK);
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   aboutToAppear(): void {
-    const params = router.getParams() as Record<string, string> | undefined;
+    const params: AppShellRouteParams | null = router.getParams() as AppShellRouteParams | null;
     if (params !== undefined && params !== null && params.page !== undefined) {
-      const initialPage = pageFromString(params.page);
-      if (initialPage === null) {
-        this.handleNavigationResult(params.page, new NavigationFailure(NavigationFailureReason.PAGE_UNAVAILABLE));
-      } else {
-        const initialResult = this.navigate(initialPage, false);
-        this.handleNavigationResult(params.page, initialResult);
-      }
+      const initialResult: NavigationResult = NavigationFacade.navigateLegacy(this.navigation, params.page,
+        NavigationSource.INITIAL);
+      this.handleNavigationResult(params.page, initialResult);
     }
-    try {
-      const currentDisplay = display.getDefaultDisplaySync();
-      const vpWidth = px2vp(currentDisplay.width);
-      this.winWidth = vpWidth;
-      this.applyWidth(vpWidth);
-    } catch (e) {
-      this.applyWidth(0);
-    }
-  }
-
-  private applyWidth(width: number): void {
-    this.isSm = width < BP_SM;
-    this.isMd = width >= BP_SM && width < 840;
-    this.isLg = width >= 840;
-  }
-
-  private canRender(page: PageKey): boolean {
-    return page === PageKey.Index || page === PageKey.Servers || page === PageKey.Pve ||
-      page === PageKey.Toolbox || page === PageKey.More || page === PageKey.Terminal ||
-      page === PageKey.Files || page === PageKey.Commands || page === PageKey.Batch ||
-      page === PageKey.Alerts || page === PageKey.Settings || page === PageKey.Games;
-  }
-
-  private navigate(target: PageKey, entryNavigation: boolean): NavigationResult {
-    if (!this.canRender(target)) {
-      return new NavigationFailure(entryNavigation ? NavigationFailureReason.ENTRY_UNAVAILABLE :
-        NavigationFailureReason.PAGE_UNAVAILABLE);
-    }
-    const previous = this.navigation.currentPage;
-    const mainKey = pageOwner(target);
-    this.navigation = new NavigationState(target, mainKey);
-    return new NavigationSuccess(previous, target, mainKey);
   }
 
   private handleNavigationResult(key: string, result: NavigationResult): void {
@@ -84,27 +48,25 @@ struct AppShell {
       hilog.error(DOMAIN, 'Navigation', '导航失败 key=%{public}s reason=%{public}s rollback=%{public}s',
         key, failure.reason, 'true');
       promptAction.showToast({ message: '页面打开失败，请重试' });
+      return;
     }
+    const success = result as NavigationSuccess;
+    this.navigation = success.nextSnapshot;
   }
 
   private selectMain(key: MainNavKey): void {
     const target = mainPage(key);
-    const result = this.navigate(target, false);
+    const result = NavigationFacade.navigate(this.navigation, target, NavigationSource.MAIN_NAV);
     this.handleNavigationResult(key, result);
   }
 
   private selectMoreEntry(key: PageKey): void {
-    const result = this.navigate(key, true);
+    const result = NavigationFacade.navigate(this.navigation, key, NavigationSource.ENTRY);
     this.handleNavigationResult(key, result);
   }
 
   private selectPage(key: string): void {
-    const target = pageFromString(key);
-    if (target === null) {
-      this.handleNavigationResult(key, new NavigationFailure(NavigationFailureReason.PAGE_UNAVAILABLE));
-      return;
-    }
-    const result = this.navigate(target, false);
+    const result = NavigationFacade.navigateLegacy(this.navigation, key, NavigationSource.LEGACY);
     this.handleNavigationResult(key, result);
   }
 
@@ -145,8 +107,9 @@ struct AppShell {
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
-          top: this.statusBarHeight + 16, bottom: 16 })
+        .padding({ left: this.environment.width < 600 ? 16 : 24,
+          right: this.environment.width < 600 ? 16 : 24,
+          top: this.environment.safeTop + 16, bottom: 16 })
       Scroll() {
         Column({ space: 12 }) {
           ForEach(AppConstants.toolboxItems, (item: ToolboxItem) => {
@@ -168,7 +131,7 @@ struct AppShell {
             .onClick(() => { this.selectPage(item.key); })
           }, (item: ToolboxItem) => item.key)
         }
-        .padding(this.isSm ? 16 : 24)
+        .padding(this.environment.width < 600 ? 16 : 24)
         .width('100%')
       }
       .layoutWeight(1)
@@ -179,33 +142,53 @@ struct AppShell {
     .backgroundColor(this.palette.bgBase)
   }
 
-  build() {
-    Column() {
-      Stack() {
-        GlobalBackgroundLayer()
-        Column() {
-          this.renderPage()
-        }
-        .width('100%')
-        .height('100%')
+  @Builder
+  startupPage() {
+    Column({ space: 12 }) {
+      LoadingProgress()
+        .width(32)
+        .height(32)
+        .visibility(this.startupState === StartupState.INITIALIZING ? Visibility.Visible : Visibility.None)
+      Text(this.startupState === StartupState.FAILED ? '应用初始化失败' : '正在初始化应用')
+        .fontSize(18)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.palette.textPrimary)
+      if (this.startupState === StartupState.FAILED) {
+        Text('核心数据未加载，请重新打开应用后重试')
+          .fontSize(13)
+          .fontColor(this.palette.textSecondary)
       }
-      .layoutWeight(1)
-      .width('100%')
-
-      FixedBottomNav({
-        selectedKey: this.navigation.selectedMain,
-        onSelect: (key: MainNavKey): void => { this.selectMain(key); }
-      })
     }
     .width('100%')
     .height('100%')
+    .justifyContent(FlexAlign.Center)
     .backgroundColor(this.palette.bgBase)
-    .onAreaChange((oldArea: Area, newArea: Area) => {
-      const width = newArea.width as number;
-      if (width > 0 && Math.abs(width - this.winWidth) > 10) {
-        this.winWidth = width;
-        this.applyWidth(width);
+  }
+
+  build() {
+    if (this.startupState !== StartupState.READY) {
+      this.startupPage()
+    } else {
+      Column() {
+        Stack() {
+          GlobalBackgroundLayer()
+          Column() {
+            this.renderPage()
+          }
+          .width('100%')
+          .height('100%')
+        }
+        .layoutWeight(1)
+        .width('100%')
+
+        FixedBottomNav({
+          selectedKey: this.navigation.selectedMain,
+          onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+        })
       }
-    })
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.palette.bgBase)
+    }
   }
 }

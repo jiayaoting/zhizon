@@ -5,6 +5,8 @@ import { fileIo } from '@kit.CoreFileKit';
 import { Server, ServerMetrics, FileItem, ConnectionMode, AuthType } from '../model/Models';
 import { DataRepository } from './DataRepository';
 import { libssh } from '@ohos/libssh';
+import { RemoteFailureCategory, RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from './RemoteResultAdapter';
 
 // ========== 错误码 ==========
 
@@ -24,12 +26,77 @@ export const SSH_ERR_HOST_UNREACH = 'SSH_ERR_HOST_UNREACH';
 export const SSH_ERR_KEY_INVALID = 'SSH_ERR_KEY_INVALID';
 export const AGENT_ERR_UNREACH = 'AGENT_ERR_UNREACH';
 export const AGENT_ERR_TOKEN = 'AGENT_ERR_TOKEN';
+export const SSH_ERR_PERMISSION = 'SSH_ERR_PERMISSION';
+export const SSH_ERR_PROTOCOL = 'SSH_ERR_PROTOCOL';
+export const SSH_ERR_HTTP = 'SSH_ERR_HTTP';
 
 // ========== TestResult ==========
 
-export interface TestResult {
+export class TestResult {
   ok: boolean;
   message: string;
+  result: RemoteResult<boolean>;
+
+  constructor(ok: boolean, message: string, result: RemoteResult<boolean>) {
+    this.ok = ok; this.message = message; this.result = result;
+  }
+}
+
+class AgentResponse { status: string = ''; }
+class AgentMetricsResponse { cpu_percent: number = 0; memory_used_gb: number = 0; memory_total_gb: number = 1; disk_used_gb: number = 0; disk_total_gb: number = 1; network_in_bytes: number = 0; network_out_bytes: number = 0; load_avg_1: number = 0; uptime_seconds: number = 0; }
+class AgentExecResponse { stdout: string = ''; stderr: string = ''; exitCode: number = 0; }
+class AgentFileData { name: string = ''; type: string = ''; size: number = 0; modified: string = ''; perms: string = ''; }
+class AgentFilesResponse { files: AgentFileData[] = []; }
+class AgentEventMessage { type: string = ''; event: string = ''; message: string = ''; percent: number = 0; transferred: number = 0; total: number = 0; }
+class AgentCommandRequest {
+  cmd: string;
+  constructor(cmd: string) { this.cmd = cmd; }
+}
+class AgentPathRequest {
+  path: string;
+  constructor(path: string) { this.path = path; }
+}
+class AgentUploadRequest {
+  path: string;
+  content: string;
+  constructor(path: string, content: string) { this.path = path; this.content = content; }
+}
+class AgentConnectRequest {
+  type: string = 'connect';
+  host: string;
+  port: number;
+  username: string;
+  password: string;
+  privateKeyContent: string;
+  authType: AuthType;
+  cols: number;
+  rows: number;
+  constructor(config: ServerConfig, cols: number, rows: number) {
+    this.host = config.host;
+    this.port = config.port;
+    this.username = config.username;
+    this.password = config.password || '';
+    this.privateKeyContent = config.privateKeyContent || '';
+    this.authType = config.authType;
+    this.cols = cols;
+    this.rows = rows;
+  }
+}
+class AgentResizeRequest {
+  type: string = 'resize';
+  cols: number;
+  rows: number;
+  constructor(cols: number, rows: number) { this.cols = cols; this.rows = rows; }
+}
+class AgentDisconnectRequest { type: string = 'disconnect'; }
+class AgentRequestSerializer {
+  static serialize(payload: Object): string {
+    try {
+      return JSON.stringify(payload);
+    } catch (error) {
+      throw new SshError(SSH_ERR_PROTOCOL, '远程请求参数无效');
+    }
+  }
 }
 
 // ========== ServerConfig ==========
@@ -89,9 +156,9 @@ export class AgentClient {
     return this.token;
   }
 
-  private async request(method: http.RequestMethod, path: string, data?: string): Promise<Record<string, Object> | null> {
+  private async request(method: http.RequestMethod, path: string, data?: string): Promise<Object> {
+    const req = http.createHttp();
     try {
-      const req = http.createHttp();
       const res = await req.request(`${this.baseUrl}${path}`, {
         method: method,
         header: {
@@ -103,21 +170,25 @@ export class AgentClient {
         connectTimeout: 10000,
         readTimeout: 30000
       });
-      req.destroy();
       if (res.responseCode === 200) {
-        return res.result as Record<string, Object>;
+        return res.result as Object;
       }
-      return null;
+      if (res.responseCode === 401) throw new SshError(AGENT_ERR_TOKEN, 'Agent 认证失败');
+      if (res.responseCode === 403) throw new SshError(SSH_ERR_PERMISSION, 'Agent 权限不足');
+      throw new SshError(SSH_ERR_HTTP, 'Agent HTTP 响应异常');
     } catch (e) {
-      console.error('Agent request failed:', JSON.stringify(e));
-      return null;
+      console.error('Remote operation=agent-request category=UNREACHABLE code=REMOTE_UNREACHABLE rollback=preserved');
+      if (e instanceof SshError) throw e;
+      throw new SshError(AGENT_ERR_UNREACH, 'Agent 服务不可达');
+    } finally {
+      req.destroy();
     }
   }
 
   // 二进制请求（用于文件下载）
   private async requestBinary(path: string): Promise<ArrayBuffer | null> {
+    const req = http.createHttp();
     try {
-      const req = http.createHttp();
       const res = await req.request(`${this.baseUrl}${path}`, {
         method: http.RequestMethod.GET,
         header: {
@@ -127,35 +198,33 @@ export class AgentClient {
         connectTimeout: 10000,
         readTimeout: 60000
       });
-      req.destroy();
       if (res.responseCode === 200) {
         return res.result as ArrayBuffer;
       }
-      return null;
+      if (res.responseCode === 401) throw new SshError(AGENT_ERR_TOKEN, 'Agent 认证失败');
+      if (res.responseCode === 403) throw new SshError(SSH_ERR_PERMISSION, 'Agent 权限不足');
+      throw new SshError(SSH_ERR_HTTP, 'Agent HTTP 响应异常');
     } catch (e) {
-      console.error('Agent binary request failed:', JSON.stringify(e));
-      return null;
+      console.error('Remote operation=agent-binary category=UNREACHABLE code=REMOTE_UNREACHABLE rollback=preserved');
+      if (e instanceof SshError) throw e;
+      throw new SshError(AGENT_ERR_UNREACH, 'Agent 服务不可达');
+    } finally {
+      req.destroy();
     }
   }
 
   async healthCheck(): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.GET, '/api/health');
-    return res !== null && res['status'] === 'ok';
+    const res = await this.request(http.RequestMethod.GET, '/api/health') as AgentResponse;
+    return res.status === 'ok';
   }
 
   async getMetrics(): Promise<ServerMetrics | null> {
-    const res = await this.request(http.RequestMethod.GET, '/api/metrics');
-    if (!res) return null;
-
-    const cpu = (res['cpu_percent'] as number) || 0;
-    const memUsed = (res['memory_used_gb'] as number) || 0;
-    const memTotal = (res['memory_total_gb'] as number) || 1;
-    const diskUsed = (res['disk_used_gb'] as number) || 0;
-    const diskTotal = (res['disk_total_gb'] as number) || 1;
-    const netIn = (res['network_in_bytes'] as number) || 0;
-    const netOut = (res['network_out_bytes'] as number) || 0;
-    const load = (res['load_avg_1'] as number) || 0;
-    const uptime = (res['uptime_seconds'] as number) || 0;
+    const res = await this.request(http.RequestMethod.GET, '/api/metrics') as AgentMetricsResponse;
+    const cpu = res.cpu_percent || 0; const memUsed = res.memory_used_gb || 0;
+    const memTotal = res.memory_total_gb || 1; const diskUsed = res.disk_used_gb || 0;
+    const diskTotal = res.disk_total_gb || 1; const netIn = res.network_in_bytes || 0;
+    const netOut = res.network_out_bytes || 0; const load = res.load_avg_1 || 0;
+    const uptime = res.uptime_seconds || 0;
 
     return {
       cpu: Math.round(cpu),
@@ -169,12 +238,9 @@ export class AgentClient {
   }
 
   async exec(cmd: string): Promise<string> {
-    const res = await this.request(http.RequestMethod.POST, '/api/exec', JSON.stringify({ cmd: cmd }));
-    if (!res) return '命令执行失败：无法连接到 Agent';
-
-    const stdout = (res['stdout'] as string) || '';
-    const stderr = (res['stderr'] as string) || '';
-    const exitCode = (res['exitCode'] as number) || 0;
+    const body: string = AgentRequestSerializer.serialize(new AgentCommandRequest(cmd));
+    const res = await this.request(http.RequestMethod.POST, '/api/exec', body) as AgentExecResponse;
+    const stdout = res.stdout || ''; const stderr = res.stderr || ''; const exitCode = res.exitCode || 0;
 
     let output = stdout;
     if (stderr) output += '\n[stderr]\n' + stderr;
@@ -183,18 +249,14 @@ export class AgentClient {
   }
 
   async listFiles(dirPath: string): Promise<FileItem[]> {
-    const res = await this.request(http.RequestMethod.GET, `/api/files?path=${encodeURIComponent(dirPath)}`);
-    if (!res || !res['files']) return [];
-
-    const files = res['files'] as Array<Record<string, Object>>;
+    const res = await this.request(http.RequestMethod.GET, `/api/files?path=${encodeURIComponent(dirPath)}`) as AgentFilesResponse;
+    if (!res.files || !Array.isArray(res.files)) throw new SshError(SSH_ERR_PROTOCOL, '文件响应格式异常');
+    const files = res.files;
     const result: FileItem[] = [];
     for (const f of files) {
       const item: FileItem = {
-        name: (f['name'] as string) || '',
-        type: ((f['type'] as string) || 'file') as 'dir' | 'file',
-        size: (f['size'] as number) || 0,
-        modified: (f['modified'] as string) || '',
-        perms: (f['perms'] as string) || ''
+        name: f.name || '', type: (f.type || 'file') as 'dir' | 'file', size: f.size || 0,
+        modified: f.modified || '', perms: f.perms || ''
       };
       result.push(item);
     }
@@ -202,20 +264,22 @@ export class AgentClient {
   }
 
   async mkdir(dirPath: string): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.POST, '/api/files/mkdir', JSON.stringify({ path: dirPath }));
-    return res !== null;
+    const body: string = AgentRequestSerializer.serialize(new AgentPathRequest(dirPath));
+    await this.request(http.RequestMethod.POST, '/api/files/mkdir', body);
+    return true;
   }
 
   async deleteFile(filePath: string): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.POST, '/api/files/delete', JSON.stringify({ path: filePath }));
-    return res !== null;
+    const body: string = AgentRequestSerializer.serialize(new AgentPathRequest(filePath));
+    await this.request(http.RequestMethod.POST, '/api/files/delete', body);
+    return true;
   }
 
   // base64 文件上传
   async uploadFileBase64(remotePath: string, content: string): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.POST, '/api/files/upload-base64',
-      JSON.stringify({ path: remotePath, content: content }));
-    return res !== null;
+    const body: string = AgentRequestSerializer.serialize(new AgentUploadRequest(remotePath, content));
+    await this.request(http.RequestMethod.POST, '/api/files/upload-base64', body);
+    return true;
   }
 
   // 二进制文件下载
@@ -251,7 +315,7 @@ export class AgentEngine implements SshEngine {
     } catch (e) {
       this.connected = false;
       if (e instanceof SshError) throw e;
-      throw new SshError(AGENT_ERR_UNREACH, `Agent 连接失败: ${JSON.stringify(e)}`);
+      throw new SshError(AGENT_ERR_UNREACH, 'Agent 连接失败');
     }
   }
 
@@ -293,19 +357,10 @@ export class AgentEngine implements SshEngine {
         this.wsConnected = true;
         // WS 连接建立后，发送 SSH 连接参数（JSON 格式）
         if (this.config) {
-          const sshParams = JSON.stringify({
-            type: 'connect',
-            host: this.config.host,
-            port: this.config.port,
-            username: this.config.username,
-            password: this.config.password || '',
-            privateKeyContent: this.config.privateKeyContent || '',
-            authType: this.config.authType,
-            cols: cols || 80,
-            rows: rows || 24
-          });
+          const sshParams: string = AgentRequestSerializer.serialize(
+            new AgentConnectRequest(this.config, cols || 80, rows || 24));
           this.ws!.send(sshParams, (err: Error) => {
-            if (err) console.error('SSH params send failed:', JSON.stringify(err));
+            if (err) console.error('Remote operation=ssh-ws-send category=PROTOCOL code=SSH_WS_SEND_FAILED rollback=preserved');
           });
         }
         if (this.terminalCallback) {
@@ -318,29 +373,29 @@ export class AgentEngine implements SshEngine {
 
       this.ws.on('message', (err: Error, value: string | ArrayBuffer) => {
         if (err) {
-          console.error('WS message error:', JSON.stringify(err));
+          console.error('Remote operation=ssh-ws-message category=PROTOCOL code=SSH_WS_MESSAGE_FAILED rollback=preserved');
           return;
         }
         const raw = typeof value === 'string' ? value : '';
         // 尝试解析 JSON 控制消息
         try {
-          const msg = JSON.parse(raw) as Record<string, Object>;
-          if (msg['type'] === 'event') {
+          const msg = JSON.parse(raw) as AgentEventMessage;
+          if (msg.type === 'event') {
             // Agent 侧事件转发
             if (this.eventCallback) {
-              this.eventCallback((msg['event'] as string) || 'info', (msg['message'] as string) || '');
+              this.eventCallback(msg.event || 'info', msg.message || '');
             }
             if (this.terminalCallback) {
-              this.terminalCallback(`\n[${msg['event']}] ${msg['message']}\n`);
+              this.terminalCallback(`\n[${msg.event}] ${msg.message}\n`);
             }
             return;
           }
-          if (msg['type'] === 'progress') {
+          if (msg.type === 'progress') {
             // SFTP 传输进度
             if (this.terminalCallback) {
-              const pct = msg['percent'] as number || 0;
-              const transferred = msg['transferred'] as number || 0;
-              const total = msg['total'] as number || 0;
+              const pct = msg.percent || 0;
+              const transferred = msg.transferred || 0;
+              const total = msg.total || 0;
               this.terminalCallback(`\r传输进度: ${pct}% (${transferred}/${total} bytes)`);
             }
             return;
@@ -377,7 +432,7 @@ export class AgentEngine implements SshEngine {
         header: { 'X-Auth-Token': token }
       });
     } catch (e) {
-      throw new SshError(AGENT_ERR_UNREACH, `WebSocket 连接失败: ${JSON.stringify(e)}`);
+      throw new SshError(AGENT_ERR_UNREACH, 'WebSocket 连接失败');
     }
   }
 
@@ -389,7 +444,7 @@ export class AgentEngine implements SshEngine {
     if (this.ws && this.wsConnected) {
       this.ws.send(data, (err: Error) => {
         if (err) {
-          console.error('WebSocket send failed:', JSON.stringify(err));
+          console.error('Remote operation=ssh-ws-send category=PROTOCOL code=SSH_WS_SEND_FAILED rollback=preserved');
         }
       });
     }
@@ -398,10 +453,10 @@ export class AgentEngine implements SshEngine {
   // 终端尺寸变化时通知 Agent
   resizeTerminal(cols: number, rows: number): void {
     if (this.ws && this.wsConnected) {
-      const resizeMsg = JSON.stringify({ type: 'resize', cols: cols, rows: rows });
+      const resizeMsg: string = AgentRequestSerializer.serialize(new AgentResizeRequest(cols, rows));
       this.ws.send(resizeMsg, (err: Error) => {
         if (err) {
-          console.error('Resize send failed:', JSON.stringify(err));
+          console.error('Remote operation=ssh-ws-resize category=PROTOCOL code=SSH_WS_RESIZE_FAILED rollback=preserved');
         }
       });
     }
@@ -412,12 +467,12 @@ export class AgentEngine implements SshEngine {
       try {
         // 发送断开命令
         if (this.wsConnected) {
-          const discMsg = JSON.stringify({ type: 'disconnect' });
+          const discMsg: string = AgentRequestSerializer.serialize(new AgentDisconnectRequest());
           this.ws.send(discMsg, () => {});
         }
         this.ws.close((err: Error) => {
           if (err) {
-            console.error('WebSocket close failed:', JSON.stringify(err));
+            console.error('Remote operation=ssh-ws-close category=PROTOCOL code=SSH_WS_CLOSE_FAILED rollback=preserved');
           }
         });
       } catch (e) {
@@ -461,7 +516,7 @@ export class AgentEngine implements SshEngine {
       }
     } catch (e) {
       if (e instanceof SshError) throw e;
-      throw new SshError(SSH_ERR_TIMEOUT, `文件上传异常: ${JSON.stringify(e)}`);
+      throw new SshError(SSH_ERR_TIMEOUT, '文件上传异常');
     }
   }
 
@@ -480,7 +535,7 @@ export class AgentEngine implements SshEngine {
       fileIo.closeSync(file);
     } catch (e) {
       if (e instanceof SshError) throw e;
-      throw new SshError(SSH_ERR_TIMEOUT, `文件下载异常: ${JSON.stringify(e)}`);
+      throw new SshError(SSH_ERR_TIMEOUT, '文件下载异常');
     }
   }
 }
@@ -558,7 +613,7 @@ export class DirectEngine implements SshEngine {
       if (e instanceof SshError) {
         throw e;
       }
-      const msg: string = JSON.stringify(e);
+      const msg: string = e instanceof Error ? e.message.toLowerCase() : '';
       if (msg.includes('auth') || msg.includes('password') || msg.includes('key')) {
         throw new SshError(SSH_ERR_AUTH_FAIL, `SSH 认证失败: ${config.host}:${config.port}`);
       }
@@ -613,9 +668,8 @@ export class DirectEngine implements SshEngine {
       const output = await this.ssh!.executeSSHComm(command, timeoutMs);
       return output || '(无输出)';
     } catch (e) {
-      const msg = JSON.stringify(e);
-      console.error('DirectEngine exec failed:', msg);
-      throw new SshError(SSH_ERR_TIMEOUT, `命令执行失败: ${msg}`);
+      console.error('Remote operation=ssh-exec category=TIMEOUT code=SSH_ERR_TIMEOUT rollback=preserved');
+      throw new SshError(SSH_ERR_TIMEOUT, '命令执行失败');
     }
   }
 
@@ -729,8 +783,9 @@ export class DirectEngine implements SshEngine {
         uptime: 0
       };
     } catch (e) {
-      console.error('DirectEngine getMetrics failed:', JSON.stringify(e));
-      return { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 };
+      console.error('Remote operation=ssh-metrics category=PROTOCOL code=SSH_METRICS_FAILED rollback=preserved');
+      if (e instanceof SshError) throw e;
+      throw new SshError(SSH_ERR_PROTOCOL, '指标响应格式异常');
     }
   }
 
@@ -748,7 +803,7 @@ export class DirectEngine implements SshEngine {
       const keyPath = this.config.privateKeyPath || '';
       if (!keyPath) {
         console.warn('DirectEngine listFiles: no private key path provided');
-        return [];
+        throw new SshError(SSH_ERR_KEY_INVALID, '私钥配置无效');
       }
       // sftpRequestRead 每次独立创建新连接，返回逗号分隔的文件名列表
       const raw = await this.ssh!.sftpRequestRead(this.config.host, this.config.port, keyPath, path);
@@ -769,8 +824,9 @@ export class DirectEngine implements SshEngine {
       }
       return result;
     } catch (e) {
-      console.error('DirectEngine listFiles failed:', JSON.stringify(e));
-      return [];
+      console.error('Remote operation=ssh-files category=PROTOCOL code=SSH_FILES_FAILED rollback=preserved');
+      if (e instanceof SshError) throw e;
+      throw new SshError(SSH_ERR_PROTOCOL, '文件响应格式异常');
     }
   }
 
@@ -792,7 +848,7 @@ export class DirectEngine implements SshEngine {
       }
     } catch (e) {
       if (e instanceof SshError) throw e;
-      throw new SshError(SSH_ERR_TIMEOUT, `文件上传异常: ${JSON.stringify(e)}`);
+      throw new SshError(SSH_ERR_TIMEOUT, '文件上传异常');
     }
   }
 
@@ -809,7 +865,7 @@ export class DirectEngine implements SshEngine {
       fileIo.closeSync(file);
     } catch (e) {
       if (e instanceof SshError) throw e;
-      throw new SshError(SSH_ERR_TIMEOUT, `文件下载异常: ${JSON.stringify(e)}`);
+      throw new SshError(SSH_ERR_TIMEOUT, '文件下载异常');
     }
   }
 }
@@ -855,6 +911,35 @@ export class SshService {
     return engine;
   }
 
+  private static failureFromSshError(error: SshError): RemoteResult<boolean> {
+    if (error.code === SSH_ERR_AUTH_FAIL || error.code === SSH_ERR_KEY_INVALID || error.code === AGENT_ERR_TOKEN) {
+      return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.AUTHENTICATION, 'REMOTE_AUTH_FAILED',
+        '认证失败，请返回服务器配置检查凭据', false);
+    }
+    if (error.code === SSH_ERR_TIMEOUT) {
+      return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.TIMEOUT, 'REMOTE_TIMEOUT',
+        '远程操作超时，请重试', true);
+    }
+    if (error.code === SSH_ERR_PERMISSION) {
+      return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.PERMISSION, 'REMOTE_PERMISSION_DENIED',
+        '当前账号没有执行此操作的权限', false);
+    }
+    if (error.code === SSH_ERR_PROTOCOL) {
+      return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.PROTOCOL, 'REMOTE_PROTOCOL_INVALID',
+        '远程响应格式异常，请稍后重试', true);
+    }
+    if (error.code === SSH_ERR_HTTP) {
+      return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.HTTP, 'REMOTE_HTTP_FAILED',
+        '远程服务返回异常状态，请稍后重试', true);
+    }
+    return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.UNREACHABLE, 'REMOTE_UNREACHABLE',
+      '远程服务不可达，请检查网络后重试', true);
+  }
+
+  private static failureFromException(error: Error | null): RemoteResult<boolean> {
+    return RemoteResultAdapter.fromException<boolean>(error);
+  }
+
   // 从加密存储加载凭据到内存态（列表页连接/测试前调用，凭据不落库）
   static async hydrateCredentials(server: Server): Promise<Server> {
     // 内存态已有明文凭据（表单测试/新建场景）则直接复用
@@ -885,7 +970,7 @@ export class SshService {
       };
       return hydrated;
     } catch (e) {
-      console.error('hydrateCredentials failed:', JSON.stringify(e));
+      console.error('Remote operation=hydrate-credentials category=PROTOCOL code=CREDENTIAL_READ_FAILED rollback=preserved');
       return server;
     }
   }
@@ -893,7 +978,7 @@ export class SshService {
   // 测试连接
   static async testConnection(server: Server): Promise<boolean> {
     const result: TestResult = await SshService.testConnectionEx(server);
-    return result.ok;
+    return result.result.success;
   }
 
   // 测试连接（带详细错误信息）
@@ -904,70 +989,79 @@ export class SshService {
       const config: ServerConfig = SshService.toConfig(hydrated);
       engine = SshService.getEngine(server);
       const ok: boolean = await engine.connect(config);
-      return { ok: ok, message: ok ? '连接成功' : '连接失败，请检查凭据' };
+      const remote = ok ? RemoteResultAdapter.success<boolean>(true) :
+        RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.PROTOCOL, 'REMOTE_PROTOCOL_INVALID',
+          '远程响应格式异常，请稍后重试', true);
+      return new TestResult(remote.success, remote.success ? '连接成功' : RemoteResultAdapter.publicMessage(remote), remote);
     } catch (e) {
       if (engine) {
         SshService.engines.delete(server.id);
         engine.disconnect().catch(() => {});
       }
-      let message: string;
+      let remote: RemoteResult<boolean>;
       if (e instanceof SshError) {
-        message = e.message;
+        remote = SshService.failureFromSshError(e);
       } else {
-        message = `连接异常: ${JSON.stringify(e)}`;
+        remote = SshService.failureFromException(e instanceof Error ? e : null);
       }
-      console.error('SshService.testConnectionEx failed:', message);
-      return { ok: false, message: message };
+      RemoteResultAdapter.logFailure('ssh-connect', remote);
+      return new TestResult(false, RemoteResultAdapter.publicMessage(remote), remote);
     }
   }
 
   // 执行命令
-  static async exec(server: Server, cmd: string): Promise<string> {
+  static async exec(server: Server, cmd: string): Promise<RemoteResult<string>> {
     try {
       const hydrated = await SshService.hydrateCredentials(server);
       const engine = SshService.getEngine(server);
       if (!engine.isConnected()) {
         await engine.connect(SshService.toConfig(hydrated));
       }
-      return await engine.exec(cmd);
+      return RemoteResultAdapter.success<string>(await engine.exec(cmd));
     } catch (e) {
       if (e instanceof SshError) {
-        return `[${e.code}] ${e.message}`;
+        const failure = SshService.failureFromSshError(e);
+        return new RemoteResult<string>(false, null, failure.failure);
       }
-      return `命令执行失败: ${JSON.stringify(e)}`;
+      const failure = SshService.failureFromException(e instanceof Error ? e : null);
+      return new RemoteResult<string>(false, null, failure.failure);
     }
   }
 
   // 获取服务器指标
-  static async getMetrics(server: Server): Promise<ServerMetrics> {
+  static async getMetrics(server: Server): Promise<RemoteResult<ServerMetrics>> {
     try {
       const hydrated = await SshService.hydrateCredentials(server);
       const engine = SshService.getEngine(server);
       if (!engine.isConnected()) {
         await engine.connect(SshService.toConfig(hydrated));
       }
-      return await engine.getMetrics();
+      return RemoteResultAdapter.success<ServerMetrics>(await engine.getMetrics());
     } catch (e) {
-      return { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0 };
+      const failure = e instanceof SshError ? SshService.failureFromSshError(e) :
+        SshService.failureFromException(e instanceof Error ? e : null);
+      return new RemoteResult<ServerMetrics>(false, null, failure.failure);
     }
   }
 
   // 列出文件
-  static async listFiles(server: Server, dirPath: string = '/'): Promise<FileItem[]> {
+  static async listFiles(server: Server, dirPath: string = '/'): Promise<RemoteResult<FileItem[]>> {
     try {
       const hydrated = await SshService.hydrateCredentials(server);
       const engine = SshService.getEngine(server);
       if (!engine.isConnected()) {
         await engine.connect(SshService.toConfig(hydrated));
       }
-      return await engine.listFiles(dirPath);
+      return RemoteResultAdapter.success<FileItem[]>(await engine.listFiles(dirPath));
     } catch (e) {
-      return [];
+      const failure = e instanceof SshError ? SshService.failureFromSshError(e) :
+        SshService.failureFromException(e instanceof Error ? e : null);
+      return new RemoteResult<FileItem[]>(false, null, failure.failure);
     }
   }
 
   // 获取终端初始输出
-  static async getTerminalOutput(server: Server): Promise<string[]> {
+  static async getTerminalOutput(server: Server): Promise<RemoteResult<string[]>> {
     try {
       const hydrated = await SshService.hydrateCredentials(server);
       const engine = SshService.getEngine(server);
@@ -978,10 +1072,11 @@ export class SshService {
       const hostname = await engine.exec('hostname');
       const output = await engine.exec('uptime && free -h && echo "---" && df -h /');
       const prompt = `${whoami.trim()}@${hostname.trim()}:~# `;
-      return [`连接成功: ${server.name} (${server.host})`, output, prompt];
+      return RemoteResultAdapter.success<string[]>([`连接成功: ${server.name}`, output, prompt]);
     } catch (e) {
-      const errMs = e instanceof SshError ? e.message : JSON.stringify(e);
-      return [`无法连接到 ${server.name} (${server.host})`, `错误: ${errMs}`];
+      const failure = e instanceof SshError ? SshService.failureFromSshError(e) :
+        SshService.failureFromException(e instanceof Error ? e : null);
+      return new RemoteResult<string[]>(false, null, failure.failure);
     }
   }
 
@@ -997,7 +1092,7 @@ export class SshService {
   }
 
   // 文件上传
-  static async uploadFile(server: Server, localPath: string, remotePath: string): Promise<boolean> {
+  static async uploadFile(server: Server, localPath: string, remotePath: string): Promise<RemoteResult<boolean>> {
     try {
       const hydrated = await SshService.hydrateCredentials(server);
       const engine = SshService.getEngine(server);
@@ -1005,15 +1100,17 @@ export class SshService {
         await engine.connect(SshService.toConfig(hydrated));
       }
       await engine.uploadFile(localPath, remotePath);
-      return true;
+      return RemoteResultAdapter.success<boolean>(true);
     } catch (e) {
-      console.error('SshService.uploadFile failed:', JSON.stringify(e));
-      return false;
+      const failure = e instanceof SshError ? SshService.failureFromSshError(e) :
+        SshService.failureFromException(e instanceof Error ? e : null);
+      RemoteResultAdapter.logFailure('ssh-upload', failure);
+      return failure;
     }
   }
 
   // 文件下载
-  static async downloadFile(server: Server, remotePath: string, localPath: string): Promise<boolean> {
+  static async downloadFile(server: Server, remotePath: string, localPath: string): Promise<RemoteResult<boolean>> {
     try {
       const hydrated = await SshService.hydrateCredentials(server);
       const engine = SshService.getEngine(server);
@@ -1021,10 +1118,12 @@ export class SshService {
         await engine.connect(SshService.toConfig(hydrated));
       }
       await engine.downloadFile(remotePath, localPath);
-      return true;
+      return RemoteResultAdapter.success<boolean>(true);
     } catch (e) {
-      console.error('SshService.downloadFile failed:', JSON.stringify(e));
-      return false;
+      const failure = e instanceof SshError ? SshService.failureFromSshError(e) :
+        SshService.failureFromException(e instanceof Error ? e : null);
+      RemoteResultAdapter.logFailure('ssh-download', failure);
+      return failure;
     }
   }
 

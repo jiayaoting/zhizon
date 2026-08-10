@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { DataRepository } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { Server } from '../model/Models';
+import { RemoteResult } from '../model/GovernanceModels';
 
 // 批量执行结果
 interface BatchResult {
@@ -61,12 +62,8 @@ export struct BatchPage {
   private textareaController: TextAreaController = new TextAreaController();
 
   // 模板命令映射
-  private templateMap: Record<string, string> = {
-    '系统信息': 'uptime\nuname -a\nfree -h',
-    '磁盘检查': 'df -h\ndu -sh /var/log',
-    '服务重启': 'systemctl restart nginx',
-    '日志查看': 'tail -n 100 /var/log/syslog'
-  };
+  private templateCommands: string[] = ['uptime\nuname -a\nfree -h', 'df -h\ndu -sh /var/log',
+    'systemctl restart nginx', 'tail -n 100 /var/log/syslog'];
 
   aboutToAppear(): void {
     this.loadServers();
@@ -76,7 +73,7 @@ export struct BatchPage {
     try {
       this.servers = await DataRepository.getServers();
     } catch (e) {
-      console.error('Failed to load servers:', JSON.stringify(e));
+      console.error('Remote operation=batch-init category=PROTOCOL code=BATCH_INIT_FAILED rollback=preserved');
     } finally {
       this.loading = false;
     }
@@ -107,7 +104,8 @@ export struct BatchPage {
   }
 
   private insertTemplate(name: string) {
-    const tpl = this.templateMap[name] || '';
+    const index: number = this.templates.indexOf(name);
+    const tpl: string = index >= 0 ? this.templateCommands[index] : '';
     const newText = this.commandInput ? this.commandInput + '\n' + tpl : tpl;
     this.commandInput = newText;
     promptAction.showToast({ message: `已插入模板：${name}` });
@@ -139,26 +137,29 @@ export struct BatchPage {
 
       const start = Date.now();
       try {
-        const output = await SshService.exec(srv, command);
+        const remote: RemoteResult<string> = await SshService.exec(srv, command);
         const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
+        if (!remote.success || remote.value === null) {
+          return { serverId: id, serverName: srv.name, host: srv.host, status: 'failed', duration: duration,
+            output: remote.failure === null ? '远程执行失败' : remote.failure.message } as BatchResult;
+        }
         return {
           serverId: id,
           serverName: srv.name,
           host: srv.host,
           status: 'success',
           duration: duration,
-          output: output
+          output: remote.value
         } as BatchResult;
       } catch (e) {
         const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
-        const errMsg = e instanceof Error ? e.message : JSON.stringify(e);
         return {
           serverId: id,
           serverName: srv.name,
           host: srv.host,
           status: 'failed',
           duration: duration,
-          output: `ssh: connect to host ${srv.host} port ${srv.port}: ${errMsg}`
+          output: '远程执行失败，请检查连接后重试'
         } as BatchResult;
       }
     });

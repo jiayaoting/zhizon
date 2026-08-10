@@ -8,6 +8,8 @@ import { StatusBadge } from '../components/StatusBadge';
 import { DataRepository, formatSize } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { FileItem, Server } from '../model/Models';
+import { RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
 
 // 传输队列项
 interface TransferItem {
@@ -51,7 +53,7 @@ export struct FilesPage {
       const servers = await DataRepository.getServers();
       this.servers = servers;
     } catch (e) {
-      console.error('FilesPage loadData failed:', JSON.stringify(e));
+      console.error('Remote operation=files-init category=PROTOCOL code=FILES_INIT_FAILED rollback=preserved');
     } finally {
       this.loading = false;
     }
@@ -77,14 +79,22 @@ export struct FilesPage {
   // 导航到指定目录
   private async navigateTo(path: string): Promise<void> {
     if (!this.selectedServer) return;
-    this.currentPath = path;
-    this.breadcrumb = path === '/' ? ['/'] : path.split('/').filter((s: string) => s.length > 0);
-    this.breadcrumb.unshift('/');
     try {
-      this.files = await SshService.listFiles(this.selectedServer, path);
+      const result: RemoteResult<FileItem[]> = await SshService.listFiles(this.selectedServer, path);
+      if (result.success && result.value !== null) {
+        this.files = result.value;
+        this.currentPath = path;
+        const nextBreadcrumb: string[] = path === '/' ? ['/'] :
+          path.split('/').filter((segment: string) => segment.length > 0);
+        if (path !== '/') nextBreadcrumb.unshift('/');
+        this.breadcrumb = nextBreadcrumb;
+      } else {
+        RemoteResultAdapter.logFailure('files-list', result);
+        promptAction.showToast({ message: RemoteResultAdapter.publicMessage(result) });
+      }
     } catch (e) {
-      console.error('navigateTo failed:', JSON.stringify(e));
-      this.files = [];
+      console.error('Remote operation=files-list category=PROTOCOL code=FILES_LIST_FAILED rollback=preserved');
+      promptAction.showToast({ message: '目录加载失败，已保留当前列表' });
     }
   }
 
@@ -136,7 +146,8 @@ export struct FilesPage {
       };
       this.transfers = [...this.transfers, transfer];
 
-      const ok = await SshService.uploadFile(this.selectedServer, uri, remotePath);
+      const result: RemoteResult<boolean> = await SshService.uploadFile(this.selectedServer, uri, remotePath);
+      const ok: boolean = result.success;
 
       // 更新传输状态
       const idx = this.transfers.findIndex((t: TransferItem) => t.id === transfer.id);
@@ -154,7 +165,7 @@ export struct FilesPage {
         promptAction.showToast({ message: `上传失败: ${fileName}` });
       }
     } catch (e) {
-      console.error('uploadFile failed:', JSON.stringify(e));
+      console.error('Remote operation=files-upload category=PROTOCOL code=FILES_UPLOAD_FAILED rollback=preserved');
       promptAction.showToast({ message: '上传取消或失败' });
     }
   }
@@ -186,7 +197,8 @@ export struct FilesPage {
 
       // 使用临时路径下载
       const localPath = `${remotePath}_dl_${Date.now()}`;
-      const ok = await SshService.downloadFile(this.selectedServer, remotePath, localPath);
+      const result: RemoteResult<boolean> = await SshService.downloadFile(this.selectedServer, remotePath, localPath);
+      const ok: boolean = result.success;
 
       const idx = this.transfers.findIndex((t: TransferItem) => t.id === transfer.id);
       if (idx >= 0) {
@@ -203,7 +215,7 @@ export struct FilesPage {
         promptAction.showToast({ message: `下载失败: ${file.name}` });
       }
     } catch (e) {
-      console.error('downloadFile failed:', JSON.stringify(e));
+      console.error('Remote operation=files-download category=PROTOCOL code=FILES_DOWNLOAD_FAILED rollback=preserved');
       promptAction.showToast({ message: '下载失败' });
     }
   }

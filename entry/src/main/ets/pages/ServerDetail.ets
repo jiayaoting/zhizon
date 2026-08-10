@@ -10,11 +10,10 @@ import { SshService } from '../service/SshService';
 import { Server, Alert, ServerMetrics } from '../model/Models';
 import { FixedBottomNav } from '../components/FixedBottomNav';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
-import { MainNavKey, mainPage } from '../common/Navigation';
-
-interface ServerDetailParams {
-  serverId: string;
-}
+import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationFacade,
+  NavigationSource, ServerDetailParameterResult, ServerDetailRouteParams, mainPage } from '../common/Navigation';
+import { RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
 
 // Top 进程（后续由真实 SSH 命令获取）
 interface TopProcess {
@@ -35,8 +34,16 @@ struct ServerDetailPage {
   @State topProcesses: TopProcess[] = [];
 
   async aboutToAppear() {
-    const params = router.getParams() as Record<string, string>;
-    this.server = await DataRepository.getServer(params?.serverId || '') || null;
+    const params: ServerDetailRouteParams | null = router.getParams() as ServerDetailRouteParams | null;
+    const parsed: ServerDetailParameterResult = NavigationFacade.serverDetailParameters(params);
+    if (!parsed.valid || parsed.value === null) {
+      this.loading = false;
+      promptAction.showToast({ message: '服务器参数无效，已返回上一页' });
+      router.back();
+      return;
+    }
+    const detailParams: ServerDetailRouteParams = parsed.value;
+    this.server = await DataRepository.getServer(detailParams.serverId) || null;
     this.alerts = await DataRepository.getAlerts();
     this.loading = false;
 
@@ -50,7 +57,13 @@ struct ServerDetailPage {
   private async refreshMetrics(): Promise<void> {
     if (!this.server) return;
     try {
-      const metrics: ServerMetrics = await SshService.getMetrics(this.server);
+      const result: RemoteResult<ServerMetrics> = await SshService.getMetrics(this.server);
+      if (!result.success || result.value === null) {
+        RemoteResultAdapter.logFailure('server-metrics', result);
+        promptAction.showToast({ message: RemoteResultAdapter.publicMessage(result) });
+        return;
+      }
+      const metrics: ServerMetrics = result.value;
       this.server = {
         id: this.server.id,
         name: this.server.name,
@@ -70,7 +83,7 @@ struct ServerDetailPage {
         createdAt: this.server.createdAt
       };
     } catch (e) {
-      console.error('Failed to fetch metrics:', JSON.stringify(e));
+      console.error('ServerDetail operation=metrics category=REMOTE_PROTOCOL code=METRICS_LOAD_FAILED rollback=preserved');
     }
   }
 
@@ -82,8 +95,9 @@ struct ServerDetailPage {
   }
 
   private selectMain(key: MainNavKey): void {
-    router.replaceUrl({ url: 'pages/AppShell', params: { page: mainPage(key) } }).catch(() => {
-      promptAction.showToast({ message: '页面打开失败，请重试' });
+    const previous: NavigationState = new NavigationState(PageKey.ServerDetail, MainNavKey.Servers);
+    NavigationFacade.openPage(previous, mainPage(key), NavigationSource.MAIN_NAV, true).then((result: NavigationResult) => {
+      if (!result.success) promptAction.showToast({ message: '页面打开失败，请重试或返回' });
     });
   }
 
@@ -110,7 +124,10 @@ struct ServerDetailPage {
         .padding({ left: 10, right: 10 })
         .onClick(() => {
           if (this.server) {
-            router.pushUrl({ url: 'pages/Terminal', params: { serverId: this.server.id } }).catch(() => {});
+            const previous: NavigationState = new NavigationState(PageKey.ServerDetail, MainNavKey.Servers);
+            NavigationFacade.openTerminal(previous, this.server.id, '').then((result: NavigationResult) => {
+              if (!result.success) promptAction.showToast({ message: '终端打开失败，请重试或返回' });
+            });
           }
         })
     }

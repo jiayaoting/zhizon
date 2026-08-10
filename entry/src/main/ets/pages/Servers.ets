@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { DataRepository } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { Server, Stats } from '../model/Models';
+import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationFacade, ServerFormRouteParams } from '../common/Navigation';
 
 @Component
 export struct ServersPage {
@@ -148,12 +149,14 @@ export struct ServersPage {
         this.servers = updated;
         await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
         promptAction.showToast({ message: `${s.name} 连接成功，跳转到终端` });
-        router.pushUrl({ url: 'pages/Terminal', params: { serverId: s.id } });
+        const previous: NavigationState = new NavigationState(PageKey.Servers, MainNavKey.Servers);
+        const result: NavigationResult = await NavigationFacade.openTerminal(previous, s.id, '');
+        if (!result.success) promptAction.showToast({ message: '终端打开失败，请重试或返回' });
       } else {
         promptAction.showToast({ message: `${s.name} 无法连接` });
       }
     } catch (e) {
-      promptAction.showToast({ message: `连接失败: ${JSON.stringify(e)}` });
+      promptAction.showToast({ message: '连接失败，请检查配置后重试' });
     }
   }
 
@@ -429,10 +432,13 @@ export struct ServersPage {
             this.quickReconnect(s);
           })
         this.secondaryBtn('终端', () => {
-          router.pushUrl({ url: 'pages/Terminal', params: { serverId: s.id } }).catch(() => {});
+          const previous: NavigationState = new NavigationState(PageKey.Servers, MainNavKey.Servers);
+          NavigationFacade.openTerminal(previous, s.id, '').then((result: NavigationResult) => {
+            if (!result.success) promptAction.showToast({ message: '终端打开失败，请重试或返回' });
+          });
         })
         this.secondaryBtn('编辑', () => {
-          router.pushUrl({ url: 'pages/ServerForm', params: { serverId: s.id } }).catch(() => {});
+          router.pushUrl({ url: 'pages/ServerForm', params: new ServerFormRouteParams(s.id) }).catch(() => {});
         })
         this.secondaryBtn('删除', () => {
           this.confirmDeleteServer(s);

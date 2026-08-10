@@ -9,13 +9,10 @@ import { DataRepository, formatUptime, formatSize } from '../service/DataReposit
 import { Vm, PveTask, Snapshot, PveCluster } from '../model/Models';
 import { FixedBottomNav } from '../components/FixedBottomNav';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
-import { MainNavKey, mainPage } from '../common/Navigation';
-
-interface VmDetailParams {
-  clusterId: string;
-  node: string;
-  vmid: number;
-}
+import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationFacade, NavigationSource,
+  VmDetailParameterResult, VmDetailRouteParams, mainPage } from '../common/Navigation';
+import { RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
 
 // 硬件信息项
 interface HwItem {
@@ -42,22 +39,48 @@ struct VmDetailPage {
   @StorageLink('isSm') isSm: boolean = false;
 
   async aboutToAppear() {
-    const params = router.getParams() as VmDetailParams;
-    this.clusterId = params.clusterId;
-    this.nodeName = params.node;
-    this.vmid = Number(params.vmid);
+    const params: VmDetailRouteParams | null = router.getParams() as VmDetailRouteParams | null;
+    const parsed: VmDetailParameterResult = NavigationFacade.vmDetailParameters(params);
+    if (!parsed.valid || parsed.value === null) {
+      this.loading = false;
+      promptAction.showToast({ message: '虚拟机参数无效，已返回上一页' });
+      router.back();
+      return;
+    }
+    const detailParams: VmDetailRouteParams = parsed.value;
+    this.clusterId = detailParams.clusterId;
+    this.nodeName = detailParams.node;
+    this.vmid = detailParams.vmid;
     const cluster: PveCluster | undefined = await DataRepository.getPveCluster(this.clusterId);
     if (cluster) {
-      this.vm = await DataRepository.getVm(cluster, this.nodeName, this.vmid);
-      this.tasks = await DataRepository.getTasks(cluster, this.nodeName);
-      this.snapshots = await DataRepository.getSnapshots(cluster, this.nodeName, this.vmid);
+      const vm: RemoteResult<Vm | undefined> = await DataRepository.getVm(cluster, this.nodeName, this.vmid);
+      const tasks: RemoteResult<PveTask[]> = await DataRepository.getTasks(cluster, this.nodeName);
+      const snapshots: RemoteResult<Snapshot[]> = await DataRepository.getSnapshots(cluster, this.nodeName, this.vmid);
+      if (vm.success && tasks.success && snapshots.success && vm.value !== null && tasks.value !== null &&
+        snapshots.value !== null) {
+        this.vm = vm.value;
+        this.tasks = tasks.value;
+        this.snapshots = snapshots.value;
+      } else {
+        if (!vm.success) {
+          RemoteResultAdapter.logFailure('pve-vm-load', vm);
+          promptAction.showToast({ message: RemoteResultAdapter.publicMessage(vm) });
+        } else if (!tasks.success) {
+          RemoteResultAdapter.logFailure('pve-vm-load', tasks);
+          promptAction.showToast({ message: RemoteResultAdapter.publicMessage(tasks) });
+        } else {
+          RemoteResultAdapter.logFailure('pve-vm-load', snapshots);
+          promptAction.showToast({ message: RemoteResultAdapter.publicMessage(snapshots) });
+        }
+      }
     }
     this.loading = false;
   }
 
   private selectMain(key: MainNavKey): void {
-    router.replaceUrl({ url: 'pages/AppShell', params: { page: mainPage(key) } }).catch(() => {
-      promptAction.showToast({ message: '页面打开失败，请重试' });
+    const previous: NavigationState = new NavigationState(PageKey.VmDetail, MainNavKey.Pve);
+    NavigationFacade.openPage(previous, mainPage(key), NavigationSource.MAIN_NAV, true).then((result: NavigationResult) => {
+      if (!result.success) promptAction.showToast({ message: '页面打开失败，请重试或返回' });
     });
   }
 

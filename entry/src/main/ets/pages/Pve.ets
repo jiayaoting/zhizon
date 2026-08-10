@@ -1,5 +1,5 @@
 // 智子 - PVE 集群列表页
-import { router, promptAction } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 
 import { TopBar } from '../components/TopBar';
@@ -10,6 +10,10 @@ import { EmptyState } from '../components/EmptyState';
 import { DataRepository, formatUptime } from '../service/DataRepository';
 import { PveService } from '../service/PveService';
 import { PveCluster, PveNode, Stats } from '../model/Models';
+import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationFacade,
+  NavigationSource } from '../common/Navigation';
+import { RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
 
 @Component
 export struct PvePage {
@@ -40,6 +44,29 @@ export struct PvePage {
     } finally {
       this.loading = false;
     }
+  }
+
+  private async refreshCluster(cluster: PveCluster): Promise<void> {
+    const result: RemoteResult<PveCluster> = await PveService.syncCluster(cluster);
+    if (!result.success || result.value === null) {
+      RemoteResultAdapter.logFailure('pve-cluster-sync', result);
+      promptAction.showToast({ message: RemoteResultAdapter.publicMessage(result) });
+      return;
+    }
+    const refreshed: PveCluster = result.value;
+    this.clusters = this.clusters.map((item: PveCluster) => item.id === cluster.id ? refreshed : item);
+    promptAction.showToast({ message: '集群数据已刷新' });
+  }
+
+  private showNavigationFailure(result: NavigationResult, message: string): void {
+    if (!result.success) promptAction.showToast({ message: message });
+  }
+
+  private openEmbeddedPage(target: PageKey): void {
+    const previous: NavigationState = new NavigationState(PageKey.Pve, MainNavKey.Pve);
+    NavigationFacade.openPage(previous, target, NavigationSource.ENTRY, false).then((result: NavigationResult) => {
+      this.showNavigationFailure(result, '页面打开失败，请重试或返回');
+    });
   }
 
   resetAddForm() {
@@ -273,8 +300,10 @@ export struct PvePage {
           .height(28)
           .width('100%')
           .onClick(() => {
-            router.pushUrl({ url: 'pages/PveNodeDetail', params: { clusterId: cluster.id, node: n.node } })
-              .catch(() => {});
+            const previous: NavigationState = new NavigationState(PageKey.Pve, MainNavKey.Pve);
+            NavigationFacade.openPveNodeDetail(previous, cluster.id, n.node).then((result: NavigationResult) => {
+              this.showNavigationFailure(result, '节点详情打开失败，请重试或返回');
+            });
           })
       }
       .padding(12)
@@ -361,7 +390,7 @@ export struct PvePage {
                         .height(28)
                         .padding({ left: 10, right: 10 })
                         .onClick(() => {
-                          this.loadClusters();
+                          this.refreshCluster(cluster);
                         })
                       Button('任务中心')
                         .fontSize(12)
@@ -371,7 +400,7 @@ export struct PvePage {
                         .height(28)
                         .padding({ left: 10, right: 10 })
                         .onClick(() => {
-                          router.pushUrl({ url: 'pages/Alerts' }).catch(() => {});
+                          this.openEmbeddedPage(PageKey.Alerts);
                         })
                       Button('设置')
                         .fontSize(12)
@@ -381,7 +410,7 @@ export struct PvePage {
                         .height(28)
                         .padding({ left: 10, right: 10 })
                         .onClick(() => {
-                          router.pushUrl({ url: 'pages/Settings' }).catch(() => {});
+                          this.openEmbeddedPage(PageKey.Settings);
                         })
                     }
                     .alignItems(VerticalAlign.Center)

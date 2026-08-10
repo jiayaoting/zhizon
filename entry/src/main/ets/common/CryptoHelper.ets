@@ -97,7 +97,7 @@ export class CryptoHelper {
       const out: cryptoFramework.DataBlob = await cipher.doFinal({ data: ciphertext });
       return CryptoHelper.bytesToStr(out.data);
     } catch (e) {
-      console.error('CryptoHelper.decrypt failed:', JSON.stringify(e));
+      console.error('operation=credential-decrypt category=DATA_SECURITY code=CREDENTIAL_DECRYPT_FAILED rollback=empty-value');
       return '';
     }
   }

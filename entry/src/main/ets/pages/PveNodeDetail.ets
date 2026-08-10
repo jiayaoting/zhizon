@@ -10,12 +10,10 @@ import { DataRepository, formatUptime, formatSize } from '../service/DataReposit
 import { PveCluster, PveNode, Vm, Storage, PveTask } from '../model/Models';
 import { FixedBottomNav } from '../components/FixedBottomNav';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
-import { MainNavKey, mainPage } from '../common/Navigation';
-
-interface NodeDetailParams {
-  clusterId: string;
-  node: string;
-}
+import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationFacade, NavigationSource,
+  PveNodeDetailParameterResult, PveNodeDetailRouteParams, mainPage } from '../common/Navigation';
+import { RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
 
 @Entry
 @Component
@@ -35,20 +33,50 @@ struct PveNodeDetailPage {
   @State tasks: PveTask[] = [];
 
   async aboutToAppear() {
-    const params = router.getParams() as NodeDetailParams;
-    this.clusterId = params.clusterId;
-    this.nodeName = params.node;
+    const params: PveNodeDetailRouteParams | null = router.getParams() as PveNodeDetailRouteParams | null;
+    const parsed: PveNodeDetailParameterResult = NavigationFacade.pveNodeDetailParameters(params);
+    if (!parsed.valid || parsed.value === null) {
+      this.loading = false;
+      promptAction.showToast({ message: '节点参数无效，已返回上一页' });
+      router.back();
+      return;
+    }
+    const detailParams: PveNodeDetailRouteParams = parsed.value;
+    this.clusterId = detailParams.clusterId;
+    this.nodeName = detailParams.node;
     const c: PveCluster | undefined = await DataRepository.getPveCluster(this.clusterId);
     this.cluster = c;
     if (c) {
       this.pveNode = c.nodes.find(n => n.node === this.nodeName);
       if (this.pveNode) {
-        this.vms = await DataRepository.getVms(c, this.pveNode.node);
-        this.storages = await DataRepository.getStorages(c, this.pveNode.node);
-        this.tasks = await DataRepository.getTasks(c, this.pveNode.node);
+        await this.loadRemoteData(c, this.pveNode.node, false);
       }
     }
     this.loading = false;
+  }
+
+  private async loadRemoteData(cluster: PveCluster, node: string, notifySuccess: boolean): Promise<void> {
+    const vms: RemoteResult<Vm[]> = await DataRepository.getVms(cluster, node);
+    const storages: RemoteResult<Storage[]> = await DataRepository.getStorages(cluster, node);
+    const tasks: RemoteResult<PveTask[]> = await DataRepository.getTasks(cluster, node);
+    if (vms.success && vms.value !== null && storages.success && storages.value !== null &&
+      tasks.success && tasks.value !== null) {
+      this.vms = vms.value;
+      this.storages = storages.value;
+      this.tasks = tasks.value;
+      if (notifySuccess) promptAction.showToast({ message: '已刷新节点数据' });
+      return;
+    }
+    if (!vms.success) {
+      RemoteResultAdapter.logFailure('pve-node-load', vms);
+      promptAction.showToast({ message: RemoteResultAdapter.publicMessage(vms) });
+    } else if (!storages.success) {
+      RemoteResultAdapter.logFailure('pve-node-load', storages);
+      promptAction.showToast({ message: RemoteResultAdapter.publicMessage(storages) });
+    } else {
+      RemoteResultAdapter.logFailure('pve-node-load', tasks);
+      promptAction.showToast({ message: RemoteResultAdapter.publicMessage(tasks) });
+    }
   }
 
   // 过滤后的 VM 列表
@@ -65,8 +93,9 @@ struct PveNodeDetailPage {
   }
 
   private selectMain(key: MainNavKey): void {
-    router.replaceUrl({ url: 'pages/AppShell', params: { page: mainPage(key) } }).catch(() => {
-      promptAction.showToast({ message: '页面打开失败，请重试' });
+    const previous: NavigationState = new NavigationState(PageKey.PveNodeDetail, MainNavKey.Pve);
+    NavigationFacade.openPage(previous, mainPage(key), NavigationSource.MAIN_NAV, true).then((result: NavigationResult) => {
+      if (!result.success) promptAction.showToast({ message: '页面打开失败，请重试或返回' });
     });
   }
 
@@ -85,11 +114,8 @@ struct PveNodeDetailPage {
           this.cluster = c;
           this.pveNode = c?.nodes.find(n => n.node === this.nodeName) || undefined;
           if (c && this.pveNode) {
-            this.vms = await DataRepository.getVms(c, this.pveNode.node);
-            this.storages = await DataRepository.getStorages(c, this.pveNode.node);
-            this.tasks = await DataRepository.getTasks(c, this.pveNode.node);
+            await this.loadRemoteData(c, this.pveNode.node, true);
           }
-          promptAction.showToast({ message: '已刷新节点数据' });
         })
       Button('SSH 连接')
         .fontSize(12)
@@ -99,7 +125,10 @@ struct PveNodeDetailPage {
         .height(28)
         .padding({ left: 10, right: 10 })
         .onClick(() => {
-          router.pushUrl({ url: 'pages/Terminal', params: { serverName: this.nodeName } }).catch(() => {});
+          const previous: NavigationState = new NavigationState(PageKey.PveNodeDetail, MainNavKey.Pve);
+          NavigationFacade.openTerminal(previous, '', this.nodeName).then((result: NavigationResult) => {
+            if (!result.success) promptAction.showToast({ message: '终端打开失败，请重试或返回' });
+          });
         })
     }
   }
@@ -202,10 +231,10 @@ struct PveNodeDetailPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
       .onClick(() => {
-        router.pushUrl({
-          url: 'pages/VmDetail',
-          params: { clusterId: this.clusterId, node: this.nodeName, vmid: v.vmid }
-        }).catch(() => {});
+        const previous: NavigationState = new NavigationState(PageKey.PveNodeDetail, MainNavKey.Pve);
+        NavigationFacade.openVmDetail(previous, this.clusterId, this.nodeName, v.vmid).then((result: NavigationResult) => {
+          if (!result.success) promptAction.showToast({ message: '虚拟机详情打开失败，请重试或返回' });
+        });
       })
 
       // 第二行：资源信息

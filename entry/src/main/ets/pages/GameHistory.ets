@@ -4,25 +4,32 @@ import { DataRepository } from '../service/DataRepository';
 import { ScoreEntry } from '../service/DatabaseHelper';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
+import { GameHistoryRouteParams } from '../common/Navigation';
 
-const GAME_ICONS: Record<string, string> = {
-  '2048': '🔢',
-  'Snake': '🐍',
-  'Tetris': '🧱'
-};
-const GAME_NAMES: Record<string, string> = {
-  '2048': '2048',
-  'Snake': '贪吃蛇',
-  'Tetris': '俄罗斯方块'
-};
+function isGameHistoryKey(key: string): boolean {
+  return key === '2048' || key === 'Snake' || key === 'Tetris';
+}
 
-const DIFFICULTY_COLORS_DARK: Record<string, string> = {
-  '超简单': '#10B981',
-  '简单': '#3B82F6',
-  '中等': '#F59E0B',
-  '困难': '#F97316',
-  '地狱': '#EF4444'
-};
+function gameIcon(key: string): string {
+  if (key === 'Snake') return '🐍';
+  if (key === 'Tetris') return '🧱';
+  return '🔢';
+}
+
+function gameName(key: string): string {
+  if (key === 'Snake') return '贪吃蛇';
+  if (key === 'Tetris') return '俄罗斯方块';
+  return '2048';
+}
+
+function difficultyColor(difficulty: string, fallback: string): string {
+  if (difficulty === '超简单') return '#10B981';
+  if (difficulty === '简单') return '#3B82F6';
+  if (difficulty === '中等') return '#F59E0B';
+  if (difficulty === '困难') return '#F97316';
+  if (difficulty === '地狱') return '#EF4444';
+  return fallback;
+}
 
 function formatTime(ts: number): string {
   const d: Date = new Date(ts);
@@ -52,9 +59,9 @@ export struct GameHistoryPage {
   private gameKeys: string[] = ['2048', 'Snake', 'Tetris'];
 
   aboutToAppear(): void {
-    const params: Record<string, string> | null = router.getParams() as Record<string, string> | null;
-    if (params !== null && params['game'] !== undefined) {
-      this.gameKey = params['game'];
+    const params: GameHistoryRouteParams | null = router.getParams() as GameHistoryRouteParams | null;
+    if (params !== null && params !== undefined && isGameHistoryKey(params.game)) {
+      this.gameKey = params.game;
     }
     this.loadScores();
   }
@@ -78,9 +85,9 @@ export struct GameHistoryPage {
       Row({ space: 0 }) {
         ForEach(this.gameKeys, (key: string) => {
           Row({ space: 4 }) {
-            Text(GAME_ICONS[key])
+            Text(gameIcon(key))
               .fontSize(14)
-            Text(GAME_NAMES[key])
+            Text(gameName(key))
               .fontSize(this.palette.fsSm)
               .fontColor(this.gameKey === key ? this.palette.textPrimary : this.palette.textTertiary)
               .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
@@ -157,7 +164,7 @@ export struct GameHistoryPage {
                 Column({ space: 2 }) {
                   Text(entry.difficulty)
                     .fontSize(this.palette.fsSm)
-                    .fontColor(DIFFICULTY_COLORS_DARK[entry.difficulty] || this.palette.textSecondary)
+                    .fontColor(difficultyColor(entry.difficulty, this.palette.textSecondary))
                     .fontWeight(FontWeight.Medium)
                   Text('难度')
                     .fontSize(this.palette.fsXs)

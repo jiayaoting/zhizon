@@ -1,11 +1,15 @@
 // 智子 - 游戏中心
-import { router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { PAGE_PADDING, CARD_RADIUS } from '../common/Constants';
+import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
+  GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
+import { DifficultyOption } from '../components/DifficultyOption';
+import { PageKey } from '../common/Navigation';
 
 interface GameEntry {
-  key: string;
+  gameId: GameId;
   name: string;
   icon: string;
   desc: string;
@@ -18,24 +22,25 @@ export struct GamesPage {
   @StorageLink('isMd') isMd: boolean = false;
   @StorageLink('isLg') isLg: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @State selectedDifficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
 
   private games: GameEntry[] = [
     {
-      key: 'Tetris',
+      gameId: GameId.TETRIS,
       name: '俄罗斯方块',
       icon: '🧱',
       desc: '经典方块消除游戏，支持触屏手势和按钮双控制',
       color: this.palette.primary
     },
     {
-      key: '2048',
+      gameId: GameId.GAME_2048,
       name: '2048',
       icon: '🔢',
       desc: '滑动合并数字，挑战 2048 极限',
       color: this.palette.warning
     },
     {
-      key: 'Snake',
+      gameId: GameId.SNAKE,
       name: '贪吃蛇',
       icon: '🐍',
       desc: '经典贪吃蛇，控制方向吃食物不断变长',
@@ -43,17 +48,30 @@ export struct GamesPage {
     }
   ];
 
-  private openGame(game: GameEntry): void {
-    let url: string = 'pages/Tetris';
-    if (game.key === 'Tetris') {
-      url = 'pages/Tetris';
-    } else if (game.key === '2048') {
-      url = 'pages/Game2048';
-    } else if (game.key === 'Snake') {
-      url = 'pages/Snake';
+  private async openGame(game: GameEntry): Promise<void> {
+    const request: GameLaunchRequest = new GameLaunchRequest(game.gameId, this.selectedDifficulty,
+      PageKey.Games, GameLaunchFacade.nextVersion());
+    const result: GameLaunchResult = await GameLaunchFacade.open(request);
+    if (!result.success) promptAction.showToast({ message: result.message });
+  }
+
+  @Builder
+  difficultyPicker() {
+    Column({ space: 8 }) {
+      Text('游戏难度')
+        .fontSize(this.palette.fsSm)
+        .fontColor(this.palette.textTertiary)
+        .fontWeight(FontWeight.Medium)
+        .width('100%')
+      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
+        DifficultyOption({
+          definition: definition,
+          selected: this.selectedDifficulty === definition.level,
+          onSelect: (level: DifficultyLevel): void => { this.selectedDifficulty = level; }
+        })
+      }, (definition: DifficultyDefinition) => definition.level)
     }
-    const params: Record<string, string> = { 'title': game.name };
-    router.pushUrl({ url: url, params: params });
+    .width('100%')
   }
 
   @Builder
@@ -103,6 +121,8 @@ export struct GamesPage {
 
       Scroll() {
         Column({ space: 12 }) {
+          this.difficultyPicker()
+
           // 标题区
           Text('可用游戏')
             .fontSize(this.palette.fsSm)
@@ -113,7 +133,7 @@ export struct GamesPage {
 
           ForEach(this.games, (game: GameEntry) => {
             this.gameCard(game)
-          }, (game: GameEntry) => game.key)
+          }, (game: GameEntry) => game.gameId)
 
 
         }

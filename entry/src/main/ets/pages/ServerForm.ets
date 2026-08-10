@@ -10,6 +10,7 @@ import { TopBar } from '../components/TopBar';
 import { DataRepository, generateId } from '../service/DataRepository';
 import { SshService, TestResult } from '../service/SshService';
 import { Server, ServerMetrics } from '../model/Models';
+import { ServerFormRouteParams } from '../common/Navigation';
 
 const EMPTY_METRICS: ServerMetrics = {
   cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0
@@ -78,8 +79,8 @@ export struct ServerFormPage {
   private base64: util.Base64Helper = new util.Base64Helper();
 
   async aboutToAppear(): Promise<void> {
-    const params = router.getParams() as Record<string, string>;
-    this.serverId = params?.serverId || '';
+    const params: ServerFormRouteParams | null = router.getParams() as ServerFormRouteParams | null;
+    this.serverId = params === null || params === undefined ? '' : params.serverId;
     if (this.serverId) {
       this.isEdit = true;
       await this.loadForEdit();
@@ -112,7 +113,7 @@ export struct ServerFormPage {
         }
       }
     } catch (e) {
-      console.error('loadForEdit failed:', JSON.stringify(e));
+      console.error('Remote operation=server-form-load category=PROTOCOL code=SERVER_FORM_LOAD_FAILED rollback=preserved');
     }
   }
 
@@ -148,7 +149,7 @@ export struct ServerFormPage {
       }
       return hex.join(':');
     } catch (e) {
-      console.error('computeFingerprint failed:', JSON.stringify(e));
+      console.error('Remote operation=key-fingerprint category=PROTOCOL code=KEY_FINGERPRINT_FAILED rollback=preserved');
       return '';
     }
   }
@@ -181,7 +182,7 @@ export struct ServerFormPage {
       this.pemFileHint = `${type} · SHA256:${fp ? fp.substring(0, 20) + '…' : '无法计算'}`;
       this.toast('私钥已导入');
     } catch (e) {
-      console.error('importKeyFile failed:', JSON.stringify(e));
+      console.error('Remote operation=key-import category=PROTOCOL code=KEY_IMPORT_FAILED rollback=preserved');
       this.toast('导入私钥失败');
     }
   }
@@ -238,7 +239,7 @@ export struct ServerFormPage {
       }
       this.toast(result.ok ? '连接成功' : '连接失败，详见页面提示');
     } catch (e) {
-      console.error('testConnection failed:', JSON.stringify(e));
+      console.error('Remote operation=server-test category=PROTOCOL code=SERVER_TEST_FAILED rollback=preserved');
       this.testResult = '连接测试异常';
     } finally {
       this.testing = false;
@@ -294,11 +295,8 @@ export struct ServerFormPage {
       AppStorage.setOrCreate('serversDirty', Date.now());
       router.back();
     } catch (e) {
-      console.error('save failed:', JSON.stringify(e));
+      console.error('Remote operation=server-save category=PERSISTENCE code=SERVER_SAVE_FAILED rollback=preserved');
       let errMsg: string = '保存失败，请重试';
-      if (e instanceof Error) {
-        errMsg = e.message;
-      }
       this.toast(errMsg);
     } finally {
       this.saving = false;

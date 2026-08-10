@@ -1,10 +1,11 @@
 // 智子 - 贪吃蛇
-import { router } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
-import { DifficultyLevel, DIFFICULTY_DEFINITIONS, DifficultyDefinition, difficultyLabel } from '../common/Difficulty';
-import { DifficultyOption } from '../components/DifficultyOption';
+import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
+  GameRouteParams } from '../common/Difficulty';
+import { GameHistoryRouteParams } from '../common/Navigation';
 
 const COLS: number = 16;
 const ROWS: number = 16;
@@ -463,26 +464,6 @@ export struct SnakePage {
     .alignContent(Alignment.Center)
   }
 
-  // ---- 难度选择 ----
-  @Builder
-  difficultyPicker() {
-    Column({ space: 16 }) {
-      Text('选择难度')
-        .fontSize(this.palette.fsXl)
-        .fontColor(this.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
-        DifficultyOption({
-          definition: definition,
-          selected: this.difficulty === definition.level,
-          onSelect: (level: DifficultyLevel): void => { this.startWithDifficulty(level); }
-        })
-      }, (definition: DifficultyDefinition) => definition.level)
-    }
-    .width('100%')
-    .padding(20)
-  }
-
   // ---- 操作栏 ----
   @Builder
   actionsBuilder() {
@@ -498,7 +479,7 @@ export struct SnakePage {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-        router.pushUrl({ url: 'pages/GameHistory', params: { 'game': 'Snake' } as Record<string, string> });
+         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('Snake') });
       })
 
       // 暂停
@@ -531,11 +512,14 @@ export struct SnakePage {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: Record<string, string> | null = router.getParams() as Record<string, string> | null;
-    if (params !== null && params['title'] !== undefined) {
-      this.titleText = params['title'];
+    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.SNAKE);
+    if (!result.success || result.request === null) {
+      promptAction.showToast({ message: result.message });
+      router.back();
+      return;
     }
-    this.initGame();
+    this.startWithDifficulty(result.request.difficulty);
   }
 
   aboutToDisappear(): void {
@@ -554,15 +538,7 @@ export struct SnakePage {
 
       if (this.isSm) {
         // 手机端布局：棋盘 + 按钮 + 信息
-        if (!this.gameStarted) {
-          Column() {
-            this.difficultyPicker()
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .padding({ left: 16, right: 16 })
-        } else {
+        if (this.gameStarted) {
           Column() {
             Stack() {
               Column() {
@@ -606,14 +582,7 @@ export struct SnakePage {
         }
       } else {
         // 平板端布局
-        if (!this.gameStarted) {
-          Column() {
-            this.difficultyPicker()
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-        } else {
+        if (this.gameStarted) {
           Row({ space: 20 }) {
             Column({ space: 12 }) {
               Stack() {

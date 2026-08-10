@@ -2,8 +2,9 @@
 import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, Stats } from '../model/Models';
 import { DatabaseHelper, ScoreEntry } from './DatabaseHelper';
 import { PveService } from './PveService';
-import { ThemePreference, ThemeMode, GlobalBackgroundPreference } from '../common/Theme';
+import { ThemePreference, ThemeMode, GlobalBackgroundPreference } from '../common/ThemeContracts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { DefectRecord, DefectStateHistory, FixEvidence, RecoverableResult, AppErrorCategory, RecoveryAction, AppFailure, ValidationResult, PreferenceSnapshot, PreferencePersistenceResult, RemoteResult } from '../model/GovernanceModels';
 
 const SETTINGS_DOMAIN = 0x9201;
 
@@ -15,6 +16,12 @@ class StoredThemePreference {
 class StoredBackgroundPreference {
   globalUri: string = '';
   visibleStrength: number = 50;
+}
+
+class StoredBackgroundPreferenceValue {
+  globalUri: string;
+  visibleStrength: number;
+  constructor(globalUri: string, visibleStrength: number) { this.globalUri = globalUri; this.visibleStrength = visibleStrength; }
 }
 
 class LegacyBackgroundConfig {
@@ -51,6 +58,68 @@ export function generateId(prefix: string): string {
 
 // 数据仓库 - 持久化版本
 export class DataRepository {
+  private static preferenceSnapshot: PreferenceSnapshot = new PreferenceSnapshot(true, ThemeMode.DARK,
+    'cyan', 'standard', '', 50, 0);
+  static generateId(prefix: string): string { return generateId(prefix); }
+
+  static async saveDefect(record: DefectRecord): Promise<RecoverableResult<DefectRecord>> {
+    try { await DatabaseHelper.saveDefect(record); return new RecoverableResult<DefectRecord>(true, record, null, null); }
+    catch (e) { return new RecoverableResult<DefectRecord>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '缺陷记录未保存', true, RecoveryAction.RETRY), record); }
+  }
+  static async getDefect(defectKey: string): Promise<DefectRecord | null> { return await DatabaseHelper.getDefect(defectKey); }
+  static async updateDefect(record: DefectRecord): Promise<RecoverableResult<DefectRecord>> {
+    const previous: DefectRecord | null = await DatabaseHelper.getDefect(record.defectKey);
+    try { await DatabaseHelper.updateDefect(record); return new RecoverableResult<DefectRecord>(true, record, null, previous); }
+    catch (e) { return new RecoverableResult<DefectRecord>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '缺陷记录未更新', true, RecoveryAction.RESTORE_SNAPSHOT), previous); }
+  }
+  static async appendEvidence(record: DefectRecord, evidence: FixEvidence): Promise<RecoverableResult<DefectRecord>> {
+    try { await DatabaseHelper.appendEvidence(record, evidence); return new RecoverableResult<DefectRecord>(true, record, null, null); }
+    catch (e) { return new RecoverableResult<DefectRecord>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '验证证据未保存', true, RecoveryAction.RETRY), record); }
+  }
+  static async appendDefectHistory(history: DefectStateHistory): Promise<void> { await DatabaseHelper.appendDefectHistory(history); }
+  static async transitionDefect(record: DefectRecord, history: DefectStateHistory, evidence: FixEvidence | null): Promise<RecoverableResult<DefectRecord>> { try { await DatabaseHelper.transitionDefect(record, history, evidence); return new RecoverableResult<DefectRecord>(true, record, null, null); } catch (e) { return new RecoverableResult<DefectRecord>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '缺陷状态未更新', true, RecoveryAction.RESTORE_SNAPSHOT), record); } }
+
+  static validateHost(host: string): ValidationResult { const value = host.trim(); return value.length > 0 && value.length <= 253 && value.indexOf(' ') < 0 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_HOST', '主机地址无效'); }
+  static validatePort(port: number): ValidationResult { return Number.isInteger(port) && port >= 1 && port <= 65535 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_PORT', '端口必须为 1 至 65535'); }
+  static validateTimeout(timeoutMs: number): ValidationResult { return Number.isInteger(timeoutMs) && timeoutMs > 0 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_TIMEOUT', '超时必须为正整数'); }
+  static validateBackgroundStrength(strength: number): ValidationResult { return Number.isInteger(strength) && strength >= 0 && strength <= 100 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_STRENGTH', '背景强度必须为 0 至 100'); }
+  static async updateServerCandidate(id: string, candidate: Server): Promise<RecoverableResult<Server>> { const previous: Server | undefined = await DatabaseHelper.getServer(id); if (!DataRepository.validateHost(candidate.host).valid || !DataRepository.validatePort(candidate.port).valid) return new RecoverableResult<Server>(false, null, new AppFailure(AppErrorCategory.INPUT, 'INVALID_SERVER_INPUT', '服务器配置无效', false, RecoveryAction.RECONFIGURE), previous === undefined ? null : previous); try { await DatabaseHelper.updateServer(id, candidate); return new RecoverableResult<Server>(true, candidate, null, previous === undefined ? null : previous); } catch (e) { return new RecoverableResult<Server>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '服务器配置未保存', true, RecoveryAction.RESTORE_SNAPSHOT), previous === undefined ? null : previous); } }
+  static async updatePveCandidate(id: string, candidate: PveCluster): Promise<RecoverableResult<PveCluster>> { const previous: PveCluster | undefined = await DataRepository.getPveCluster(id); if (!DataRepository.validateHost(candidate.host).valid || !DataRepository.validatePort(candidate.port).valid) return new RecoverableResult<PveCluster>(false, null, new AppFailure(AppErrorCategory.INPUT, 'INVALID_PVE_INPUT', 'PVE 配置无效', false, RecoveryAction.RECONFIGURE), previous === undefined ? null : previous); try { await DatabaseHelper.updatePveCluster(id, candidate); return new RecoverableResult<PveCluster>(true, candidate, null, previous === undefined ? null : previous); } catch (e) { return new RecoverableResult<PveCluster>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', 'PVE 配置未保存', true, RecoveryAction.RESTORE_SNAPSHOT), previous === undefined ? null : previous); } }
+  static initializePreferenceSnapshot(snapshot: PreferenceSnapshot): void {
+    DataRepository.preferenceSnapshot = DataRepository.copyPreferenceSnapshot(snapshot);
+  }
+  static getPreferenceSnapshot(): PreferenceSnapshot {
+    return DataRepository.copyPreferenceSnapshot(DataRepository.preferenceSnapshot);
+  }
+  static async persistPreferenceCandidate(candidate: PreferenceSnapshot): Promise<PreferencePersistenceResult> {
+    const rollback: PreferenceSnapshot = DataRepository.getPreferenceSnapshot();
+    if (candidate.operationVersion <= rollback.operationVersion ||
+      !DataRepository.validateBackgroundStrength(candidate.backgroundStrength).valid ||
+      (candidate.manualThemeMode !== ThemeMode.DARK && candidate.manualThemeMode !== ThemeMode.LIGHT) ||
+      !DataRepository.isColorTheme(candidate.colorThemeId) || !DataRepository.isFontSizeScale(candidate.fontSizeScale) ||
+      !isSandboxBackgroundReference(candidate.backgroundUri)) {
+      return new PreferencePersistenceResult(false, 'INVALID_PREFERENCE_CANDIDATE', rollback, rollback);
+    }
+    try {
+      const storedTheme = new StoredThemePreference(); storedTheme.followSystem = candidate.followSystem; storedTheme.manualMode = candidate.manualThemeMode;
+      await DatabaseHelper.setPreferenceSettings(JSON.stringify(storedTheme),
+        JSON.stringify(new StoredBackgroundPreferenceValue(candidate.backgroundUri, candidate.backgroundStrength)),
+        candidate.colorThemeId, candidate.fontSizeScale);
+      DataRepository.preferenceSnapshot = DataRepository.copyPreferenceSnapshot(candidate);
+      return new PreferencePersistenceResult(true, '', DataRepository.getPreferenceSnapshot(), rollback);
+    } catch (e) { return new PreferencePersistenceResult(false, 'PERSISTENCE_FAILED', rollback, rollback); }
+  }
+  private static copyPreferenceSnapshot(source: PreferenceSnapshot): PreferenceSnapshot {
+    return new PreferenceSnapshot(source.followSystem, source.manualThemeMode, source.colorThemeId,
+      source.fontSizeScale, source.backgroundUri, source.backgroundStrength, source.operationVersion);
+  }
+  private static isColorTheme(value: string): boolean {
+    return value === 'cyan' || value === 'ocean' || value === 'sunset' || value === 'aurora' ||
+      value === 'sakura' || value === 'forest';
+  }
+  private static isFontSizeScale(value: string): boolean {
+    return value === 'small' || value === 'standard' || value === 'large';
+  }
   // ========== 服务器管理 ==========
 
   static async getServers(): Promise<Server[]> {
@@ -62,10 +131,13 @@ export class DataRepository {
   }
 
   static async addServer(server: Server): Promise<void> {
+    if (!DataRepository.validateHost(server.host).valid || !DataRepository.validatePort(server.port).valid || server.id.trim().length === 0) throw new Error('INVALID_SERVER_INPUT');
     await DatabaseHelper.addServer(server);
   }
 
   static async updateServer(id: string, updates: Partial<Server>): Promise<void> {
+    if (updates.host !== undefined && !DataRepository.validateHost(updates.host).valid) throw new Error('INVALID_HOST');
+    if (updates.port !== undefined && !DataRepository.validatePort(updates.port).valid) throw new Error('INVALID_PORT');
     await DatabaseHelper.updateServer(id, updates);
   }
 
@@ -103,10 +175,13 @@ export class DataRepository {
   }
 
   static async addPveCluster(cluster: PveCluster): Promise<void> {
+    if (!DataRepository.validateHost(cluster.host).valid || !DataRepository.validatePort(cluster.port).valid || cluster.id.trim().length === 0) throw new Error('INVALID_PVE_INPUT');
     await DatabaseHelper.addPveCluster(cluster);
   }
 
   static async updatePveCluster(id: string, updates: Partial<PveCluster>): Promise<void> {
+    if (updates.host !== undefined && !DataRepository.validateHost(updates.host).valid) throw new Error('INVALID_HOST');
+    if (updates.port !== undefined && !DataRepository.validatePort(updates.port).valid) throw new Error('INVALID_PORT');
     await DatabaseHelper.updatePveCluster(id, updates);
   }
 
@@ -158,7 +233,7 @@ export class DataRepository {
       };
       return hydrated;
     } catch (e) {
-      console.error('hydratePveCredentials failed:', JSON.stringify(e));
+      console.error('DataRepository operation=hydrate-pve category=PERSISTENCE code=CREDENTIAL_READ_FAILED rollback=preserved');
       return cluster;
     }
   }
@@ -348,40 +423,25 @@ export class DataRepository {
     return clusters.find(c => c.id === id);
   }
 
-  static async getVms(cluster: PveCluster, node?: string): Promise<Vm[]> {
-    try {
-      return await PveService.getVms(cluster, node);
-    } catch (e) {
-      return [];
-    }
+  static async getVms(cluster: PveCluster, node?: string): Promise<RemoteResult<Vm[]>> {
+    return await PveService.getVms(cluster, node);
   }
 
-  static async getStorages(cluster: PveCluster, node: string): Promise<Storage[]> {
-    try {
-      return await PveService.getStorages(cluster, node);
-    } catch (e) {
-      return [];
-    }
+  static async getStorages(cluster: PveCluster, node: string): Promise<RemoteResult<Storage[]>> {
+    return await PveService.getStorages(cluster, node);
   }
 
-  static async getTasks(cluster: PveCluster, node: string): Promise<PveTask[]> {
-    try {
-      return await PveService.getTasks(cluster, node);
-    } catch (e) {
-      return [];
-    }
+  static async getTasks(cluster: PveCluster, node: string): Promise<RemoteResult<PveTask[]>> {
+    return await PveService.getTasks(cluster, node);
   }
 
-  static async getVm(cluster: PveCluster, node: string, vmid: number): Promise<Vm | undefined> {
+  static async getVm(cluster: PveCluster, node: string, vmid: number): Promise<RemoteResult<Vm | undefined>> {
     const vms = await DataRepository.getVms(cluster, node);
-    return vms.find(v => v.vmid === vmid);
+    if (!vms.success || vms.value === null) return new RemoteResult<Vm | undefined>(false, null, vms.failure);
+    return new RemoteResult<Vm | undefined>(true, vms.value.find((vm: Vm) => vm.vmid === vmid), null);
   }
 
-  static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<Snapshot[]> {
-    try {
-      return await PveService.getSnapshots(cluster, node, vmid);
-    } catch (e) {
-      return [];
-    }
+  static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<RemoteResult<Snapshot[]>> {
+    return await PveService.getSnapshots(cluster, node, vmid);
   }
 }

@@ -1,454 +1,338 @@
-// 智子 - PVE 服务（对接 Proxmox VE REST API）
-// API 文档: https://pve.proxmox.com/wiki/Proxmox_VE_API
-
 import { http } from '@kit.NetworkKit';
 import { PveCluster, PveNode, Vm, Storage, PveTask, Snapshot } from '../model/Models';
+import { RemoteFailureCategory, RemoteResult } from '../model/GovernanceModels';
 import { DataRepository } from './DataRepository';
+import { RemoteOperation } from './RemoteOperation';
+import { RemoteResultAdapter } from './RemoteResultAdapter';
+import { PveTransportAdapter, PveTransportResponse } from './PveTransportAdapter';
 
-// PVE API 客户端
+class PveTicketData { ticket: string = ''; CSRFPreventionToken: string = ''; }
+class PveTicketEnvelope { data: PveTicketData = new PveTicketData(); }
+class PveArrayEnvelope { data: Object[] = []; }
+class PveEmptyData {}
+class PveObjectEnvelope { data: Object = new PveEmptyData(); }
+class PveNodeData { node: string = ''; status: string = ''; }
+class PveCpuInfo { cpus: number = 0; }
+class PveUsage { used: number = 0; total: number = 0; }
+class PveNodeStatusData {
+  cpu: number = 0; cpuinfo: PveCpuInfo = new PveCpuInfo(); memory: PveUsage = new PveUsage();
+  rootfs: PveUsage = new PveUsage(); uptime: number = 0;
+}
+class PveVmData {
+  vmid: number = 0; name: string = ''; status: string = ''; cpu: number = 0; mem: number = 0;
+  maxmem: number = 0; maxdisk: number = 0; netin: number = 0; netout: number = 0;
+  diskread: number = 0; diskwrite: number = 0; uptime: number = 0; tags: string = ''; ostype: string = '';
+}
+class PveSnapshotData { name: string = ''; snaptime: number = 0; size: number = 0; description: string = ''; }
+class PveStorageData {
+  storage: string = ''; type: string = ''; content: string = ''; used: number = 0; total: number = 0; active: number = 0;
+}
+class PveTaskData {
+  upid: string = ''; type: string = ''; status: string = ''; user: string = ''; id: string = ''; starttime: number = 0;
+}
+class PveVersionData { version: string = ''; }
+class PveSnapshotRequest {
+  snapname: string;
+  description: string;
+  constructor(snapname: string, description: string) {
+    this.snapname = snapname;
+    this.description = description;
+  }
+}
+class PveLoginHeaders {
+  'Content-Type': string = 'application/x-www-form-urlencoded';
+}
+class PveRequestHeaders {
+  Authorization?: string;
+  Cookie?: string;
+  CSRFPreventionToken?: string;
+}
+
 export class PveClient {
   private baseUrl: string;
+  private host: string;
+  private port: number;
   private ticket: string = '';
   private csrfToken: string = '';
-  private verifyTls: boolean;
 
   constructor(host: string, port: number, verifyTls: boolean = false) {
+    this.host = host;
+    this.port = port;
     this.baseUrl = `https://${host}:${port}/api2/json`;
-    this.verifyTls = verifyTls;
   }
 
-  // 登录获取 Ticket
-  // POST /access/ticket
-  async login(username: string, password: string): Promise<boolean> {
-    try {
-      const req = http.createHttp();
-      const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-      const res = await req.request(`${this.baseUrl}/access/ticket`, {
-        method: http.RequestMethod.POST,
-        header: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        extraData: body,
-        expectDataType: http.HttpDataType.OBJECT,
-        connectTimeout: 10000,
-        readTimeout: 10000
-      });
-
-      if (res.responseCode === 200) {
-        const data = res.result as Record<string, Object>;
-        this.ticket = (data['data'] as Record<string, Object>)['ticket'] as string;
-        this.csrfToken = (data['data'] as Record<string, Object>)['CSRFPreventionToken'] as string;
-        req.destroy();
-        return true;
-      }
-      req.destroy();
-      return false;
-    } catch (e) {
-      console.error('PVE login failed:', JSON.stringify(e));
-      return false;
+  async login(username: string, password: string): Promise<RemoteResult<boolean>> {
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const operation = new RemoteOperation('pve-login', this.host, this.port, '/access/ticket', 10000, 10000);
+    const headers: PveLoginHeaders = new PveLoginHeaders();
+    const response = await PveTransportAdapter.request(operation, http.RequestMethod.POST,
+      `${this.baseUrl}/access/ticket`, headers, body);
+    if (!response.success || response.value === null || response.value.body === null) {
+      return new RemoteResult<boolean>(false, null, response.failure);
     }
+    const envelope = response.value.body as PveTicketEnvelope;
+    if (!envelope.data || !envelope.data.ticket || !envelope.data.CSRFPreventionToken) {
+      return RemoteResultAdapter.protocolFailure<boolean>();
+    }
+    this.ticket = envelope.data.ticket;
+    this.csrfToken = envelope.data.CSRFPreventionToken;
+    return RemoteResultAdapter.success<boolean>(true);
   }
 
-  // 登录获取 API Token
-  async loginWithToken(tokenId: string, secret: string): Promise<boolean> {
+  loginWithToken(tokenId: string, secret: string): RemoteResult<boolean> {
+    if (!tokenId || !secret) {
+      return RemoteResultAdapter.failure<boolean>(
+        RemoteFailureCategory.AUTHENTICATION,
+        'REMOTE_AUTH_MISSING', '认证失败，请返回配置页检查凭据', false);
+    }
     this.ticket = `PVEAPIToken=${tokenId}=${secret}`;
-    return true;
+    return RemoteResultAdapter.success<boolean>(true);
   }
 
-  // 统一请求方法
-  private async request(method: http.RequestMethod, path: string, data?: string): Promise<Record<string, Object> | null> {
-    try {
-      const req = http.createHttp();
-      const headers: Record<string, string> = {};
-      if (this.ticket.startsWith('PVEAPIToken=')) {
-        headers['Authorization'] = this.ticket;
-      } else {
-        headers['Cookie'] = `PVEAuthCookie=${this.ticket}`;
-      }
-      if (this.csrfToken && method !== http.RequestMethod.GET) {
-        headers['CSRFPreventionToken'] = this.csrfToken;
-      }
-
-      const res = await req.request(`${this.baseUrl}${path}`, {
-        method: method,
-        header: headers,
-        extraData: data ? data : undefined,
-        expectDataType: http.HttpDataType.OBJECT,
-        connectTimeout: 15000,
-        readTimeout: 15000
-      });
-
-      req.destroy();
-      if (res.responseCode === 200) {
-        return res.result as Record<string, Object>;
-      }
-      return null;
-    } catch (e) {
-      console.error(`PVE request failed: ${method} ${path}`, JSON.stringify(e));
-      return null;
+  private async request(method: http.RequestMethod, path: string, data: string = ''): Promise<RemoteResult<Object>> {
+    const headers: PveRequestHeaders = new PveRequestHeaders();
+    if (this.ticket.startsWith('PVEAPIToken=')) {
+      headers.Authorization = this.ticket;
+    } else {
+      headers.Cookie = `PVEAuthCookie=${this.ticket}`;
     }
+    if (this.csrfToken.length > 0 && method !== http.RequestMethod.GET) {
+      headers.CSRFPreventionToken = this.csrfToken;
+    }
+    const operation = new RemoteOperation('pve-request', this.host, this.port, path, 15000, 15000);
+    const response: RemoteResult<PveTransportResponse> = await PveTransportAdapter.request(operation, method,
+      `${this.baseUrl}${path}`, headers, data);
+    if (!response.success || response.value === null || response.value.body === null) {
+      return new RemoteResult<Object>(false, null, response.failure);
+    }
+    return RemoteResultAdapter.success<Object>(response.value.body);
   }
 
-  // 获取集群节点列表 GET /nodes
-  async getNodes(): Promise<PveNode[]> {
-    const res = await this.request(http.RequestMethod.GET, '/nodes');
-    if (!res || !res['data']) return [];
-
-    const nodesData = res['data'] as Array<Record<string, Object>>;
+  async getNodes(): Promise<RemoteResult<PveNode[]>> {
+    const response = await this.request(http.RequestMethod.GET, '/nodes');
+    if (!response.success || response.value === null) return new RemoteResult<PveNode[]>(false, null, response.failure);
+    const envelope = response.value as PveArrayEnvelope;
+    if (!envelope.data || !Array.isArray(envelope.data)) return RemoteResultAdapter.protocolFailure<PveNode[]>();
     const nodes: PveNode[] = [];
-
-    for (const n of nodesData) {
-      const nodeName = n['node'] as string;
-      // 获取节点状态
-      const statusRes = await this.request(http.RequestMethod.GET, `/nodes/${nodeName}/status`);
-      const statusData = (statusRes && statusRes['data']) ? statusRes['data'] as Record<string, Object> : null;
-
-      nodes.push({
-        id: nodeName,
-        node: nodeName,
-        status: (n['status'] === 'online' ? 'online' : 'offline') as 'online' | 'offline',
-        cpu: statusData ? (statusData['cpu'] as number) || 0 : 0,
-        maxcpu: statusData ? (statusData['cpuinfo'] as Record<string, Object>)['cpus'] as number || 0 : 0,
-        mem: statusData ? ((statusData['memory'] as Record<string, Object>)['used'] as number) / (1024 * 1024 * 1024) || 0 : 0,
-        maxmem: statusData ? ((statusData['memory'] as Record<string, Object>)['total'] as number) / (1024 * 1024 * 1024) || 0 : 0,
-        disk: statusData ? ((statusData['rootfs'] as Record<string, Object>)['used'] as number) / (1024 * 1024 * 1024) || 0 : 0,
-        maxdisk: statusData ? ((statusData['rootfs'] as Record<string, Object>)['total'] as number) / (1024 * 1024 * 1024) || 0 : 0,
-        uptime: statusData ? (statusData['uptime'] as number) || 0 : 0,
-        vmCount: 0,
-        ctCount: 0
-      });
+    for (const raw of envelope.data) {
+      const nodeData = raw as PveNodeData;
+      if (!nodeData.node) return RemoteResultAdapter.protocolFailure<PveNode[]>();
+      const statusResult = await this.request(http.RequestMethod.GET, `/nodes/${nodeData.node}/status`);
+      if (!statusResult.success || statusResult.value === null) return new RemoteResult<PveNode[]>(false, null, statusResult.failure);
+      const statusEnvelope = statusResult.value as PveObjectEnvelope;
+      const status = statusEnvelope.data as PveNodeStatusData;
+      nodes.push({ id: nodeData.node, node: nodeData.node, status: nodeData.status === 'online' ? 'online' : 'offline',
+        cpu: status.cpu || 0, maxcpu: status.cpuinfo ? status.cpuinfo.cpus || 0 : 0,
+        mem: status.memory ? (status.memory.used || 0) / 1073741824 : 0,
+        maxmem: status.memory ? (status.memory.total || 0) / 1073741824 : 0,
+        disk: status.rootfs ? (status.rootfs.used || 0) / 1073741824 : 0,
+        maxdisk: status.rootfs ? (status.rootfs.total || 0) / 1073741824 : 0,
+        uptime: status.uptime || 0, vmCount: 0, ctCount: 0 });
     }
-
-    return nodes;
+    return RemoteResultAdapter.success<PveNode[]>(nodes);
   }
 
-  // 获取 VM 列表 GET /nodes/{node}/qemu
-  async getVms(node: string): Promise<Vm[]> {
-    const res = await this.request(http.RequestMethod.GET, `/nodes/${node}/qemu`);
-    if (!res || !res['data']) return [];
-
-    const vmsData = res['data'] as Array<Record<string, Object>>;
+  private async getGuests(node: string, type: 'qemu' | 'lxc'): Promise<RemoteResult<Vm[]>> {
+    const response = await this.request(http.RequestMethod.GET, `/nodes/${node}/${type}`);
+    if (!response.success || response.value === null) return new RemoteResult<Vm[]>(false, null, response.failure);
+    const envelope = response.value as PveArrayEnvelope;
+    if (!envelope.data || !Array.isArray(envelope.data)) return RemoteResultAdapter.protocolFailure<Vm[]>();
     const vms: Vm[] = [];
-
-    for (const v of vmsData) {
-      const vmid = v['vmid'] as number;
-      const statusRes = await this.request(http.RequestMethod.GET, `/nodes/${node}/qemu/${vmid}/status/current`);
-      const statusData = (statusRes && statusRes['data']) ? statusRes['data'] as Record<string, Object> : null;
-
-      const status = statusData ? (statusData['status'] as string) : 'stopped';
-      let vmStatus: 'running' | 'stopped' | 'paused' = 'stopped';
-      if (status === 'running') vmStatus = 'running';
-      else if (status === 'paused') vmStatus = 'paused';
-
-      vms.push({
-        vmid: vmid,
-        name: (v['name'] as string) || `vm-${vmid}`,
-        node: node,
-        type: 'qemu',
-        status: vmStatus,
-        cpu: statusData ? (statusData['cpu'] as number) || 0 : 0,
-        mem: statusData ? (statusData['mem'] as number) / (1024 * 1024) || 0 : 0,
-        maxmem: statusData ? (statusData['maxmem'] as number) / (1024 * 1024) || 0 : 0,
-        maxdisk: statusData ? (statusData['maxdisk'] as number) / (1024 * 1024 * 1024) || 0 : 0,
-        netin: statusData ? (statusData['netin'] as number) || 0 : 0,
-        netout: statusData ? (statusData['netout'] as number) || 0 : 0,
-        diskread: statusData ? (statusData['diskread'] as number) || 0 : 0,
-        diskwrite: statusData ? (statusData['diskwrite'] as number) || 0 : 0,
-        uptime: statusData ? (statusData['uptime'] as number) || 0 : 0,
-        tags: (v['tags'] as string) ? (v['tags'] as string).split(';').filter(Boolean) : [],
-        os: (v['ostype'] as string) || ''
-      });
+    for (const raw of envelope.data) {
+      const source = raw as PveVmData;
+      if (!source.vmid) return RemoteResultAdapter.protocolFailure<Vm[]>();
+      const statusResult = await this.request(http.RequestMethod.GET,
+        `/nodes/${node}/${type}/${source.vmid}/status/current`);
+      if (!statusResult.success || statusResult.value === null) return new RemoteResult<Vm[]>(false, null, statusResult.failure);
+      const status = (statusResult.value as PveObjectEnvelope).data as PveVmData;
+      const vmStatus: 'running' | 'stopped' | 'paused' = status.status === 'running' ? 'running' :
+        status.status === 'paused' ? 'paused' : 'stopped';
+      vms.push({ vmid: source.vmid, name: source.name || `${type === 'qemu' ? 'vm' : 'ct'}-${source.vmid}`,
+        node: node, type: type, status: vmStatus, cpu: status.cpu || 0, mem: (status.mem || 0) / 1048576,
+        maxmem: (status.maxmem || 0) / 1048576, maxdisk: (status.maxdisk || 0) / 1073741824,
+        netin: status.netin || 0, netout: status.netout || 0, diskread: status.diskread || 0,
+        diskwrite: status.diskwrite || 0, uptime: status.uptime || 0,
+        tags: PveClient.parseTags(source.tags), os: source.ostype || '' });
     }
-
-    return vms;
+    return RemoteResultAdapter.success<Vm[]>(vms);
   }
 
-  // 获取 CT 列表 GET /nodes/{node}/lxc
-  async getCts(node: string): Promise<Vm[]> {
-    const res = await this.request(http.RequestMethod.GET, `/nodes/${node}/lxc`);
-    if (!res || !res['data']) return [];
+  async getVms(node: string): Promise<RemoteResult<Vm[]>> { return await this.getGuests(node, 'qemu'); }
+  async getCts(node: string): Promise<RemoteResult<Vm[]>> { return await this.getGuests(node, 'lxc'); }
 
-    const ctsData = res['data'] as Array<Record<string, Object>>;
-    const cts: Vm[] = [];
+  async vmAction(node: string, vmid: number, type: 'qemu' | 'lxc', action: string): Promise<RemoteResult<boolean>> {
+    const result = await this.request(http.RequestMethod.POST, `/nodes/${node}/${type}/${vmid}/status/${action}`);
+    return result.success ? RemoteResultAdapter.success<boolean>(true) : new RemoteResult<boolean>(false, null, result.failure);
+  }
 
-    for (const c of ctsData) {
-      const vmid = c['vmid'] as number;
-      const statusRes = await this.request(http.RequestMethod.GET, `/nodes/${node}/lxc/${vmid}/status/current`);
-      const statusData = (statusRes && statusRes['data']) ? statusRes['data'] as Record<string, Object> : null;
-
-      const status = statusData ? (statusData['status'] as string) : 'stopped';
-      let vmStatus: 'running' | 'stopped' | 'paused' = 'stopped';
-      if (status === 'running') vmStatus = 'running';
-      else if (status === 'paused') vmStatus = 'paused';
-
-      cts.push({
-        vmid: vmid,
-        name: (c['name'] as string) || `ct-${vmid}`,
-        node: node,
-        type: 'lxc',
-        status: vmStatus,
-        cpu: statusData ? (statusData['cpu'] as number) || 0 : 0,
-        mem: statusData ? (statusData['mem'] as number) / (1024 * 1024) || 0 : 0,
-        maxmem: statusData ? (statusData['maxmem'] as number) / (1024 * 1024) || 0 : 0,
-        maxdisk: statusData ? (statusData['maxdisk'] as number) / (1024 * 1024 * 1024) || 0 : 0,
-        netin: statusData ? (statusData['netin'] as number) || 0 : 0,
-        netout: statusData ? (statusData['netout'] as number) || 0 : 0,
-        diskread: statusData ? (statusData['diskread'] as number) || 0 : 0,
-        diskwrite: statusData ? (statusData['diskwrite'] as number) || 0 : 0,
-        uptime: 0,
-        tags: [],
-        os: (c['ostype'] as string) || ''
-      });
+  async createSnapshot(node: string, vmid: number, name: string, description: string): Promise<RemoteResult<boolean>> {
+    let body: string = '';
+    try {
+      body = JSON.stringify(new PveSnapshotRequest(name, description));
+    } catch (error) {
+      return RemoteResultAdapter.failure<boolean>(RemoteFailureCategory.VALIDATION,
+        'REMOTE_REQUEST_SERIALIZATION_FAILED', '远程请求参数无效', false);
     }
-
-    return cts;
+    const result = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, body);
+    return result.success ? RemoteResultAdapter.success<boolean>(true) : new RemoteResult<boolean>(false, null, result.failure);
   }
 
-  // VM 操作 POST /nodes/{node}/qemu/{vmid}/status/{action}
-  // action: start | shutdown | stop | reboot | suspend | resume
-  async vmAction(node: string, vmid: number, action: string): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/status/${action}`);
-    return res !== null;
-  }
-
-  // CT 操作
-  async ctAction(node: string, vmid: number, action: string): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/lxc/${vmid}/status/${action}`);
-    return res !== null;
-  }
-
-  // 创建快照 POST /nodes/{node}/qemu/{vmid}/snapshot
-  async createSnapshot(node: string, vmid: number, snapName: string, description: string = ''): Promise<boolean> {
-    const jsonStr = `{"snapname":"${snapName}","description":"${description}"}`;
-    const res = await this.request(http.RequestMethod.POST, `/nodes/${node}/qemu/${vmid}/snapshot`, jsonStr);
-    return res !== null;
-  }
-
-  // 获取快照列表
-  async getSnapshots(node: string, vmid: number): Promise<Snapshot[]> {
-    const res = await this.request(http.RequestMethod.GET, `/nodes/${node}/qemu/${vmid}/snapshot`);
-    if (!res || !res['data']) return [];
-
-    const snapsData = res['data'] as Array<Record<string, Object>>;
-    return snapsData.map((s): Snapshot => {
-      const result: Snapshot = {
-        name: s['name'] as string,
-        vmid: vmid,
-        date: s['snaptime'] ? new Date((s['snaptime'] as number) * 1000).toLocaleString() : '',
-        size: s['size'] ? `${(s['size'] as number / (1024 * 1024 * 1024)).toFixed(1)} GB` : '',
-        desc: (s['description'] as string) || ''
-      };
-      return result;
-    });
-  }
-
-  // 删除快照
-  async deleteSnapshot(node: string, vmid: number, snapName: string): Promise<boolean> {
-    const res = await this.request(http.RequestMethod.DELETE, `/nodes/${node}/qemu/${vmid}/snapshot/${snapName}`);
-    return res !== null;
-  }
-
-  // 获取存储池列表 GET /nodes/{node}/storage
-  async getStorages(node: string): Promise<Storage[]> {
-    const res = await this.request(http.RequestMethod.GET, `/nodes/${node}/storage`);
-    if (!res || !res['data']) return [];
-
-    const storagesData = res['data'] as Array<Record<string, Object>>;
-    return storagesData.map((s): Storage => {
-      const result: Storage = {
-        name: s['storage'] as string,
-        type: (s['type'] as string) as 'dir' | 'lvmthin' | 'zfs' | 'nfs',
-        node: node,
-        content: (s['content'] as string) || '',
-        used: s['used'] ? (s['used'] as number) / (1024 * 1024 * 1024) : 0,
-        total: s['total'] ? (s['total'] as number) / (1024 * 1024 * 1024) : 0,
-        status: (s['active'] as number) === 1 ? 'active' : 'inactive'
-      };
-      return result;
-    });
-  }
-
-  // 获取任务列表 GET /nodes/{node}/tasks
-  async getTasks(node: string): Promise<PveTask[]> {
-    const res = await this.request(http.RequestMethod.GET, `/nodes/${node}/tasks`);
-    if (!res || !res['data']) return [];
-
-    const tasksData = res['data'] as Array<Record<string, Object>>;
-    return tasksData.map(t => {
-      const tStatus = t['status'] as string || '';
-      let status: 'running' | 'success' | 'failed' = 'running';
-      if (tStatus === 'OK') status = 'success';
-      else if (tStatus.includes('fail') || tStatus.includes('error')) status = 'failed';
-
-      const result: PveTask = {
-        id: t['upid'] as string,
-        node: node,
-        upid: t['upid'] as string,
-        type: t['type'] as string,
-        status: status,
-        user: (t['user'] as string) || '',
-        target: (t['id'] as string) || '',
-        progress: 0,
-        startTime: t['starttime'] ? new Date((t['starttime'] as number) * 1000).toLocaleTimeString() : ''
-      };
-      return result;
-    });
-  }
-
-  // 获取集群版本
-  async getVersion(): Promise<string> {
-    const res = await this.request(http.RequestMethod.GET, '/version');
-    if (res && res['data']) {
-      return (res['data'] as Record<string, Object>)['version'] as string || '';
+  private static parseTags(value: string): string[] {
+    if (value.length === 0) return [];
+    const candidates: string[] = value.split(';');
+    const tags: string[] = [];
+    for (let index: number = 0; index < candidates.length; index++) {
+      if (candidates[index].length > 0) tags.push(candidates[index]);
     }
-    return '';
+    return tags;
+  }
+
+  async getSnapshots(node: string, vmid: number): Promise<RemoteResult<Snapshot[]>> {
+    const result = await this.request(http.RequestMethod.GET, `/nodes/${node}/qemu/${vmid}/snapshot`);
+    if (!result.success || result.value === null) return new RemoteResult<Snapshot[]>(false, null, result.failure);
+    const envelope = result.value as PveArrayEnvelope;
+    if (!envelope.data || !Array.isArray(envelope.data)) return RemoteResultAdapter.protocolFailure<Snapshot[]>();
+    const snapshots: Snapshot[] = [];
+    for (const raw of envelope.data) {
+      const source = raw as PveSnapshotData;
+      snapshots.push({ name: source.name, vmid: vmid,
+        date: source.snaptime ? new Date(source.snaptime * 1000).toLocaleString() : '',
+        size: source.size ? `${(source.size / 1073741824).toFixed(1)} GB` : '', desc: source.description || '' });
+    }
+    return RemoteResultAdapter.success<Snapshot[]>(snapshots);
+  }
+
+  async getStorages(node: string): Promise<RemoteResult<Storage[]>> {
+    const result = await this.request(http.RequestMethod.GET, `/nodes/${node}/storage`);
+    if (!result.success || result.value === null) return new RemoteResult<Storage[]>(false, null, result.failure);
+    const envelope = result.value as PveArrayEnvelope;
+    if (!envelope.data || !Array.isArray(envelope.data)) return RemoteResultAdapter.protocolFailure<Storage[]>();
+    const storages: Storage[] = [];
+    for (const raw of envelope.data) {
+      const source = raw as PveStorageData;
+      storages.push({ name: source.storage, type: source.type as 'dir' | 'lvmthin' | 'zfs' | 'nfs', node: node,
+        content: source.content || '', used: (source.used || 0) / 1073741824,
+        total: (source.total || 0) / 1073741824, status: source.active === 1 ? 'active' : 'inactive' });
+    }
+    return RemoteResultAdapter.success<Storage[]>(storages);
+  }
+
+  async getTasks(node: string): Promise<RemoteResult<PveTask[]>> {
+    const result = await this.request(http.RequestMethod.GET, `/nodes/${node}/tasks`);
+    if (!result.success || result.value === null) return new RemoteResult<PveTask[]>(false, null, result.failure);
+    const envelope = result.value as PveArrayEnvelope;
+    if (!envelope.data || !Array.isArray(envelope.data)) return RemoteResultAdapter.protocolFailure<PveTask[]>();
+    const tasks: PveTask[] = [];
+    for (const raw of envelope.data) {
+      const source = raw as PveTaskData;
+      const status: 'running' | 'success' | 'failed' = source.status === 'OK' ? 'success' :
+        source.status.indexOf('fail') >= 0 || source.status.indexOf('error') >= 0 ? 'failed' : 'running';
+      tasks.push({ id: source.upid, node: node, upid: source.upid, type: source.type, status: status,
+        user: source.user || '', target: source.id || '', progress: 0,
+        startTime: source.starttime ? new Date(source.starttime * 1000).toLocaleTimeString() : '' });
+    }
+    return RemoteResultAdapter.success<PveTask[]>(tasks);
+  }
+
+  async getVersion(): Promise<RemoteResult<string>> {
+    const result = await this.request(http.RequestMethod.GET, '/version');
+    if (!result.success || result.value === null) return new RemoteResult<string>(false, null, result.failure);
+    const data = (result.value as PveObjectEnvelope).data as PveVersionData;
+    return data.version ? RemoteResultAdapter.success<string>(data.version) : RemoteResultAdapter.protocolFailure<string>();
   }
 }
 
-// PVE 服务门面
 export class PveService {
-  // 获取所有集群配置
-  static async getClusters(): Promise<PveCluster[]> {
-    return await DataRepository.getPveClusters();
+  static async getClusters(): Promise<PveCluster[]> { return await DataRepository.getPveClusters(); }
+
+  private static async loginClient(client: PveClient, cluster: PveCluster): Promise<RemoteResult<boolean>> {
+    if (cluster.authType === 'token') return client.loginWithToken(cluster.tokenId || '', cluster.tokenSecret || '');
+    if (!cluster.password) {
+      return RemoteResultAdapter.failure<boolean>(
+        RemoteFailureCategory.AUTHENTICATION,
+        'REMOTE_AUTH_MISSING', '认证失败，请返回配置页检查凭据', false);
+    }
+    return await client.login(cluster.username, cluster.password);
   }
 
-  // 登录 PVE 客户端（根据认证类型选择登录方式）
-  private static async loginClient(client: PveClient, cluster: PveCluster): Promise<boolean> {
-    if (cluster.authType === 'token') {
-      const tokenId = cluster.tokenId || '';
-      const tokenSecret = cluster.tokenSecret || '';
-      if (!tokenId || !tokenSecret) {
-        console.error('PVE token auth failed: missing tokenId or tokenSecret');
-        return false;
-      }
-      return await client.loginWithToken(tokenId, tokenSecret);
+  private static async clientFor(cluster: PveCluster): Promise<RemoteResult<PveClient>> {
+    const hydrated = await DataRepository.hydratePveCredentials(cluster);
+    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
+    const login = await PveService.loginClient(client, hydrated);
+    if (!login.success) return new RemoteResult<PveClient>(false, null, login.failure);
+    return RemoteResultAdapter.success<PveClient>(client);
+  }
+
+  static async syncCluster(cluster: PveCluster): Promise<RemoteResult<PveCluster>> {
+    const prepared = await PveService.clientFor(cluster);
+    if (!prepared.success || prepared.value === null) return new RemoteResult<PveCluster>(false, null, prepared.failure);
+    const version = await prepared.value.getVersion();
+    if (!version.success || version.value === null) return new RemoteResult<PveCluster>(false, null, version.failure);
+    const nodes = await prepared.value.getNodes();
+    if (!nodes.success || nodes.value === null) return new RemoteResult<PveCluster>(false, null, nodes.failure);
+    for (const node of nodes.value) {
+      const vms = await prepared.value.getVms(node.node);
+      if (!vms.success || vms.value === null) return new RemoteResult<PveCluster>(false, null, vms.failure);
+      const cts = await prepared.value.getCts(node.node);
+      if (!cts.success || cts.value === null) return new RemoteResult<PveCluster>(false, null, cts.failure);
+      node.vmCount = vms.value.length;
+      node.ctCount = cts.value.length;
+    }
+    return RemoteResultAdapter.success<PveCluster>({ id: cluster.id, name: cluster.name, host: cluster.host,
+      port: cluster.port, username: cluster.username, authType: cluster.authType, verifyTls: cluster.verifyTls,
+      version: version.value, lastSync: new Date().toLocaleTimeString(), nodes: nodes.value });
+  }
+
+  static async getVms(cluster: PveCluster, node?: string): Promise<RemoteResult<Vm[]>> {
+    const prepared = await PveService.clientFor(cluster);
+    if (!prepared.success || prepared.value === null) return new RemoteResult<Vm[]>(false, null, prepared.failure);
+    const nodes: string[] = [];
+    if (node !== undefined && node.length > 0) {
+      nodes.push(node);
     } else {
-      const password = cluster.password || '';
-      if (!password) {
-        console.error('PVE password auth failed: missing password');
-        return false;
+      for (let index: number = 0; index < cluster.nodes.length; index++) {
+        nodes.push(cluster.nodes[index].node);
       }
-      return await client.login(cluster.username, password);
     }
-  }
-
-  // 同步单个集群数据
-  static async syncCluster(cluster: PveCluster): Promise<PveCluster> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-
-    // 加载凭据
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-
-    // 登录
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) {
-      const failedCluster: PveCluster = {
-        id: cluster.id,
-        name: cluster.name,
-        host: cluster.host,
-        port: cluster.port,
-        username: cluster.username,
-        authType: cluster.authType,
-        verifyTls: cluster.verifyTls,
-        version: cluster.version,
-        lastSync: '登录失败',
-        nodes: []
-      };
-      return failedCluster;
+    const all: Vm[] = [];
+    for (const name of nodes) {
+      const vms = await prepared.value.getVms(name);
+      if (!vms.success || vms.value === null) return new RemoteResult<Vm[]>(false, null, vms.failure);
+      const cts = await prepared.value.getCts(name);
+      if (!cts.success || cts.value === null) return new RemoteResult<Vm[]>(false, null, cts.failure);
+      all.push(...vms.value, ...cts.value);
     }
-
-    // 获取版本
-    const version = await client.getVersion();
-
-    // 获取节点
-    const nodes = await client.getNodes();
-
-    // 获取每个节点的 VM/CT 数量
-    for (const node of nodes) {
-      const vms = await client.getVms(node.node);
-      const cts = await client.getCts(node.node);
-      node.vmCount = vms.length;
-      node.ctCount = cts.length;
-    }
-
-    const syncedCluster: PveCluster = {
-      id: cluster.id,
-      name: cluster.name,
-      host: cluster.host,
-      port: cluster.port,
-      username: cluster.username,
-      authType: cluster.authType,
-      verifyTls: cluster.verifyTls,
-      version: version,
-      lastSync: new Date().toLocaleTimeString(),
-      nodes: nodes
-    };
-    return syncedCluster;
+    return RemoteResultAdapter.success<Vm[]>(all);
   }
 
-  // 获取 VM 列表
-  static async getVms(cluster: PveCluster, node?: string): Promise<Vm[]> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) return [];
-
-    const targetNodes = node ? [node] : cluster.nodes.map(n => n.node);
-    const allVms: Vm[] = [];
-
-    for (const n of targetNodes) {
-      const vms = await client.getVms(n);
-      const cts = await client.getCts(n);
-      allVms.push(...vms, ...cts);
-    }
-
-    return allVms;
+  static async getStorages(cluster: PveCluster, node: string): Promise<RemoteResult<Storage[]>> {
+    const prepared = await PveService.clientFor(cluster);
+    return prepared.success && prepared.value ? await prepared.value.getStorages(node) :
+      new RemoteResult<Storage[]>(false, null, prepared.failure);
   }
 
-  // 获取存储池
-  static async getStorages(cluster: PveCluster, node: string): Promise<Storage[]> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) return [];
-    return await client.getStorages(node);
+  static async getTasks(cluster: PveCluster, node: string): Promise<RemoteResult<PveTask[]>> {
+    const prepared = await PveService.clientFor(cluster);
+    return prepared.success && prepared.value ? await prepared.value.getTasks(node) :
+      new RemoteResult<PveTask[]>(false, null, prepared.failure);
   }
 
-  // 获取任务
-  static async getTasks(cluster: PveCluster, node: string): Promise<PveTask[]> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) return [];
-    return await client.getTasks(node);
+  static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<RemoteResult<Snapshot[]>> {
+    const prepared = await PveService.clientFor(cluster);
+    return prepared.success && prepared.value ? await prepared.value.getSnapshots(node, vmid) :
+      new RemoteResult<Snapshot[]>(false, null, prepared.failure);
   }
 
-  // VM 操作
-  static async vmAction(cluster: PveCluster, node: string, vmid: number, type: 'qemu' | 'lxc', action: string): Promise<boolean> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) return false;
-
-    if (type === 'qemu') {
-      return await client.vmAction(node, vmid, action);
-    } else {
-      return await client.ctAction(node, vmid, action);
-    }
+  static async vmAction(cluster: PveCluster, node: string, vmid: number, type: 'qemu' | 'lxc', action: string): Promise<RemoteResult<boolean>> {
+    const prepared = await PveService.clientFor(cluster);
+    return prepared.success && prepared.value ? await prepared.value.vmAction(node, vmid, type, action) :
+      new RemoteResult<boolean>(false, null, prepared.failure);
   }
 
-  // 快照操作
-  static async createSnapshot(cluster: PveCluster, node: string, vmid: number, name: string, desc: string = ''): Promise<boolean> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) return false;
-    return await client.createSnapshot(node, vmid, name, desc);
-  }
-
-  static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<Snapshot[]> {
-    const client = new PveClient(cluster.host, cluster.port, cluster.verifyTls);
-    const hydrated = await DataRepository.hydratePveCredentials(cluster);
-    const loggedIn = await PveService.loginClient(client, hydrated);
-    if (!loggedIn) return [];
-    return await client.getSnapshots(node, vmid);
+  static async createSnapshot(cluster: PveCluster, node: string, vmid: number, name: string,
+    description: string = ''): Promise<RemoteResult<boolean>> {
+    const prepared = await PveService.clientFor(cluster);
+    return prepared.success && prepared.value ? await prepared.value.createSnapshot(node, vmid, name, description) :
+      new RemoteResult<boolean>(false, null, prepared.failure);
   }
 }

@@ -5,6 +5,9 @@ import { TopBar } from '../components/TopBar';
 import { SshService } from '../service/SshService';
 import { DataRepository } from '../service/DataRepository';
 import { Server, TerminalSession } from '../model/Models';
+import { RemoteResult } from '../model/GovernanceModels';
+import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
+import { TerminalRouteParams } from '../common/Navigation';
 
 // 会话状态
 interface SessionState {
@@ -37,8 +40,8 @@ export struct TerminalPage {
   private async initPage(): Promise<void> {
     try {
       this.allServers = await DataRepository.getServers();
-      const params = router.getParams() as Record<string, string>;
-      const serverId: string = params?.serverId || '';
+      const params: TerminalRouteParams | null = router.getParams() as TerminalRouteParams | null;
+      const serverId: string = params === null || params === undefined ? '' : params.serverId;
 
       if (serverId) {
         const server: Server | undefined = await DataRepository.getServer(serverId);
@@ -54,7 +57,7 @@ export struct TerminalPage {
       this.showPicker = true;
       this.pickerServers = this.allServers;
     } catch (e) {
-      console.error('TerminalPage init failed:', JSON.stringify(e));
+      console.error('Remote operation=terminal-init category=PROTOCOL code=TERMINAL_INIT_FAILED rollback=preserved');
       this.showPicker = true;
       this.pickerServers = this.allServers;
     } finally {
@@ -137,7 +140,14 @@ export struct TerminalPage {
 
     try {
       // 获取终端初始输出（连接 + 系统信息）
-      const output: string[] = await SshService.getTerminalOutput(this.server);
+      const result: RemoteResult<string[]> = await SshService.getTerminalOutput(this.server);
+      if (!result.success || result.value === null) {
+        RemoteResultAdapter.logFailure('terminal-connect', result);
+        state.lines = [...state.lines, RemoteResultAdapter.publicMessage(result)];
+        state.session.connected = false;
+        return;
+      }
+      const output: string[] = result.value;
       state.lines = output;
       state.session.connected = output.length > 1 && output[0].includes('连接成功');
 
@@ -157,7 +167,7 @@ export struct TerminalPage {
         state.lines = [...state.lines, '连接失败，请检查服务器凭据和网络'];
       }
     } catch (e) {
-      state.lines = [...state.lines, `连接异常: ${JSON.stringify(e)}`];
+      state.lines = [...state.lines, '连接失败，请检查配置后重试'];
       state.session.connected = false;
     } finally {
       state.isLoading = false;
@@ -190,7 +200,13 @@ export struct TerminalPage {
     }
 
     try {
-      const output: string = await SshService.exec(this.server, cmd);
+      const result: RemoteResult<string> = await SshService.exec(this.server, cmd);
+      if (!result.success || result.value === null) {
+        RemoteResultAdapter.logFailure('terminal-exec', result);
+        state.lines = [...state.lines, RemoteResultAdapter.publicMessage(result), state.prompt];
+        return;
+      }
+      const output: string = result.value;
       if (output.trim()) {
         const outputLines: string[] = output.split('\n');
         state.lines = [...state.lines, ...outputLines];
@@ -198,7 +214,7 @@ export struct TerminalPage {
       // 追加空 prompt 表示命令完成
       state.lines = [...state.lines, state.prompt];
     } catch (e) {
-      state.lines = [...state.lines, `执行失败: ${JSON.stringify(e)}`, state.prompt];
+      state.lines = [...state.lines, '命令执行失败，请重试', state.prompt];
     }
   }
 
