@@ -1,7 +1,7 @@
 import { AppConstants, NavItem } from '../common/Constants';
 import { MainNavKey } from '../common/Navigation';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
-import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
+import { GlassStyle, GlassLevel } from './GlassEffect';
 
 @Component
 export struct FixedBottomNav {
@@ -58,6 +58,5 @@ export struct FixedBottomNav {
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
     }
     .width('100%')
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
   }
 }

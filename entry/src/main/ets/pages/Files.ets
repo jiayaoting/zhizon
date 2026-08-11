@@ -6,7 +6,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusBadge } from '../components/StatusBadge';
-import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository, formatSize } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
@@ -299,7 +299,6 @@ export struct FilesPage {
     .padding({ left: 14, right: 14, top: 10, bottom: 10 })
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
     .border({ width: { bottom: 0.5 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
     .onClick(() => {
       if (!this.selectedServer) {
         this.showPicker = true;
@@ -465,7 +464,6 @@ export struct FilesPage {
               .borderRadius(10)
               .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
               .alignItems(HorizontalAlign.Start)
-              .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
 
               // 中间分隔线
               Divider()
@@ -525,7 +523,6 @@ export struct FilesPage {
               .borderRadius(10)
               .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
               .alignItems(HorizontalAlign.Start)
-              .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
             }
             .layoutWeight(1)
             .width('100%')
@@ -682,7 +679,6 @@ export struct FilesPage {
         .constraintSize({ maxWidth: 480 })
         .borderRadius(16)
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
         .shadow({
           radius: 24,
           color: 'rgba(0,0,0,0.4)',

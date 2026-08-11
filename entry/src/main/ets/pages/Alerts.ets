@@ -6,7 +6,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
-import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { Alert } from '../model/Models';
@@ -200,7 +200,6 @@ export struct AlertsPage {
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
     .opacity(this.isResolved(a) ? 0.5 : 1)
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 
   @Builder loadingBuilder() {

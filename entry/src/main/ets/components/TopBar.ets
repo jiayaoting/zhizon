@@ -1,6 +1,6 @@
 // 智子 - 通用组件：顶栏（沉浸光感版）
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
-import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
+import { GlassStyle, GlassLevel } from './GlassEffect';
 import { router } from '@kit.ArkUI';
 
 @Component
@@ -60,6 +60,5 @@ export struct TopBar {
     .alignItems(VerticalAlign.Center)
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
     .border({ width: { bottom: 1 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
   }
 }

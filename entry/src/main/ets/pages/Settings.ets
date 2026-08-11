@@ -6,7 +6,7 @@ import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorT
 import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
-import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 
 import { TopBar } from '../components/TopBar';
 
@@ -34,7 +34,6 @@ struct GroupCard {
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
     .alignItems(HorizontalAlign.Start)
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 }
 

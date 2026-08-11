@@ -4,7 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { EmptyState } from '../components/EmptyState';
-import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { Command } from '../model/Models';
@@ -166,7 +166,6 @@ export struct CommandsPage {
     .borderRadius(10)
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 
   @Builder loadingBuilder() {

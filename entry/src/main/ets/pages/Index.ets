@@ -5,7 +5,7 @@ import { AppConstants, ToolboxItem } from '../common/Constants';
 import { MetricCard } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
-import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
 import { Server, PveCluster, Alert, Stats, PveNode } from '../model/Models';
 
@@ -142,7 +142,6 @@ export struct IndexPage {
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
-        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
         .onClick(() => {
           this.onNavigate('Servers');
         })
@@ -174,7 +173,6 @@ export struct IndexPage {
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
-        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
         .onClick(() => {
           this.onNavigate('Pve');
         })
@@ -206,7 +204,6 @@ export struct IndexPage {
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
-        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
 
         // 未处理告警
         Column() {
@@ -235,7 +232,6 @@ export struct IndexPage {
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
-        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
         .onClick(() => {
           this.onNavigate('Alerts');
         })
@@ -282,7 +278,6 @@ export struct IndexPage {
             .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
             .alignItems(HorizontalAlign.Center)
             .justifyContent(FlexAlign.Center)
-            .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
             .onClick(() => {
               this.onNavigate(item.key);
             })
@@ -366,7 +361,6 @@ export struct IndexPage {
             .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
             .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
             .alignItems(HorizontalAlign.Start)
-            .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
             .onClick(() => {
               this.onNavigate('Servers');
             })

@@ -1,6 +1,6 @@
 // 智子 - 通用组件：指标卡（沉浸光感版）
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
-import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
+import { GlassStyle, GlassLevel } from './GlassEffect';
 
 @Component
 export struct MetricCard {
@@ -55,6 +55,5 @@ export struct MetricCard {
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
     .alignItems(HorizontalAlign.Start)
-    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
   }
 }
