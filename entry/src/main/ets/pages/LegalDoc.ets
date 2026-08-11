@@ -203,6 +203,7 @@ function licenseSections(): DocSection[] {
         'Press Start 2P：SIL OFL 1.1，像素风游戏字体，版权归 The Press Start 2P Project Authors。',
         'Orbitron：SIL OFL 1.1，科技感几何体，版权归 The Orbitron Project Authors。',
         'Dancing Script：SIL OFL 1.1，优雅手写斜体，版权归 The Dancing Script Project Authors。',
+        '站酷快乐体（ZCOOL KuaiLe）：SIL OFL 1.1，中文艺术字体，含常用中文字形，版权归 The ZCOOL KuaiLe Project Authors。',
         '以上开源字体文件及其 OFL 许可文本均已随应用打包（rawfile/fonts 目录）。'
       ]
     },
@@ -242,6 +243,7 @@ export struct LegalDocPage {
     Column({ space: 10 }) {
       Text(section.title)
         .fontSize(this.palette.fsMd)
+        .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
@@ -249,6 +251,7 @@ export struct LegalDocPage {
         if (paragraph.length > 0) {
           Text(paragraph)
             .fontSize(this.palette.fsBase)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
             .lineHeight(22)
             .width('100%')

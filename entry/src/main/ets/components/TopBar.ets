@@ -22,6 +22,7 @@ export struct TopBar {
         Row() {
           Text('‹')
             .fontSize(22)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
             .fontWeight(FontWeight.Bold)
         }

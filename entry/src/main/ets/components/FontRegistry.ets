@@ -10,6 +10,7 @@
 //   Press Start 2P   - The Press Start 2P Project Authors
 //   Orbitron         - The Orbitron Project Authors
 //   Dancing Script   - The Dancing Script Project Authors
+//   ZCOOL KuaiLe     - The ZCOOL KuaiLe Project Authors（中文字体）
 import { font } from '@kit.ArkUI';
 
 @Component
@@ -56,6 +57,10 @@ export struct FontRegistry {
       font.registerFont({
         familyName: 'Dancing Script',
         familySrc: $rawfile('fonts/DancingScript-Variable.ttf')
+      });
+      font.registerFont({
+        familyName: 'ZCOOL KuaiLe',
+        familySrc: $rawfile('fonts/ZCOOLKuaiLe-Regular.ttf')
       });
     } catch (e) {
       // 注册失败时静默回退系统字体

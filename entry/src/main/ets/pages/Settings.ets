@@ -92,7 +92,8 @@ export struct SettingsPage {
     { name: 'Righteous', family: 'Righteous', category: '艺术' },
     { name: 'Press Start 2P', family: 'Press Start 2P', category: '艺术' },
     { name: 'Orbitron', family: 'Orbitron', category: '艺术' },
-    { name: 'Dancing Script', family: 'Dancing Script', category: '艺术' }
+    { name: 'Dancing Script', family: 'Dancing Script', category: '艺术' },
+    { name: '站酷快乐体', family: 'ZCOOL KuaiLe', category: '中文艺术' }
   ];
 
   // 主题颜色选项
@@ -317,6 +318,7 @@ export struct SettingsPage {
       }
       Text('›')
         .fontSize(14)
+        .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textTertiary)
     }
     .width('100%')
@@ -360,12 +362,14 @@ export struct SettingsPage {
             if (this.colorThemeId === themeId) {
               Text('✓')
                 .fontSize(14)
+                .fontFamily(this.palette.fontSans)
                 .fontColor(Color.White)
                 .fontWeight(FontWeight.Bold)
             }
           }
           Text(colorThemeName(themeId))
             .fontSize(9)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
             .margin({ top: 4 })
             .maxLines(1)
@@ -386,6 +390,7 @@ export struct SettingsPage {
       Row() {
         Text('跟随系统深色模式')
           .fontSize(13)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
         Toggle({ type: ToggleType.Switch, isOn: this.followSystemDark })
@@ -403,6 +408,7 @@ export struct SettingsPage {
         Row() {
           Text('深色模式')
             .fontSize(13)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
             .layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.isDarkMode })
@@ -426,23 +432,28 @@ export struct SettingsPage {
       Row() {
         Text('全局背景图')
           .fontSize(13)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
         if (this.backgroundDisplayState === BackgroundDisplayState.LOADING) {
           Text('正在应用')
             .fontSize(12)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.primary)
         } else if (this.backgroundDisplayState === BackgroundDisplayState.INVALID && this.globalBgUri) {
           Text('背景失效，请重新选择')
             .fontSize(12)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.warning)
         } else if (this.globalBgUri) {
           Text('已设置')
             .fontSize(12)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.success)
         } else {
           Text('未设置')
             .fontSize(12)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
       }
@@ -458,6 +469,7 @@ export struct SettingsPage {
         Row() {
           Text('清除背景图')
             .fontSize(13)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.danger)
         }
         .width('100%')
@@ -472,10 +484,12 @@ export struct SettingsPage {
       Row() {
         Text('可见强度')
           .fontSize(13)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
         Text(`${this.backgroundStrength}%`)
           .fontSize(12)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
       }
       .width('100%')
@@ -508,10 +522,12 @@ export struct SettingsPage {
       Column({ space: 4 }) {
         Text('字号')
           .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('选择全局字号大小')
           .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .margin({ bottom: 8 })
 
@@ -519,15 +535,18 @@ export struct SettingsPage {
           Row({ space: 12 }) {
             Text('Aa 智子 123')
               .fontSize(option.preview)
+              .fontFamily(this.palette.fontSans)
               .fontWeight(FontWeight.Medium)
               .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textPrimary)
             Blank()
             Text(option.label)
               .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textSecondary)
             if (this.fontSizeScale === option.value) {
               Text('✓')
                 .fontSize(14)
+                .fontFamily(this.palette.fontSans)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.palette.primary)
             }
@@ -542,6 +561,7 @@ export struct SettingsPage {
 
         Text('取消')
           .fontSize(this.palette.fsBase)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
           .padding({ top: 12, bottom: 4 })
           .width('100%')
@@ -578,10 +598,12 @@ export struct SettingsPage {
       Column({ space: 4 }) {
         Text('字体')
           .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('选择全局字体')
           .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .margin({ bottom: 8 })
 
@@ -605,6 +627,7 @@ export struct SettingsPage {
                 if (this.fontFamily === option.family) {
                   Text('✓')
                     .fontSize(14)
+                    .fontFamily(this.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
                     .fontColor(this.palette.primary)
                 }
@@ -626,6 +649,7 @@ export struct SettingsPage {
 
         Text('取消')
           .fontSize(this.palette.fsBase)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
           .padding({ top: 12, bottom: 4 })
           .width('100%')
@@ -663,6 +687,7 @@ export struct SettingsPage {
                 // 颜色主题选择器
                 Text('颜色主题')
                   .fontSize(13)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                 this.colorThemeSelector()
@@ -670,6 +695,7 @@ export struct SettingsPage {
                 // 深色模式
                 Text('深色模式')
                   .fontSize(13)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                 this.darkModeSettings()
@@ -677,6 +703,7 @@ export struct SettingsPage {
                 // 背景图
                 Text('背景图')
                   .fontSize(13)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                 this.backgroundSettings()
@@ -684,12 +711,14 @@ export struct SettingsPage {
                 // 毛玻璃效果
                 Text('毛玻璃效果')
                   .fontSize(13)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                   .margin({ top: 4 })
                 Row() {
                   Text('启用毛玻璃效果')
                     .fontSize(13)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textPrimary)
                     .layoutWeight(1)
                   Toggle({ type: ToggleType.Switch, isOn: this.glassEnabled })
@@ -704,6 +733,7 @@ export struct SettingsPage {
                 .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
                 Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
                   .fontSize(10)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
                   .width('100%')
                   .margin({ top: 2 })

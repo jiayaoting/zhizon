@@ -60,6 +60,7 @@ export struct GamesPage {
     Column({ space: 8 }) {
       Text('游戏难度')
         .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textTertiary)
         .fontWeight(FontWeight.Medium)
         .width('100%')
@@ -89,15 +90,18 @@ export struct GamesPage {
             .justifyContent(FlexAlign.Center)
           Text(game.icon)
             .fontSize(24)
+            .fontFamily(this.palette.fontSans)
         }
 
         Column({ space: 4 }) {
           Text(game.name)
             .fontSize(this.palette.fsLg)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
           Text(game.desc)
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -126,6 +130,7 @@ export struct GamesPage {
           // 标题区
           Text('可用游戏')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
             .fontWeight(FontWeight.Medium)
             .padding({ left: 4, top: 8, bottom: 4 })

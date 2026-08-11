@@ -91,8 +91,10 @@ export struct GameHistoryPage {
           Row({ space: 4 }) {
             Text(gameIcon(key))
               .fontSize(14)
+              .fontFamily(this.palette.fontSans)
             Text(gameName(key))
               .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.gameKey === key ? this.palette.textPrimary : this.palette.textTertiary)
               .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
           }
@@ -117,11 +119,14 @@ export struct GameHistoryPage {
         Column({ space: 8 }) {
           Text('📋')
             .fontSize(48)
+            .fontFamily(this.palette.fontSans)
           Text('暂无战绩')
             .fontSize(this.palette.fsLg)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
           Text('快去玩一局吧！')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
         .layoutWeight(1)
@@ -135,6 +140,7 @@ export struct GameHistoryPage {
                 // 排名
                 Text(medalIcon(idx))
                   .fontSize(20)
+                  .fontFamily(this.palette.fontSans)
                   .width(32)
                   .textAlign(TextAlign.Center)
 
@@ -142,10 +148,12 @@ export struct GameHistoryPage {
                 Column({ space: 2 }) {
                   Text(entry.score.toString())
                     .fontSize(this.palette.fsXl)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textPrimary)
                     .fontWeight(FontWeight.Bold)
                   Text('分数')
                     .fontSize(this.palette.fsXs)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
@@ -156,10 +164,12 @@ export struct GameHistoryPage {
                 Column({ space: 2 }) {
                   Text('Lv.' + entry.level.toString())
                     .fontSize(this.palette.fsMd)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.warning)
                     .fontWeight(FontWeight.Medium)
                   Text('等级')
                     .fontSize(this.palette.fsXs)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
@@ -168,10 +178,12 @@ export struct GameHistoryPage {
                 Column({ space: 2 }) {
                   Text(entry.difficulty)
                     .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(difficultyColor(entry.difficulty, this.palette.textSecondary))
                     .fontWeight(FontWeight.Medium)
                   Text('难度')
                     .fontSize(this.palette.fsXs)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
@@ -179,6 +191,7 @@ export struct GameHistoryPage {
                 // 时间
                 Text(formatTime(entry.createdAt))
                   .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
               }
               .width('100%')
@@ -198,6 +211,7 @@ export struct GameHistoryPage {
         Row() {
           Text('🗑 清空战绩')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })

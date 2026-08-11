@@ -13,15 +13,18 @@ export struct DifficultyOption {
     Row({ space: 12 }) {
       Text(this.definition.icon)
         .fontSize(24)
+        .fontFamily(this.palette.fontSans)
         .width(32)
       Column({ space: 3 }) {
         Text(this.definition.label)
           .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.disabled ? this.palette.textTertiary : this.palette.textPrimary)
           .fontWeight(this.selected ? FontWeight.Bold : FontWeight.Medium)
           .maxLines(1)
         Text(this.definition.description)
           .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .maxLines(2)
       }
@@ -30,6 +33,7 @@ export struct DifficultyOption {
       if (this.selected) {
         Text('✓')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.primary)
       }

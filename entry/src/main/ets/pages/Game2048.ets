@@ -390,6 +390,7 @@ export struct Game2048Page {
     Stack() {
       Text(value > 0 ? value.toString() : '')
         .fontSize(tileStyle(value, this.palette).fontSize)
+        .fontFamily(this.palette.fontSans)
         .fontColor(tileStyle(value, this.palette).fg)
         .fontWeight(FontWeight.Bold)
     }
@@ -451,9 +452,11 @@ export struct Game2048Page {
       Column({ space: 2 }) {
         Text('分数')
           .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Text(this.score.toString())
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
@@ -468,9 +471,11 @@ export struct Game2048Page {
       Column({ space: 2 }) {
         Text('最佳')
           .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Text(this.bestScore.toString())
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
@@ -491,10 +496,12 @@ export struct Game2048Page {
       Column({ space: 16 }) {
         Text('🎉 恭喜！')
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
         Text('你达到了 2048！')
           .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
         Row({ space: 12 }) {
           Row()
@@ -505,6 +512,7 @@ export struct Game2048Page {
             .onClick(() => { this.continueGame(); })
           Text('继续游戏')
             .fontSize(this.palette.fsMd)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
             .fontWeight(FontWeight.Medium)
 
@@ -515,6 +523,7 @@ export struct Game2048Page {
             .onClick(() => { this.restartGame(); })
           Text('重新开始')
             .fontSize(this.palette.fsMd)
+            .fontFamily(this.palette.fontSans)
             .fontColor('#0A0E1A')
             .fontWeight(FontWeight.Medium)
         }
@@ -535,20 +544,24 @@ export struct Game2048Page {
       Column({ space: 12 }) {
         Text('游戏结束')
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
         if (this.newRecord) {
           Text('🎉 新纪录！')
             .fontSize(this.palette.fsMd)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.warning)
             .fontWeight(FontWeight.Bold)
         }
         Text('最终得分：' + this.score.toString())
           .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
         Text('历史最高：' + this.bestScore.toString() + ' · 用时 ' + this.formatDuration(this.playSeconds))
           .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Row({ space: 12 }) {
           // 重新开始
@@ -556,6 +569,7 @@ export struct Game2048Page {
             Row() {
             Text('↺')
               .fontSize(22)
+              .fontFamily(this.palette.fontSans)
               .fontColor('#0A0E1A')
               .fontWeight(FontWeight.Bold)
             }
@@ -566,6 +580,7 @@ export struct Game2048Page {
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -576,6 +591,7 @@ export struct Game2048Page {
             Row() {
             Text('←')
               .fontSize(22)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
             }
             .width(48)
@@ -585,6 +601,7 @@ export struct Game2048Page {
             .justifyContent(FlexAlign.Center)
             Text('返回')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -608,18 +625,22 @@ export struct Game2048Page {
       Column({ space: 12 }) {
         Text('已暂停')
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row({ space: 10 }) {
           Text('难度')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
           Text(difficultyLabel(this.difficulty))
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.primary)
             .fontWeight(FontWeight.Medium)
           Text('›')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
@@ -632,6 +653,7 @@ export struct Game2048Page {
             Row() {
             Text('▶')
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
               .fontColor('#0A0E1A')
             }
             .width(48)
@@ -641,6 +663,7 @@ export struct Game2048Page {
             .justifyContent(FlexAlign.Center)
             Text('继续')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -651,6 +674,7 @@ export struct Game2048Page {
             Row() {
             Text('↺')
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
             }
             .width(48)
@@ -660,6 +684,7 @@ export struct Game2048Page {
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -670,6 +695,7 @@ export struct Game2048Page {
             Row() {
             Text('←')
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
             }
             .width(48)
@@ -679,6 +705,7 @@ export struct Game2048Page {
             .justifyContent(FlexAlign.Center)
             Text('返回')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -702,6 +729,7 @@ export struct Game2048Page {
       Row() {
         Text('🏆')
           .fontSize(14)
+          .fontFamily(this.palette.fontSans)
       }
       .width(32)
       .height(32)
@@ -716,6 +744,7 @@ export struct Game2048Page {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
       }
       .width(32)
@@ -728,6 +757,7 @@ export struct Game2048Page {
       Row() {
         Text('↺')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
       }
       .width(32)
@@ -834,16 +864,20 @@ export struct Game2048Page {
               Column({ space: 8 }) {
                 Text('操作提示')
                   .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
                 Column({ space: 6 }) {
                   Text('滑动屏幕即可操作')
                     .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textSecondary)
                   Text('相同数字会合并相加')
                     .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textSecondary)
                   Text('目标：达到 2048！')
                     .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.primary)
                 }
                 .padding(16)
@@ -896,6 +930,7 @@ export struct Game2048Page {
       if (this.showFloatScore) {
         Text(this.floatScore)
           .fontSize(this.palette.fsXl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.warning)
           .fontWeight(FontWeight.Bold)
           .position({ x: '50%', y: '12%' })

@@ -140,6 +140,7 @@ struct AppShell {
     Column() {
       Text('工具箱')
         .fontSize(20)
+        .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
@@ -152,12 +153,15 @@ struct AppShell {
             Row({ space: 12 }) {
               Text(item.icon).fontSize(24)
               Column({ space: 3 }) {
-                Text(item.label).fontSize(14).fontColor(this.palette.textPrimary).fontWeight(FontWeight.Medium)
-                Text(item.desc).fontSize(11).fontColor(this.palette.textTertiary)
+                Text(item.label).fontSize(14)
+                .fontFamily(this.palette.fontSans).fontColor(this.palette.textPrimary).fontWeight(FontWeight.Medium)
+                Text(item.desc).fontSize(11)
+                .fontFamily(this.palette.fontSans).fontColor(this.palette.textTertiary)
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
-              Text('›').fontSize(18).fontColor(this.palette.textTertiary)
+              Text('›').fontSize(18)
+              .fontFamily(this.palette.fontSans).fontColor(this.palette.textTertiary)
             }
             .width('100%')
             .padding(14)
@@ -187,11 +191,13 @@ struct AppShell {
         .visibility(this.startupState === StartupState.INITIALIZING ? Visibility.Visible : Visibility.None)
       Text(this.startupState === StartupState.FAILED ? '应用初始化失败' : '正在初始化应用')
         .fontSize(18)
+        .fontFamily(this.palette.fontSans)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.palette.textPrimary)
       if (this.startupState === StartupState.FAILED) {
         Text('核心数据未加载，请重新打开应用后重试')
           .fontSize(13)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
       }
     }

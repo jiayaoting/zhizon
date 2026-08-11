@@ -264,15 +264,7 @@ function fontSizeRatio(scale: string): number {
 
 // 按字号档位缩放 fs 系列，并注入全局字体（原地修改 palette）
 function applyFontPreferences(palette: ThemePalette, fontSizeScale: string, fontFamily: string): void {
-  const ratio: number = fontSizeRatio(fontSizeScale);
-  palette.fsXs = Math.max(8, Math.round(palette.fsXs * ratio));
-  palette.fsSm = Math.max(9, Math.round(palette.fsSm * ratio));
-  palette.fsBase = Math.max(10, Math.round(palette.fsBase * ratio));
-  palette.fsMd = Math.max(11, Math.round(palette.fsMd * ratio));
-  palette.fsLg = Math.max(12, Math.round(palette.fsLg * ratio));
-  palette.fsXl = Math.max(14, Math.round(palette.fsXl * ratio));
-  palette.fs2xl = Math.max(18, Math.round(palette.fs2xl * ratio));
-  palette.fs3xl = Math.max(22, Math.round(palette.fs3xl * ratio));
+  // 字号缩放由系统级 setFontSizeScale 统一处理（对全部 Text 生效），此处不再缩放 fs 系列
   if (fontFamily.length > 0 && fontFamily !== 'HarmonyOS Sans') {
     palette.fontSans = fontFamily + ', HarmonyOS Sans, sans-serif';
   }
@@ -530,6 +522,14 @@ export class ThemeManager {
   private applyFontSize(scale: string): void {
     // 字号缩放因子存储在 AppStorage 中，组件层通过 @StorageLink 获取
     AppStorage.setOrCreate('fontSizeScale', scale);
+    // 系统级全局缩放：对所有 Text（含硬编码字号）生效
+    try {
+      if (this.context !== null) {
+        this.context.getApplicationContext().setFontSizeScale(fontSizeRatio(scale));
+      }
+    } catch (e) {
+      // 系统不支持全局字号缩放时忽略
+    }
   }
 
   // 设置全局字体
@@ -791,7 +791,7 @@ export class ThemeManager {
       value === 'JetBrains Mono' || value === 'Fira Code' ||
       value === 'Lobster' || value === 'Pacifico' || value === 'Bebas Neue' ||
       value === 'Righteous' || value === 'Press Start 2P' ||
-      value === 'Orbitron' || value === 'Dancing Script';
+      value === 'Orbitron' || value === 'Dancing Script' || value === 'ZCOOL KuaiLe';
   }
 
   private isColorTheme(value: string): boolean {

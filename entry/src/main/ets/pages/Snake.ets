@@ -409,6 +409,7 @@ export struct SnakePage {
       Row() {
         Text('▲')
           .fontSize(20)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
       }
       .width(this.isSm ? 48 : 56)
@@ -424,6 +425,7 @@ export struct SnakePage {
         Row() {
           Text('◀')
             .fontSize(20)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
         }
         .width(this.isSm ? 48 : 56)
@@ -437,6 +439,7 @@ export struct SnakePage {
         Row() {
           Text('▼')
             .fontSize(20)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
         }
         .width(this.isSm ? 48 : 56)
@@ -450,6 +453,7 @@ export struct SnakePage {
         Row() {
           Text('▶')
             .fontSize(20)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
         }
         .width(this.isSm ? 48 : 56)
@@ -473,9 +477,11 @@ export struct SnakePage {
       Column({ space: 2 }) {
         Text('分数')
           .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Text(this.score.toString())
           .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
@@ -490,9 +496,11 @@ export struct SnakePage {
       Column({ space: 2 }) {
         Text('等级')
           .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Text(this.level.toString())
           .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
@@ -507,9 +515,11 @@ export struct SnakePage {
       Column({ space: 2 }) {
         Text('最佳')
           .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Text(this.bestScore.toString())
           .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.info)
           .fontWeight(FontWeight.Bold)
       }
@@ -530,23 +540,28 @@ export struct SnakePage {
       Column({ space: 12 }) {
         Text('游戏结束')
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
         if (this.newRecord) {
           Text('🎉 新纪录！')
             .fontSize(this.palette.fsMd)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.warning)
             .fontWeight(FontWeight.Bold)
         }
         Text('最终得分：' + this.score.toString())
           .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
         Text('蛇身长度：' + this.snake.length.toString() + ' · 历史最高：' + this.bestScore.toString())
           .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Text('用时 ' + this.formatDuration(this.playSeconds))
           .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
         Row({ space: 12 }) {
           // 重新开始
@@ -554,6 +569,7 @@ export struct SnakePage {
             Row() {
             Text('↺')
               .fontSize(22)
+              .fontFamily(this.palette.fontSans)
               .fontColor('#0A0E1A')
               .fontWeight(FontWeight.Bold)
             }
@@ -564,6 +580,7 @@ export struct SnakePage {
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -574,6 +591,7 @@ export struct SnakePage {
             Row() {
             Text('←')
               .fontSize(22)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
             }
             .width(48)
@@ -583,6 +601,7 @@ export struct SnakePage {
             .justifyContent(FlexAlign.Center)
             Text('返回')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -606,18 +625,22 @@ export struct SnakePage {
       Column({ space: 12 }) {
         Text('已暂停')
           .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row({ space: 10 }) {
           Text('难度')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
           Text(difficultyLabel(this.difficulty))
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.primary)
             .fontWeight(FontWeight.Medium)
           Text('›')
             .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
@@ -630,6 +653,7 @@ export struct SnakePage {
             Row() {
             Text('▶')
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
               .fontColor('#0A0E1A')
             }
             .width(48)
@@ -639,6 +663,7 @@ export struct SnakePage {
             .justifyContent(FlexAlign.Center)
             Text('继续')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -649,6 +674,7 @@ export struct SnakePage {
             Row() {
             Text('↺')
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
             }
             .width(48)
@@ -658,6 +684,7 @@ export struct SnakePage {
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -668,6 +695,7 @@ export struct SnakePage {
             Row() {
             Text('←')
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
             }
             .width(48)
@@ -677,6 +705,7 @@ export struct SnakePage {
             .justifyContent(FlexAlign.Center)
             Text('返回')
               .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
@@ -701,6 +730,7 @@ export struct SnakePage {
       Row() {
         Text('🏆')
           .fontSize(14)
+          .fontFamily(this.palette.fontSans)
       }
       .width(32)
       .height(32)
@@ -715,6 +745,7 @@ export struct SnakePage {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
       }
       .width(32)
@@ -728,6 +759,7 @@ export struct SnakePage {
       Row() {
         Text('↺')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
       }
       .width(32)
@@ -899,6 +931,7 @@ export struct SnakePage {
       if (this.showFloatScore) {
         Text(this.floatScore)
           .fontSize(this.palette.fsXl)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.warning)
           .fontWeight(FontWeight.Bold)
           .position({ x: '50%', y: '12%' })

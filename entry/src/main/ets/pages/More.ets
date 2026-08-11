@@ -13,6 +13,7 @@ export struct MorePage {
     Column() {
       Text('更多')
         .fontSize(20)
+        .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
@@ -22,6 +23,7 @@ export struct MorePage {
         Column() {
           Text('暂无更多功能')
             .fontSize(14)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
         .layoutWeight(1)
@@ -36,15 +38,18 @@ export struct MorePage {
                 Column({ space: 3 }) {
                   Text(item.label)
                     .fontSize(14)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text(item.desc)
                     .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
-                Text('›').fontSize(18).fontColor(this.palette.textTertiary)
+                Text('›').fontSize(18)
+                .fontFamily(this.palette.fontSans).fontColor(this.palette.textTertiary)
               }
               .width('100%')
               .padding(14)
@@ -58,6 +63,7 @@ export struct MorePage {
 
             Text('工具功能')
               .fontSize(13)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
               .fontWeight(FontWeight.Medium)
               .width('100%')
@@ -69,15 +75,18 @@ export struct MorePage {
                 Column({ space: 3 }) {
                   Text(item.label)
                     .fontSize(14)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text(item.desc)
                     .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
-                Text('›').fontSize(18).fontColor(this.palette.textTertiary)
+                Text('›').fontSize(18)
+                .fontFamily(this.palette.fontSans).fontColor(this.palette.textTertiary)
               }
               .width('100%')
               .padding(14)

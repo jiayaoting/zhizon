@@ -121,10 +121,12 @@ export struct IndexPage {
       Column() {
         Text(this.greeting)
           .fontSize(24)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text(this.currentTime)
           .fontSize(12)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .margin({ top: 4 })
       }
@@ -138,6 +140,7 @@ export struct IndexPage {
           .border({ width: 2, color: this.palette.primary })
         Text('Z')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
@@ -154,11 +157,13 @@ export struct IndexPage {
       Row() {
         Text('游戏中心')
           .fontSize(16)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('查看全部 ›')
           .fontSize(12)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .onClick(() => {
             this.onNavigate('Games');
@@ -177,6 +182,7 @@ export struct IndexPage {
                 .fill(game.color)
               Text(game.icon)
                 .fontSize(24)
+                .fontFamily(this.palette.fontSans)
             }
             .width(48)
             .height(48)
@@ -185,10 +191,12 @@ export struct IndexPage {
             Column({ space: 4 }) {
               Text(game.name)
                 .fontSize(15)
+                .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
               Text(game.desc)
                 .fontSize(11)
+                .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textTertiary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -199,6 +207,7 @@ export struct IndexPage {
             // 开始按钮
             Button('开始')
               .fontSize(12)
+              .fontFamily(this.palette.fontSans)
               .fontColor(Color.White)
               .backgroundColor(game.color)
               .borderRadius(14)
@@ -234,6 +243,7 @@ export struct IndexPage {
         Blank()
         Text('历史记录 ›')
           .fontSize(12)
+          .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .onClick(() => {
             this.onNavigate('Games');
@@ -248,8 +258,10 @@ export struct IndexPage {
           Column({ space: 6 }) {
             Text(row.icon)
               .fontSize(20)
+              .fontFamily(this.palette.fontSans)
             Text(row.name)
               .fontSize(11)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
               .fontWeight(FontWeight.Medium)
             Text(`${row.best}`)
@@ -259,6 +271,7 @@ export struct IndexPage {
               .fontFamily(this.palette.fontMono)
             Text('最高分')
               .fontSize(9)
+              .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textTertiary)
           }
           .layoutWeight(1)
@@ -296,12 +309,15 @@ export struct IndexPage {
             Column({ space: 4 }) {
               Text(def.icon)
                 .fontSize(20)
+                .fontFamily(this.palette.fontSans)
               Text(def.label)
                 .fontSize(11)
+                .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textPrimary)
                 .fontWeight(FontWeight.Medium)
               Text(def.description)
                 .fontSize(9)
+                .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textTertiary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -333,6 +349,7 @@ export struct IndexPage {
             .color(this.palette.primary)
           Text('加载中...')
             .fontSize(14)
+            .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
             .margin({ top: 12 })
         }
