@@ -253,6 +253,31 @@ function buildPalette(themeId: ColorThemeId, isDark: boolean): ThemePalette {
 export const defaultLightPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, false);
 export const defaultDarkPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, true);
 
+// ============================================================
+// 字号缩放偏移
+// ============================================================
+function fontSizeDelta(scale: string): number {
+  if (scale === 'small') return -2;
+  if (scale === 'large') return 2;
+  return 0;
+}
+
+// 按字号档位缩放 fs 系列，并注入全局字体（原地修改 palette）
+function applyFontPreferences(palette: ThemePalette, fontSizeScale: string, fontFamily: string): void {
+  const delta: number = fontSizeDelta(fontSizeScale);
+  palette.fsXs = Math.max(8, palette.fsXs + delta);
+  palette.fsSm = Math.max(9, palette.fsSm + delta);
+  palette.fsBase = Math.max(10, palette.fsBase + delta);
+  palette.fsMd = Math.max(11, palette.fsMd + delta);
+  palette.fsLg = Math.max(12, palette.fsLg + delta);
+  palette.fsXl = Math.max(14, palette.fsXl + delta);
+  palette.fs2xl = Math.max(18, palette.fs2xl + delta);
+  palette.fs3xl = Math.max(22, palette.fs3xl + delta);
+  if (fontFamily.length > 0 && fontFamily !== 'HarmonyOS Sans') {
+    palette.fontSans = fontFamily + ', sans-serif';
+  }
+}
+
 export enum PreferenceFailureReason {
   INVALID_VALUE = 'INVALID_VALUE',
   INVALID_STRENGTH = 'INVALID_STRENGTH',
@@ -377,6 +402,7 @@ export class ThemeManager {
   private backgroundPreference: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
   private glassEffectEnabled: boolean = false;
   private fontSizeScale: string = 'standard';
+  private fontFamily: string = 'HarmonyOS Sans';
   private context: Context | null = null;
   private initialized: boolean = false;
   private themeOperationVersion: number = 0;
@@ -419,6 +445,9 @@ export class ThemeManager {
       // 加载字号配置
       const fontSize = await DataRepository.getSetting('fontSizeScale', 'standard');
       this.fontSizeScale = this.isFontSizeScale(fontSize) ? fontSize : 'standard';
+
+      // 加载全局字体
+      this.fontFamily = await DataRepository.getSetting('fontFamily', 'HarmonyOS Sans');
 
       // 加载毛玻璃开关
       const glassEnabled = await DataRepository.getSetting('glassEffectEnabled', 'false');
@@ -484,7 +513,9 @@ export class ThemeManager {
 
   // 获取当前色板
   getPalette(): ThemePalette {
-    return buildPalette(this.currentColorTheme, this.getIsDark());
+    const raw = buildPalette(this.currentColorTheme, this.getIsDark());
+    applyFontPreferences(raw, this.fontSizeScale, this.fontFamily);
+    return raw;
   }
 
   // 应用字号缩放
@@ -498,6 +529,19 @@ export class ThemeManager {
     AppStorage.setOrCreate('fontSizeScale', scale);
   }
 
+  // 设置全局字体
+  async setFontFamily(family: string): Promise<void> {
+    if (family === this.fontFamily || family.length === 0) return;
+    this.fontFamily = family;
+    try {
+      await DataRepository.setSetting('fontFamily', family);
+    } catch (e) {
+      // 持久化失败不阻断界面更新
+    }
+    this.applyTheme();
+    AppStorage.setOrCreate('fontFamily', family);
+  }
+
   // 获取缩放后的字号（供组件使用）
   static scaledFontSize(base: number, scale: string): number {
     if (scale === 'small') return Math.max(8, base - 2);
@@ -507,9 +551,10 @@ export class ThemeManager {
 
   // 应用主题到 AppStorage
   private applyTheme(): void {
-    const palette = buildPalette(this.currentColorTheme, this.effectiveMode === ThemeMode.DARK);
-    AppStorage.setOrCreate('themePalette', palette);
-    AppStorage.setOrCreate('isDarkMode', palette.isDark);
+    const raw = buildPalette(this.currentColorTheme, this.effectiveMode === ThemeMode.DARK);
+    applyFontPreferences(raw, this.fontSizeScale, this.fontFamily);
+    AppStorage.setOrCreate('themePalette', raw);
+    AppStorage.setOrCreate('isDarkMode', raw.isDark);
     AppStorage.setOrCreate('colorThemeId', this.currentColorTheme);
     AppStorage.setOrCreate('followSystemDark', this.followSystem);
     AppStorage.setOrCreate('manualThemeMode', this.manualMode);

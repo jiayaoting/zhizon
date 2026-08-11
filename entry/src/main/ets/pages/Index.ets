@@ -229,6 +229,7 @@ export struct IndexPage {
         Text('最佳战绩')
           .fontSize(16)
           .fontColor(this.palette.textPrimary)
+          .fontFamily(this.palette.fontSans)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('历史记录 ›')
@@ -282,6 +283,7 @@ export struct IndexPage {
         Text('难度速览')
           .fontSize(16)
           .fontColor(this.palette.textPrimary)
+          .fontFamily(this.palette.fontSans)
           .fontWeight(FontWeight.Bold)
       }
       .width('100%')

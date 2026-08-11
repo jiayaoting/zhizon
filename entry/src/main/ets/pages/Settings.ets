@@ -39,6 +39,7 @@ struct GroupCard {
       Text(this.title)
         .fontSize(this.palette.fsMd)
         .fontColor(this.palette.textPrimary)
+        .fontFamily(this.palette.fontSans)
         .fontWeight(FontWeight.Bold)
       this.content()
     }
@@ -250,8 +251,7 @@ export struct SettingsPage {
   private async applyFontFamily(family: string): Promise<void> {
     if (family === this.fontFamily) return;
     this.fontFamily = family;
-    await DataRepository.setSetting('fontFamily', family);
-    AppStorage.setOrCreate('fontFamily', family);
+    await ThemeManager.getInstance().setFontFamily(family);
     this.toast(`字体：${family}`);
   }
 
@@ -287,11 +287,13 @@ export struct SettingsPage {
       Text(label)
         .fontSize(13)
         .fontColor(this.palette.textPrimary)
+        .fontFamily(this.palette.fontSans)
         .layoutWeight(1)
       if (value) {
         Text(value)
           .fontSize(12)
           .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontSans)
           .margin({ right: 6 })
       }
       Text('›')
@@ -316,6 +318,7 @@ export struct SettingsPage {
       Text(label)
         .fontSize(13)
         .fontColor(this.palette.textPrimary)
+        .fontFamily(this.palette.fontSans)
         .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: isOn })
         .selectedColor(this.palette.primary)

@@ -36,15 +36,17 @@ export struct TopBar {
 
       Column() {
         Text(this.title)
-          .fontSize(20)
+          .fontSize(this.palette.fsXl)
           .fontColor(this.palette.textPrimary)
+          .fontFamily(this.palette.fontSans)
           .fontWeight(FontWeight.Bold)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.subtitle) {
           Text(this.subtitle)
-            .fontSize(11)
+            .fontSize(this.palette.fsXs)
             .fontColor(this.palette.textTertiary)
+            .fontFamily(this.palette.fontSans)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 2 })
