@@ -52,8 +52,8 @@ export class GlassStyle {
 
 // GlassBlur 映射：不同级别对应不同 BlurStyle preset
 export function glassBlurStyle(enabled: boolean, level: GlassLevel): BlurStyle {
-  if (!enabled) return BlurStyle.None;
-  if (level === GlassLevel.P0_BAR) return BlurStyle.Component_Thick;
-  if (level === GlassLevel.P1_CARD) return BlurStyle.Component_Thin;
-  return BlurStyle.Component_Thin;
+  if (!enabled) return BlurStyle.NONE;
+  if (level === GlassLevel.P0_BAR) return BlurStyle.COMPONENT_THICK;
+  if (level === GlassLevel.P1_CARD) return BlurStyle.COMPONENT_THIN;
+  return BlurStyle.COMPONENT_THIN;
 }
