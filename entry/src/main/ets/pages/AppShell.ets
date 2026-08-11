@@ -31,7 +31,7 @@ struct AppShell {
     if (params !== undefined && params !== null && params.page !== undefined) {
       const initialResult: NavigationResult = NavigationFacade.navigateLegacy(this.navigation, params.page,
         NavigationSource.INITIAL);
-      this.handleNavigationResult(params.page, initialResult);
+      this.handleNavigationResult(params.page, initialResult, false);
     }
   }
 
@@ -48,7 +48,7 @@ struct AppShell {
     return true;
   }
 
-  private handleNavigationResult(key: string, result: NavigationResult): void {
+  private handleNavigationResult(key: string, result: NavigationResult, animated: boolean = true): void {
     if (!result.success) {
       const failure = result as NavigationFailure;
       hilog.error(DOMAIN, 'Navigation', '导航失败 key=%{public}s reason=%{public}s rollback=%{public}s',
@@ -57,7 +57,17 @@ struct AppShell {
       return;
     }
     const success = result as NavigationSuccess;
-    this.navigation = success.nextSnapshot;
+    if (success.currentPage === this.navigation.currentPage) {
+      this.navigation = success.nextSnapshot;
+      return;
+    }
+    if (animated) {
+      animateTo({ duration: 300, curve: Curve.Friction, delay: 0 }, () => {
+        this.navigation = success.nextSnapshot;
+      });
+    } else {
+      this.navigation = success.nextSnapshot;
+    }
   }
 
   private selectMain(key: MainNavKey): void {
@@ -78,17 +88,50 @@ struct AppShell {
 
   @Builder
   renderPage() {
-    if (this.navigation.currentPage === PageKey.Index) {
-      IndexPage({ onNavigate: (key: string): void => { this.selectPage(key); } })
-    } else if (this.navigation.currentPage === PageKey.Toolbox) {
-      this.toolboxPage()
-    } else if (this.navigation.currentPage === PageKey.More) {
-      MorePage({ onSelectEntry: (key: PageKey): void => { this.selectMoreEntry(key); } })
-    } else if (this.navigation.currentPage === PageKey.Settings) {
-      SettingsPage()
-    } else if (this.navigation.currentPage === PageKey.Games) {
-      GamesPage()
+    Stack() {
+      if (this.navigation.currentPage === PageKey.Index) {
+        Column() {
+          IndexPage({ onNavigate: (key: string): void => { this.selectPage(key); } })
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
+      if (this.navigation.currentPage === PageKey.Toolbox) {
+        Column() {
+          this.toolboxPage()
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
+      if (this.navigation.currentPage === PageKey.More) {
+        Column() {
+          MorePage({ onSelectEntry: (key: PageKey): void => { this.selectMoreEntry(key); } })
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
+      if (this.navigation.currentPage === PageKey.Settings) {
+        Column() {
+          SettingsPage()
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
+      if (this.navigation.currentPage === PageKey.Games) {
+        Column() {
+          GamesPage()
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
     }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder

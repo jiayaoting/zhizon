@@ -19,15 +19,18 @@ export struct FixedBottomNav {
         .height(3)
         .borderRadius(2)
         .backgroundColor(item.key === this.selectedKey ? this.palette.primary : Color.Transparent)
+        .animation({ duration: 250, curve: Curve.EaseInOut })
       Text(item.icon)
         .fontSize(20)
         .fontColor(item.key === this.selectedKey ? this.palette.primary : this.palette.textTertiary)
+        .animation({ duration: 250, curve: Curve.EaseInOut })
       Text(item.label)
         .fontSize(10)
         .fontColor(item.key === this.selectedKey ? this.palette.primary : this.palette.textTertiary)
         .fontWeight(item.key === this.selectedKey ? FontWeight.Medium : FontWeight.Regular)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .animation({ duration: 250, curve: Curve.EaseInOut })
     }
     .layoutWeight(1)
     .height(56)
@@ -35,6 +38,7 @@ export struct FixedBottomNav {
     .borderRadius(6)
     .alignItems(HorizontalAlign.Center)
     .justifyContent(FlexAlign.Center)
+    .animation({ duration: 250, curve: Curve.EaseInOut })
     .accessibilityText(item.label + (item.key === this.selectedKey ? '，已选中' : ''))
     .onClick(() => {
       this.onSelect(item.key);
