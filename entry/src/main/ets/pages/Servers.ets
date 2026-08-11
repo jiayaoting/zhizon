@@ -268,7 +268,7 @@ export struct ServersPage {
     };
     this.servers[idx] = updated;
     // 更新数组引用 + 刷新 LazyForEach 数据源 + 刷新统计，触发 UI 更新
-    this.servers = [...this.servers];
+    this.servers = this.servers.slice();
     this.refreshServersDataSource();
     this.refreshStats();
     if (connectedNow) {
@@ -278,8 +278,11 @@ export struct ServersPage {
 
   // 基于 servers 数组重新计算统计
   private refreshStats(): void {
-    const stats: Stats = { ...this.stats };
-    stats.total = this.servers.length;
+    const stats: Stats = {
+      total: this.servers.length,
+      online: 0, warning: 0, offline: 0, alerts: 0,
+      pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0
+    };
     stats.online = this.servers.filter((s: Server) => s.status === 'online').length;
     stats.offline = this.servers.filter((s: Server) => s.status === 'offline').length;
     stats.warning = this.servers.filter((s: Server) => s.status === 'warning').length;
@@ -529,7 +532,7 @@ export struct ServersPage {
                   .fontWeight(FontWeight.Bold)
                 Row({ space: 8 }) {
                   ForEach(
-                    [...this.servers]
+                    this.servers.slice()
                       .filter((s: Server) => s.lastConnected && s.lastConnected > 0)
                       .sort((a: Server, b: Server) => (b.lastConnected || 0) - (a.lastConnected || 0))
                       .slice(0, 5),
