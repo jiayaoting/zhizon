@@ -1,5 +1,7 @@
 // 智子 - 俄罗斯方块
 import { promptAction, router } from '@kit.ArkUI';
+import { vibrator } from '@kit.SensorServiceKit';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
@@ -83,11 +85,48 @@ export struct TetrisPage {
   @State clearedRows: number[] = [];
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
+  @State bestScore: number = 0;
+  @State heldType: number = -1;
+  @State holdUsed: boolean = false;
+  @State autoPaused: boolean = false;
+  @State floatScore: string = '';
+  @State showFloatScore: boolean = false;
+  @State newRecord: boolean = false;
+  @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
+  private gameStartTime: number = 0;
+  private scoreSaved: boolean = false;
+  private lastLevel: number = 1;
+
+  // ---- 触觉反馈 ----
+  private vibrate(duration: number): void {
+    try {
+      vibrator.startVibration({ type: 'time', duration: duration }, { usage: 'physicalFeedback' });
+    } catch (e) {
+      // 设备不支持振动时静默忽略
+    }
+  }
+
+  private formatDuration(seconds: number): string {
+    const m: number = Math.floor(seconds / 60);
+    const s: number = Math.floor(seconds % 60);
+    return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`;
+  }
+
+  private showScoreFloat(text: string): void {
+    this.floatScore = text;
+    this.showFloatScore = false;
+    setTimeout(() => {
+      this.showFloatScore = true;
+    }, 10);
+    setTimeout(() => {
+      this.showFloatScore = false;
+    }, 900);
+  }
 
   // ---- 棋盘初始化 ----
   private initBoard(): void {
@@ -155,6 +194,7 @@ export struct TetrisPage {
     // 尝试基础旋转
     if (!this.collides(p.type, newRot, p.x, p.y)) {
       this.currentPiece = { type: p.type, rotation: newRot, x: p.x, y: p.y };
+      this.vibrate(10);
       return;
     }
     // Wall kick：尝试左右偏移
@@ -162,8 +202,21 @@ export struct TetrisPage {
     for (let k: number = 0; k < kicks.length; k++) {
       if (!this.collides(p.type, newRot, p.x + kicks[k], p.y)) {
         this.currentPiece = { type: p.type, rotation: newRot, x: p.x + kicks[k], y: p.y };
+        this.vibrate(10);
         return;
       }
+    }
+  }
+
+  // ---- 软降：每次下落一格并 +1 分 ----
+  softDrop(): void {
+    if (this.isGameOver || this.isPaused || this.currentPiece === null) return;
+    const p: Piece = this.currentPiece;
+    if (!this.collides(p.type, p.rotation, p.x, p.y + 1)) {
+      this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x, y: p.y + 1 };
+      this.score += 1;
+    } else {
+      this.lockPiece();
     }
   }
 
@@ -175,7 +228,38 @@ export struct TetrisPage {
       dropY++;
     }
     this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x, y: dropY };
+    this.vibrate(20);
     this.lockPiece();
+  }
+
+  // ---- 暂存方块（Hold） ----
+  holdPiece(): void {
+    if (this.isGameOver || this.isPaused || this.currentPiece === null || this.holdUsed) return;
+    const current: Piece = this.currentPiece;
+    if (this.heldType === -1) {
+      this.heldType = current.type;
+      this.holdUsed = true;
+      this.spawnPiece();
+    } else {
+      const swapType: number = this.heldType;
+      this.heldType = current.type;
+      const shape: number[][] = SHAPES[swapType][0];
+      const pieceX: number = Math.floor((COLS - this.pieceWidth(shape)) / 2);
+      this.currentPiece = { type: swapType, rotation: 0, x: pieceX, y: 0 };
+      this.holdUsed = true;
+    }
+    this.vibrate(10);
+  }
+
+  // ---- 落点投影（Ghost） ----
+  private ghostDropY(): number {
+    if (this.currentPiece === null) return 0;
+    const p: Piece = this.currentPiece;
+    let dropY: number = p.y;
+    while (!this.collides(p.type, p.rotation, p.x, dropY + 1)) {
+      dropY++;
+    }
+    return dropY;
   }
 
   // ---- 锁定方块 ----
@@ -232,12 +316,26 @@ export struct TetrisPage {
 
       const cleared: number = fullRows.length;
       this.lines += cleared;
-      this.score += scoreForLines(cleared);
+      const gained: number = scoreForLines(cleared);
+      this.score += gained;
       this.level = Math.floor(this.lines / 10) + 1;
 
+      // 触觉反馈 + 飘字
+      this.vibrate(cleared >= 4 ? 60 : 30);
+      this.showScoreFloat('+' + gained.toString());
+
+      // 等级提升提示
+      if (this.level > this.lastLevel) {
+        promptAction.showToast({ message: `等级提升 → Level ${this.level}` });
+        this.lastLevel = this.level;
+      }
+
       // 清除动画标记
-      setTimeout(() => { this.clearedRows = []; }, 200);
+      setTimeout(() => { this.clearedRows = []; }, 220);
     }
+
+    // 允许再次 Hold
+    this.holdUsed = false;
 
     // 生成新方块
     this.spawnPiece();
@@ -247,6 +345,10 @@ export struct TetrisPage {
       this.isGameOver = true;
       this.currentPiece = null;
       this.stopTimer();
+      this.vibrate(80);
+      this.newRecord = this.score > this.bestScore;
+      if (this.newRecord) this.bestScore = this.score;
+      this.playSeconds = Math.floor((Date.now() - this.gameStartTime) / 1000);
       this.saveScore();
     }
   }
@@ -292,6 +394,13 @@ export struct TetrisPage {
     this.isGameOver = false;
     this.isPaused = false;
     this.clearedRows = [];
+    this.heldType = -1;
+    this.holdUsed = false;
+    this.newRecord = false;
+    this.playSeconds = 0;
+    this.scoreSaved = false;
+    this.lastLevel = 1;
+    this.gameStartTime = Date.now();
     this.nextType = this.randomType();
     this.spawnPiece();
     this.startTimer();
@@ -305,21 +414,75 @@ export struct TetrisPage {
     this.isGameOver = false;
     this.isPaused = false;
     this.clearedRows = [];
+    this.heldType = -1;
+    this.holdUsed = false;
+    this.newRecord = false;
+    this.playSeconds = 0;
+    this.scoreSaved = false;
+    this.lastLevel = 1;
+    this.gameStartTime = Date.now();
     this.nextType = this.randomType();
     this.spawnPiece();
     this.startTimer();
   }
 
   private saveScore(): void {
+    if (this.scoreSaved) return;
+    this.scoreSaved = true;
     DataRepository.addGameScore('Tetris', this.score, this.level, difficultyLabel(this.difficulty));
   }
 
   togglePause(): void {
     if (this.isGameOver) return;
     this.isPaused = !this.isPaused;
+    this.autoPaused = false;
+    if (!this.isPaused) {
+      this.startTimer();
+    }
   }
 
-  // ---- 获取合并后的棋盘（含当前活动方块） ----
+  // ---- 页面隐藏时自动暂停 ----
+  onPageHide(): void {
+    if (!this.isPaused && !this.isGameOver && this.gameStarted) {
+      this.autoPaused = true;
+      this.isPaused = true;
+      this.stopTimer();
+    }
+  }
+
+  // ---- 页面显示时恢复（仅自动暂停） ----
+  onPageShow(): void {
+    if (this.autoPaused) {
+      this.autoPaused = false;
+      this.isPaused = false;
+      this.startTimer();
+      promptAction.showToast({ message: '已恢复游戏' });
+    }
+  }
+
+  // ---- 切换难度（暂停弹层内） ----
+  cycleDifficulty(): void {
+    const order: DifficultyLevel[] = [
+      DifficultyLevel.VERY_EASY, DifficultyLevel.EASY, DifficultyLevel.MEDIUM,
+      DifficultyLevel.HARD, DifficultyLevel.HELL
+    ];
+    let idx: number = 0;
+    for (let i: number = 0; i < order.length; i++) {
+      if (order[i] === this.difficulty) { idx = i; break; }
+    }
+    this.difficulty = order[(idx + 1) % order.length];
+    if (!this.isPaused && !this.isGameOver) {
+      this.restartTimer();
+    }
+    promptAction.showToast({ message: `难度：${difficultyLabel(this.difficulty)}` });
+  }
+
+  private async loadBestScore(): Promise<void> {
+    const best: number = await DataRepository.getGameHighScore('Tetris');
+    this.bestScore = best;
+  }
+
+  // ---- 获取合并后的棋盘（含当前活动方块与落点投影） ----
   private getDisplayBoard(): number[][] {
     const display: number[][] = [];
     for (let r: number = 0; r < ROWS; r++) {
@@ -332,11 +495,20 @@ export struct TetrisPage {
     if (this.currentPiece !== null && !this.isGameOver) {
       const p: Piece = this.currentPiece;
       const shape: number[][] = SHAPES[p.type][p.rotation];
+      const ghostY: number = this.ghostDropY();
       for (let i: number = 0; i < shape.length; i++) {
         const bx: number = p.x + shape[i][0];
         const by: number = p.y + shape[i][1];
         if (by >= 0 && by < ROWS && bx >= 0 && bx < COLS) {
           display[by][bx] = p.type + 1;
+        }
+        // 落点投影（100+ 表示 ghost）
+        const gx: number = p.x + shape[i][0];
+        const gy: number = ghostY + shape[i][1];
+        if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+          if (display[gy][gx] === 0) {
+            display[gy][gx] = 100 + p.type + 1;
+          }
         }
       }
     }
@@ -382,8 +554,12 @@ export struct TetrisPage {
               .aspectRatio(1)
               .margin(0.5)
               .borderRadius(2)
-              .backgroundColor(cell > 0 ? PIECE_COLORS[cell - 1] : this.palette.bgSurface2)
-              .border({ width: cell > 0 ? 0.5 : 0, color: 'rgba(255,255,255,0.1)' })
+              .backgroundColor(cell >= 100 ? PIECE_COLORS[cell - 100 - 1] :
+                (cell > 0 ? PIECE_COLORS[cell - 1] : this.palette.bgSurface2))
+              .opacity(cell >= 100 ? 0.35 : 1)
+              .scale(this.clearedRows.indexOf(rowIdx) !== -1 ? { x: 1.15, y: 1.15 } : { x: 1, y: 1 })
+              .animation({ duration: 110, curve: Curve.EaseOut })
+              .border({ width: cell > 0 && cell < 100 ? 0.5 : 0, color: 'rgba(255,255,255,0.1)' })
           }, (colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
@@ -493,23 +669,65 @@ export struct TetrisPage {
   @Builder
   gameOverOverlay() {
     Stack() {
-      Column({ space: 16 }) {
+      Column({ space: 12 }) {
         Text('游戏结束')
           .fontSize(this.palette.fs2xl)
           .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
-        Text('最终得分: ' + this.score.toString())
+        if (this.newRecord) {
+          Text('🎉 新纪录！')
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.warning)
+            .fontWeight(FontWeight.Bold)
+        }
+        Text('最终得分：' + this.score.toString())
           .fontSize(this.palette.fsMd)
-          .fontColor(this.palette.textSecondary)
-        Row()
-          .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(this.palette.primary)
-          .borderRadius(8)
-          .onClick(() => { this.restartGame(); })
-        Text('重新开始')
-          .fontSize(this.palette.fsMd)
-          .fontColor('#0A0E1A')
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
+        Text('历史最高：' + this.bestScore.toString() + ' · 用时 ' + this.formatDuration(this.playSeconds))
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textTertiary)
+        Row({ space: 12 }) {
+          // 重新开始
+          Column({ space: 6 }) {
+            Row() {
+            Text('↺')
+              .fontSize(22)
+              .fontColor('#0A0E1A')
+              .fontWeight(FontWeight.Bold)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.primary)
+            .justifyContent(FlexAlign.Center)
+            Text('重新开始')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.restartGame(); })
+
+          // 返回
+          Column({ space: 6 }) {
+            Row() {
+            Text('←')
+              .fontSize(22)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('返回')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { router.back(); })
+        }
+        .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
     }
@@ -529,15 +747,81 @@ export struct TetrisPage {
           .fontSize(this.palette.fs2xl)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
-        Row()
-          .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(this.palette.primary)
-          .borderRadius(8)
+        Row({ space: 10 }) {
+          Text('难度')
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
+          Text(difficultyLabel(this.difficulty))
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.primary)
+            .fontWeight(FontWeight.Medium)
+          Text('›')
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
+        }
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(8)
+        .backgroundColor(this.palette.bgSurface2)
+        .onClick(() => { this.cycleDifficulty(); })
+        Row({ space: 12 }) {
+          // 继续
+          Column({ space: 6 }) {
+            Row() {
+            Text('▶')
+              .fontSize(20)
+              .fontColor('#0A0E1A')
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.primary)
+            .justifyContent(FlexAlign.Center)
+            Text('继续')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.togglePause(); })
-        Text('继续')
-          .fontSize(this.palette.fsMd)
-          .fontColor('#0A0E1A')
-          .fontWeight(FontWeight.Medium)
+
+          // 重新开始
+          Column({ space: 6 }) {
+            Row() {
+            Text('↺')
+              .fontSize(20)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('重新开始')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.restartGame(); })
+
+          // 返回
+          Column({ space: 6 }) {
+            Row() {
+            Text('←')
+              .fontSize(20)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('返回')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { router.back(); })
+        }
+        .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
     }
@@ -552,6 +836,22 @@ export struct TetrisPage {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 暂存方块（Hold）
+      Row() {
+        Text(this.heldType >= 0 ? (this.heldType + 1).toString() : 'H')
+          .fontSize(13)
+          .fontColor(this.holdUsed ? this.palette.textTertiary : this.palette.primary)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.heldType >= 0 ? PIECE_COLORS[this.heldType] + '33' :
+        (this.holdUsed ? this.palette.bgSurface2 : this.palette.primaryDim))
+      .justifyContent(FlexAlign.Center)
+      .border({ width: 1, color: this.holdUsed ? this.palette.borderSubtle : this.palette.primary })
+      .onClick(() => { this.holdPiece(); })
+
       // 战绩
       Row() {
         Text('🏆')
@@ -603,22 +903,28 @@ export struct TetrisPage {
       router.back();
       return;
     }
+    this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
   }
 
   aboutToDisappear(): void {
     this.stopTimer();
+    // 中途退出时保存当前分数
+    if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
+      this.saveScore();
+    }
   }
 
   build() {
-    Column() {
-      TopBar({
-        title: this.titleText,
-        subtitle: 'Level ' + this.level.toString(),
-        showBack: true
-      }) {
-        this.actionsBuilder()
-      }
+    Stack() {
+      Column() {
+        TopBar({
+          title: this.titleText,
+          subtitle: 'Level ' + this.level.toString(),
+          showBack: true
+        }) {
+          this.actionsBuilder()
+        }
 
       if (this.isSm) {
         if (this.gameStarted) {
@@ -789,9 +1095,51 @@ export struct TetrisPage {
         .alignItems(VerticalAlign.Center)
         }
       }
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .backgroundColor(this.palette.bgBase)
+      .focusable(true)
+      .defaultFocus(true)
+      .onKeyEvent((event: KeyEvent) => {
+        if (event.type !== KeyType.Down) return;
+        const code: KeyCode = event.keyCode;
+        if (code === KeyCode.KEYCODE_P || code === KeyCode.KEYCODE_ENTER) {
+          this.togglePause();
+          return;
+        }
+        if (code === KeyCode.KEYCODE_R) {
+          this.restartGame();
+          return;
+        }
+        if (this.isGameOver || this.isPaused) return;
+        if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
+          this.moveLeft();
+        } else if (code === KeyCode.KEYCODE_DPAD_RIGHT || code === KeyCode.KEYCODE_D) {
+          this.moveRight();
+        } else if (code === KeyCode.KEYCODE_DPAD_DOWN || code === KeyCode.KEYCODE_S) {
+          this.softDrop();
+        } else if (code === KeyCode.KEYCODE_DPAD_UP || code === KeyCode.KEYCODE_W ||
+          code === KeyCode.KEYCODE_X) {
+          this.rotatePiece();
+        } else if (code === KeyCode.KEYCODE_SPACE) {
+          this.hardDrop();
+        }
+      })
+
+      // 得分飘字
+      if (this.showFloatScore) {
+        Text(this.floatScore)
+          .fontSize(this.palette.fsXl)
+          .fontColor(this.palette.warning)
+          .fontWeight(FontWeight.Bold)
+          .position({ x: '50%', y: '12%' })
+          .translate({ x: '-50%' })
+          .transition({ type: TransitionType.Insert, translate: { x: '-50%', y: -50 }, opacity: 0 })
+          .animation({ duration: 800, curve: Curve.Friction })
+      }
     }
-    .layoutWeight(1)
+    .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
   }
 }

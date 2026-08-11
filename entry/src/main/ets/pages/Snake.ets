@@ -1,5 +1,7 @@
 // 智子 - 贪吃蛇
 import { promptAction, router } from '@kit.ArkUI';
+import { vibrator } from '@kit.SensorServiceKit';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
@@ -39,11 +41,45 @@ export struct SnakePage {
   @State isStarted: boolean = false;
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false; // 是否已选择难度开始
+  @State autoPaused: boolean = false;
+  @State floatScore: string = '';
+  @State showFloatScore: boolean = false;
+  @State newRecord: boolean = false;
+  @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private timerId: number = -1;
   private titleText: string = '贪吃蛇';
+  private gameStartTime: number = 0;
+  private scoreSaved: boolean = false;
+  private lastLevel: number = 1;
+
+  // ---- 触觉反馈 ----
+  private vibrate(duration: number): void {
+    try {
+      vibrator.startVibration({ type: 'time', duration: duration }, { usage: 'physicalFeedback' });
+    } catch (e) {
+      // 设备不支持振动时静默忽略
+    }
+  }
+
+  private formatDuration(seconds: number): string {
+    const m: number = Math.floor(seconds / 60);
+    const s: number = Math.floor(seconds % 60);
+    return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`;
+  }
+
+  private showScoreFloat(text: string): void {
+    this.floatScore = text;
+    this.showFloatScore = false;
+    setTimeout(() => {
+      this.showFloatScore = true;
+    }, 10);
+    setTimeout(() => {
+      this.showFloatScore = false;
+    }, 900);
+  }
 
   // ---- 下落速度（基于难度） ----
   private dropInterval(): number {
@@ -92,7 +128,9 @@ export struct SnakePage {
     if (available.length === 0) {
       // 无可用位置 = 胜利
       this.isGameOver = true;
-      this.saveScore();
+      this.stopTimer();
+      this.vibrate(80);
+      this.finishGame();
       return;
     }
     const idx: number = Math.floor(Math.random() * available.length);
@@ -118,7 +156,8 @@ export struct SnakePage {
     if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
       this.isGameOver = true;
       this.stopTimer();
-      this.saveScore();
+      this.vibrate(80);
+      this.finishGame();
       return;
     }
 
@@ -127,7 +166,8 @@ export struct SnakePage {
       if (this.snake[i].x === newHead.x && this.snake[i].y === newHead.y) {
         this.isGameOver = true;
         this.stopTimer();
-        this.saveScore();
+        this.vibrate(80);
+        this.finishGame();
         return;
       }
     }
@@ -147,11 +187,27 @@ export struct SnakePage {
       this.generateFood();
       // 调整速度
       this.restartTimer();
+      // 触觉反馈 + 飘字
+      this.vibrate(15);
+      this.showScoreFloat('+10');
+      // 等级提升提示
+      if (this.level > this.lastLevel) {
+        promptAction.showToast({ message: `等级提升 → Level ${this.level}` });
+        this.lastLevel = this.level;
+      }
     } else {
       // 移除尾部
       newSnake.pop();
       this.snake = newSnake;
     }
+  }
+
+  // ---- 游戏结束收尾（新纪录/用时/保存） ----
+  private finishGame(): void {
+    this.newRecord = this.score > this.bestScore;
+    if (this.newRecord) this.bestScore = this.score;
+    this.playSeconds = Math.max(0, Math.floor((Date.now() - this.gameStartTime) / 1000));
+    this.saveScore();
   }
 
   // ---- 方向变更（防止反向） ----
@@ -196,6 +252,11 @@ export struct SnakePage {
     this.gameStarted = true;
     this.initGame();
     this.isStarted = true;
+    this.scoreSaved = false;
+    this.lastLevel = 1;
+    this.newRecord = false;
+    this.playSeconds = 0;
+    this.gameStartTime = Date.now();
     this.startTimer();
   }
 
@@ -203,16 +264,70 @@ export struct SnakePage {
     this.stopTimer();
     this.initGame();
     this.isStarted = true;
+    this.scoreSaved = false;
+    this.lastLevel = 1;
+    this.newRecord = false;
+    this.playSeconds = 0;
+    this.gameStartTime = Date.now();
     this.startTimer();
   }
 
   private saveScore(): void {
+    if (this.scoreSaved) return;
+    this.scoreSaved = true;
     DataRepository.addGameScore('Snake', this.score, this.level, difficultyLabel(this.difficulty));
   }
 
   togglePause(): void {
     if (this.isGameOver || !this.isStarted) return;
     this.isPaused = !this.isPaused;
+    this.autoPaused = false;
+    if (this.isPaused) {
+      this.stopTimer();
+    } else {
+      this.startTimer();
+    }
+  }
+
+  // ---- 页面隐藏时自动暂停 ----
+  onPageHide(): void {
+    if (!this.isPaused && !this.isGameOver && this.isStarted) {
+      this.autoPaused = true;
+      this.isPaused = true;
+      this.stopTimer();
+    }
+  }
+
+  // ---- 页面显示时恢复（仅自动暂停） ----
+  onPageShow(): void {
+    if (this.autoPaused) {
+      this.autoPaused = false;
+      this.isPaused = false;
+      this.startTimer();
+      promptAction.showToast({ message: '已恢复游戏' });
+    }
+  }
+
+  // ---- 切换难度（暂停弹层内） ----
+  cycleDifficulty(): void {
+    const order: DifficultyLevel[] = [
+      DifficultyLevel.VERY_EASY, DifficultyLevel.EASY, DifficultyLevel.MEDIUM,
+      DifficultyLevel.HARD, DifficultyLevel.HELL
+    ];
+    let idx: number = 0;
+    for (let i: number = 0; i < order.length; i++) {
+      if (order[i] === this.difficulty) { idx = i; break; }
+    }
+    this.difficulty = order[(idx + 1) % order.length];
+    if (!this.isPaused && !this.isGameOver) {
+      this.restartTimer();
+    }
+    promptAction.showToast({ message: `难度：${difficultyLabel(this.difficulty)}` });
+  }
+
+  private async loadBestScore(): Promise<void> {
+    const best: number = await DataRepository.getGameHighScore('Snake');
+    this.bestScore = best;
   }
 
   // ---- 棋盘渲染 ----
@@ -228,6 +343,11 @@ export struct SnakePage {
               .margin(0.5)
               .borderRadius(2)
               .backgroundColor(this.cellColor(cell, colIdx, rowIdx))
+              // 食物脉冲动画
+              .scale(cell === 3 ? { x: 1.12, y: 1.12 } : { x: 1, y: 1 })
+              .animation(cell === 3 ?
+                { duration: 600, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate } :
+                { duration: 0 })
           }, (colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
@@ -407,26 +527,68 @@ export struct SnakePage {
   @Builder
   gameOverOverlay() {
     Stack() {
-      Column({ space: 16 }) {
+      Column({ space: 12 }) {
         Text('游戏结束')
           .fontSize(this.palette.fs2xl)
           .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
-        Text('最终得分: ' + this.score.toString())
+        if (this.newRecord) {
+          Text('🎉 新纪录！')
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.warning)
+            .fontWeight(FontWeight.Bold)
+        }
+        Text('最终得分：' + this.score.toString())
           .fontSize(this.palette.fsMd)
-          .fontColor(this.palette.textSecondary)
-        Text('蛇身长度: ' + this.snake.length.toString())
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Medium)
+        Text('蛇身长度：' + this.snake.length.toString() + ' · 历史最高：' + this.bestScore.toString())
           .fontSize(this.palette.fsSm)
           .fontColor(this.palette.textTertiary)
-        Row()
-          .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(this.palette.primary)
-          .borderRadius(8)
+        Text('用时 ' + this.formatDuration(this.playSeconds))
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textTertiary)
+        Row({ space: 12 }) {
+          // 重新开始
+          Column({ space: 6 }) {
+            Row() {
+            Text('↺')
+              .fontSize(22)
+              .fontColor('#0A0E1A')
+              .fontWeight(FontWeight.Bold)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.primary)
+            .justifyContent(FlexAlign.Center)
+            Text('重新开始')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.restartGame(); })
-        Text('重新开始')
-          .fontSize(this.palette.fsMd)
-          .fontColor('#0A0E1A')
-          .fontWeight(FontWeight.Medium)
+
+          // 返回
+          Column({ space: 6 }) {
+            Row() {
+            Text('←')
+              .fontSize(22)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('返回')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { router.back(); })
+        }
+        .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
     }
@@ -446,15 +608,81 @@ export struct SnakePage {
           .fontSize(this.palette.fs2xl)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
-        Row()
-          .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(this.palette.primary)
-          .borderRadius(8)
+        Row({ space: 10 }) {
+          Text('难度')
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
+          Text(difficultyLabel(this.difficulty))
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.primary)
+            .fontWeight(FontWeight.Medium)
+          Text('›')
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
+        }
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(8)
+        .backgroundColor(this.palette.bgSurface2)
+        .onClick(() => { this.cycleDifficulty(); })
+        Row({ space: 12 }) {
+          // 继续
+          Column({ space: 6 }) {
+            Row() {
+            Text('▶')
+              .fontSize(20)
+              .fontColor('#0A0E1A')
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.primary)
+            .justifyContent(FlexAlign.Center)
+            Text('继续')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.togglePause(); })
-        Text('继续')
-          .fontSize(this.palette.fsMd)
-          .fontColor('#0A0E1A')
-          .fontWeight(FontWeight.Medium)
+
+          // 重新开始
+          Column({ space: 6 }) {
+            Row() {
+            Text('↺')
+              .fontSize(20)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('重新开始')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.restartGame(); })
+
+          // 返回
+          Column({ space: 6 }) {
+            Row() {
+            Text('←')
+              .fontSize(20)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('返回')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { router.back(); })
+        }
+        .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
     }
@@ -520,22 +748,28 @@ export struct SnakePage {
       router.back();
       return;
     }
+    this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
   }
 
   aboutToDisappear(): void {
     this.stopTimer();
+    // 中途退出时保存当前分数
+    if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
+      this.saveScore();
+    }
   }
 
   build() {
-    Column() {
-      TopBar({
-        title: this.titleText,
-        subtitle: 'Level ' + this.level.toString(),
-        showBack: true
-      }) {
-        this.actionsBuilder()
-      }
+    Stack() {
+      Column() {
+        TopBar({
+          title: this.titleText,
+          subtitle: 'Level ' + this.level.toString(),
+          showBack: true
+        }) {
+          this.actionsBuilder()
+        }
 
       if (this.isSm) {
         // 手机端布局：棋盘 + 按钮 + 信息
@@ -632,9 +866,48 @@ export struct SnakePage {
           .alignItems(VerticalAlign.Center)
         }
       }
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .backgroundColor(this.palette.bgBase)
+      .focusable(true)
+      .defaultFocus(true)
+      .onKeyEvent((event: KeyEvent) => {
+        if (event.type !== KeyType.Down) return;
+        const code: KeyCode = event.keyCode;
+        if (code === KeyCode.KEYCODE_P || code === KeyCode.KEYCODE_ENTER) {
+          this.togglePause();
+          return;
+        }
+        if (code === KeyCode.KEYCODE_R) {
+          this.restartGame();
+          return;
+        }
+        if (this.isGameOver || this.isPaused) return;
+        if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
+          this.changeDirection(Direction.LEFT);
+        } else if (code === KeyCode.KEYCODE_DPAD_RIGHT || code === KeyCode.KEYCODE_D) {
+          this.changeDirection(Direction.RIGHT);
+        } else if (code === KeyCode.KEYCODE_DPAD_UP || code === KeyCode.KEYCODE_W) {
+          this.changeDirection(Direction.UP);
+        } else if (code === KeyCode.KEYCODE_DPAD_DOWN || code === KeyCode.KEYCODE_S) {
+          this.changeDirection(Direction.DOWN);
+        }
+      })
+
+      // 得分飘字
+      if (this.showFloatScore) {
+        Text(this.floatScore)
+          .fontSize(this.palette.fsXl)
+          .fontColor(this.palette.warning)
+          .fontWeight(FontWeight.Bold)
+          .position({ x: '50%', y: '12%' })
+          .translate({ x: '-50%' })
+          .transition({ type: TransitionType.Insert, translate: { x: '-50%', y: -50 }, opacity: 0 })
+          .animation({ duration: 800, curve: Curve.Friction })
+      }
     }
-    .layoutWeight(1)
+    .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
   }
 }

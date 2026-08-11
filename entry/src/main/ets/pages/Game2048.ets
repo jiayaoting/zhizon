@@ -1,5 +1,7 @@
 // 智子 - 2048
 import { promptAction, router } from '@kit.ArkUI';
+import { vibrator } from '@kit.SensorServiceKit';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DataRepository } from '../service/DataRepository';
@@ -53,10 +55,45 @@ export struct Game2048Page {
   @State moveAnimating: boolean = false;
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
+  @State isPaused: boolean = false;
+  @State autoPaused: boolean = false;
+  @State mergePulse: boolean = false;
+  @State floatScore: string = '';
+  @State showFloatScore: boolean = false;
+  @State newRecord: boolean = false;
+  @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
   private titleText: string = '2048';
+  private gameStartTime: number = 0;
+  private scoreSaved: boolean = false;
+
+  // ---- 触觉反馈 ----
+  private vibrate(duration: number): void {
+    try {
+      vibrator.startVibration({ type: 'time', duration: duration }, { usage: 'physicalFeedback' });
+    } catch (e) {
+      // 设备不支持振动时静默忽略
+    }
+  }
+
+  private formatDuration(seconds: number): string {
+    const m: number = Math.floor(seconds / 60);
+    const s: number = Math.floor(seconds % 60);
+    return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`;
+  }
+
+  private showScoreFloat(text: string): void {
+    this.floatScore = text;
+    this.showFloatScore = false;
+    setTimeout(() => {
+      this.showFloatScore = true;
+    }, 10);
+    setTimeout(() => {
+      this.showFloatScore = false;
+    }, 900);
+  }
 
   // 难度对应的4出现概率和初始瓦片数
   private difficultyConfigs: DifficultyConfig2048[] = [
@@ -159,8 +196,9 @@ export struct Game2048Page {
   }
 
   private move(direction: string): void {
-    if (this.isGameOver || this.moveAnimating) return;
+    if (this.isGameOver || this.moveAnimating || this.isPaused) return;
 
+    const prevScore: number = this.score;
     const oldBoard: number[][] = this.copyBoard();
     let newBoard: number[][] = [];
 
@@ -212,9 +250,22 @@ export struct Game2048Page {
 
     if (!this.boardEquals(oldBoard, newBoard)) {
       this.board = newBoard;
+      const gained: number = this.score - prevScore;
+      if (gained > 0) {
+        // 合并反馈：振动 + 飘字 + 棋盘脉冲动画
+        this.vibrate(gained >= 512 ? 40 : 12);
+        this.showScoreFloat('+' + gained.toString());
+        this.mergePulse = true;
+        setTimeout(() => { this.mergePulse = false; }, 180);
+      }
       this.addRandomTile();
       this.checkGameOver();
     }
+  }
+
+  // ---- 合并动画（棋盘缩放脉冲） ----
+  private mergeBoardScale(): number {
+    return this.mergePulse ? 1.03 : 1;
   }
 
   // ---- 胜负判定 ----
@@ -250,10 +301,16 @@ export struct Game2048Page {
     }
 
     this.isGameOver = true;
+    this.vibrate(80);
+    this.newRecord = this.score > this.bestScore;
+    if (this.newRecord) this.bestScore = this.score;
+    this.playSeconds = Math.max(0, Math.floor((Date.now() - this.gameStartTime) / 1000));
     this.saveScore();
   }
 
   private saveScore(): void {
+    if (this.scoreSaved) return;
+    this.scoreSaved = true;
     DataRepository.addGameScore('2048', this.score, 1, difficultyLabel(this.difficulty));
   }
 
@@ -266,6 +323,12 @@ export struct Game2048Page {
     this.isGameOver = false;
     this.isWin = false;
     this.hasWonBefore = false;
+    this.isPaused = false;
+    this.autoPaused = false;
+    this.newRecord = false;
+    this.playSeconds = 0;
+    this.scoreSaved = false;
+    this.gameStartTime = Date.now();
     const config = this.difficultyConfig(this.difficulty);
     for (let i: number = 0; i < config.initTiles; i++) {
       this.addRandomTile();
@@ -278,6 +341,12 @@ export struct Game2048Page {
     this.isGameOver = false;
     this.isWin = false;
     this.hasWonBefore = false;
+    this.isPaused = false;
+    this.autoPaused = false;
+    this.newRecord = false;
+    this.playSeconds = 0;
+    this.scoreSaved = false;
+    this.gameStartTime = Date.now();
     const config = this.difficultyConfig(this.difficulty);
     for (let i: number = 0; i < config.initTiles; i++) {
       this.addRandomTile();
@@ -286,6 +355,32 @@ export struct Game2048Page {
 
   continueGame(): void {
     this.isWin = false;
+  }
+
+  // ---- 暂停 ----
+  togglePause(): void {
+    if (this.isGameOver || this.isWin) return;
+    this.isPaused = !this.isPaused;
+    this.autoPaused = false;
+  }
+
+  // ---- 切换难度（暂停弹层内） ----
+  cycleDifficulty(): void {
+    const order: DifficultyLevel[] = [
+      DifficultyLevel.VERY_EASY, DifficultyLevel.EASY, DifficultyLevel.MEDIUM,
+      DifficultyLevel.HARD, DifficultyLevel.HELL
+    ];
+    let idx: number = 0;
+    for (let i: number = 0; i < order.length; i++) {
+      if (order[i] === this.difficulty) { idx = i; break; }
+    }
+    this.difficulty = order[(idx + 1) % order.length];
+    promptAction.showToast({ message: `难度：${difficultyLabel(this.difficulty)}` });
+  }
+
+  private async loadBestScore(): Promise<void> {
+    const best: number = await DataRepository.getGameHighScore('2048');
+    this.bestScore = best;
   }
 
   // ---- 瓦片渲染 ----
@@ -436,23 +531,65 @@ export struct Game2048Page {
   @Builder
   gameOverOverlay() {
     Stack() {
-      Column({ space: 16 }) {
+      Column({ space: 12 }) {
         Text('游戏结束')
           .fontSize(this.palette.fs2xl)
           .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
-        Text('最终得分: ' + this.score.toString())
+        if (this.newRecord) {
+          Text('🎉 新纪录！')
+            .fontSize(this.palette.fsMd)
+            .fontColor(this.palette.warning)
+            .fontWeight(FontWeight.Bold)
+        }
+        Text('最终得分：' + this.score.toString())
           .fontSize(this.palette.fsMd)
-          .fontColor(this.palette.textSecondary)
-        Row()
-          .padding({ left: 24, right: 24, top: 10, bottom: 10 })
-          .backgroundColor(this.palette.primary)
-          .borderRadius(8)
-          .onClick(() => { this.restartGame(); })
-        Text('重新开始')
-          .fontSize(this.palette.fsMd)
-          .fontColor('#0A0E1A')
+          .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
+        Text('历史最高：' + this.bestScore.toString() + ' · 用时 ' + this.formatDuration(this.playSeconds))
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textTertiary)
+        Row({ space: 12 }) {
+          // 重新开始
+          Column({ space: 6 }) {
+            Row() {
+            Text('↺')
+              .fontSize(22)
+              .fontColor('#0A0E1A')
+              .fontWeight(FontWeight.Bold)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.primary)
+            .justifyContent(FlexAlign.Center)
+            Text('重新开始')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.restartGame(); })
+
+          // 返回
+          Column({ space: 6 }) {
+            Row() {
+            Text('←')
+              .fontSize(22)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('返回')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { router.back(); })
+        }
+        .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
     }
@@ -460,6 +597,100 @@ export struct Game2048Page {
     .height('100%')
     .position({ x: 0, y: 0 })
     .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .alignContent(Alignment.Center)
+  }
+
+  // ---- 暂停弹窗 ----
+  @Builder
+  pauseOverlay() {
+    Stack() {
+      Column({ space: 12 }) {
+        Text('已暂停')
+          .fontSize(this.palette.fs2xl)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Row({ space: 10 }) {
+          Text('难度')
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
+          Text(difficultyLabel(this.difficulty))
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.primary)
+            .fontWeight(FontWeight.Medium)
+          Text('›')
+            .fontSize(this.palette.fsSm)
+            .fontColor(this.palette.textTertiary)
+        }
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(8)
+        .backgroundColor(this.palette.bgSurface2)
+        .onClick(() => { this.cycleDifficulty(); })
+        Row({ space: 12 }) {
+          // 继续
+          Column({ space: 6 }) {
+            Row() {
+            Text('▶')
+              .fontSize(20)
+              .fontColor('#0A0E1A')
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.primary)
+            .justifyContent(FlexAlign.Center)
+            Text('继续')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.togglePause(); })
+
+          // 重新开始
+          Column({ space: 6 }) {
+            Row() {
+            Text('↺')
+              .fontSize(20)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('重新开始')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.restartGame(); })
+
+          // 返回
+          Column({ space: 6 }) {
+            Row() {
+            Text('←')
+              .fontSize(20)
+              .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
+              .backgroundColor(this.palette.bgSurface2)
+            .justifyContent(FlexAlign.Center)
+            Text('返回')
+              .fontSize(this.palette.fsXs)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { router.back(); })
+        }
+        .margin({ top: 4 })
+      }
+      .alignItems(HorizontalAlign.Center)
+    }
+    .width('100%')
+    .height('100%')
+    .position({ x: 0, y: 0 })
+    .backgroundColor('rgba(10, 14, 26, 0.7)')
     .alignContent(Alignment.Center)
   }
 
@@ -479,6 +710,19 @@ export struct Game2048Page {
       .onClick(() => {
          router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('2048') });
       })
+
+      // 暂停/继续
+      Row() {
+        Text(this.isPaused ? '▶' : '⏸')
+          .fontSize(16)
+          .fontColor(this.palette.textPrimary)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.togglePause(); })
 
       Row() {
         Text('↺')
@@ -503,58 +747,86 @@ export struct Game2048Page {
       router.back();
       return;
     }
+    this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
   }
 
+  // ---- 页面隐藏时自动暂停 ----
+  onPageHide(): void {
+    if (!this.isPaused && !this.isGameOver && this.gameStarted) {
+      this.autoPaused = true;
+      this.isPaused = true;
+    }
+  }
+
+  // ---- 页面显示时恢复（仅自动暂停） ----
+  onPageShow(): void {
+    if (this.autoPaused) {
+      this.autoPaused = false;
+      this.isPaused = false;
+      promptAction.showToast({ message: '已恢复游戏' });
+    }
+  }
+
   aboutToDisappear(): void {
-    // 2048 为纯状态机游戏，无计时器/连接资源需要释放
+    // 中途退出时保存当前分数
+    if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
+      this.saveScore();
+    }
   }
 
   build() {
-    Column() {
-      TopBar({
-        title: this.titleText,
-        subtitle: '合并数字，达到2048',
-        showBack: true
-      }) {
-        this.actionsBuilder()
-      }
-
-      if (this.isSm) {
-        // 手机端布局
-        if (this.gameStarted) {
-          Column({ space: 16 }) {
-            this.scoreBoard()
-            Stack() {
-              Column() {
-                this.gameBoard()
-              }
-              if (this.isWin) { this.winOverlay() }
-              if (this.isGameOver) { this.gameOverOverlay() }
-            }
-            .width('100%')
-            .layoutWeight(1)
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .padding({ left: 16, right: 16 })
-          .justifyContent(FlexAlign.Center)
+    Stack() {
+      Column() {
+        TopBar({
+          title: this.titleText,
+          subtitle: '合并数字，达到2048',
+          showBack: true
+        }) {
+          this.actionsBuilder()
         }
-      } else {
-        // 平板端布局
-        if (this.gameStarted) {
-          Row({ space: 20 }) {
+
+        if (this.isSm) {
+          // 手机端布局
+          if (this.gameStarted) {
             Column({ space: 16 }) {
+              this.scoreBoard()
               Stack() {
                 Column() {
                   this.gameBoard()
                 }
                 if (this.isWin) { this.winOverlay() }
                 if (this.isGameOver) { this.gameOverOverlay() }
+                if (this.isPaused) { this.pauseOverlay() }
               }
-              .width(360)
+              .width('100%')
+              .layoutWeight(1)
+              .scale(this.mergeBoardScale())
+              .animation({ duration: 180, curve: Curve.EaseOut })
             }
-            .alignItems(HorizontalAlign.Center)
+            .layoutWeight(1)
+            .width('100%')
+            .padding({ left: 16, right: 16 })
+            .justifyContent(FlexAlign.Center)
+          }
+        } else {
+          // 平板端布局
+          if (this.gameStarted) {
+            Row({ space: 20 }) {
+              Column({ space: 16 }) {
+                Stack() {
+                  Column() {
+                    this.gameBoard()
+                  }
+                  if (this.isWin) { this.winOverlay() }
+                  if (this.isGameOver) { this.gameOverOverlay() }
+                  if (this.isPaused) { this.pauseOverlay() }
+                }
+                .width(360)
+                .scale(this.mergeBoardScale())
+                .animation({ duration: 180, curve: Curve.EaseOut })
+              }
+              .alignItems(HorizontalAlign.Center)
 
             Column({ space: 16 }) {
               this.scoreBoard()
@@ -590,9 +862,48 @@ export struct Game2048Page {
           .alignItems(VerticalAlign.Center)
         }
       }
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .backgroundColor(this.palette.bgBase)
+      .focusable(true)
+      .defaultFocus(true)
+      .onKeyEvent((event: KeyEvent) => {
+        if (event.type !== KeyType.Down) return;
+        const code: KeyCode = event.keyCode;
+        if (code === KeyCode.KEYCODE_P || code === KeyCode.KEYCODE_ENTER) {
+          this.togglePause();
+          return;
+        }
+        if (code === KeyCode.KEYCODE_R) {
+          this.restartGame();
+          return;
+        }
+        if (this.isGameOver || this.isPaused) return;
+        if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
+          this.move('left');
+        } else if (code === KeyCode.KEYCODE_DPAD_RIGHT || code === KeyCode.KEYCODE_D) {
+          this.move('right');
+        } else if (code === KeyCode.KEYCODE_DPAD_UP || code === KeyCode.KEYCODE_W) {
+          this.move('up');
+        } else if (code === KeyCode.KEYCODE_DPAD_DOWN || code === KeyCode.KEYCODE_S) {
+          this.move('down');
+        }
+      })
+
+      // 得分飘字
+      if (this.showFloatScore) {
+        Text(this.floatScore)
+          .fontSize(this.palette.fsXl)
+          .fontColor(this.palette.warning)
+          .fontWeight(FontWeight.Bold)
+          .position({ x: '50%', y: '12%' })
+          .translate({ x: '-50%' })
+          .transition({ type: TransitionType.Insert, translate: { x: '-50%', y: -50 }, opacity: 0 })
+          .animation({ duration: 800, curve: Curve.Friction })
+      }
     }
-    .layoutWeight(1)
+    .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
   }
 }
