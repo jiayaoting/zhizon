@@ -49,8 +49,10 @@ export struct SettingsPage {
   @StorageLink('backgroundDisplayState') backgroundDisplayState: BackgroundDisplayState = BackgroundDisplayState.INVALID;
 
   // 外观
-  @State fontSizeSetting: string = '标准';
-  @State fontFamily: string = 'JetBrains Mono';
+  @State fontSizeScale: string = 'standard';
+  @State fontFamily: string = 'HarmonyOS Sans';
+  @State showFontSizePicker: boolean = false;
+  @State showFontFamilyPicker: boolean = false;
   // 安全
   @State biometricUnlock: boolean = false;
   @State autoLock: string = '5 分钟';
@@ -77,8 +79,8 @@ export struct SettingsPage {
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
 
-      this.fontSizeSetting = await DataRepository.getSetting('fontSize', '标准');
-      this.fontFamily = await DataRepository.getSetting('fontFamily', 'JetBrains Mono');
+      this.fontSizeScale = await DataRepository.getSetting('fontSizeScale', 'standard');
+      this.fontFamily = await DataRepository.getSetting('fontFamily', 'HarmonyOS Sans');
       this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
 
       // 加载背景图配置
@@ -189,10 +191,43 @@ export struct SettingsPage {
       this.colorThemeId = result.snapshot.colorThemeId;
       this.isDarkMode = result.snapshot.followSystem ? this.isDarkMode :
         result.snapshot.manualThemeMode === ThemeMode.DARK;
+      this.fontSizeScale = result.snapshot.fontSizeScale;
     }
   }
 
-  @Builder valueRow(label: string, value: string) {
+  // 字号选项
+  private fontSizeOptions: string[] = ['small', 'standard', 'large'];
+  // 字体选项
+  private fontFamilyOptions: string[] = ['HarmonyOS Sans', 'JetBrains Mono', 'Fira Code', 'Consolas'];
+
+  private fontSizeLabel(scale: string): string {
+    if (scale === 'small') return '小';
+    if (scale === 'large') return '大';
+    return '标准';
+  }
+
+  private async updateFontSize(scale: string): Promise<void> {
+    this.showFontSizePicker = false;
+    if (scale === this.fontSizeScale) return;
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setFontSize(scale);
+    this.applyPreferenceResult(result);
+    if (result.success) {
+      this.toast(`字号：${this.fontSizeLabel(scale)}`);
+    } else {
+      this.toast('设置未保存，请重试');
+    }
+  }
+
+  private async updateFontFamily(family: string): Promise<void> {
+    this.showFontFamilyPicker = false;
+    if (family === this.fontFamily) return;
+    this.fontFamily = family;
+    await DataRepository.setSetting('fontFamily', family);
+    AppStorage.setOrCreate('fontFamily', family);
+    this.toast(`字体：${family}`);
+  }
+
+  @Builder valueRow(label: string, value: string, onClick?: () => void) {
     Row() {
       Text(label)
         .fontSize(13)
@@ -212,7 +247,13 @@ export struct SettingsPage {
     .padding({ left: 12, right: 12, top: 11, bottom: 11 })
     .borderRadius(6)
     .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
-    .onClick(() => this.toast(value ? `${label}：${value}` : label))
+    .onClick(() => {
+      if (onClick) {
+        onClick();
+      } else {
+        this.toast(value ? `${label}：${value}` : label);
+      }
+    })
   }
 
   @Builder toggleRow(label: string, isOn: boolean, onChange: (v: boolean) => void) {
@@ -434,8 +475,12 @@ export struct SettingsPage {
                   .width('100%')
                   .margin({ top: 2 })
 
-                this.valueRow('字号', this.fontSizeSetting)
-                this.valueRow('字体', this.fontFamily)
+                this.valueRow('字号', this.fontSizeLabel(this.fontSizeScale), () => {
+                  this.showFontSizePicker = true;
+                })
+                this.valueRow('字体', this.fontFamily, () => {
+                  this.showFontFamilyPicker = true;
+                })
               }
               .width('100%')
             }
@@ -506,6 +551,34 @@ export struct SettingsPage {
         cancel: () => {
           this.showClearBgConfirm = false;
         }
+      })
+    }
+    // 字号选择
+    if (this.showFontSizePicker) {
+      ActionSheet.show({
+        title: '字号',
+        message: '选择全局字号大小',
+        sheets: this.fontSizeOptions.map((scale: string) => {
+          return {
+            title: this.fontSizeLabel(scale),
+            action: () => { this.updateFontSize(scale); }
+          }
+        }),
+        cancel: () => { this.showFontSizePicker = false; }
+      })
+    }
+    // 字体选择
+    if (this.showFontFamilyPicker) {
+      ActionSheet.show({
+        title: '字体',
+        message: '选择全局字体',
+        sheets: this.fontFamilyOptions.map((family: string) => {
+          return {
+            title: family,
+            action: () => { this.updateFontFamily(family); }
+          }
+        }),
+        cancel: () => { this.showFontFamilyPicker = false; }
       })
     }
   }
