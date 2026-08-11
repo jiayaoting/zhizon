@@ -86,7 +86,7 @@ export class BackgroundImporter {
       }
       if (copied !== stat.size) return new BackgroundImportResult(false, '', BackgroundImportFailure.SOURCE_UNREADABLE);
       completed = true;
-      return new BackgroundImportResult(true, targetPath, null);
+      return new BackgroundImportResult(true, 'file://' + targetPath, null);
     } catch (e) {
       return new BackgroundImportResult(false, '', failure);
     } finally {
@@ -98,7 +98,8 @@ export class BackgroundImporter {
 
   static removeSandboxFile(path: string): void {
     if (path.length === 0) return;
-    try { fileIo.unlinkSync(path); } catch (e) {}
+    const filePath = path.startsWith('file://') ? path.substring(7) : path;
+    try { fileIo.unlinkSync(filePath); } catch (e) {}
   }
 
   private static closeFile(file: fileIo.File | null): void {
