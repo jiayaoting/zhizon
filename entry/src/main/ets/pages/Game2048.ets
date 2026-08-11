@@ -264,8 +264,9 @@ export struct Game2048Page {
   }
 
   // ---- 合并动画（棋盘缩放脉冲） ----
-  private mergeBoardScale(): number {
-    return this.mergePulse ? 1.03 : 1;
+  private mergeBoardScale(): ScaleOptions {
+    const v: number = this.mergePulse ? 1.03 : 1;
+    return { x: v, y: v };
   }
 
   // ---- 胜负判定 ----
