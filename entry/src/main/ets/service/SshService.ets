@@ -382,7 +382,7 @@ export class AgentEngine implements SshEngine {
         const raw = typeof value === 'string' ? value : '';
         // 尝试解析 JSON 控制消息
         try {
-          const msg: AgentEventMessage = JSON.parse(raw) as unknown as AgentEventMessage;
+          const msg: AgentEventMessage = JSON.parse(raw) as AgentEventMessage;
           if (msg.type === 'event') {
             // Agent 侧事件转发
             if (this.eventCallback) {
