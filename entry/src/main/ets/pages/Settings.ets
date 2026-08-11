@@ -25,6 +25,14 @@ interface FontFamilyOption {
   category: string;
 }
 
+// 应用图标选项
+interface AppIconOption {
+  id: string;       // 持久化用的标识
+  label: string;    // 显示名称
+  style: string;    // 风格描述
+  resource: string; // media 资源名（不带 $media: 前缀）
+}
+
 // 分组卡片组件
 @Component
 struct GroupCard {
@@ -69,6 +77,8 @@ export struct SettingsPage {
   @State fontFamily: string = 'HarmonyOS Sans';
   @State showFontSizeSheet: boolean = false;
   @State showFontFamilySheet: boolean = false;
+  @State showAppIconSheet: boolean = false;
+  @State appIconId: string = 'liquid';
   // 安全
   @State biometricUnlock: boolean = false;
   @State autoLock: string = '5 分钟';
@@ -97,6 +107,15 @@ export struct SettingsPage {
     { name: 'Dancing Script', family: 'Dancing Script', category: '艺术' },
     { name: '站酷快乐体', family: 'ZCOOL KuaiLe', category: '中文艺术' }
   ];
+  // 应用图标选项（共 6 款，含当前正在使用的经典款）
+  private appIconOptions: AppIconOption[] = [
+    { id: 'classic',        label: '经典',   style: '当前应用图标',                         resource: 'app_icon_classic' },
+    { id: 'bright_gradient',label: '明亮渐变', style: '青绿到深蓝渐变 + 几何 Z 符号',         resource: 'app_icon_bright_gradient' },
+    { id: 'glass',          label: '玻璃拟物', style: '毛玻璃方块层叠 + 折射光',             resource: 'app_icon_glass' },
+    { id: 'flat',           label: '扁平彩色', style: '四色圆点十字花瓣 + 纯白背景',         resource: 'app_icon_flat' },
+    { id: '3d_cartoon',     label: '3D 卡通', style: '圆润方块层叠 + 橡皮糖质感',           resource: 'app_icon_3d_cartoon' },
+    { id: 'liquid',         label: '液态渐变', style: '流动渐变背景 + 镂空 Z 符号',         resource: 'app_icon_liquid' }
+  ];
 
   // 主题颜色选项
   private themeColors: ColorThemeId[] = [
@@ -123,6 +142,10 @@ export struct SettingsPage {
         this.fontFamily = 'HarmonyOS Sans';
       }
       this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
+      this.appIconId = await DataRepository.getSetting('appIconId', 'liquid');
+      if (!this.isSupportedAppIcon(this.appIconId)) {
+        this.appIconId = 'liquid';
+      }
 
       // 加载背景图配置
       const background = ThemeManager.getInstance().getGlobalBackground();
@@ -286,6 +309,37 @@ export struct SettingsPage {
   private pickFontFamily(family: string): void {
     this.showFontFamilySheet = false;
     this.applyFontFamily(family);
+  }
+
+  // ---- 应用图标 ----
+  private appIconLabel(id: string): string {
+    for (let i: number = 0; i < this.appIconOptions.length; i++) {
+      if (this.appIconOptions[i].id === id) return this.appIconOptions[i].label;
+    }
+    return '液态渐变';
+  }
+
+  private isSupportedAppIcon(id: string): boolean {
+    for (let i: number = 0; i < this.appIconOptions.length; i++) {
+      if (this.appIconOptions[i].id === id) return true;
+    }
+    return false;
+  }
+
+  private async applyAppIcon(id: string): Promise<void> {
+    if (id === this.appIconId) return;
+    this.appIconId = id;
+    await DataRepository.setSetting('appIconId', id);
+    this.toast(`应用图标：${this.appIconLabel(id)}（重新打包后桌面图标生效）`);
+  }
+
+  private openAppIconPicker(): void {
+    this.showAppIconSheet = true;
+  }
+
+  private pickAppIcon(id: string): void {
+    this.showAppIconSheet = false;
+    this.applyAppIcon(id);
   }
 
   private confirmClearBackground(): void {
@@ -675,6 +729,103 @@ export struct SettingsPage {
     .justifyContent(FlexAlign.End)
   }
 
+  // 应用图标选择弹层
+  @Builder
+  appIconSheet() {
+    Column() {
+      // 遮罩
+      Column()
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .onClick(() => { this.showAppIconSheet = false; })
+        .transition({ type: TransitionType.All, opacity: 0 })
+
+      // 底部面板
+      Column({ space: 4 }) {
+        Text('应用图标')
+          .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Text('选择应用图标（重新打包发布后桌面图标生效）')
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .margin({ bottom: 8 })
+
+        Scroll() {
+          Column({ space: 8 }) {
+            ForEach(this.appIconOptions, (option: AppIconOption) => {
+              Row({ space: 12 }) {
+                Image($r(`app.media.${option.resource}`))
+                  .width(48)
+                  .height(48)
+                  .borderRadius(12)
+                  .border({
+                    width: this.appIconId === option.id ? 2 : 1,
+                    color: this.appIconId === option.id ? this.palette.primary : this.palette.borderSubtle
+                  })
+                Column({ space: 2 }) {
+                  Text(option.label)
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.appIconId === option.id ? this.palette.primary : this.palette.textPrimary)
+                    .fontWeight(FontWeight.Medium)
+                  Text(option.style)
+                    .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.appIconId === option.id ? this.palette.primary : this.palette.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                if (this.appIconId === option.id) {
+                  Text('✓')
+                    .fontSize(14)
+                    .fontFamily(this.palette.fontSans)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.palette.primary)
+                }
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+              .borderRadius(10)
+              .backgroundColor(this.appIconId === option.id ?
+                this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+              .onClick(() => { this.pickAppIcon(option.id); })
+            }, (option: AppIconOption) => option.id)
+          }
+          .width('100%')
+          .padding({ right: 2 })
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+
+        Text('取消')
+          .fontSize(this.palette.fsBase)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textSecondary)
+          .padding({ top: 12, bottom: 4 })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .onClick(() => { this.showAppIconSheet = false; })
+      }
+      .width('100%')
+      .height('70%')
+      .padding(20)
+      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
+      .borderRadius({ topLeft: 24, topRight: 24 })
+      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
+      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.End)
+  }
+
   @Builder actionsBuilder() {}
 
   build() {
@@ -748,6 +899,9 @@ export struct SettingsPage {
                 this.valueRow('字体', this.fontFamily, () => {
                   this.openFontFamilyPicker();
                 })
+                this.valueRow('应用图标', this.appIconLabel(this.appIconId), () => {
+                  this.openAppIconPicker();
+                })
               }
               .width('100%')
             }
@@ -805,12 +959,15 @@ export struct SettingsPage {
       .height('100%')
       .backgroundColor(Color.Transparent)
 
-      // 字号/字体选择弹层
+      // 字号/字体/应用图标选择弹层
       if (this.showFontSizeSheet) {
         this.fontSizeSheet()
       }
       if (this.showFontFamilySheet) {
         this.fontFamilySheet()
+      }
+      if (this.showAppIconSheet) {
+        this.appIconSheet()
       }
     }
     .width('100%')
