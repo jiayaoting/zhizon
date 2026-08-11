@@ -1,6 +1,7 @@
 // 智子 - 数据库管理（RDB Store）
 import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Server, PveCluster, Command, Alert, FileItem } from '../model/Models';
 import { AffectedFeature, DefectInput, DefectRecord, DefectSeverity, DefectStateHistory, DefectStatus, EvidenceConclusion, EvidenceType, FixEvidence, FixResult } from '../model/GovernanceModels';
 import { CryptoHelper } from '../common/CryptoHelper';
@@ -15,6 +16,7 @@ export interface ScoreEntry {
 
 const DB_NAME = 'zhizon.db';
 const DB_VERSION = 4;
+const DB_DOMAIN = 0x9201;
 
 // 建表 SQL
 const SQL_CREATE_SERVERS = `
@@ -178,7 +180,7 @@ export class DatabaseHelper {
         await DatabaseHelper.store!.executeSql(sql);
       } catch (e) {
         // 列已存在，忽略错误
-        console.info('Migration column already exists, skipping:', sql);
+        hilog.info(DB_DOMAIN, 'DatabaseHelper', '%{public}s%{public}s', 'Migration column already exists, skipping: ', sql);
       }
     }
   }
@@ -189,7 +191,7 @@ export class DatabaseHelper {
       try {
         await DatabaseHelper.store!.executeSql(sql);
       } catch (e) {
-        console.info('Migration column already exists, skipping:', sql);
+        hilog.info(DB_DOMAIN, 'DatabaseHelper', '%{public}s%{public}s', 'Migration column already exists, skipping: ', sql);
       }
     }
   }
@@ -364,7 +366,7 @@ export class DatabaseHelper {
       resultSet.close();
       return val;
     } catch (e) {
-      console.error('getEncColumn failed:', column, e);
+      hilog.error(DB_DOMAIN, 'DatabaseHelper', '%{public}s%{public}s', 'getEncColumn failed: ', column);
       return '';
     }
   }
@@ -502,7 +504,7 @@ export class DatabaseHelper {
       resultSet.close();
       return val;
     } catch (e) {
-      console.error('getPveTokenId failed:', e);
+      hilog.error(DB_DOMAIN, 'DatabaseHelper', '%{public}s', 'getPveTokenId failed');
       return '';
     }
   }
@@ -521,7 +523,7 @@ export class DatabaseHelper {
       resultSet.close();
       return val;
     } catch (e) {
-      console.error('getPveEncColumn failed:', column, e);
+      hilog.error(DB_DOMAIN, 'DatabaseHelper', '%{public}s%{public}s', 'getPveEncColumn failed: ', column);
       return '';
     }
   }
@@ -674,7 +676,7 @@ export class DatabaseHelper {
       }
       resultSet.close();
     } catch (e) {
-      console.error('getGameScores failed:', e);
+      hilog.error(DB_DOMAIN, 'DatabaseHelper', '%{public}s', 'getGameScores failed');
     }
     return results;
   }
@@ -792,8 +794,8 @@ export class DatabaseHelper {
   private static async getDefectEvidence(defectKey: string): Promise<FixEvidence[]> { const store = DatabaseHelper.getStore(); const predicates = new relationalStore.RdbPredicates('defect_evidence'); predicates.equalTo('defect_key', defectKey); predicates.orderByAsc('recorded_at'); const rs = await store.query(predicates); const items: FixEvidence[] = []; try { while (rs.goToNextRow()) items.push(new FixEvidence(rs.getString(rs.getColumnIndex('evidence_id')), rs.getString(rs.getColumnIndex('evidence_type')) as EvidenceType, rs.getString(rs.getColumnIndex('conclusion')) as EvidenceConclusion, rs.getString(rs.getColumnIndex('source')), DatabaseHelper.parseStringArray(rs.getString(rs.getColumnIndex('conditions'))), rs.getLong(rs.getColumnIndex('recorded_at')), rs.getString(rs.getColumnIndex('operator')))); } finally { rs.close(); } return items; }
   private static async saveFixResultInTransaction(store: relationalStore.RdbStore, defectKey: string, result: FixResult): Promise<void> { const predicates = new relationalStore.RdbPredicates('defect_fix_results'); predicates.equalTo('defect_key', defectKey); const existing = await store.query(predicates); let found = false; try { found = existing.goToNextRow(); } finally { existing.close(); } const bucket: relationalStore.ValuesBucket = { defect_key: defectKey, scope: JSON.stringify(result.scope), expected_behavior: result.expectedBehavior, failure_behavior: result.failureBehavior, validation_conditions: JSON.stringify(result.validationConditions), residual_risks: JSON.stringify(result.residualRisks) }; if (found) await store.update(bucket, predicates); else await store.insert('defect_fix_results', bucket); }
   private static async getFixResult(defectKey: string): Promise<FixResult | null> { const predicates = new relationalStore.RdbPredicates('defect_fix_results'); predicates.equalTo('defect_key', defectKey); const rs = await DatabaseHelper.getStore().query(predicates); try { if (!rs.goToNextRow()) return null; return new FixResult(DatabaseHelper.parseFeatures(rs.getString(rs.getColumnIndex('scope'))), rs.getString(rs.getColumnIndex('expected_behavior')), rs.getString(rs.getColumnIndex('failure_behavior')), DatabaseHelper.parseStringArray(rs.getString(rs.getColumnIndex('validation_conditions'))), DatabaseHelper.parseStringArray(rs.getString(rs.getColumnIndex('residual_risks')))); } finally { rs.close(); } }
-  private static parseStringArray(raw: string): string[] { try { return JSON.parse(raw) as string[]; } catch (e) { return []; } }
-  private static parseFeatures(raw: string): AffectedFeature[] { try { return JSON.parse(raw) as AffectedFeature[]; } catch (e) { return []; } }
+  private static parseStringArray(raw: string): string[] { try { return JSON.parse(raw) as Object[] as string[]; } catch (e) { return []; } }
+  private static parseFeatures(raw: string): AffectedFeature[] { try { return JSON.parse(raw) as Object[] as AffectedFeature[]; } catch (e) { return []; } }
 
   // ========== 设置 ==========
 
@@ -870,6 +872,6 @@ export class DatabaseHelper {
       predicates.equalTo('id', id);
       await store.delete(predicates);
     }
-    console.info('Zhizon: legacy seed data cleaned');
+    hilog.info(DB_DOMAIN, 'DatabaseHelper', '%{public}s', 'Zhizon: legacy seed data cleaned');
   }
 }

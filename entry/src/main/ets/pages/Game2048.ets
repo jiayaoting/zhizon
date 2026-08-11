@@ -505,6 +505,10 @@ export struct Game2048Page {
     this.startWithDifficulty(result.request.difficulty);
   }
 
+  aboutToDisappear(): void {
+    // 2048 为纯状态机游戏，无计时器/连接资源需要释放
+  }
+
   build() {
     Column() {
       TopBar({

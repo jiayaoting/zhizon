@@ -1,10 +1,12 @@
 // 智子 - SFTP 文件管理页面
 import { router, promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { picker } from '@kit.CoreFileKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusBadge } from '../components/StatusBadge';
+import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository, formatSize } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { FileItem, Server } from '../model/Models';
@@ -37,6 +39,7 @@ export struct FilesPage {
   private breadcrumb: string[] = ['/'];
   private currentPath: string = '/';
   private transferCounter: number = 0;
+  private filesDataSource: ArrayDataSource<FileItem> = new ArrayDataSource<FileItem>();
 
   aboutToAppear(): void {
     this.loadData();
@@ -53,7 +56,7 @@ export struct FilesPage {
       const servers = await DataRepository.getServers();
       this.servers = servers;
     } catch (e) {
-      console.error('Remote operation=files-init category=PROTOCOL code=FILES_INIT_FAILED rollback=preserved');
+      hilog.error(0x9201, 'Files', '%{public}s', 'operation=files-init category=PROTOCOL code=FILES_INIT_FAILED rollback=preserved');
     } finally {
       this.loading = false;
     }
@@ -83,6 +86,7 @@ export struct FilesPage {
       const result: RemoteResult<FileItem[]> = await SshService.listFiles(this.selectedServer, path);
       if (result.success && result.value !== null) {
         this.files = result.value;
+        this.filesDataSource.reloadAll(result.value);
         this.currentPath = path;
         const nextBreadcrumb: string[] = path === '/' ? ['/'] :
           path.split('/').filter((segment: string) => segment.length > 0);
@@ -93,7 +97,7 @@ export struct FilesPage {
         promptAction.showToast({ message: RemoteResultAdapter.publicMessage(result) });
       }
     } catch (e) {
-      console.error('Remote operation=files-list category=PROTOCOL code=FILES_LIST_FAILED rollback=preserved');
+      hilog.error(0x9201, 'Files', '%{public}s', 'operation=files-list category=PROTOCOL code=FILES_LIST_FAILED rollback=preserved');
       promptAction.showToast({ message: '目录加载失败，已保留当前列表' });
     }
   }
@@ -165,7 +169,7 @@ export struct FilesPage {
         promptAction.showToast({ message: `上传失败: ${fileName}` });
       }
     } catch (e) {
-      console.error('Remote operation=files-upload category=PROTOCOL code=FILES_UPLOAD_FAILED rollback=preserved');
+      hilog.error(0x9201, 'Files', '%{public}s', 'operation=files-upload category=PROTOCOL code=FILES_UPLOAD_FAILED rollback=preserved');
       promptAction.showToast({ message: '上传取消或失败' });
     }
   }
@@ -215,7 +219,7 @@ export struct FilesPage {
         promptAction.showToast({ message: `下载失败: ${file.name}` });
       }
     } catch (e) {
-      console.error('Remote operation=files-download category=PROTOCOL code=FILES_DOWNLOAD_FAILED rollback=preserved');
+      hilog.error(0x9201, 'Files', '%{public}s', 'operation=files-download category=PROTOCOL code=FILES_DOWNLOAD_FAILED rollback=preserved');
       promptAction.showToast({ message: '下载失败' });
     }
   }
@@ -487,7 +491,7 @@ export struct FilesPage {
                   .padding({ top: 24, bottom: 24 })
                   .justifyContent(FlexAlign.Center)
                   .alignItems(HorizontalAlign.Center)
-                } else if (this.files.length === 0) {
+                } else if (this.filesDataSource.totalCount() === 0) {
                   Column({ space: 6 }) {
                     Text('📭')
                       .fontSize(28)
@@ -500,9 +504,15 @@ export struct FilesPage {
                   .justifyContent(FlexAlign.Center)
                   .alignItems(HorizontalAlign.Center)
                 } else {
-                  ForEach(this.files, (f: FileItem) => {
-                    this.remoteFileRow(f)
-                  }, (f: FileItem) => f.name)
+                  List() {
+                    LazyForEach(this.filesDataSource, (f: FileItem) => {
+                      ListItem() {
+                        this.remoteFileRow(f)
+                      }
+                    }, (f: FileItem) => f.name)
+                  }
+                  .width('100%')
+                  .scrollBar(BarState.Auto)
                 }
               }
               .layoutWeight(1)

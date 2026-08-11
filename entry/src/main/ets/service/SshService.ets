@@ -2,11 +2,14 @@
 import { http, webSocket } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { fileIo } from '@kit.CoreFileKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Server, ServerMetrics, FileItem, ConnectionMode, AuthType } from '../model/Models';
 import { DataRepository } from './DataRepository';
 import { libssh } from '@ohos/libssh';
 import { RemoteFailureCategory, RemoteResult } from '../model/GovernanceModels';
 import { RemoteResultAdapter } from './RemoteResultAdapter';
+
+const SSH_DOMAIN = 0x9201;
 
 // ========== 错误码 ==========
 
@@ -177,7 +180,7 @@ export class AgentClient {
       if (res.responseCode === 403) throw new SshError(SSH_ERR_PERMISSION, 'Agent 权限不足');
       throw new SshError(SSH_ERR_HTTP, 'Agent HTTP 响应异常');
     } catch (e) {
-      console.error('Remote operation=agent-request category=UNREACHABLE code=REMOTE_UNREACHABLE rollback=preserved');
+      hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=agent-request category=UNREACHABLE code=REMOTE_UNREACHABLE rollback=preserved');
       if (e instanceof SshError) throw e;
       throw new SshError(AGENT_ERR_UNREACH, 'Agent 服务不可达');
     } finally {
@@ -205,7 +208,7 @@ export class AgentClient {
       if (res.responseCode === 403) throw new SshError(SSH_ERR_PERMISSION, 'Agent 权限不足');
       throw new SshError(SSH_ERR_HTTP, 'Agent HTTP 响应异常');
     } catch (e) {
-      console.error('Remote operation=agent-binary category=UNREACHABLE code=REMOTE_UNREACHABLE rollback=preserved');
+      hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=agent-binary category=UNREACHABLE code=REMOTE_UNREACHABLE rollback=preserved');
       if (e instanceof SshError) throw e;
       throw new SshError(AGENT_ERR_UNREACH, 'Agent 服务不可达');
     } finally {
@@ -360,7 +363,7 @@ export class AgentEngine implements SshEngine {
           const sshParams: string = AgentRequestSerializer.serialize(
             new AgentConnectRequest(this.config, cols || 80, rows || 24));
           this.ws!.send(sshParams, (err: Error) => {
-            if (err) console.error('Remote operation=ssh-ws-send category=PROTOCOL code=SSH_WS_SEND_FAILED rollback=preserved');
+            if (err) hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-ws-send category=PROTOCOL code=SSH_WS_SEND_FAILED rollback=preserved');
           });
         }
         if (this.terminalCallback) {
@@ -373,13 +376,13 @@ export class AgentEngine implements SshEngine {
 
       this.ws.on('message', (err: Error, value: string | ArrayBuffer) => {
         if (err) {
-          console.error('Remote operation=ssh-ws-message category=PROTOCOL code=SSH_WS_MESSAGE_FAILED rollback=preserved');
+          hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-ws-message category=PROTOCOL code=SSH_WS_MESSAGE_FAILED rollback=preserved');
           return;
         }
         const raw = typeof value === 'string' ? value : '';
         // 尝试解析 JSON 控制消息
         try {
-          const msg = JSON.parse(raw) as AgentEventMessage;
+          const msg: AgentEventMessage = JSON.parse(raw) as Record<string, Object> as AgentEventMessage;
           if (msg.type === 'event') {
             // Agent 侧事件转发
             if (this.eventCallback) {
@@ -444,7 +447,7 @@ export class AgentEngine implements SshEngine {
     if (this.ws && this.wsConnected) {
       this.ws.send(data, (err: Error) => {
         if (err) {
-          console.error('Remote operation=ssh-ws-send category=PROTOCOL code=SSH_WS_SEND_FAILED rollback=preserved');
+          hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-ws-send category=PROTOCOL code=SSH_WS_SEND_FAILED rollback=preserved');
         }
       });
     }
@@ -456,7 +459,7 @@ export class AgentEngine implements SshEngine {
       const resizeMsg: string = AgentRequestSerializer.serialize(new AgentResizeRequest(cols, rows));
       this.ws.send(resizeMsg, (err: Error) => {
         if (err) {
-          console.error('Remote operation=ssh-ws-resize category=PROTOCOL code=SSH_WS_RESIZE_FAILED rollback=preserved');
+          hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-ws-resize category=PROTOCOL code=SSH_WS_RESIZE_FAILED rollback=preserved');
         }
       });
     }
@@ -472,7 +475,7 @@ export class AgentEngine implements SshEngine {
         }
         this.ws.close((err: Error) => {
           if (err) {
-            console.error('Remote operation=ssh-ws-close category=PROTOCOL code=SSH_WS_CLOSE_FAILED rollback=preserved');
+            hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-ws-close category=PROTOCOL code=SSH_WS_CLOSE_FAILED rollback=preserved');
           }
         });
       } catch (e) {
@@ -569,7 +572,7 @@ export class DirectEngine implements SshEngine {
       }, ms);
 
       ssh.startSSHClient(host, port, keyPath, (event: number): void => {
-        console.info('DirectEngine: startSSHClient callback event:', event);
+        hilog.info(SSH_DOMAIN, 'SshService', '%{public}s%{public}d', 'DirectEngine: startSSHClient callback event: ', event);
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -586,7 +589,7 @@ export class DirectEngine implements SshEngine {
     try {
       this.ssh = new libssh();
       const userResult: number = this.ssh.setUser(config.username, config.password || '');
-      console.info('DirectEngine: setUser result:', userResult);
+      hilog.info(SSH_DOMAIN, 'SshService', '%{public}s%{public}d', 'DirectEngine: setUser result: ', userResult);
 
       if (userResult !== 0) {
         throw new SshError(SSH_ERR_AUTH_FAIL, 'setUser 失败：用户名或密码为空');
@@ -596,7 +599,7 @@ export class DirectEngine implements SshEngine {
 
       // 不 await startSSHClient 的 Promise（原生层死循环永不 resolve），通过 callback 判断结果
       const connectResult: number = await DirectEngine.waitForCallback(this.ssh, config.host, config.port, keyPath, 15000);
-      console.info('DirectEngine: connectResult:', connectResult);
+      hilog.info(SSH_DOMAIN, 'SshService', '%{public}s%{public}d', 'DirectEngine: connectResult: ', connectResult);
 
       if (connectResult !== 0) {
         throw new SshError(SSH_ERR_AUTH_FAIL,
@@ -653,7 +656,7 @@ export class DirectEngine implements SshEngine {
     }
     if (!this.shellReady) {
       const shellResult = this.ssh.createShell();
-      console.info('DirectEngine: createShell result:', shellResult);
+      hilog.info(SSH_DOMAIN, 'SshService', '%{public}s%{public}d', 'DirectEngine: createShell result: ', shellResult);
       if (shellResult !== 0) {
         throw new SshError(SSH_ERR_TIMEOUT, '创建 Shell 会话失败');
       }
@@ -668,7 +671,7 @@ export class DirectEngine implements SshEngine {
       const output = await this.ssh!.executeSSHComm(command, timeoutMs);
       return output || '(无输出)';
     } catch (e) {
-      console.error('Remote operation=ssh-exec category=TIMEOUT code=SSH_ERR_TIMEOUT rollback=preserved');
+      hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-exec category=TIMEOUT code=SSH_ERR_TIMEOUT rollback=preserved');
       throw new SshError(SSH_ERR_TIMEOUT, '命令执行失败');
     }
   }
@@ -747,7 +750,7 @@ export class DirectEngine implements SshEngine {
       try {
         await this.exec('echo keepalive', 5000);
       } catch (e) {
-        console.warn('DirectEngine keepalive failed, marking disconnected');
+        hilog.warn(SSH_DOMAIN, 'SshService', '%{public}s', 'DirectEngine keepalive failed, marking disconnected');
         this.connected = false;
         this.stopKeepalive();
         if (this.terminalCallback) {
@@ -783,7 +786,7 @@ export class DirectEngine implements SshEngine {
         uptime: 0
       };
     } catch (e) {
-      console.error('Remote operation=ssh-metrics category=PROTOCOL code=SSH_METRICS_FAILED rollback=preserved');
+      hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-metrics category=PROTOCOL code=SSH_METRICS_FAILED rollback=preserved');
       if (e instanceof SshError) throw e;
       throw new SshError(SSH_ERR_PROTOCOL, '指标响应格式异常');
     }
@@ -794,7 +797,7 @@ export class DirectEngine implements SshEngine {
 
     // sftpRequestRead 只支持密钥认证，密码认证时降级到 Agent
     if (this.config.authType === 'password') {
-      console.warn('DirectEngine listFiles: password auth not supported, falling back to Agent');
+      hilog.warn(SSH_DOMAIN, 'SshService', '%{public}s', 'DirectEngine listFiles: password auth not supported, falling back to Agent');
       const agentClient = new AgentClient(this.config.host, 9527, this.config.agentToken || 'zhizon-agent');
       return await agentClient.listFiles(path);
     }
@@ -802,7 +805,7 @@ export class DirectEngine implements SshEngine {
     try {
       const keyPath = this.config.privateKeyPath || '';
       if (!keyPath) {
-        console.warn('DirectEngine listFiles: no private key path provided');
+        hilog.warn(SSH_DOMAIN, 'SshService', '%{public}s', 'DirectEngine listFiles: no private key path provided');
         throw new SshError(SSH_ERR_KEY_INVALID, '私钥配置无效');
       }
       // sftpRequestRead 每次独立创建新连接，返回逗号分隔的文件名列表
@@ -824,7 +827,7 @@ export class DirectEngine implements SshEngine {
       }
       return result;
     } catch (e) {
-      console.error('Remote operation=ssh-files category=PROTOCOL code=SSH_FILES_FAILED rollback=preserved');
+      hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=ssh-files category=PROTOCOL code=SSH_FILES_FAILED rollback=preserved');
       if (e instanceof SshError) throw e;
       throw new SshError(SSH_ERR_PROTOCOL, '文件响应格式异常');
     }
@@ -970,7 +973,7 @@ export class SshService {
       };
       return hydrated;
     } catch (e) {
-      console.error('Remote operation=hydrate-credentials category=PROTOCOL code=CREDENTIAL_READ_FAILED rollback=preserved');
+      hilog.error(SSH_DOMAIN, 'SshService', '%{public}s', 'operation=hydrate-credentials category=PROTOCOL code=CREDENTIAL_READ_FAILED rollback=preserved');
       return server;
     }
   }

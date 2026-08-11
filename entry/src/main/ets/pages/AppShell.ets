@@ -42,6 +42,10 @@ struct AppShell {
     }
   }
 
+  aboutToDisappear(): void {
+    // 导航容器为路由托管，无独立资源需要释放
+  }
+
   private handleNavigationResult(key: string, result: NavigationResult): void {
     if (!result.success) {
       const failure = result as NavigationFailure;

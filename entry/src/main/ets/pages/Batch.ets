@@ -1,6 +1,7 @@
 // 智子 - 批量操作页面
 import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 
 import { TopBar } from '../components/TopBar';
@@ -9,6 +10,8 @@ import { DataRepository } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { Server } from '../model/Models';
 import { RemoteResult } from '../model/GovernanceModels';
+
+const BATCH_DOMAIN = 0x9201;
 
 // 批量执行结果
 interface BatchResult {
@@ -69,11 +72,15 @@ export struct BatchPage {
     this.loadServers();
   }
 
+  aboutToDisappear(): void {
+    // 批量任务为短连接同步执行，无持久资源需要释放
+  }
+
   private async loadServers(): Promise<void> {
     try {
       this.servers = await DataRepository.getServers();
     } catch (e) {
-      console.error('Remote operation=batch-init category=PROTOCOL code=BATCH_INIT_FAILED rollback=preserved');
+      hilog.error(BATCH_DOMAIN, 'Batch', '%{public}s', 'operation=batch-init category=PROTOCOL code=BATCH_INIT_FAILED rollback=preserved');
     } finally {
       this.loading = false;
     }

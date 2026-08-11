@@ -6,6 +6,7 @@ import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { EmptyState } from '../components/EmptyState';
+import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
 import { Server, Stats } from '../model/Models';
@@ -21,6 +22,7 @@ export struct ServersPage {
   @State stats: Stats = { total: 0, online: 0, warning: 0, offline: 0, alerts: 0, pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0 };
   @State servers: Server[] = [];
   private groups: string[] = ['全部', '生产', '测试', '监控', '备份', 'CI/CD'];
+  private serversDataSource: ArrayDataSource<Server> = new ArrayDataSource<Server>();
 
   aboutToAppear(): void {
     this.loadData().then(() => {
@@ -31,6 +33,10 @@ export struct ServersPage {
     });
   }
 
+  aboutToDisappear(): void {
+    // 服务器连接检测为短连接同步执行，无持久资源需要释放
+  }
+
   private async loadData(): Promise<void> {
     this.loading = true;
     try {
@@ -38,6 +44,7 @@ export struct ServersPage {
       const stats = await DataRepository.getStats();
       this.servers = servers;
       this.stats = stats;
+      this.refreshServersDataSource();
     } catch (e) {
       promptAction.showToast({ message: '加载数据失败' });
     } finally {
@@ -47,6 +54,11 @@ export struct ServersPage {
 
   refresh(): void {
     this.loadData();
+  }
+
+  // 刷新 LazyForEach 数据源
+  private refreshServersDataSource(): void {
+    this.serversDataSource.reloadAll(this.filteredServers());
   }
 
   // 服务器数据变更（添加/编辑/删除后）自动刷新
@@ -86,6 +98,7 @@ export struct ServersPage {
       return item;
     });
     this.servers = updated;
+    this.refreshServersDataSource();
 
     // 持久化最后连接时间
     if (ok) {
@@ -147,6 +160,7 @@ export struct ServersPage {
           return item;
         });
         this.servers = updated;
+        this.refreshServersDataSource();
         await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
         promptAction.showToast({ message: `${s.name} 连接成功，跳转到终端` });
         const previous: NavigationState = new NavigationState(PageKey.Servers, MainNavKey.Servers);
@@ -186,6 +200,7 @@ export struct ServersPage {
       await DataRepository.deleteServer(s.id);
       promptAction.showToast({ message: `${s.name} 已删除` });
       this.servers = this.servers.filter((item: Server) => item.id !== s.id);
+      this.refreshServersDataSource();
       // 整体赋值 stats 以触发 @State UI 更新
       const onlineCount = this.servers.filter(i => i.status === 'online').length;
       const offlineCount = this.servers.filter(i => i.status === 'offline').length;
@@ -312,7 +327,7 @@ export struct ServersPage {
       .padding({ left: 12, right: 12, top: 5, bottom: 5 })
       .borderRadius(14)
       .backgroundColor(g === this.currentGroup ? this.palette.primaryDim : this.palette.bgSurface2)
-      .onClick(() => { this.currentGroup = g; })
+      .onClick(() => { this.currentGroup = g; this.refreshServersDataSource(); })
   }
 
   // 资源列：标题 + 百分比 + 进度条
@@ -523,20 +538,26 @@ export struct ServersPage {
             }
 
             // 服务器列表
-            if (this.filteredServers().length === 0) {
-              EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
-            } else {
-              ForEach(this.filteredServers(), (s: Server) => {
-                this.serverCard(s)
-              }, (s: Server) => s.id)
-            }
           }
           .padding(this.isSm ? 16 : 24)
           .width('100%')
         }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
         .align(Alignment.Top)
+
+        if (this.serversDataSource.totalCount() === 0) {
+          EmptyState({ icon: '🖥️', title: '暂无服务器', desc: '点击右上角"添加服务器"开始' })
+        } else {
+          List({ space: 12 }) {
+            LazyForEach(this.serversDataSource, (s: Server) => {
+              ListItem() {
+                this.serverCard(s)
+              }
+            }, (s: Server) => s.id)
+          }
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+        }
       }
     }
     .height('100%')

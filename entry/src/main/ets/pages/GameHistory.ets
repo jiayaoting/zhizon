@@ -66,6 +66,10 @@ export struct GameHistoryPage {
     this.loadScores();
   }
 
+  aboutToDisappear(): void {
+    // 历史分数为单次拉取，无持久资源需要释放
+  }
+
   async loadScores(): Promise<void> {
     this.loading = true;
     this.scores = await DataRepository.getGameScores(this.gameKey);

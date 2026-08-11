@@ -55,6 +55,10 @@ struct PveNodeDetailPage {
     this.loading = false;
   }
 
+  aboutToDisappear(): void {
+    // 节点数据为单次拉取，无持久资源需要释放
+  }
+
   private async loadRemoteData(cluster: PveCluster, node: string, notifySuccess: boolean): Promise<void> {
     const vms: RemoteResult<Vm[]> = await DataRepository.getVms(cluster, node);
     const storages: RemoteResult<Storage[]> = await DataRepository.getStorages(cluster, node);

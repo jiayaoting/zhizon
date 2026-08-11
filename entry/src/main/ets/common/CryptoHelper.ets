@@ -4,8 +4,10 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const PREF_NAME = 'zhizon_crypto';
+const CRYPTO_DOMAIN = 0x9201;
 const KEY_MASTER = 'master_key_v1';
 const TAG_ALGO = 'AES256|GCM|PKCS7';
 const IV_LEN = 12;
@@ -97,7 +99,7 @@ export class CryptoHelper {
       const out: cryptoFramework.DataBlob = await cipher.doFinal({ data: ciphertext });
       return CryptoHelper.bytesToStr(out.data);
     } catch (e) {
-      console.error('operation=credential-decrypt category=DATA_SECURITY code=CREDENTIAL_DECRYPT_FAILED rollback=empty-value');
+      hilog.error(CRYPTO_DOMAIN, 'CryptoHelper', '%{public}s', 'operation=credential-decrypt category=DATA_SECURITY code=CREDENTIAL_DECRYPT_FAILED rollback=empty-value');
       return '';
     }
   }

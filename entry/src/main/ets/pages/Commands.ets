@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { EmptyState } from '../components/EmptyState';
+import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { Command } from '../model/Models';
 
@@ -15,14 +16,25 @@ export struct CommandsPage {
   @State commands: Command[] = [];
   @State loading: boolean = true;
   private categories: string[] = ['全部', '系统', '进程', '网络', 'Docker', '安全', '服务'];
+  private commandsDataSource: ArrayDataSource<Command> = new ArrayDataSource<Command>();
 
   aboutToAppear(): void {
     DataRepository.getCommands().then((data: Command[]) => {
       this.commands = data;
+      this.refreshCommandsDataSource();
       this.loading = false;
     }).catch(() => {
       this.loading = false;
     });
+  }
+
+  aboutToDisappear(): void {
+    // 命令库为静态数据，无持久资源需要释放
+  }
+
+  // 刷新 LazyForEach 数据源
+  private refreshCommandsDataSource(): void {
+    this.commandsDataSource.reloadAll(this.filteredCommands());
   }
 
   // 分类下命令数
@@ -77,6 +89,7 @@ export struct CommandsPage {
     .backgroundColor(cat === this.currentCat ? this.palette.primaryDim : Color.Transparent)
     .onClick(() => {
       this.currentCat = cat;
+      this.refreshCommandsDataSource();
     })
   }
 
@@ -189,7 +202,7 @@ export struct CommandsPage {
                   .padding({ left: 12, right: 12, top: 6, bottom: 6 })
                   .borderRadius(14)
                   .backgroundColor(cat === this.currentCat ? this.palette.primary : this.palette.bgSurface2)
-                  .onClick(() => { this.currentCat = cat; })
+                  .onClick(() => { this.currentCat = cat; this.refreshCommandsDataSource(); })
               }, (cat: string) => cat)
             }
             .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -203,23 +216,20 @@ export struct CommandsPage {
           // 命令卡片列表
           if (this.loading) {
             this.loadingBuilder()
+          } else if (this.commandsDataSource.totalCount() === 0) {
+            EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
           } else {
-            Scroll() {
-              if (this.filteredCommands().length === 0) {
-                EmptyState({ icon: '⚡', title: '暂无命令', desc: '切换其他分类查看命令' })
-              } else {
-                Column({ space: 10 }) {
-                  ForEach(this.filteredCommands(), (cmd: Command) => {
-                    this.commandCard(cmd)
-                  }, (cmd: Command) => cmd.id)
+            List({ space: 10 }) {
+              LazyForEach(this.commandsDataSource, (cmd: Command) => {
+                ListItem() {
+                  this.commandCard(cmd)
                 }
-                .padding(12)
-                .width('100%')
-              }
+              }, (cmd: Command) => cmd.id)
             }
             .layoutWeight(1)
             .scrollBar(BarState.Auto)
             .align(Alignment.Top)
+            .padding(12)
           }
         }
         .layoutWeight(1)

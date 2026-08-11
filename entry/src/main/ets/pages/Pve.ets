@@ -34,6 +34,10 @@ export struct PvePage {
     this.loadClusters();
   }
 
+  aboutToDisappear(): void {
+    // 集群同步为单次请求，无持久资源需要释放
+  }
+
   async loadClusters() {
     this.loading = true;
     try {

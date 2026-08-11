@@ -36,6 +36,10 @@ export struct IndexPage {
     this.loadData();
   }
 
+  aboutToDisappear(): void {
+    // 概览数据为单次拉取，无持久资源需要释放
+  }
+
   private async loadData() {
     try {
       const stats = await DataRepository.getStats();

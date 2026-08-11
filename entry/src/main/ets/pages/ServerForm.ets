@@ -4,6 +4,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { picker, fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
@@ -11,6 +12,8 @@ import { DataRepository, generateId } from '../service/DataRepository';
 import { SshService, TestResult } from '../service/SshService';
 import { Server, ServerMetrics } from '../model/Models';
 import { ServerFormRouteParams } from '../common/Navigation';
+
+const FORM_DOMAIN = 0x9201;
 
 const EMPTY_METRICS: ServerMetrics = {
   cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, load: 0, uptime: 0
@@ -87,6 +90,10 @@ export struct ServerFormPage {
     }
   }
 
+  aboutToDisappear(): void {
+    // 表单为内存态编辑，无持久连接/计时器需要释放
+  }
+
   // 编辑模式：加载服务器信息与已保存凭据
   private async loadForEdit(): Promise<void> {
     try {
@@ -113,7 +120,7 @@ export struct ServerFormPage {
         }
       }
     } catch (e) {
-      console.error('Remote operation=server-form-load category=PROTOCOL code=SERVER_FORM_LOAD_FAILED rollback=preserved');
+      hilog.error(FORM_DOMAIN, 'ServerForm', '%{public}s', 'operation=server-form-load category=PROTOCOL code=SERVER_FORM_LOAD_FAILED rollback=preserved');
     }
   }
 
@@ -149,7 +156,7 @@ export struct ServerFormPage {
       }
       return hex.join(':');
     } catch (e) {
-      console.error('Remote operation=key-fingerprint category=PROTOCOL code=KEY_FINGERPRINT_FAILED rollback=preserved');
+      hilog.error(FORM_DOMAIN, 'ServerForm', '%{public}s', 'operation=key-fingerprint category=PROTOCOL code=KEY_FINGERPRINT_FAILED rollback=preserved');
       return '';
     }
   }
@@ -182,7 +189,7 @@ export struct ServerFormPage {
       this.pemFileHint = `${type} · SHA256:${fp ? fp.substring(0, 20) + '…' : '无法计算'}`;
       this.toast('私钥已导入');
     } catch (e) {
-      console.error('Remote operation=key-import category=PROTOCOL code=KEY_IMPORT_FAILED rollback=preserved');
+      hilog.error(FORM_DOMAIN, 'ServerForm', '%{public}s', 'operation=key-import category=PROTOCOL code=KEY_IMPORT_FAILED rollback=preserved');
       this.toast('导入私钥失败');
     }
   }
@@ -239,7 +246,7 @@ export struct ServerFormPage {
       }
       this.toast(result.ok ? '连接成功' : '连接失败，详见页面提示');
     } catch (e) {
-      console.error('Remote operation=server-test category=PROTOCOL code=SERVER_TEST_FAILED rollback=preserved');
+      hilog.error(FORM_DOMAIN, 'ServerForm', '%{public}s', 'operation=server-test category=PROTOCOL code=SERVER_TEST_FAILED rollback=preserved');
       this.testResult = '连接测试异常';
     } finally {
       this.testing = false;
@@ -295,7 +302,7 @@ export struct ServerFormPage {
       AppStorage.setOrCreate('serversDirty', Date.now());
       router.back();
     } catch (e) {
-      console.error('Remote operation=server-save category=PERSISTENCE code=SERVER_SAVE_FAILED rollback=preserved');
+      hilog.error(FORM_DOMAIN, 'ServerForm', '%{public}s', 'operation=server-save category=PERSISTENCE code=SERVER_SAVE_FAILED rollback=preserved');
       let errMsg: string = '保存失败，请重试';
       this.toast(errMsg);
     } finally {

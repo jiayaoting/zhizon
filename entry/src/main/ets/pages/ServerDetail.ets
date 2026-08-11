@@ -1,5 +1,6 @@
 // 智子 - 服务器监控详情页
 import { router, promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemePalette, defaultLightPalette, progressColor } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
@@ -53,6 +54,10 @@ struct ServerDetailPage {
     }
   }
 
+  aboutToDisappear(): void {
+    // 指标拉取为单次短连接请求，无持久资源需要释放
+  }
+
   // 从 Agent 拉取实时指标
   private async refreshMetrics(): Promise<void> {
     if (!this.server) return;
@@ -83,7 +88,7 @@ struct ServerDetailPage {
         createdAt: this.server.createdAt
       };
     } catch (e) {
-      console.error('ServerDetail operation=metrics category=REMOTE_PROTOCOL code=METRICS_LOAD_FAILED rollback=preserved');
+      hilog.error(0x9201, 'ServerDetail', '%{public}s', 'operation=metrics category=REMOTE_PROTOCOL code=METRICS_LOAD_FAILED rollback=preserved');
     }
   }
 

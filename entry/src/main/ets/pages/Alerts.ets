@@ -6,12 +6,13 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
+import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { Alert } from '../model/Models';
 
 @Component
 export struct AlertsPage {
-  
+
   @State alertFilter: string = '全部';
   @State resolvedMap: Record<string, boolean> = {};
   @State alerts: Alert[] = [];
@@ -19,14 +20,25 @@ export struct AlertsPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   private filters: string[] = ['全部', '未处理', '严重', '警告', '信息'];
+  private alertsDataSource: ArrayDataSource<Alert> = new ArrayDataSource<Alert>();
 
   aboutToAppear(): void {
     DataRepository.getAlerts().then((data: Alert[]) => {
       this.alerts = data;
+      this.refreshAlertsDataSource();
       this.loading = false;
     }).catch(() => {
       this.loading = false;
     });
+  }
+
+  aboutToDisappear(): void {
+    // 告警数据为单次拉取，无持久资源需要释放
+  }
+
+  // 刷新 LazyForEach 数据源
+  private refreshAlertsDataSource(): void {
+    this.alertsDataSource.reloadAll(this.filteredAlerts());
   }
 
   // 级别颜色
@@ -79,6 +91,7 @@ export struct AlertsPage {
       });
       newMap[a.id] = true;
       this.resolvedMap = newMap;
+      this.refreshAlertsDataSource();
       promptAction.showToast({ message: '已标记为已处理' });
     });
   }
@@ -88,6 +101,7 @@ export struct AlertsPage {
       const map: Record<string, boolean> = {};
       this.alerts.forEach(a => { map[a.id] = true; });
       this.resolvedMap = map;
+      this.refreshAlertsDataSource();
       promptAction.showToast({ message: '已全部标记已读' });
     });
   }
@@ -110,7 +124,7 @@ export struct AlertsPage {
       .borderRadius(14)
       .backgroundColor(f === this.alertFilter ? this.palette.primary : this.palette.bgSurface2)
       .border({ width: 1, color: f === this.alertFilter ? this.palette.primary : this.palette.borderSubtle })
-      .onClick(() => { this.alertFilter = f; })
+      .onClick(() => { this.alertFilter = f; this.refreshAlertsDataSource(); })
   }
 
   @Builder alertCard(a: Alert) {
@@ -246,22 +260,27 @@ export struct AlertsPage {
               }, (f: string) => f)
             }
             .width('100%')
-
-            // 告警列表
-            if (this.filteredAlerts().length === 0) {
-              EmptyState({ icon: '✅', title: '暂无告警', desc: '所有服务器运行正常' })
-            } else {
-              ForEach(this.filteredAlerts(), (a: Alert) => {
-                this.alertCard(a)
-              }, (a: Alert) => a.id)
-            }
           }
           .padding(this.isSm ? 16 : 24)
           .width('100%')
         }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
         .align(Alignment.Top)
+
+        // 告警列表（LazyForEach 按需渲染）
+        if (this.alertsDataSource.totalCount() === 0) {
+          EmptyState({ icon: '✅', title: '暂无告警', desc: '所有服务器运行正常' })
+        } else {
+          List({ space: 12 }) {
+            LazyForEach(this.alertsDataSource, (a: Alert) => {
+              ListItem() {
+                this.alertCard(a)
+              }
+            }, (a: Alert) => a.id)
+          }
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+        }
       }
     .layoutWeight(1)
     .height('100%')

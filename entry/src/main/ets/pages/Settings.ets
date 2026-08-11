@@ -122,6 +122,10 @@ export struct SettingsPage {
     }
   }
 
+  aboutToDisappear(): void {
+    // 设置项通过 DataRepository 持久化，无内存态资源需要释放
+  }
+
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
   }

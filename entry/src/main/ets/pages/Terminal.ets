@@ -1,5 +1,6 @@
 // 智子 - SSH 终端页面
 import { router, promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { SshService } from '../service/SshService';
@@ -8,6 +9,8 @@ import { Server, TerminalSession } from '../model/Models';
 import { RemoteResult } from '../model/GovernanceModels';
 import { RemoteResultAdapter } from '../service/RemoteResultAdapter';
 import { TerminalRouteParams } from '../common/Navigation';
+
+const TERMINAL_DOMAIN = 0x9201;
 
 // 会话状态
 interface SessionState {
@@ -57,7 +60,7 @@ export struct TerminalPage {
       this.showPicker = true;
       this.pickerServers = this.allServers;
     } catch (e) {
-      console.error('Remote operation=terminal-init category=PROTOCOL code=TERMINAL_INIT_FAILED rollback=preserved');
+      hilog.error(TERMINAL_DOMAIN, 'Terminal', '%{public}s', 'operation=terminal-init category=PROTOCOL code=TERMINAL_INIT_FAILED rollback=preserved');
       this.showPicker = true;
       this.pickerServers = this.allServers;
     } finally {
@@ -104,13 +107,13 @@ export struct TerminalPage {
       connected: false,
       reconnecting: false
     };
-    this.sessions.push({
+    this.sessions = [...this.sessions, {
       session: session,
       lines: [`准备连接 ${server.name} (${server.host})...`],
       prompt: '$ ',
       cmdInput: '',
       isLoading: false
-    });
+    }];
     this.activeIndex = this.sessions.length - 1;
   }
 
@@ -119,7 +122,7 @@ export struct TerminalPage {
     if (this.sessions.length <= 1) {
       return;
     }
-    this.sessions.splice(index, 1);
+    this.sessions = this.sessions.filter((_: SessionState, i: number) => i !== index);
     if (this.activeIndex >= this.sessions.length) {
       this.activeIndex = this.sessions.length - 1;
     }
@@ -188,7 +191,7 @@ export struct TerminalPage {
     const cmdLine: string = `${state.prompt}${cmd}`;
     state.lines = [...state.lines, cmdLine];
     state.cmdInput = '';
-    state.session.history.push(cmd);
+    state.session.history = [...state.session.history, cmd];
 
     if (!state.session.connected) {
       state.lines = [...state.lines, '未连接，正在重连...'];

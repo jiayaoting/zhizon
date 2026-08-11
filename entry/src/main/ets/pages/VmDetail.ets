@@ -77,6 +77,10 @@ struct VmDetailPage {
     this.loading = false;
   }
 
+  aboutToDisappear(): void {
+    // VM 数据为单次拉取，无持久连接/计时器需要释放
+  }
+
   private selectMain(key: MainNavKey): void {
     const previous: NavigationState = new NavigationState(PageKey.VmDetail, MainNavKey.Pve);
     NavigationFacade.openPage(previous, mainPage(key), NavigationSource.MAIN_NAV, true).then((result: NavigationResult) => {

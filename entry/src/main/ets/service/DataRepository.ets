@@ -233,7 +233,7 @@ export class DataRepository {
       };
       return hydrated;
     } catch (e) {
-      console.error('DataRepository operation=hydrate-pve category=PERSISTENCE code=CREDENTIAL_READ_FAILED rollback=preserved');
+      hilog.error(SETTINGS_DOMAIN, 'DataRepository', '%{public}s', 'operation=hydrate-pve category=PERSISTENCE code=CREDENTIAL_READ_FAILED rollback=preserved');
       return cluster;
     }
   }
@@ -312,7 +312,7 @@ export class DataRepository {
     const raw = await DatabaseHelper.getSetting('themePreference', '');
     if (raw.length > 0) {
       try {
-        const stored = JSON.parse(raw) as StoredThemePreference;
+        const stored: StoredThemePreference = JSON.parse(raw) as Record<string, Object> as StoredThemePreference;
         if ((stored.followSystem !== true && stored.followSystem !== false) ||
           (stored.manualMode !== ThemeMode.DARK && stored.manualMode !== ThemeMode.LIGHT)) {
           hilog.warn(SETTINGS_DOMAIN, 'DataRepository',
@@ -346,7 +346,7 @@ export class DataRepository {
     const raw = await DatabaseHelper.getSetting('globalBackgroundPreference', '');
     if (raw.length > 0) {
       try {
-        const stored = JSON.parse(raw) as StoredBackgroundPreference;
+        const stored: StoredBackgroundPreference = JSON.parse(raw) as Record<string, Object> as StoredBackgroundPreference;
         const globalUri = stored.globalUri && isSandboxBackgroundReference(stored.globalUri) ? stored.globalUri : '';
         let strength = Number.isInteger(stored.visibleStrength) ? stored.visibleStrength : 50;
         if (strength < 0 || strength > 100) {
@@ -363,7 +363,7 @@ export class DataRepository {
     const legacyRaw = await DatabaseHelper.getSetting('backgroundConfig', '');
     if (legacyRaw.length > 0) {
       try {
-        const legacy = JSON.parse(legacyRaw) as LegacyBackgroundConfig;
+        const legacy: LegacyBackgroundConfig = JSON.parse(legacyRaw) as Record<string, Object> as LegacyBackgroundConfig;
         if (legacy.global && isSandboxBackgroundReference(legacy.global)) {
           migratedUri = legacy.global;
         }
