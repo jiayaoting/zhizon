@@ -201,12 +201,13 @@ export struct SettingsPage {
   }
 
   private async updateGlassEffect(enabled: boolean): Promise<void> {
+    this.glassEffectEnabled = enabled;
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setGlassEffect(enabled);
     this.applyPreferenceResult(result);
     if (result.success) {
-      this.glassEffectEnabled = enabled;
       this.toast(enabled ? '已开启毛玻璃效果' : '已关闭毛玻璃效果');
     } else {
+      this.glassEffectEnabled = !enabled;
       this.toast('设置未保存，请重试');
     }
   }
