@@ -1,6 +1,7 @@
 // 智子 - 首页（沉浸光感版）
 // 欢迎区 + 游戏入口大卡 + 最近游戏战绩
 import { promptAction } from '@kit.ArkUI';
+import { KeyCode, KeyType } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
@@ -29,6 +30,8 @@ export struct IndexPage {
   @State currentTime: string = '';
   @State greeting: string = '';
   @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('isLg') isLg: boolean = false;
+  @StorageLink('isLandscape') isLandscape: boolean = false;
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
@@ -188,7 +191,7 @@ export struct IndexPage {
       .margin({ bottom: 12 })
 
       Column({ space: 10 }) {
-        ForEach(this.homeGames, (game: HomeGameEntry) => {
+        ForEach(this.homeGames, (game: HomeGameEntry, index: number) => {
           Row({ space: 14 }) {
             // 图标
             Stack() {
@@ -237,6 +240,8 @@ export struct IndexPage {
           .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
           .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
           .alignItems(VerticalAlign.Center)
+          .focusable(true)
+          .tabIndex(index)
         }, (game: HomeGameEntry) => game.gameId)
       }
       .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
@@ -374,20 +379,25 @@ export struct IndexPage {
       } else {
         Scroll() {
           Column({ space: 20 }) {
-            // 欢迎区
-            this.welcomeSection()
+            // 大屏居中限制
+            Column({ space: 20 }) {
+              // 欢迎区
+              this.welcomeSection()
 
-            // 游戏入口大卡
-            this.gameEntryCards()
+              // 游戏入口大卡
+              this.gameEntryCards()
 
-            // 最佳战绩
-            this.recentScores()
+              // 最佳战绩
+              this.recentScores()
 
-            // 难度速览
-            this.difficultyQuickView()
+              // 难度速览
+              this.difficultyQuickView()
 
-            // 底部留白
-            Column().height(20)
+              // 底部留白
+              Column().height(20)
+            }
+            .width('100%')
+            .constraintSize({ maxWidth: this.isLg ? 720 : undefined })
           }
           .width('100%')
           .padding({ top: this.statusBarHeight + (this.isSm ? 16 : 24) })
@@ -395,6 +405,15 @@ export struct IndexPage {
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
         .align(Alignment.Top)
+        .focusable(true)
+        .onKeyEvent((event: KeyEvent) => {
+          if (event.type !== KeyType.Down) return;
+          const code: KeyCode = event.keyCode;
+          if (code === KeyCode.KEYCODE_TAB) {
+            // 默认 Tab 行为由系统处理，此处仅确保页面可聚焦
+            return;
+          }
+        })
       }
     }
     .height('100%')

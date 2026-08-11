@@ -9,6 +9,7 @@ export struct FixedBottomNav {
   @StorageLink('navBarHeight') navBarHeight: number = 12;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
+  @StorageLink('isLandscape') isLandscape: boolean = false;
   onSelect: (key: MainNavKey) => void = () => {};
 
   @Builder
@@ -21,12 +22,12 @@ export struct FixedBottomNav {
         .backgroundColor(item.key === this.selectedKey ? this.palette.primary : Color.Transparent)
         .animation({ duration: 250, curve: Curve.EaseInOut })
       Text(item.icon)
-        .fontSize(20)
+        .fontSize(this.isLandscape ? 16 : 20)
         .fontFamily(this.palette.fontSans)
         .fontColor(item.key === this.selectedKey ? this.palette.primary : this.palette.textTertiary)
         .animation({ duration: 250, curve: Curve.EaseInOut })
       Text(item.label)
-        .fontSize(10)
+        .fontSize(this.isLandscape ? 9 : 10)
         .fontFamily(this.palette.fontSans)
         .fontColor(item.key === this.selectedKey ? this.palette.primary : this.palette.textTertiary)
         .fontWeight(item.key === this.selectedKey ? FontWeight.Medium : FontWeight.Regular)
@@ -35,7 +36,7 @@ export struct FixedBottomNav {
         .animation({ duration: 250, curve: Curve.EaseInOut })
     }
     .layoutWeight(1)
-    .height(56)
+    .height(this.isLandscape ? 44 : 56)
     .backgroundColor(item.key === this.selectedKey ? this.palette.primaryDim : Color.Transparent)
     .borderRadius(6)
     .alignItems(HorizontalAlign.Center)
@@ -55,7 +56,7 @@ export struct FixedBottomNav {
         }, (item: NavItem) => item.key)
       }
       .width('100%')
-      .height(56)
+      .height(this.isLandscape ? 44 : 56)
       .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
       .border({ width: { top: 1 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
       Row()

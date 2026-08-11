@@ -121,6 +121,7 @@ export class WindowEnvironmentProvider {
     AppStorage.setOrCreate('isSm', snapshot.width < BP_SM);
     AppStorage.setOrCreate('isMd', snapshot.width >= BP_SM && snapshot.width < BP_LG);
     AppStorage.setOrCreate('isLg', snapshot.width >= BP_LG);
+    AppStorage.setOrCreate('isLandscape', snapshot.orientation === WindowOrientation.LANDSCAPE);
   }
 
   private static handleAvoidAreaChange(options: window.AvoidAreaOptions): void {

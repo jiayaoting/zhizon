@@ -1,5 +1,6 @@
 // 智子 - 游戏中心
 import { promptAction } from '@kit.ArkUI';
+import { KeyCode, KeyType } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { PAGE_PADDING, CARD_RADIUS } from '../common/Constants';
@@ -90,7 +91,7 @@ export struct GamesPage {
   }
 
   @Builder
-  gameCard(game: GameEntry) {
+  gameCard(game: GameEntry, index: number) {
     Column() {
       Row({ space: 12 }) {
         // 游戏图标
@@ -131,6 +132,8 @@ export struct GamesPage {
     .borderRadius(CARD_RADIUS)
     .border({ width: 1, color: this.palette.borderSubtle })
     .onClick(() => { this.openGame(game); })
+    .focusable(true)
+    .tabIndex(index)
   }
 
   build() {
@@ -150,8 +153,8 @@ export struct GamesPage {
             .padding({ left: 4, top: 8, bottom: 4 })
             .width('100%')
 
-          ForEach(this.games, (game: GameEntry) => {
-            this.gameCard(game)
+          ForEach(this.games, (game: GameEntry, index: number) => {
+            this.gameCard(game, index)
           }, (game: GameEntry) => game.gameId)
 
 
@@ -166,6 +169,11 @@ export struct GamesPage {
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
+      .focusable(true)
+      .onKeyEvent((event: KeyEvent) => {
+        // 确保页面可聚焦，Tab 导航由系统处理
+        return;
+      })
     }
     .layoutWeight(1)
     .height('100%')

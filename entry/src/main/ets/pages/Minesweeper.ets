@@ -364,6 +364,12 @@ export struct MinesweeperPage {
     }
   }
 
+  // 棋盘宽高比（cols/rows），用于约束外层容器
+  private boardAspectRatio(): number {
+    if (this.rows <= 0) return 1;
+    return this.cols / this.rows;
+  }
+
   // ---- 棋盘 ----
   @Builder
   gameBoard() {
@@ -380,7 +386,6 @@ export struct MinesweeperPage {
             }
             .layoutWeight(1)
             .aspectRatio(1)
-            .margin(0.5)
             .borderRadius(2)
             .border({ width: this.cursorR === rowIdx && this.cursorC === colIdx ? 2 : 0.5,
               color: this.cursorR === rowIdx && this.cursorC === colIdx ? this.palette.primary : this.palette.borderDefault })
@@ -853,7 +858,8 @@ export struct MinesweeperPage {
                   if (this.isGameOver || this.isWin) { this.gameOverOverlay() }
                   if (this.isPaused) { this.pauseOverlay() }
                 }
-                .layoutWeight(1)
+                .width('100%')
+                .aspectRatio(this.boardAspectRatio())
                 .alignContent(Alignment.Center)
                 this.modeBar()
               }

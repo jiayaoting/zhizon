@@ -782,7 +782,8 @@ export struct BreakoutPage {
                   if (this.isGameOver || this.isWin) { this.gameOverOverlay() }
                   if (this.isPaused) { this.pauseOverlay() }
                 }
-                .layoutWeight(1)
+                .width('100%')
+                .aspectRatio(3 / 4)
                 .alignContent(Alignment.Center)
               }
               .alignItems(HorizontalAlign.Center)
