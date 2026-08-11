@@ -113,10 +113,10 @@ function darkPalette(primary: string, primaryHover: string, primaryDim: string):
     bgSurface2: '#1A2030',
     bgElevated: '#232A3D',
     bgHover: '#2A3349',
-    bgGlassBar: 'rgba(19, 24, 38, 0.72)',
-    bgGlassCard: 'rgba(19, 24, 38, 0.60)',
-    bgGlassCard2: 'rgba(26, 32, 48, 0.65)',
-    borderGlass: 'rgba(61, 74, 99, 0.55)',
+    bgGlassBar: 'rgba(19, 24, 38, 0.35)',
+    bgGlassCard: 'rgba(19, 24, 38, 0.30)',
+    bgGlassCard2: 'rgba(26, 32, 48, 0.35)',
+    borderGlass: 'rgba(61, 74, 99, 0.40)',
     borderSubtle: '#1E293B',
     borderDefault: '#2D3748',
     borderStrong: '#3D4A63',
@@ -168,10 +168,10 @@ function lightPalette(primary: string, primaryHover: string, primaryDim: string)
     bgSurface2: '#F0F1F5',
     bgElevated: '#FFFFFF',
     bgHover: '#EBEDF2',
-    bgGlassBar: 'rgba(255, 255, 255, 0.70)',
-    bgGlassCard: 'rgba(255, 255, 255, 0.62)',
-    bgGlassCard2: 'rgba(240, 241, 245, 0.68)',
-    borderGlass: 'rgba(209, 213, 219, 0.60)',
+    bgGlassBar: 'rgba(255, 255, 255, 0.35)',
+    bgGlassCard: 'rgba(255, 255, 255, 0.30)',
+    bgGlassCard2: 'rgba(240, 241, 245, 0.35)',
+    borderGlass: 'rgba(209, 213, 219, 0.40)',
     borderSubtle: '#E5E7EB',
     borderDefault: '#D1D5DB',
     borderStrong: '#9CA3AF',
@@ -666,7 +666,8 @@ export class ThemeManager {
     }
     const latest = operationVersion === this.operationVersion;
     this.completeFollowSystemMutation(mutation, operationVersion);
-    if (latest) this.publishPreferenceSnapshot(persisted.snapshot);
+    if (latest) this.publishPreferenceSnapshot(persisted.snapshot,
+      mutation.type === PreferenceMutationType.FOLLOW_SYSTEM && persisted.snapshot.followSystem);
     if (mutation.type === PreferenceMutationType.BACKGROUND && rollback.backgroundUri.length > 0 &&
       rollback.backgroundUri !== persisted.snapshot.backgroundUri) {
       BackgroundImporter.removeSandboxFile(rollback.backgroundUri);

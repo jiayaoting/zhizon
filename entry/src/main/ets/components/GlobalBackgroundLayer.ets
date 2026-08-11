@@ -38,7 +38,7 @@ export struct GlobalBackgroundLayer {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.palette.isDark ? 'rgba(10, 14, 26, 0.72)' : 'rgba(245, 246, 250, 0.72)')
+        .backgroundColor(this.palette.isDark ? 'rgba(10, 14, 26, 0.45)' : 'rgba(245, 246, 250, 0.45)')
     }
     .width('100%')
     .height('100%')
