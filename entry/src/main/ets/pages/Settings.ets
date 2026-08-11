@@ -562,6 +562,5 @@ export struct SettingsPage {
     }
     .height('100%')
     .backgroundColor(Color.Transparent)
-    }
   }
 }
