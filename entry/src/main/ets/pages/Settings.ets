@@ -86,7 +86,6 @@ export struct SettingsPage {
   @State showBgSettings: boolean = false;
   @State globalBgUri: string = '';
   @State backgroundStrength: number = 50;
-  @State glassEffectEnabled: boolean = false;
 
   async aboutToAppear(): Promise<void> {
     this.loading = true;
@@ -122,8 +121,6 @@ export struct SettingsPage {
       const background = ThemeManager.getInstance().getGlobalBackground();
       this.globalBgUri = background.globalUri;
       this.backgroundStrength = background.visibleStrength;
-      // 加载毛玻璃开关
-      this.glassEffectEnabled = ThemeManager.getInstance().getGlassEffectEnabled();
     } finally {
       this.loading = false;
     }
@@ -201,13 +198,13 @@ export struct SettingsPage {
   }
 
   private async updateGlassEffect(enabled: boolean): Promise<void> {
-    this.glassEffectEnabled = enabled;
+    this.glassEnabled = enabled;
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setGlassEffect(enabled);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(enabled ? '已开启毛玻璃效果' : '已关闭毛玻璃效果');
     } else {
-      this.glassEffectEnabled = !enabled;
+      this.glassEnabled = !enabled;
       this.toast('设置未保存，请重试');
     }
   }
@@ -466,9 +463,21 @@ export struct SettingsPage {
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                   .margin({ top: 4 })
-                this.toggleRow('启用毛玻璃效果', this.glassEffectEnabled, async (v: boolean) => {
-                  await this.updateGlassEffect(v);
-                })
+                Row() {
+                  Text('启用毛玻璃效果')
+                    .fontSize(13)
+                    .fontColor(this.palette.textPrimary)
+                    .layoutWeight(1)
+                  Toggle({ type: ToggleType.Switch, isOn: this.glassEnabled })
+                    .selectedColor(this.palette.primary)
+                    .onChange((v: boolean) => {
+                      this.updateGlassEffect(v);
+                    })
+                }
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+                .borderRadius(6)
+                .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
                 Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
                   .fontSize(10)
                   .fontColor(this.palette.textTertiary)
