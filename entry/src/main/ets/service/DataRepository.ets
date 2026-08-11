@@ -97,7 +97,8 @@ export class DataRepository {
       value === 'sakura' || value === 'forest';
   }
   private static isFontSizeScale(value: string): boolean {
-    return value === 'small' || value === 'standard' || value === 'large';
+    return value === 'xsmall' || value === 'small' || value === 'standard' ||
+      value === 'large' || value === 'xlarge';
   }
 
   // ========== 游戏战绩 ==========

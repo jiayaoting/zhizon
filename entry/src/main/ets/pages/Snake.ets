@@ -340,7 +340,6 @@ export struct SnakePage {
             Row()
               .layoutWeight(1)
               .aspectRatio(1)
-              .margin(0.5)
               .borderRadius(2)
               .backgroundColor(this.cellColor(cell, colIdx, rowIdx))
               // 食物脉冲动画
@@ -351,8 +350,11 @@ export struct SnakePage {
           }, (colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
+        .width('100%')
       }, (rowIdx: number) => rowIdx.toString())
     }
+    .width('100%')
+    .aspectRatio(1)
     .border({ width: 2, color: this.palette.borderDefault })
     .borderRadius(6)
     .padding(2)

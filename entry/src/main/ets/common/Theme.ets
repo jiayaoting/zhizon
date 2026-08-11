@@ -255,11 +255,14 @@ export const defaultDarkPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, 
 
 // ============================================================
 // 字号缩放比例
+// 5 档：超小、小、标准、大、特大
 // ============================================================
 function fontSizeRatio(scale: string): number {
+  if (scale === 'xsmall') return 0.8;
   if (scale === 'small') return 0.9;
-  if (scale === 'large') return 1.15;
-  return 1;
+  if (scale === 'large') return 1.3;
+  if (scale === 'xlarge') return 1.45;
+  return 1.15; // standard
 }
 
 // 按字号档位缩放 fs 系列，并注入全局字体（原地修改 palette）
@@ -547,9 +550,11 @@ export class ThemeManager {
 
   // 获取缩放后的字号（供组件使用）
   static scaledFontSize(base: number, scale: string): number {
+    if (scale === 'xsmall') return Math.max(8, Math.round(base * 0.8));
     if (scale === 'small') return Math.max(8, Math.round(base * 0.9));
-    if (scale === 'large') return Math.round(base * 1.15);
-    return base;
+    if (scale === 'large') return Math.round(base * 1.3);
+    if (scale === 'xlarge') return Math.round(base * 1.45);
+    return Math.round(base * 1.15); // standard
   }
 
   // 应用主题到 AppStorage
@@ -782,7 +787,8 @@ export class ThemeManager {
   }
 
   private isFontSizeScale(value: string): boolean {
-    return value === 'small' || value === 'standard' || value === 'large';
+    return value === 'xsmall' || value === 'small' || value === 'standard' ||
+      value === 'large' || value === 'xlarge';
   }
 
   // 校验字体是否在应用支持列表中（全部为免费商用授权）

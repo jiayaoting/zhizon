@@ -77,9 +77,11 @@ export struct SettingsPage {
 
   // 字号/字体选项
   private fontSizeOptions: FontSizeOption[] = [
+    { label: '超小', value: 'xsmall', preview: 9 },
     { label: '小', value: 'small', preview: 11 },
-    { label: '标准', value: 'standard', preview: 14 },
-    { label: '大', value: 'large', preview: 18 }
+    { label: '标准', value: 'standard', preview: 16 },
+    { label: '大', value: 'large', preview: 20 },
+    { label: '特大', value: 'xlarge', preview: 24 }
   ];
   private fontFamilyOptions: FontFamilyOption[] = [
     { name: 'HarmonyOS Sans', family: 'HarmonyOS Sans', category: '系统' },
@@ -235,8 +237,10 @@ export struct SettingsPage {
   }
 
   private fontSizeLabel(scale: string): string {
+    if (scale === 'xsmall') return '超小';
     if (scale === 'small') return '小';
     if (scale === 'large') return '大';
+    if (scale === 'xlarge') return '特大';
     return '标准';
   }
 

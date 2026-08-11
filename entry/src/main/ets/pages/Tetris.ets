@@ -552,7 +552,6 @@ export struct TetrisPage {
             Row()
               .layoutWeight(1)
               .aspectRatio(1)
-              .margin(0.5)
               .borderRadius(2)
               .backgroundColor(cell >= 100 ? PIECE_COLORS[cell - 100 - 1] :
                 (cell > 0 ? PIECE_COLORS[cell - 1] : this.palette.bgSurface2))
@@ -563,8 +562,11 @@ export struct TetrisPage {
           }, (colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
+        .width('100%')
       }, (rowIdx: number) => rowIdx.toString())
     }
+    .width('100%')
+    .aspectRatio(0.5)
     .border({ width: 2, color: this.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
@@ -1057,7 +1059,8 @@ export struct TetrisPage {
             if (this.isGameOver) { this.gameOverOverlay() }
             if (this.isPaused) { this.pauseOverlay() }
           }
-          .layoutWeight(1)
+          .width('100%')
+          .aspectRatio(0.5)
           .alignContent(Alignment.Center)
 
           // 旋转按钮
@@ -1065,6 +1068,7 @@ export struct TetrisPage {
         }
         .layoutWeight(1)
         .width('100%')
+        .justifyContent(FlexAlign.Center)
         .padding({ left: 8, right: 8, top: 4, bottom: 4 })
         }
       } else {
@@ -1096,6 +1100,7 @@ export struct TetrisPage {
             if (this.isPaused) { this.pauseOverlay() }
           }
           .layoutWeight(1)
+          .alignContent(Alignment.Center)
 
           // 右侧：下一个 + 旋转 + 信息
           Column({ space: 12 }) {

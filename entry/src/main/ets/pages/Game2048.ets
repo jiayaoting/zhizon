@@ -20,20 +20,21 @@ interface TileStyle {
 
 // 瓦片颜色映射
 // 2048 瓦片颜色（独立函数，使用硬编码颜色避免 arkts-no-standalone-this）
+// 所有前景色均为固定高对比色，不依赖主题变量，确保任何主题下数字都清晰可读
 function tileStyle(value: number, palette: ThemePalette): TileStyle {
   switch (value) {
-    case 2:    return { bg: '#1E293B', fg: palette.textPrimary, fontSize: 24 };
-    case 4:    return { bg: '#334155', fg: palette.textPrimary, fontSize: 24 };
+    case 2:    return { bg: '#1E293B', fg: '#E2E8F0', fontSize: 24 };
+    case 4:    return { bg: '#334155', fg: '#E2E8F0', fontSize: 24 };
     case 8:    return { bg: '#3B82F6', fg: '#FFFFFF', fontSize: 24 };
     case 16:   return { bg: '#2563EB', fg: '#FFFFFF', fontSize: 24 };
     case 32:   return { bg: '#8B5CF6', fg: '#FFFFFF', fontSize: 24 };
     case 64:   return { bg: '#7C3AED', fg: '#FFFFFF', fontSize: 24 };
-    case 128:  return { bg: palette.warning, fg: '#FFFFFF', fontSize: 22 };
-    case 256:  return { bg: '#F59E0B', fg: '#FFFFFF', fontSize: 22 };
-    case 512:  return { bg: palette.danger, fg: '#FFFFFF', fontSize: 22 };
-    case 1024: return { bg: '#EF4444', fg: '#FFFFFF', fontSize: 20 };
-    case 2048: return { bg: palette.primary, fg: '#0A0E1A', fontSize: 20 };
-    default:   return { bg: palette.bgSurface2, fg: palette.textSecondary, fontSize: 18 };
+    case 128:  return { bg: '#F59E0B', fg: '#FFFFFF', fontSize: 22 };
+    case 256:  return { bg: '#EA580C', fg: '#FFFFFF', fontSize: 22 };
+    case 512:  return { bg: '#EF4444', fg: '#FFFFFF', fontSize: 22 };
+    case 1024: return { bg: '#DC2626', fg: '#FFFFFF', fontSize: 20 };
+    case 2048: return { bg: '#FBBF24', fg: '#7C2D12', fontSize: 20 };
+    default:   return { bg: '#1A2030', fg: '#E2E8F0', fontSize: 18 };
   }
 }
 
@@ -384,23 +385,6 @@ export struct Game2048Page {
     this.bestScore = best;
   }
 
-  // ---- 瓦片渲染 ----
-  @Builder
-  tileCell(value: number) {
-    Stack() {
-      Text(value > 0 ? value.toString() : '')
-        .fontSize(tileStyle(value, this.palette).fontSize)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(tileStyle(value, this.palette).fg)
-        .fontWeight(FontWeight.Bold)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(tileStyle(value, this.palette).bg)
-    .borderRadius(8)
-    .alignContent(Alignment.Center)
-  }
-
   // ---- 棋盘渲染 ----
   @Builder
   gameBoard() {
@@ -408,23 +392,33 @@ export struct Game2048Page {
       ForEach(this.board, (row: number[], rowIdx: number) => {
         Row({ space: 8 }) {
           ForEach(row, (cell: number, colIdx: number) => {
-            Row()
-              .layoutWeight(1)
-              .aspectRatio(1)
-              .borderRadius(8)
-              .backgroundColor(this.palette.bgSurface2)
-              .overlay(this.tileCell(cell))
+            Stack() {
+              if (cell > 0) {
+                Text(cell.toString())
+                  .fontSize(tileStyle(cell, this.palette).fontSize)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(tileStyle(cell, this.palette).fg)
+                  .fontWeight(FontWeight.Bold)
+              }
+            }
+            .layoutWeight(1)
+            .aspectRatio(1)
+            .borderRadius(8)
+            .backgroundColor(tileStyle(cell, this.palette).bg)
+            .alignContent(Alignment.Center)
           }, (colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
       }, (rowIdx: number) => rowIdx.toString())
     }
     .width('100%')
-    .height('100%')
+    .aspectRatio(1)
     .padding(8)
     .backgroundColor(this.palette.bgSurface)
     .borderRadius(12)
     .border({ width: 1, color: this.palette.borderSubtle })
+    .scale(this.mergeBoardScale())
+    .animation({ duration: 180, curve: Curve.EaseOut })
     .gesture(
       PanGesture({ fingers: 1, direction: PanDirection.All, distance: 20 })
         .onActionEnd((event: GestureEvent) => {
@@ -832,8 +826,7 @@ export struct Game2048Page {
               }
               .width('100%')
               .layoutWeight(1)
-              .scale(this.mergeBoardScale())
-              .animation({ duration: 180, curve: Curve.EaseOut })
+              .alignContent(Alignment.Center)
             }
             .layoutWeight(1)
             .width('100%')
@@ -854,8 +847,7 @@ export struct Game2048Page {
                   if (this.isPaused) { this.pauseOverlay() }
                 }
                 .width(360)
-                .scale(this.mergeBoardScale())
-                .animation({ duration: 180, curve: Curve.EaseOut })
+                .alignContent(Alignment.Center)
               }
               .alignItems(HorizontalAlign.Center)
 
