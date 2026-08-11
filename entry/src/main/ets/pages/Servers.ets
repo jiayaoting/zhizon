@@ -236,39 +236,54 @@ export struct ServersPage {
     promptAction.showToast({ message: '检测完成' });
   }
 
-  // 检测单台服务器（不弹 toast）
+  // 检测单台服务器（不弹 toast），完成后刷新数据源 + 统计
   private async testSingleServer(s: Server): Promise<void> {
+    let status: 'online' | 'warning' | 'offline' = 'offline';
+    let connectedNow: boolean = false;
     try {
-      const ok: boolean = await SshService.testConnection(s);
-      const status: 'online' | 'warning' | 'offline' = ok ? 'online' : 'offline';
-      const idx: number = this.servers.findIndex((item: Server) => item.id === s.id);
-      if (idx >= 0) {
-        const updated: Server = {
-          id: s.id,
-          name: s.name,
-          host: s.host,
-          port: s.port,
-          username: s.username,
-          authType: s.authType,
-          connectionMode: s.connectionMode,
-          agentToken: s.agentToken,
-          privateKeyPath: s.privateKeyPath,
-          group: s.group,
-          tags: s.tags,
-          os: s.os,
-          status: status,
-          metrics: s.metrics,
-          lastConnected: ok ? Date.now() : s.lastConnected,
-          createdAt: s.createdAt
-        };
-        this.servers[idx] = updated;
-        if (ok) {
-          await DataRepository.updateServer(s.id, { lastConnected: Date.now() });
-        }
-      }
+      connectedNow = await SshService.testConnection(s);
+      status = connectedNow ? 'online' : 'offline';
     } catch (e) {
-      // 单台失败不影响其他
+      status = 'offline';
     }
+    const idx: number = this.servers.findIndex((item: Server) => item.id === s.id);
+    if (idx < 0) return;
+    const updated: Server = {
+      id: s.id,
+      name: s.name,
+      host: s.host,
+      port: s.port,
+      username: s.username,
+      authType: s.authType,
+      connectionMode: s.connectionMode,
+      agentToken: s.agentToken,
+      privateKeyPath: s.privateKeyPath,
+      group: s.group,
+      tags: s.tags,
+      os: s.os,
+      status: status,
+      metrics: s.metrics,
+      lastConnected: connectedNow ? Date.now() : s.lastConnected,
+      createdAt: s.createdAt
+    };
+    this.servers[idx] = updated;
+    // 更新数组引用 + 刷新 LazyForEach 数据源 + 刷新统计，触发 UI 更新
+    this.servers = [...this.servers];
+    this.refreshServersDataSource();
+    this.refreshStats();
+    if (connectedNow) {
+      try { await DataRepository.updateServer(s.id, { lastConnected: Date.now() }); } catch (_) { }
+    }
+  }
+
+  // 基于 servers 数组重新计算统计
+  private refreshStats(): void {
+    const stats: Stats = { ...this.stats };
+    stats.total = this.servers.length;
+    stats.online = this.servers.filter((s: Server) => s.status === 'online').length;
+    stats.offline = this.servers.filter((s: Server) => s.status === 'offline').length;
+    stats.warning = this.servers.filter((s: Server) => s.status === 'warning').length;
+    this.stats = stats;
   }
 
   // 状态点颜色
