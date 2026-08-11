@@ -319,10 +319,11 @@ export struct Game2048Page {
               .overlay(this.tileCell(cell))
           }, (colIdx: number) => colIdx.toString())
         }
-        .width('100%')
+        .layoutWeight(1)
       }, (rowIdx: number) => rowIdx.toString())
     }
     .width('100%')
+    .height('100%')
     .padding(8)
     .backgroundColor(this.palette.bgSurface)
     .borderRadius(12)
@@ -532,6 +533,7 @@ export struct Game2048Page {
               if (this.isGameOver) { this.gameOverOverlay() }
             }
             .width('100%')
+            .layoutWeight(1)
           }
           .layoutWeight(1)
           .width('100%')

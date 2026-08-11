@@ -223,13 +223,14 @@ export struct SnakePage {
         Row() {
           ForEach(row, (cell: number, colIdx: number) => {
             Row()
-              .width(this.isSm ? CELL_SIZE_SM : CELL_SIZE_LG)
-              .height(this.isSm ? CELL_SIZE_SM : CELL_SIZE_LG)
+              .layoutWeight(1)
+              .aspectRatio(1)
               .margin(0.5)
               .borderRadius(2)
               .backgroundColor(this.cellColor(cell, colIdx, rowIdx))
           }, (colIdx: number) => colIdx.toString())
         }
+        .layoutWeight(1)
       }, (rowIdx: number) => rowIdx.toString())
     }
     .border({ width: 2, color: this.palette.borderDefault })
@@ -566,6 +567,7 @@ export struct SnakePage {
               if (this.isPaused) { this.pauseOverlay() }
             }
             .width('100%')
+            .layoutWeight(1)
             .alignContent(Alignment.Center)
 
             Column({ space: 8 }) {
@@ -610,6 +612,8 @@ export struct SnakePage {
                 if (this.isGameOver) { this.gameOverOverlay() }
                 if (this.isPaused) { this.pauseOverlay() }
               }
+              .layoutWeight(1)
+              .alignContent(Alignment.Center)
 
               this.directionPad()
             }

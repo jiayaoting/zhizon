@@ -378,14 +378,15 @@ export struct TetrisPage {
         Row() {
           ForEach(row, (cell: number, colIdx: number) => {
             Row()
-              .width(this.isSm ? CELL_SIZE_SM : CELL_SIZE_LG)
-              .height(this.isSm ? CELL_SIZE_SM : CELL_SIZE_LG)
+              .layoutWeight(1)
+              .aspectRatio(1)
               .margin(0.5)
               .borderRadius(2)
               .backgroundColor(cell > 0 ? PIECE_COLORS[cell - 1] : this.palette.bgSurface2)
               .border({ width: cell > 0 ? 0.5 : 0, color: 'rgba(255,255,255,0.1)' })
           }, (colIdx: number) => colIdx.toString())
         }
+        .layoutWeight(1)
       }, (rowIdx: number) => rowIdx.toString())
     }
     .border({ width: 2, color: this.palette.borderDefault })
@@ -713,6 +714,7 @@ export struct TetrisPage {
             if (this.isGameOver) { this.gameOverOverlay() }
             if (this.isPaused) { this.pauseOverlay() }
           }
+          .layoutWeight(1)
           .alignContent(Alignment.Center)
 
           // 旋转按钮
@@ -750,6 +752,7 @@ export struct TetrisPage {
             if (this.isGameOver) { this.gameOverOverlay() }
             if (this.isPaused) { this.pauseOverlay() }
           }
+          .layoutWeight(1)
 
           // 右侧：下一个 + 旋转 + 信息
           Column({ space: 12 }) {
