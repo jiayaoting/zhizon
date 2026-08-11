@@ -1,10 +1,10 @@
 # 智子（Zhizon）详细设计文档
 
-> **版本**：v3.0.0
+> **版本**：v4.0.0
 > **平台**：HarmonyOS NEXT（鸿蒙 6+ / 纯血鸿蒙）
 > **Bundle Name**：`com.zhizon.manager`
 > **开发语言**：ArkTS
-> **文档状态**：v3.0 当前实现版（SSH 直连可用 + 凭据加密 + 终端 + 文件管理 + PVE）
+> **文档状态**：v4.0 当前实现版（游戏中心 + 多主题系统 + 终端渲染 + 缺陷追踪 + 治理模型）
 
 ---
 
@@ -54,13 +54,16 @@
 │  3 档断点 (isSm/isMd/isLg) @StorageLink 响应式   │
 ├─────────────────────────────────────────────────┤
 │                  ArkUI 表现层                    │
-│   12 Pages + 6 Components + @State 状态管理     │
+│   20 Pages + 9 Components + @State 状态管理     │
 │   全异步数据加载 (aboutToAppear + await)         │
 ├─────────────────────────────────────────────────┤
 │                  业务逻辑层                      │
 │   SshService (策略门面) │ PveService (PveClient) │
 │   DataRepository (CRUD 门面 + 辅助函数)         │
 │   CryptoHelper (AES-256-GCM 凭据加密)           │
+│   BackgroundImporter (沙箱背景图导入)           │
+│   DefectWorkflow (缺陷状态机)                   │
+│   WindowEnvironmentProvider (窗口环境感知)       │
 ├─────────────────────────────────────────────────┤
 │              引擎层 (双模通信)                   │
 │   SshEngine 接口                                │
@@ -68,13 +71,16 @@
 │   └─ DirectEngine (@ohos/libssh 直连)           │
 ├─────────────────────────────────────────────────┤
 │                  数据访问层                      │
-│   DatabaseHelper (RDB Store v3) │ 5 张持久化表  │
-│   servers(含 connection_mode) / pve_clusters /  │
-│   commands / alerts / settings                  │
+│   DatabaseHelper (RDB Store v4) │ 10 张持久化表 │
+│   servers / pve_clusters / commands / alerts /   │
+│   settings / game_scores / defects /            │
+│   defect_evidence / defect_history /            │
+│   defect_fix_results                            │
 ├─────────────────────────────────────────────────┤
 │              远程通信层                          │
 │   Go Agent (HTTP + WebSocket) │ @ohos/libssh    │
-│   /api/metrics /api/exec /api/files /ws/terminal│
+│   /api/metrics /api/exec /api/files             │
+│   /api/files/upload-base64 /ws/terminal /ws/ssh │
 ├─────────────────────────────────────────────────┤
 │            HarmonyOS 系统能力                    │
 │   NetworkKit │ CryptoArchitectureKit │ ArkData  │
@@ -134,7 +140,7 @@
 | 开发语言 | ArkTS + Go (Agent) | ✅ |
 | UI 框架 | ArkUI 声明式 + Stage 模型 | ✅ |
 | 目标 SDK | HarmonyOS 6.1.1 (API 24) | ✅ |
-| 数据存储 | RelationalStore (RDB v3) + 5 表 | ✅ |
+| 数据存储 | RelationalStore (RDB v4) + 10 表 | ✅ |
 | SSH 通信 | 双模：AgentEngine + DirectEngine | ✅ |
 | 凭据加密 | AES-256-GCM (CryptoArchitectureKit) | ✅ |
 | PVE API | `@kit.NetworkKit` HTTP 调 REST API | ✅ |
@@ -142,6 +148,11 @@
 | 文件管理 | Go Agent HTTP API / DirectEngine SFTP 只读 | ✅ |
 | 命令执行 | SshEngine.exec (双模路由) | ✅ |
 | 响应式 | @StorageLink 跨组件状态 + display API | ✅ |
+| 终端渲染 | AnsiParser + TerminalBuffer + TerminalView | ✅ |
+| 多主题系统 | ThemePalette + 6 配色 + 亮/暗模式 | ✅ |
+| 游戏中心 | 3 游戏 + 5 级难度 + 历史记录 | ✅ |
+| 缺陷追踪 | DefectRecord + DefectWorkflow + DefectClassifier | ✅ |
+| 导航系统 | NavigationFacade + PageRegistry + 类型化路由参数 | ✅ |
 | 图表渲染 | 自绘 Canvas | 🚧 规划 |
 | 后台保活 | BackgroundTaskKit | 🚧 规划 |
 
@@ -178,7 +189,7 @@ zhizon/
 ├── agent/                                 # Go Agent（服务端代理）
 │   ├── go.mod
 │   ├── go.sum
-│   └── main.go                            # 694 行，含 HTTP + WebSocket
+│   └── main.go                            # 1001 行，含 HTTP + WebSocket + SSH 网关
 │
 ├── doc/
 │   └── DESIGN.md                          # 本文档
@@ -199,49 +210,87 @@ zhizon/
         │   └── base/
         │       ├── element/color.json
         │       ├── element/string.json
-        │       └── profile/main_pages.json  # 12 页面路由
+        │       └── profile/main_pages.json  # 9 路由（AppShell + ServerDetail + PveNodeDetail + VmDetail + ServerForm + Tetris + Game2048 + Snake + GameHistory）
         │
         └── ets/
             ├── entryability/
             │   └── EntryAbility.ets       # 应用入口（延迟初始化加密+数据库）
             │
-            ├── common/                    # 🎨 主题与常量
-            │   ├── Theme.ets              # AppTheme + progressColor() + statusInfo()
+            ├── common/                    # 🎨 主题与常量（7 个）
+            │   ├── Theme.ets              # 多主题系统 + ThemePalette + 6 配色 + 亮/暗模式
             │   ├── Constants.ets          # 导航项 + 断点常量 + 尺寸常量
-            │   └── CryptoHelper.ets       # AES-256-GCM 凭据加密/解密
+            │   ├── CryptoHelper.ets       # AES-256-GCM 凭据加密/解密
+            │   ├── Difficulty.ets         # 游戏难度定义（5 级：超简单/简单/中等/困难/地狱）
+            │   ├── FailureHandling.ets    # 统一失败处理（AppFailure + RecoverableResult）
+            │   ├── Navigation.ets         # 导航系统（NavigationFacade + 类型化路由参数）
+            │   └── ThemeContracts.ets     # 主题契约接口（ThemePalette + PreferenceSnapshot）
             │
-            ├── model/                     # 📦 数据模型
-            │   └── Models.ets             # 13 个 interface + 1 个 type
+            ├── model/                     # 📦 数据模型（2 个）
+            │   ├── Models.ets             # 17 个 interface + type（含 ConnEvent/TransferProgress/AnsiSegment/TerminalSession）
+            │   └── GovernanceModels.ets   # 治理模型（AppFailure + RecoverableResult + RemoteResult + DefectRecord 等）
             │
-            ├── service/                   # 🔧 业务服务层
-            │   ├── DatabaseHelper.ets    # RDB Store v3 + 5 表 CRUD + 默认数据播种
+            ├── service/                   # 🔧 业务服务层（13 个）
+            │   ├── DatabaseHelper.ets    # RDB Store v4 + 10 表 CRUD + 默认数据播种
             │   ├── DataRepository.ets    # 数据门面 + 格式化工具 + PVE 代理方法
             │   ├── PveService.ets         # PveClient + PveService 门面
-            │   └── SshService.ets         # AgentClient + AgentEngine + DirectEngine + SshService 门面
+            │   ├── SshService.ets         # AgentClient + AgentEngine + DirectEngine + SshService 门面
+            │   ├── SshService_new.ets     # SSH 服务重构版（WIP）
+            │   ├── BackgroundImporter.ets # 沙箱背景图导入 + 强度调节
+            │   ├── DefectClassifier.ets   # 缺陷分类器
+            │   ├── DefectWorkflow.ets     # 缺陷状态机工作流
+            │   ├── PickerAdapter.ets      # 选择器适配器
+            │   ├── PveTransportAdapter.ets # PVE 传输适配器
+            │   ├── RemoteOperation.ets   # 远程操作封装
+            │   ├── RemoteResultAdapter.ets # 远程结果适配器
+            │   └── WindowEnvironmentProvider.ets # 窗口环境感知
             │
-            ├── components/                # 🧩 通用组件 (6 个)
+            ├── terminal/                  # 🖥️ 终端渲染模块（3 个）
+            │   ├── AnsiParser.ets        # ANSI 转义序列解析（颜色/加粗/斜体/下划线）
+            │   ├── TerminalBuffer.ets    # 终端缓冲区（行管理 + 滚动）
+            │   └── TerminalView.ets      # 终端渲染组件（Mono 字体 + 状态着色 + 自动滚动）
+            │
+            ├── components/                # 🧩 通用组件 (9 个)
             │   ├── NavSidebar.ets         # 左侧导航栏（支持 compact 模式）
             │   ├── TopBar.ets             # 顶栏（响应式 padding）
             │   ├── StatusBadge.ets        # 状态徽章
             │   ├── ProgressBar.ets        # 进度条（阈值变色）
             │   ├── MetricCard.ets         # 指标卡
-            │   └── EmptyState.ets         # 空状态占位
+            │   ├── EmptyState.ets         # 空状态占位
+            │   ├── DifficultyOption.ets   # 难度选择项（图标 + 标签 + 描述 + 选中态）
+            │   ├── FixedBottomNav.ets     # 固定底部导航（手机端 5 Tab + 更多）
+            │   └── GlobalBackgroundLayer.ets # 全局背景层（自定义背景图 + 强度调节）
             │
-            └── pages/                     # 📱 12 个页面
-                ├── AppShell.ets           # 自适应主框架（底部Tab / 侧边栏切换）
-                ├── Index.ets              # 总览仪表盘
-                ├── Servers.ets            # SSH 服务器列表（自动检测状态）
-                ├── ServerDetail.ets       # 服务器监控详情
-                ├── ServerForm.ets         # 添加/编辑服务器表单
-                ├── Terminal.ets           # SSH 终端（多会话 + 命令执行）
-                ├── Files.ets              # SFTP 文件管理
-                ├── Pve.ets                # PVE 集群列表 + 添加对话框
-                ├── PveNodeDetail.ets      # PVE 节点详情
-                ├── VmDetail.ets           # 虚拟机详情
-                ├── Commands.ets           # 快捷命令库
-                ├── Batch.ets              # 批量操作
-                ├── Alerts.ets             # 告警中心
-                └── Settings.ets           # 设置
+            ├── pages/                     # 📱 20 个页面
+            │   ├── AppShell.ets           # 自适应主框架（底部Tab / 侧边栏切换）
+            │   ├── Index.ets              # 总览仪表盘
+            │   ├── Servers.ets            # SSH 服务器列表（自动检测状态）
+            │   ├── ServerDetail.ets       # 服务器监控详情
+            │   ├── ServerForm.ets         # 添加/编辑服务器表单
+            │   ├── Terminal.ets           # SSH 终端（多会话 + 命令执行）
+            │   ├── Files.ets              # SFTP 文件管理
+            │   ├── Pve.ets                # PVE 集群列表 + 添加对话框
+            │   ├── PveNodeDetail.ets      # PVE 节点详情
+            │   ├── VmDetail.ets           # 虚拟机详情
+            │   ├── Commands.ets           # 快捷命令库
+            │   ├── Batch.ets              # 批量操作
+            │   ├── Alerts.ets             # 告警中心
+            │   ├── Settings.ets           # 设置
+            │   ├── More.ets               # 更多功能入口
+            │   ├── Games.ets              # 游戏中心入口（3 游戏 + 难度选择器）
+            │   ├── Tetris.ets             # 俄罗斯方块（7 种方块 + 旋转/移动/消行）
+            │   ├── Game2048.ets           # 2048（4x4 棋盘 + 滑动合并）
+            │   ├── Snake.ets              # 贪吃蛇（方向控制 + 食物 + 碰撞检测）
+            │   └── GameHistory.ets        # 游戏历史记录（分数 + 难度 + 排行）
+            │
+            └── test/                      # 🧪 单元测试（8 个）
+                ├── DefectClassifier.test.ets
+                ├── DefectWorkflow.test.ets
+                ├── GameLaunch.test.ets
+                ├── Navigation.test.ets
+                ├── RemoteOperation.test.ets
+                ├── RemoteResultAdapter.test.ets
+                ├── WindowEnvironmentProvider.test.ets
+                └── WindowEnvironmentSnapshot.test.ets
 ```
 
 ---
@@ -299,14 +348,33 @@ zhizon/
 │   ├── 告警卡片
 │   └── 标记已处理
 │
-└── 9. 系统设置
-    ├── 常规（端口/超时/重连）
-    ├── 外观（主题/字号/字体）
-    ├── 终端（字体/光标/滚屏/256色）
-    ├── 安全（生物识别/指纹校验）
-    ├── 通知（推送/勿扰/阈值）
-    ├── 数据（导出/导入/备份）
-    └── 关于（版本/更新/协议）
+├── 9. 系统设置
+│   ├── 常规（端口/超时/重连）
+│   ├── 外观（主题/字号/字体）
+│   ├── 终端（字体/光标/滚屏/256色）
+│   ├── 安全（生物识别/指纹校验）
+│   ├── 通知（推送/勿扰/阈值）
+│   ├── 数据（导出/导入/备份）
+│   └── 关于（版本/更新/协议）
+│
+├── 10. 游戏中心
+│   ├── 俄罗斯方块（5 级难度 + 触屏手势 + 按钮双控制）
+│   ├── 2048（5 级难度 + 滑动操作）
+│   ├── 贪吃蛇（5 级难度 + 方向控制）
+│   ├── 游戏难度选择（5 级：超简单/简单/中等/困难/地狱）
+│   └── 游戏历史记录（分数 + 难度 + 排行）
+│
+├── 11. 多主题系统
+│   ├── 6 套配色（终端青绿/海洋蓝/日落橙/极光紫/樱花粉/自然绿）
+│   ├── 亮/暗模式（跟随系统或手动）
+│   ├── 自定义背景图（沙箱导入 + 强度调节）
+│   └── 字号缩放（小/标准/大）
+│
+└── 12. 缺陷追踪
+    ├── 缺陷记录（症状/步骤/预期/实际/设备信息）
+    ├── 状态机（分析中→待修复→待验证→已确认）
+    ├── 验证证据（静态/代码/设备/用户确认）
+    └── 修复结果（影响范围/验证条件/残余风险）
 ```
 
 ### 4.2 各模块详细设计
@@ -461,6 +529,86 @@ zhizon/
 
 ---
 
+#### 模块 9：游戏中心
+
+**实现位置**：[pages/Games.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Games.ets)、[pages/Tetris.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Tetris.ets)（794 行）、[pages/Game2048.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Game2048.ets)（592 行）、[pages/Snake.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Snake.ets)（636 行）、[pages/GameHistory.ets](file:///workspace/zhizon/entry/src/main/ets/pages/GameHistory.ets)（213 行）、[common/Difficulty.ets](file:///workspace/zhizon/entry/src/main/ets/common/Difficulty.ets)（201 行）
+
+**功能列表**：
+
+| 功能 | 实现状态 |
+|------|---------|
+| 游戏中心入口 | ✅ 3 游戏 + 难度选择器 |
+| 俄罗斯方块 | ✅ 7 种方块 + 旋转/移动/消行 + 5 级难度 |
+| 2048 | ✅ 4x4 棋盘 + 滑动合并 + 5 级难度 |
+| 贪吃蛇 | ✅ 方向控制 + 食物 + 碰撞检测 + 5 级难度 |
+| 游戏难度 | ✅ 5 级（超简单/简单/中等/困难/地狱） |
+| GameLaunchFacade | ✅ 启动参数验证 + 路由跳转 |
+| 游戏历史 | ✅ 分数记录 + 难度标记 + 排行 |
+
+---
+
+#### 模块 10：多主题系统
+
+**实现位置**：[common/Theme.ets](file:///workspace/zhizon/entry/src/main/ets/common/Theme.ets)（758 行）、[common/ThemeContracts.ets](file:///workspace/zhizon/entry/src/main/ets/common/ThemeContracts.ets)、[service/BackgroundImporter.ets](file:///workspace/zhizon/entry/src/main/ets/service/BackgroundImporter.ets)、[components/GlobalBackgroundLayer.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlobalBackgroundLayer.ets)
+
+**功能列表**：
+
+| 功能 | 实现状态 |
+|------|---------|
+| 6 套配色 | ✅ CYAN/OCEAN/SUNSET/AURORA/SAKURA/FOREST |
+| 亮/暗模式 | ✅ 跟随系统或手动切换 |
+| ThemePalette 接口 | ✅ 30+ 颜色字段 + 8 级字号 |
+| 自定义背景 | ✅ 沙箱导入 + 强度调节 |
+| 偏好持久化 | ✅ PreferenceSnapshot + RDB |
+| 偏好回滚 | ✅ PreferencePersistenceResult |
+
+---
+
+#### 模块 11：终端渲染模块
+
+**实现位置**：[terminal/AnsiParser.ets](file:///workspace/zhizon/entry/src/main/ets/terminal/AnsiParser.ets)（269 行）、[terminal/TerminalBuffer.ets](file:///workspace/zhizon/entry/src/main/ets/terminal/TerminalBuffer.ets)（121 行）、[terminal/TerminalView.ets](file:///workspace/zhizon/entry/src/main/ets/terminal/TerminalView.ets)（206 行）
+
+**功能列表**：
+
+| 功能 | 实现状态 |
+|------|---------|
+| ANSI 解析 | ✅ 颜色/加粗/斜体/下划线 |
+| 终端缓冲区 | ✅ 行管理 + 滚动 |
+| 终端渲染 | ✅ Mono 字体 + 状态着色 + 自动滚动 |
+
+---
+
+#### 模块 12：缺陷追踪
+
+**实现位置**：[model/GovernanceModels.ets](file:///workspace/zhizon/entry/src/main/ets/model/GovernanceModels.ets)（135 行）、[service/DefectWorkflow.ets](file:///workspace/zhizon/entry/src/main/ets/service/DefectWorkflow.ets)（137 行）、[service/DefectClassifier.ets](file:///workspace/zhizon/entry/src/main/ets/service/DefectClassifier.ets)
+
+**功能列表**：
+
+| 功能 | 实现状态 |
+|------|---------|
+| 缺陷记录 | ✅ DefectRecord 完整字段 |
+| 状态机 | ✅ 6 状态（分析中/待信息/待修复/待验证/已确认/未复现） |
+| 验证证据 | ✅ 4 类型（静态/代码/设备/用户确认） |
+| 修复结果 | ✅ 影响范围 + 验证条件 + 残余风险 |
+| 状态历史 | ✅ DefectStateHistory 变更记录 |
+
+---
+
+#### 模块 13：导航系统
+
+**实现位置**：[common/Navigation.ets](file:///workspace/zhizon/entry/src/main/ets/common/Navigation.ets)（376 行）
+
+**功能列表**：
+
+| 功能 | 实现状态 |
+|------|---------|
+| NavigationFacade | ✅ 页面注册表 + 导航验证 |
+| 类型化路由参数 | ✅ 7 种 RouteParams 类 |
+| 页面可用性 | ✅ EMBEDDED（内嵌）/ ROUTE（独立路由） |
+| 导航结果 | ✅ NavigationSuccess / NavigationFailure |
+
+---
+
 ## 五、自适应布局设计
 
 ### 5.1 三档响应式断点
@@ -546,7 +694,7 @@ aboutToAppear() {
 
 ### 6.1 核心实体
 
-详见 [model/Models.ets](file:///workspace/zhizon/entry/src/main/ets/model/Models.ets)（194 行），共 13 个 interface + 1 个 type：
+详见 [model/Models.ets](file:///workspace/zhizon/entry/src/main/ets/model/Models.ets)（217 行），共 17 个 interface + type，新增 `ConnEvent`、`TransferProgress`、`AnsiSegment`、`TerminalSession`：
 
 | 实体 | 说明 | 关键字段 |
 |------|------|---------|
@@ -566,6 +714,11 @@ aboutToAppear() {
 | `TransferItem` | 传输项 | id, name, direction, progress, status, speed |
 | `Stats` | 统计聚合 | total, online, warning, offline, alerts, pveNodes, vmTotal, vmRunning... |
 | `TerminalSession` | 终端会话 | id, serverName, cwd, history[] |
+| `ConnEvent` | 连接事件 | type, message, timestamp |
+| `TransferProgress` | 传输进度 | transferred, total, speed |
+| `AnsiSegment` | ANSI 解析段 | text, color, bold, italic, underline |
+
+**治理模型**：详见 [model/GovernanceModels.ets](file:///workspace/zhizon/entry/src/main/ets/model/GovernanceModels.ets)（135 行），含 `AppFailure`、`RecoverableResult`、`RemoteResult`、`DefectRecord`、`DefectEvidence`、`DefectStateHistory`、`DefectFixResult` 等。
 
 ### 6.2 数据存储方案
 
@@ -577,15 +730,20 @@ aboutToAppear() {
 | 快捷命令 | RDB `commands` 表 | ✅ |
 | 告警记录 | RDB `alerts` 表 | ✅ |
 | 应用设置 | RDB `settings` 表 | ✅ |
+| 游戏分数记录 | RDB `game_scores` 表 | ✅ |
+| 缺陷记录 | RDB `defects` 表 | ✅ |
+| 缺陷证据 | RDB `defect_evidence` 表 | ✅ |
+| 缺陷状态历史 | RDB `defect_status_history` 表 | ✅ |
+| 缺陷修复结果 | RDB `defect_fix_results` 表 | ✅ |
 | 加密主密钥 | preferences 持久化 | ✅ |
 | 服务器实时指标 | exec 命令解析 / Agent API 实时获取 | ✅ |
 | PVE 节点/VM 数据 | PVE REST API 实时获取 | ✅ |
 
 ### 6.3 数据库表结构
 
-**数据库版本**：v3
+**数据库版本**：v4
 
-**servers 表 (v3)**：id(PK), name, host, port, username, auth_type, password_enc, key_id, key_content, grp, tags, os, created_at, last_connected, connection_mode, agent_token, private_key_path
+**servers 表 (v4)**：id(PK), name, host, port, username, auth_type, password_enc, key_id, key_content, grp, tags, os, created_at, last_connected, connection_mode(默认 'direct'), agent_token, private_key_path
 
 **pve_clusters 表**：id(PK), name, host, port, username, auth_type, password_enc, token_id, token_secret_enc, verify_tls, created_at, last_sync
 
@@ -595,9 +753,19 @@ aboutToAppear() {
 
 **settings 表**：key(PK), value
 
+**game_scores 表**：id(PK), game, score, level, difficulty, created_at
+
+**defects 表**：defect_key(PK), title, symptom, preconditions, steps, expected_behavior, actual_behavior, device_info, source, severity, status, priority, affected_features, fix_result, created_at, updated_at
+
+**defect_evidence 表**：evidence_id(PK), defect_key, evidence_type, conclusion, source, conditions, operator, recorded_at
+
+**defect_status_history 表**：history_id(PK), defect_key, from_status, to_status, operator, trigger, evidence_id, recorded_at
+
+**defect_fix_results 表**：defect_key(PK), scope, expected_behavior, failure_behavior, validation_conditions, residual_risks
+
 ### 6.4 初始默认数据
 
-由 `DatabaseHelper.seedDefaults()` 在首次启动时播种：
+由 `DatabaseHelper.seedDefaults()` 在首次启动时播种（已移除 MockData，全量真实数据）：
 
 | 数据 | 数量 | 说明 |
 |------|------|------|
@@ -610,14 +778,19 @@ aboutToAppear() {
 
 ### 7.1 设计风格
 
-- **风格**：tech-dark（深色终端科技风）
-- **主色**：终端青绿 `#00D9A3`
+- **风格**：tech-dark（深色终端科技风），支持多主题系统切换
+- **多主题系统**：6 套配色（ColorThemeId 枚举：CYAN/OCEAN/SUNSET/AURORA/SAKURA/FOREST），亮/暗模式（跟随系统或手动）
+- **主色（终端青绿主题，默认）**：`#00D9A3`
 - **强调色**：紫色 `#8B5CF6`（PVE 专属）、信息蓝 `#3B82F6`
 - **字体**：系统字体 + JetBrains Mono（代码/数字）
 
 ### 7.2 颜色规范
 
-详见 [common/Theme.ets](file:///workspace/zhizon/entry/src/main/ets/common/Theme.ets)
+详见 [common/Theme.ets](file:///workspace/zhizon/entry/src/main/ets/common/Theme.ets) 与 [common/ThemeContracts.ets](file:///workspace/zhizon/entry/src/main/ets/common/ThemeContracts.ets)
+
+**ThemePalette 接口**：30+ 颜色字段 + 8 级字号 + `isDark` 标志（区分亮/暗模式）
+
+以下为**终端青绿主题（默认）**色值：
 
 | 用途 | 色值 |
 |------|------|
@@ -685,7 +858,7 @@ function progressColor(value: number): string {
 
 ## 八、通用组件设计
 
-### 8.1 组件清单（6 个）
+### 8.1 组件清单（9 个）
 
 | 组件 | 文件 | 说明 |
 |------|------|------|
@@ -695,6 +868,9 @@ function progressColor(value: number): string {
 | ProgressBar | [components/ProgressBar.ets](file:///workspace/zhizon/entry/src/main/ets/components/ProgressBar.ets) | 进度条，阈值自动变色 |
 | MetricCard | [components/MetricCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/MetricCard.ets) | 指标卡，标题 + 大数字 + 单位 + 副标 |
 | EmptyState | [components/EmptyState.ets](file:///workspace/zhizon/entry/src/main/ets/components/EmptyState.ets) | 空状态占位，图标 + 标题 + 描述 |
+| DifficultyOption | [components/DifficultyOption.ets](file:///workspace/zhizon/entry/src/main/ets/components/DifficultyOption.ets) | 难度选择项（图标 + 标签 + 描述 + 选中态） |
+| FixedBottomNav | [components/FixedBottomNav.ets](file:///workspace/zhizon/entry/src/main/ets/components/FixedBottomNav.ets) | 固定底部导航（手机端 5 Tab + 更多） |
+| GlobalBackgroundLayer | [components/GlobalBackgroundLayer.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlobalBackgroundLayer.ets) | 全局背景层（自定义背景图 + 强度调节） |
 
 ---
 
@@ -709,9 +885,10 @@ function progressColor(value: number): string {
 
 ### 9.2 子页面跳转
 
-- **进入详情页**：`router.pushUrl({ url: 'pages/XxxDetail', params: { id: xxx } })`
+- **进入详情页**：通过 `NavigationFacade` 统一入口（替代直接 `router.pushUrl`），内部进行页面注册表查找 + 导航参数验证后跳转
 - **返回**：`router.back()` 或 `router.replaceUrl()`
-- **传参方式**：`params` 对象，接收方 `router.getParams() as Record<string, string>`
+- **传参方式**：类型化 `RouteParams` 对象（7 种类型），接收方 `router.getParams() as XxxRouteParams`
+- **导航结果**：`NavigationSuccess` / `NavigationFailure`，支持页面可用性检查（EMBEDDED 内嵌 / ROUTE 独立路由）
 
 ### 9.3 页面跳转关系
 
@@ -727,14 +904,16 @@ AppShell (主框架)
 ├── Commands
 ├── Batch
 ├── Alerts
-└── Settings
+├── Settings
+└── More
+    └──> Games ──> Tetris / Game2048 / Snake ──> GameHistory
 ```
 
 ---
 
 ## 十、SshService 详细设计
 
-**实现文件**：[service/SshService.ets](file:///workspace/zhizon/entry/src/main/ets/service/SshService.ets)（921 行）
+**实现文件**：[service/SshService.ets](file:///workspace/zhizon/entry/src/main/ets/service/SshService.ets)（1138 行）
 
 ### 10.1 类结构
 
@@ -744,7 +923,7 @@ AppShell (主框架)
 | `AgentClient` | 69-221 | Agent HTTP 通信客户端 |
 | `AgentEngine` | 228-482 | 封装 AgentClient 为 SshEngine |
 | `DirectEngine` | 490-799 | 基于 @ohos/libssh 的直连引擎 |
-| `SshService` | 808-921 | 静态方法门面，策略路由 |
+| `SshService` | 808-1138 | 静态方法门面，策略路由 |
 
 ### 10.2 错误码常量
 
@@ -754,6 +933,9 @@ AppShell (主框架)
 | `SSH_ERR_TIMEOUT` | 1002 | 连接超时 |
 | `SSH_ERR_HOST_UNREACH` | 1003 | 主机不可达 |
 | `SSH_ERR_KEY_INVALID` | 1004 | 密钥无效 |
+| `SSH_ERR_PERMISSION` | 1005 | 权限不足 |
+| `SSH_ERR_PROTOCOL` | 1006 | 协议错误 |
+| `SSH_ERR_HTTP` | 1007 | HTTP 通信错误 |
 | `AGENT_ERR_UNREACH` | 2001 | Agent 不可达 |
 | `AGENT_ERR_TOKEN` | 2002 | Agent Token 错误 |
 
@@ -762,7 +944,7 @@ AppShell (主框架)
 | 方法 | 功能 | 实现方式 |
 |------|------|---------|
 | `testConnection(server)` | 测试连接 | 调用 testConnectionEx，返回 boolean |
-| `testConnectionEx(server)` | 测试连接（含错误信息） | 创建引擎 → connect → 失败清理引擎 |
+| `testConnectionEx(server)` | 测试连接（含错误信息） | 创建引擎 → connect → 失败清理引擎，返回 `TestResult(ok, message)` |
 | `exec(server, cmd)` | 执行命令 | 双模路由 |
 | `getMetrics(server)` | 获取指标 | 双模路由（含空值兜底） |
 | `listFiles(server, path)` | 列出文件 | 双模路由 |
@@ -771,7 +953,7 @@ AppShell (主框架)
 | `uploadFile(server, local, remote)` | 上传文件 | 双模路由 |
 | `downloadFile(server, remote, local)` | 下载文件 | 双模路由 |
 | `disconnect(server)` | 断开连接 | 清理引擎缓存 |
-| `hydrateCredentials(server)` | 凭据解密 | 从加密存储解密密码/私钥到内存态 |
+| `hydrateCredentials(server)` | 凭据解密 | 从加密存储解密密码/私钥到内存态，返回 `RemoteResult` |
 
 ### 10.4 DirectEngine.waitForCallback
 
@@ -802,10 +984,12 @@ private static waitForCallback(ssh, host, port, keyPath, ms): Promise<number> {
 | `/api/exec` | POST | 执行命令（30s 超时） | ✅ |
 | `/api/files` | GET | 列出目录 | ✅ |
 | `/api/files/upload` | POST | 上传文件（100MB 限制） | ✅ |
+| `/api/files/upload-base64` | POST | 上传文件（base64 编码，小文件） | ✅ |
 | `/api/files/download` | GET | 下载文件 | ✅ |
 | `/api/files/mkdir` | POST | 创建目录 | ✅ |
 | `/api/files/delete` | POST | 删除文件 | ✅ |
 | `/ws/terminal` | WS | WebSocket 终端（60s 心跳） | ✅ |
+| `/ws/ssh` | WS | WebSocket SSH 网关（Agent 代理 SSH，用于直连模式降级） | ✅ |
 
 ---
 
@@ -866,6 +1050,8 @@ private static waitForCallback(ssh, host, port, keyPath, ms): Promise<number> {
 
 ## 十二、Go Agent 设计
 
+**实现文件**：[agent/main.go](file:///workspace/zhizon/agent/main.go)（1001 行）
+
 ### 12.1 架构
 
 Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通过 HTTP/WebSocket 与它通信。
@@ -884,7 +1070,23 @@ Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通�
 - **删除保护**：禁止删除 root 目录
 - **日志中间件**：记录请求耗时
 
-### 12.3 启动方式
+### 12.3 端点清单
+
+| 端点 | 方法 | 功能 |
+|------|------|------|
+| `/api/health` | GET | 健康检查 |
+| `/api/metrics` | GET | 系统指标 |
+| `/api/exec` | POST | 执行命令 |
+| `/api/files` | GET | 列出目录 |
+| `/api/files/upload` | POST | 上传文件 |
+| `/api/files/upload-base64` | POST | 上传文件（base64 编码） |
+| `/api/files/download` | GET | 下载文件 |
+| `/api/files/mkdir` | POST | 创建目录 |
+| `/api/files/delete` | POST | 删除文件 |
+| `/ws/terminal` | WS | WebSocket 终端 |
+| `/ws/ssh` | WS | WebSocket SSH 网关（`wsSSHGateway`，Agent 代理 SSH 连接，用于直连模式降级） |
+
+### 12.4 启动方式
 
 ```bash
 ./zhizon-agent -port 9527 -host 0.0.0.0 -token zhizon-agent -root /
@@ -918,7 +1120,7 @@ Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通�
 | **M5** | 全异步改造、响应式布局（3 档断点） | ✅ |
 | **M6** | DirectEngine SSH 直连可用、ServerForm 完整表单、Terminal 命令执行 | ✅ |
 | **M7** | 监控告警、后台保活 | 🚧 |
-| **M8** | VM 控制台、SFTP 增强、批量操作增强 | 🚧 |
+| **M8** | 游戏中心 + 多主题系统 + 终端渲染模块 + 缺陷追踪系统 | ✅ |
 
 ### 14.2 关键修复记录
 
@@ -936,6 +1138,15 @@ Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通�
 | 2026-08-06 | Terminal.ets 完整重写（多会话 + exec 命令 + 自定义选择弹窗） |
 | 2026-08-06 | Files.ets 服务器选择器改为自定义弹窗 |
 | 2026-08-06 | ServerForm.ets 连接测试改用 testConnectionEx 显示详细错误 |
+| 2026-08-07 | 游戏中心（俄罗斯方块 + 2048 + 贪吃蛇 + 5 级难度） |
+| 2026-08-07 | 多主题系统（6 配色 + 亮/暗模式 + 自定义背景） |
+| 2026-08-07 | 终端渲染模块（AnsiParser + TerminalBuffer + TerminalView） |
+| 2026-08-07 | 导航系统重构（NavigationFacade + 类型化路由参数） |
+| 2026-08-07 | 缺陷追踪系统（DefectRecord + DefectWorkflow + DefectClassifier） |
+| 2026-08-07 | 数据库 v4（game_scores + defects 4 表） |
+| 2026-08-07 | 治理模型（GovernanceModels + RemoteResult + PreferenceSnapshot） |
+| 2026-08-07 | 单元测试（8 个测试文件） |
+| 2026-08-07 | 删除 MockData.ets，全量真实数据 |
 
 ---
 
@@ -945,21 +1156,37 @@ Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通�
 
 | 文件 | 行数 | 说明 |
 |------|------|------|
-| SshService.ets | 921 | SSH 双模引擎 + 门面 |
-| Files.ets | 627 | SFTP 文件管理 |
-| Servers.ets | 507 | 服务器列表 |
-| Terminal.ets | 505 | SSH 终端 |
-| ServerForm.ets | 501 | 服务器表单 |
-| DatabaseHelper.ets | 488 | RDB 数据库 |
-| PveService.ets | 370 | PVE API 客户端 |
-| ServerDetail.ets | 375 | 服务器详情 |
-| DataRepository.ets | 161 | 数据仓库门面 |
-| Models.ets | 194 | 数据模型 |
-| CryptoHelper.ets | 113 | 凭据加密 |
-| EntryAbility.ets | 94 | 应用入口 |
-| main.go (Agent) | 694 | Go Agent |
-| 其他页面/组件 | ~2500 | Index/Pve/Batch/Alerts/Settings/Commands + 6 组件 |
-| **总计** | **~7,050** | |
+| SshService.ets | 1138 | SSH 双模引擎 + 门面 |
+| SshService_new.ets | 1053 | SSH 服务重构版（WIP） |
+| DatabaseHelper.ets | 875 | RDB v4 数据库 |
+| Tetris.ets | 794 | 俄罗斯方块 |
+| Theme.ets | 758 | 多主题系统 |
+| Files.ets | 683 | SFTP 文件管理 |
+| Snake.ets | 636 | 贪吃蛇 |
+| VmDetail.ets | 617 | 虚拟机详情 |
+| PveNodeDetail.ets | 594 | PVE 节点详情 |
+| Game2048.ets | 592 | 2048 |
+| Pve.ets | 582 | PVE 集群列表 |
+| Terminal.ets | 582 | SSH 终端 |
+| Servers.ets | 545 | 服务器列表 |
+| ServerForm.ets | 536 | 服务器表单 |
+| Settings.ets | 534 | 设置 |
+| Index.ets | 498 | 总览仪表盘 |
+| DataRepository.ets | 448 | 数据仓库门面 |
+| ServerDetail.ets | 420 | 服务器详情 |
+| Navigation.ets | 376 | 导航系统 |
+| Batch.ets | 375 | 批量操作 |
+| PveService.ets | 338 | PVE API 客户端 |
+| AnsiParser.ets | 269 | ANSI 解析器 |
+| Alerts.ets | 269 | 告警中心 |
+| Models.ets | 217 | 数据模型 |
+| GameHistory.ets | 213 | 游戏历史 |
+| TerminalView.ets | 206 | 终端渲染组件 |
+| Difficulty.ets | 201 | 难度定义 |
+| AppShell.ets | 194 | 自适应主框架 |
+| main.go | 1001 | Go Agent |
+| 其他文件 | ~3000 | GovernanceModels + 9 组件 + 7 common + 4 service + terminal + tests |
+| **总计** | **~16,864** | |
 
 ### 15.2 文件清单
 
@@ -967,10 +1194,11 @@ Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通�
 |------|------|------|
 | 配置文件 | 8 | build-profile / oh-package / module.json5 / ... |
 | 资源文件 | 3 | color.json / string.json / main_pages.json |
+| ArkTS 代码 | 55 | 1 EntryAbility + 7 common + 2 model + 13 service + 3 terminal + 9 components + 20 pages |
+| 测试文件 | 8 | DefectClassifier/DefectWorkflow/GameLaunch/Navigation/RemoteOperation/RemoteResultAdapter/WindowEnvironmentProvider/WindowEnvironmentSnapshot |
 | Go Agent | 3 | go.mod / go.sum / main.go |
-| ArkTS 代码 | 24 | EntryAbility + 3 common + 4 service + 1 model + 6 components + 12 pages + 1 AppShell |
 | 文档 | 2 | README.md + doc/DESIGN.md |
-| **合计** | **40** | |
+| **合计** | **~69** | |
 
 ---
 
@@ -995,6 +1223,7 @@ Agent 是运行在被管理 Linux 服务器上的轻量级 Go 进程，App 通�
 | v1.2.0 | 2026-08-05 | 自适应布局（3 档断点）、响应式安全区域、ArkTS 严格模式合规 |
 | v2.0.0 | 2026-08-05 | 双模通信改造：SshEngine 接口、AgentEngine + DirectEngine |
 | v3.0.0 | 2026-08-06 | SSH 直连可用、凭据加密 AES-256-GCM、ServerForm 完整表单、Terminal 命令执行、自定义选择弹窗、文档全面更新（代码行数/新增模块/修复记录） |
+| v4.0.0 | 2026-08-07 | 游戏中心（3 游戏 + 5 级难度）、多主题系统（6 配色 + 亮/暗 + 自定义背景）、终端渲染模块、导航系统重构、缺陷追踪系统、数据库 v4、治理模型、8 个单元测试、MockData 移除 |
 
 ---
 
