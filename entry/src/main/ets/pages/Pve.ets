@@ -460,78 +460,74 @@ export struct PvePage {
               .width('100%')
               .margin({ bottom: 12 })
 
-            Scroll() {
-              Column({ space: 10 }) {
+            Column({ space: 10 }) {
+              Column({ space: 4 }) {
+                Text('集群名称').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
+                TextInput({ text: this.addClusterName, placeholder: '例如: homelab-cluster' })
+                  .onChange((value: string) => { this.addClusterName = value; })
+                  .fontSize(14)
+                  .height(40)
+                  .borderRadius(8)
+                  .backgroundColor(this.palette.bgSurface2)
+                  .fontColor(this.palette.textPrimary)
+              }
+              .width('100%')
+
+              Column({ space: 4 }) {
+                Text('主机地址').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
+                TextInput({ text: this.addClusterHost, placeholder: '例如: 192.168.1.10' })
+                  .onChange((value: string) => { this.addClusterHost = value; })
+                  .fontSize(14)
+                  .height(40)
+                  .borderRadius(8)
+                  .backgroundColor(this.palette.bgSurface2)
+                  .fontColor(this.palette.textPrimary)
+              }
+              .width('100%')
+
+              Row({ space: 10 }) {
                 Column({ space: 4 }) {
-                  Text('集群名称').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
-                  TextInput({ text: this.addClusterName, placeholder: '例如: homelab-cluster' })
-                    .onChange((value: string) => { this.addClusterName = value; })
+                  Text('端口').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
+                  TextInput({ text: this.addClusterPort, placeholder: '8006' })
+                    .onChange((value: string) => { this.addClusterPort = value; })
                     .fontSize(14)
-                    .height(36)
+                    .height(40)
+                    .borderRadius(8)
+                    .backgroundColor(this.palette.bgSurface2)
+                    .fontColor(this.palette.textPrimary)
+                    .type(InputType.Number)
+                }
+                .layoutWeight(1)
+
+                Column({ space: 4 }) {
+                  Text('用户名').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
+                  TextInput({ text: this.addClusterUsername, placeholder: 'root@pam' })
+                    .onChange((value: string) => { this.addClusterUsername = value; })
+                    .fontSize(14)
+                    .height(40)
                     .borderRadius(8)
                     .backgroundColor(this.palette.bgSurface2)
                     .fontColor(this.palette.textPrimary)
                 }
-                .width('100%')
+                .layoutWeight(1)
+              }
+              .width('100%')
 
-                Column({ space: 4 }) {
-                  Text('主机地址').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
-                  TextInput({ text: this.addClusterHost, placeholder: '例如: 192.168.1.10' })
-                    .onChange((value: string) => { this.addClusterHost = value; })
-                    .fontSize(14)
-                    .height(36)
-                    .borderRadius(8)
-                    .backgroundColor(this.palette.bgSurface2)
-                    .fontColor(this.palette.textPrimary)
-                }
-                .width('100%')
-
-                Row({ space: 10 }) {
-                  Column({ space: 4 }) {
-                    Text('端口').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
-                    TextInput({ text: this.addClusterPort, placeholder: '8006' })
-                      .onChange((value: string) => { this.addClusterPort = value; })
-                      .fontSize(14)
-                      .height(36)
-                      .borderRadius(8)
-                      .backgroundColor(this.palette.bgSurface2)
-                      .fontColor(this.palette.textPrimary)
-                      .type(InputType.Number)
-                  }
-                  .layoutWeight(1)
-
-                  Column({ space: 4 }) {
-                    Text('用户名').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
-                    TextInput({ text: this.addClusterUsername, placeholder: 'root@pam' })
-                      .onChange((value: string) => { this.addClusterUsername = value; })
-                      .fontSize(14)
-                      .height(36)
-                      .borderRadius(8)
-                      .backgroundColor(this.palette.bgSurface2)
-                      .fontColor(this.palette.textPrimary)
-                  }
-                  .layoutWeight(1)
-                }
-                .width('100%')
-
-                Column({ space: 4 }) {
-                  Text('密码').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
-                  TextInput({ text: this.addClusterPassword, placeholder: '输入 PVE 密码' })
-                    .onChange((value: string) => { this.addClusterPassword = value; })
-                    .fontSize(14)
-                    .height(36)
-                    .borderRadius(8)
-                    .backgroundColor(this.palette.bgSurface2)
-                    .fontColor(this.palette.textPrimary)
-                    .type(InputType.Password)
-                }
-                .width('100%')
+              Column({ space: 4 }) {
+                Text('密码').fontSize(12).fontColor(this.palette.textSecondary).width('100%')
+                TextInput({ text: this.addClusterPassword, placeholder: '输入 PVE 密码' })
+                  .onChange((value: string) => { this.addClusterPassword = value; })
+                  .fontSize(14)
+                  .height(40)
+                  .borderRadius(8)
+                  .backgroundColor(this.palette.bgSurface2)
+                  .fontColor(this.palette.textPrimary)
+                  .type(InputType.Password)
               }
               .width('100%')
             }
-            .height(240)
-            .scrollBar(BarState.Auto)
-            .margin({ bottom: 12 })
+            .width('100%')
+            .margin({ bottom: 16 })
 
             Row({ space: 12 }) {
               Button('取消')
