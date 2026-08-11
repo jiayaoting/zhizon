@@ -10,6 +10,7 @@ import { SettingsPage } from './Settings';
 import { GamesPage } from './Games';
 import { MorePage } from './More';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
+import { FontRegistry } from '../components/FontRegistry';
 import { StartupState } from '../entryability/EntryAbility';
 import { WindowEnvironmentConfidence, WindowEnvironmentSnapshot, WindowDeviceType,
   WindowOrientation } from '../service/WindowEnvironmentProvider';
@@ -207,6 +208,8 @@ struct AppShell {
       Column() {
         Stack() {
           GlobalBackgroundLayer()
+          // 注册打包的开源字体（无可见 UI）
+          FontRegistry()
           Column() {
             this.renderPage()
           }

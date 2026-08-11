@@ -18,10 +18,11 @@ interface FontSizeOption {
   preview: number;
 }
 
-// 字体选项
+// 字体选项（全部为免费商用授权）
 interface FontFamilyOption {
   name: string;
   family: string;
+  category: string;
 }
 
 // 分组卡片组件
@@ -81,10 +82,10 @@ export struct SettingsPage {
     { label: '大', value: 'large', preview: 18 }
   ];
   private fontFamilyOptions: FontFamilyOption[] = [
-    { name: 'HarmonyOS Sans', family: 'HarmonyOS Sans' },
-    { name: 'JetBrains Mono', family: 'JetBrains Mono' },
-    { name: 'Fira Code', family: 'Fira Code' },
-    { name: 'Consolas', family: 'Consolas' }
+    { name: 'HarmonyOS Sans', family: 'HarmonyOS Sans', category: '系统' },
+    { name: 'Inter', family: 'Inter', category: '无衬线' },
+    { name: 'JetBrains Mono', family: 'JetBrains Mono', category: '等宽' },
+    { name: 'Fira Code', family: 'Fira Code', category: '等宽' }
   ];
 
   // 主题颜色选项
@@ -108,6 +109,9 @@ export struct SettingsPage {
 
       this.fontSizeScale = await DataRepository.getSetting('fontSizeScale', 'standard');
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'HarmonyOS Sans');
+      if (!this.isSupportedFont(this.fontFamily)) {
+        this.fontFamily = 'HarmonyOS Sans';
+      }
       this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
 
       // 加载背景图配置
@@ -226,6 +230,14 @@ export struct SettingsPage {
     if (scale === 'small') return '小';
     if (scale === 'large') return '大';
     return '标准';
+  }
+
+  // 校验字体是否为应用支持（避免旧版本保存的字体残留）
+  private isSupportedFont(family: string): boolean {
+    for (let i: number = 0; i < this.fontFamilyOptions.length; i++) {
+      if (this.fontFamilyOptions[i].family === family) return true;
+    }
+    return false;
   }
 
   private async applyFontSize(scale: string): Promise<void> {
@@ -568,15 +580,19 @@ export struct SettingsPage {
 
         ForEach(this.fontFamilyOptions, (option: FontFamilyOption) => {
           Row({ space: 12 }) {
-            Text('Aa 智子 123')
-              .fontSize(15)
-              .fontFamily(option.family)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
-            Blank()
-            Text(option.name)
-              .fontSize(this.palette.fsSm)
-              .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textSecondary)
+            Column({ space: 3 }) {
+              Text(option.name)
+                .fontSize(this.palette.fsSm)
+                .fontFamily(option.family)
+                .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+              Text('Aa 智子 123 — ' + option.category)
+                .fontSize(11)
+                .fontFamily(option.family)
+                .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textTertiary)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
             if (this.fontFamily === option.family) {
               Text('✓')
                 .fontSize(14)

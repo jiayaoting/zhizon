@@ -274,7 +274,7 @@ function applyFontPreferences(palette: ThemePalette, fontSizeScale: string, font
   palette.fs2xl = Math.max(18, palette.fs2xl + delta);
   palette.fs3xl = Math.max(22, palette.fs3xl + delta);
   if (fontFamily.length > 0 && fontFamily !== 'HarmonyOS Sans') {
-    palette.fontSans = fontFamily + ', sans-serif';
+    palette.fontSans = fontFamily + ', HarmonyOS Sans, sans-serif';
   }
 }
 
@@ -448,6 +448,9 @@ export class ThemeManager {
 
       // 加载全局字体
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'HarmonyOS Sans');
+      if (!this.isSupportedFontFamily(this.fontFamily)) {
+        this.fontFamily = 'HarmonyOS Sans';
+      }
 
       // 加载毛玻璃开关
       const glassEnabled = await DataRepository.getSetting('glassEffectEnabled', 'false');
@@ -780,6 +783,12 @@ export class ThemeManager {
 
   private isFontSizeScale(value: string): boolean {
     return value === 'small' || value === 'standard' || value === 'large';
+  }
+
+  // 校验字体是否在应用支持列表中（全部为免费商用授权）
+  private isSupportedFontFamily(value: string): boolean {
+    return value === 'HarmonyOS Sans' || value === 'Inter' ||
+      value === 'JetBrains Mono' || value === 'Fira Code';
   }
 
   private isColorTheme(value: string): boolean {

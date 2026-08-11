@@ -191,8 +191,12 @@ function licenseSections(): DocSection[] {
     {
       title: '五、字体说明',
       paragraphs: [
-        '应用界面默认使用系统字体 HarmonyOS Sans，其版权归华为技术有限公司所有。',
-        '代码等场景可选使用的 JetBrains Mono、Fira Code、Consolas 等字体，其版权归各自版权所有者所有，用户需在支持对应字体的设备上使用。'
+        '应用内可选字体均为免费商用授权，不涉及版权风险：',
+        'HarmonyOS Sans：系统内置字体，随 HarmonyOS 系统免费授权使用，版权归华为技术有限公司所有。',
+        'Inter：SIL Open Font License 1.1 开源协议，可免费商用，版权归 The Inter Project Authors。',
+        'JetBrains Mono：SIL Open Font License 1.1 开源协议，可免费商用，版权归 The JetBrains Mono Project Authors。',
+        'Fira Code：SIL Open Font License 1.1 开源协议，可免费商用，版权归 The Fira Code Project Authors。',
+        '以上开源字体文件已随应用打包，完整许可文本见各字体项目官方发布页。'
       ]
     },
     {
