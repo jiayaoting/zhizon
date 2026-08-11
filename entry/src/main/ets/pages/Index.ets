@@ -58,6 +58,20 @@ export struct IndexPage {
       icon: '🐍',
       desc: '控制方向吃食物，不断变长',
       color: this.palette.success
+    },
+    {
+      gameId: GameId.MINESWEEPER,
+      name: '扫雷',
+      icon: '💣',
+      desc: '逻辑推理，翻开数字找出地雷',
+      color: this.palette.purple
+    },
+    {
+      gameId: GameId.BREAKOUT,
+      name: '打砖块',
+      icon: '🎱',
+      desc: '弹球击碎所有砖块',
+      color: this.palette.danger
     }
   ];
 

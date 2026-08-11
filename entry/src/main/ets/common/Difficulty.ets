@@ -41,7 +41,9 @@ export function difficultyLabel(level: DifficultyLevel): string {
 export enum GameId {
   TETRIS = 'TETRIS',
   GAME_2048 = 'GAME_2048',
-  SNAKE = 'SNAKE'
+  SNAKE = 'SNAKE',
+  MINESWEEPER = 'MINESWEEPER',
+  BREAKOUT = 'BREAKOUT'
 }
 
 export enum GameLaunchFailureCode {
@@ -107,7 +109,9 @@ export class GameLaunchResult {
 export const GAME_REGISTRY: GameRegistration[] = [
   new GameRegistration(GameId.TETRIS, 'pages/Tetris', '俄罗斯方块'),
   new GameRegistration(GameId.GAME_2048, 'pages/Game2048', '2048'),
-  new GameRegistration(GameId.SNAKE, 'pages/Snake', '贪吃蛇')
+  new GameRegistration(GameId.SNAKE, 'pages/Snake', '贪吃蛇'),
+  new GameRegistration(GameId.MINESWEEPER, 'pages/Minesweeper', '扫雷'),
+  new GameRegistration(GameId.BREAKOUT, 'pages/Breakout', '打砖块')
 ];
 
 export function isDifficultyLevel(value: string): boolean {
@@ -119,6 +123,8 @@ function gameIdFromString(value: string): GameId | null {
   if (value === GameId.TETRIS) return GameId.TETRIS;
   if (value === GameId.GAME_2048) return GameId.GAME_2048;
   if (value === GameId.SNAKE) return GameId.SNAKE;
+  if (value === GameId.MINESWEEPER) return GameId.MINESWEEPER;
+  if (value === GameId.BREAKOUT) return GameId.BREAKOUT;
   return null;
 }
 

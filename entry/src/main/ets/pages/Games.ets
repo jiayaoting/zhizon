@@ -45,6 +45,20 @@ export struct GamesPage {
       icon: '🐍',
       desc: '经典贪吃蛇，控制方向吃食物不断变长',
       color: this.palette.success
+    },
+    {
+      gameId: GameId.MINESWEEPER,
+      name: '扫雷',
+      icon: '💣',
+      desc: '逻辑推理经典，翻开数字找出所有地雷',
+      color: this.palette.purple
+    },
+    {
+      gameId: GameId.BREAKOUT,
+      name: '打砖块',
+      icon: '🎱',
+      desc: '经典街机弹球，击碎所有砖块闯关',
+      color: this.palette.danger
     }
   ];
 
