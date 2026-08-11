@@ -66,6 +66,7 @@ export struct SettingsPage {
   // 背景图设置
   @State showBgSettings: boolean = false;
   @State globalBgUri: string = '';
+  @State showClearBgConfirm: boolean = false;
   @State backgroundStrength: number = 50;
 
   async aboutToAppear(): Promise<void> {
@@ -345,8 +346,8 @@ export struct SettingsPage {
         .padding({ left: 12, right: 12, top: 11, bottom: 11 })
         .borderRadius(6)
         .backgroundColor(this.palette.bgSurface2)
-        .onClick(async () => {
-          await this.clearBackground();
+        .onClick(() => {
+          this.showClearBgConfirm = true;
         })
       }
 
@@ -490,5 +491,22 @@ export struct SettingsPage {
     }
     .height('100%')
     .backgroundColor(Color.Transparent)
+    // 清除背景图二次确认
+    if (this.showClearBgConfirm) {
+      AlertDialog.show({
+        title: '清除背景图',
+        message: '确定要清除当前背景图吗？此操作不可恢复。',
+        confirm: {
+          value: '清除',
+          action: () => {
+            this.showClearBgConfirm = false;
+            this.clearBackground();
+          }
+        },
+        cancel: () => {
+          this.showClearBgConfirm = false;
+        }
+      })
+    }
   }
 }
