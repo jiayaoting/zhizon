@@ -365,6 +365,6 @@ export struct IndexPage {
       }
     }
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(Color.Transparent)
   }
 }

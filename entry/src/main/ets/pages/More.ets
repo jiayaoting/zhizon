@@ -98,6 +98,6 @@ export struct MorePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(Color.Transparent)
   }
 }
