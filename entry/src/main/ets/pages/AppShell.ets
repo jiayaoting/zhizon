@@ -11,6 +11,7 @@ import { GamesPage } from './Games';
 import { MorePage } from './More';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { FontRegistry } from '../components/FontRegistry';
+import { PrivacyDialog } from '../components/PrivacyDialog';
 import { StartupState } from '../entryability/EntryAbility';
 import { WindowEnvironmentConfidence, WindowEnvironmentSnapshot, WindowDeviceType,
   WindowOrientation } from '../service/WindowEnvironmentProvider';
@@ -26,6 +27,7 @@ struct AppShell {
     new WindowEnvironmentSnapshot(WindowDeviceType.PHONE, 0, 0, WindowOrientation.PORTRAIT, 1, 44, 24,
       WindowEnvironmentConfidence.FALLBACK);
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @State privacyConsented: boolean = false;
 
   aboutToAppear(): void {
     const params: AppShellRouteParams | null = router.getParams() as AppShellRouteParams | null;
@@ -211,28 +213,42 @@ struct AppShell {
     if (this.startupState !== StartupState.READY) {
       this.startupPage()
     } else {
-      Column() {
-        Stack() {
-          GlobalBackgroundLayer()
-          // 注册打包的开源字体（无可见 UI）
-          FontRegistry()
-          Column() {
-            this.renderPage()
+      Stack() {
+        // 主内容层
+        Column() {
+          Stack() {
+            GlobalBackgroundLayer()
+            // 注册打包的开源字体（无可见 UI）
+            FontRegistry()
+            Column() {
+              this.renderPage()
+            }
+            .width('100%')
+            .height('100%')
           }
+          .layoutWeight(1)
           .width('100%')
-          .height('100%')
-        }
-        .layoutWeight(1)
-        .width('100%')
 
-        FixedBottomNav({
-          selectedKey: this.navigation.selectedMain,
-          onSelect: (key: MainNavKey): void => { this.selectMain(key); }
-        })
+          FixedBottomNav({
+            selectedKey: this.navigation.selectedMain,
+            onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.palette.bgBase)
+
+        // 隐私政策同意弹窗（未同意时覆盖）
+        if (!this.privacyConsented) {
+          PrivacyDialog({
+            onConsent: (): void => {
+              this.privacyConsented = true;
+            }
+          })
+        }
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
     }
   }
 }
