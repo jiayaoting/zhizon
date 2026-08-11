@@ -156,24 +156,26 @@ export struct SettingsPage {
   }
 
   private async updateFollowSystem(follow: boolean): Promise<void> {
+    this.followSystemDark = follow;
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setFollowSystem(follow);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(follow ? '已开启跟随系统深色模式' : '已切换为手动模式');
-    } else if (!follow) {
-      this.toast('跟随系统深色模式未关闭，请重试');
     } else {
+      this.followSystemDark = !follow;
       this.toast('设置未保存，请重试');
     }
   }
 
   private async updateManualMode(isDark: boolean): Promise<void> {
+    this.isDarkMode = isDark;
     const mode = isDark ? ThemeMode.DARK : ThemeMode.LIGHT;
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setManualMode(mode);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(isDark ? '已切换为深色模式' : '已切换为浅色模式');
     } else {
+      this.isDarkMode = !isDark;
       this.toast('设置未保存，请重试');
     }
   }
@@ -299,13 +301,38 @@ export struct SettingsPage {
   // 深色模式设置
   @Builder darkModeSettings() {
     Column({ space: 8 }) {
-      this.toggleRow('跟随系统深色模式', this.followSystemDark, async (v: boolean) => {
-        await this.updateFollowSystem(v);
-      })
+      Row() {
+        Text('跟随系统深色模式')
+          .fontSize(13)
+          .fontColor(this.palette.textPrimary)
+          .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.followSystemDark })
+          .selectedColor(this.palette.primary)
+          .onChange((v: boolean) => {
+            this.updateFollowSystem(v);
+          })
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+      .borderRadius(6)
+      .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+
       if (!this.followSystemDark) {
-        this.toggleRow('深色模式', this.isDarkMode, async (v: boolean) => {
-          await this.updateManualMode(v);
-        })
+        Row() {
+          Text('深色模式')
+            .fontSize(13)
+            .fontColor(this.palette.textPrimary)
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.isDarkMode })
+            .selectedColor(this.palette.primary)
+            .onChange((v: boolean) => {
+              this.updateManualMode(v);
+            })
+        }
+        .width('100%')
+        .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+        .borderRadius(6)
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
       }
     }
     .width('100%')
