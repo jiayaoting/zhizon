@@ -1,10 +1,9 @@
 // 智子 - 数据仓库（基于数据库持久化）
-import { Server, PveCluster, Vm, Storage, PveTask, Snapshot, Command, Alert, Stats } from '../model/Models';
+import { Command, Alert, Stats } from '../model/Models';
 import { DatabaseHelper, ScoreEntry } from './DatabaseHelper';
-import { PveService } from './PveService';
 import { ThemePreference, ThemeMode, GlobalBackgroundPreference } from '../common/ThemeContracts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { DefectRecord, DefectStateHistory, FixEvidence, RecoverableResult, AppErrorCategory, RecoveryAction, AppFailure, ValidationResult, PreferenceSnapshot, PreferencePersistenceResult, RemoteResult } from '../model/GovernanceModels';
+import { DefectRecord, DefectStateHistory, FixEvidence, RecoverableResult, AppErrorCategory, RecoveryAction, AppFailure, ValidationResult, PreferenceSnapshot, PreferencePersistenceResult } from '../model/GovernanceModels';
 
 const SETTINGS_DOMAIN = 0x9201;
 
@@ -79,12 +78,7 @@ export class DataRepository {
   static async appendDefectHistory(history: DefectStateHistory): Promise<void> { await DatabaseHelper.appendDefectHistory(history); }
   static async transitionDefect(record: DefectRecord, history: DefectStateHistory, evidence: FixEvidence | null): Promise<RecoverableResult<DefectRecord>> { try { await DatabaseHelper.transitionDefect(record, history, evidence); return new RecoverableResult<DefectRecord>(true, record, null, null); } catch (e) { return new RecoverableResult<DefectRecord>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '缺陷状态未更新', true, RecoveryAction.RESTORE_SNAPSHOT), record); } }
 
-  static validateHost(host: string): ValidationResult { const value = host.trim(); return value.length > 0 && value.length <= 253 && value.indexOf(' ') < 0 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_HOST', '主机地址无效'); }
-  static validatePort(port: number): ValidationResult { return Number.isInteger(port) && port >= 1 && port <= 65535 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_PORT', '端口必须为 1 至 65535'); }
-  static validateTimeout(timeoutMs: number): ValidationResult { return Number.isInteger(timeoutMs) && timeoutMs > 0 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_TIMEOUT', '超时必须为正整数'); }
   static validateBackgroundStrength(strength: number): ValidationResult { return Number.isInteger(strength) && strength >= 0 && strength <= 100 ? new ValidationResult(true, '', '') : new ValidationResult(false, 'INVALID_STRENGTH', '背景强度必须为 0 至 100'); }
-  static async updateServerCandidate(id: string, candidate: Server): Promise<RecoverableResult<Server>> { const previous: Server | undefined = await DatabaseHelper.getServer(id); if (!DataRepository.validateHost(candidate.host).valid || !DataRepository.validatePort(candidate.port).valid) return new RecoverableResult<Server>(false, null, new AppFailure(AppErrorCategory.INPUT, 'INVALID_SERVER_INPUT', '服务器配置无效', false, RecoveryAction.RECONFIGURE), previous === undefined ? null : previous); try { await DatabaseHelper.updateServer(id, candidate); return new RecoverableResult<Server>(true, candidate, null, previous === undefined ? null : previous); } catch (e) { return new RecoverableResult<Server>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', '服务器配置未保存', true, RecoveryAction.RESTORE_SNAPSHOT), previous === undefined ? null : previous); } }
-  static async updatePveCandidate(id: string, candidate: PveCluster): Promise<RecoverableResult<PveCluster>> { const previous: PveCluster | undefined = await DataRepository.getPveCluster(id); if (!DataRepository.validateHost(candidate.host).valid || !DataRepository.validatePort(candidate.port).valid) return new RecoverableResult<PveCluster>(false, null, new AppFailure(AppErrorCategory.INPUT, 'INVALID_PVE_INPUT', 'PVE 配置无效', false, RecoveryAction.RECONFIGURE), previous === undefined ? null : previous); try { await DatabaseHelper.updatePveCluster(id, candidate); return new RecoverableResult<PveCluster>(true, candidate, null, previous === undefined ? null : previous); } catch (e) { return new RecoverableResult<PveCluster>(false, null, new AppFailure(AppErrorCategory.PERSISTENCE, 'PERSISTENCE_FAILED', 'PVE 配置未保存', true, RecoveryAction.RESTORE_SNAPSHOT), previous === undefined ? null : previous); } }
   static initializePreferenceSnapshot(snapshot: PreferenceSnapshot): void {
     DataRepository.preferenceSnapshot = DataRepository.copyPreferenceSnapshot(snapshot);
   }
@@ -122,123 +116,6 @@ export class DataRepository {
   }
   private static isFontSizeScale(value: string): boolean {
     return value === 'small' || value === 'standard' || value === 'large';
-  }
-  // ========== 服务器管理 ==========
-
-  static async getServers(): Promise<Server[]> {
-    return await DatabaseHelper.getServers();
-  }
-
-  static async getServer(id: string): Promise<Server | undefined> {
-    return await DatabaseHelper.getServer(id);
-  }
-
-  static async addServer(server: Server): Promise<void> {
-    if (!DataRepository.validateHost(server.host).valid || !DataRepository.validatePort(server.port).valid || server.id.trim().length === 0) throw new Error('INVALID_SERVER_INPUT');
-    await DatabaseHelper.addServer(server);
-  }
-
-  static async updateServer(id: string, updates: Partial<Server>): Promise<void> {
-    if (updates.host !== undefined && !DataRepository.validateHost(updates.host).valid) throw new Error('INVALID_HOST');
-    if (updates.port !== undefined && !DataRepository.validatePort(updates.port).valid) throw new Error('INVALID_PORT');
-    await DatabaseHelper.updateServer(id, updates);
-  }
-
-  static async deleteServer(id: string): Promise<void> {
-    await DatabaseHelper.deleteServer(id);
-  }
-
-  // ========== 凭据管理（加密存储） ==========
-
-  static async saveCredentials(id: string, password?: string, keyContent?: string): Promise<void> {
-    await DatabaseHelper.saveCredentials(id, password, keyContent);
-  }
-
-  static async getPassword(id: string): Promise<string> {
-    return await DatabaseHelper.getPassword(id);
-  }
-
-  static async getKeyContent(id: string): Promise<string> {
-    return await DatabaseHelper.getKeyContent(id);
-  }
-
-  // ========== 连接历史（按最近连接排序） ==========
-
-  static async getConnectionHistory(limit: number = 5): Promise<Server[]> {
-    const servers = await DatabaseHelper.getServers();
-    const connected = servers.filter(s => (s.lastConnected ?? 0) > 0);
-    connected.sort((a, b) => (b.lastConnected ?? 0) - (a.lastConnected ?? 0));
-    return connected.slice(0, limit);
-  }
-
-  // ========== PVE 集群管理 ==========
-
-  static async getPveClusters(): Promise<PveCluster[]> {
-    return await DatabaseHelper.getPveClusters();
-  }
-
-  static async addPveCluster(cluster: PveCluster): Promise<void> {
-    if (!DataRepository.validateHost(cluster.host).valid || !DataRepository.validatePort(cluster.port).valid || cluster.id.trim().length === 0) throw new Error('INVALID_PVE_INPUT');
-    await DatabaseHelper.addPveCluster(cluster);
-  }
-
-  static async updatePveCluster(id: string, updates: Partial<PveCluster>): Promise<void> {
-    if (updates.host !== undefined && !DataRepository.validateHost(updates.host).valid) throw new Error('INVALID_HOST');
-    if (updates.port !== undefined && !DataRepository.validatePort(updates.port).valid) throw new Error('INVALID_PORT');
-    await DatabaseHelper.updatePveCluster(id, updates);
-  }
-
-  static async deletePveCluster(id: string): Promise<void> {
-    await DatabaseHelper.deletePveCluster(id);
-  }
-
-  // ========== PVE 凭据管理（加密存储） ==========
-
-  static async savePveCredentials(id: string, password?: string, tokenSecret?: string): Promise<void> {
-    await DatabaseHelper.savePveCredentials(id, password, tokenSecret);
-  }
-
-  static async getPvePassword(id: string): Promise<string> {
-    return await DatabaseHelper.getPvePassword(id);
-  }
-
-  static async getPveTokenId(id: string): Promise<string> {
-    return await DatabaseHelper.getPveTokenId(id);
-  }
-
-  static async getPveTokenSecret(id: string): Promise<string> {
-    return await DatabaseHelper.getPveTokenSecret(id);
-  }
-
-  // 从加密存储加载 PVE 凭据到内存态（列表页连接/测试前调用，凭据不落库）
-  static async hydratePveCredentials(cluster: PveCluster): Promise<PveCluster> {
-    // 内存态已有明文凭据（表单测试/新建场景）则直接复用
-    if (cluster.password || cluster.tokenSecret) return cluster;
-    try {
-      const password = await DataRepository.getPvePassword(cluster.id);
-      const tokenSecret = await DataRepository.getPveTokenSecret(cluster.id);
-      const tokenId = await DataRepository.getPveTokenId(cluster.id);
-      if (!password && !tokenSecret) return cluster;
-      const hydrated: PveCluster = {
-        id: cluster.id,
-        name: cluster.name,
-        host: cluster.host,
-        port: cluster.port,
-        username: cluster.username,
-        authType: cluster.authType,
-        verifyTls: cluster.verifyTls,
-        version: cluster.version,
-        lastSync: cluster.lastSync,
-        nodes: cluster.nodes,
-        password: password || undefined,
-        tokenId: tokenId || undefined,
-        tokenSecret: tokenSecret || undefined
-      };
-      return hydrated;
-    } catch (e) {
-      hilog.error(SETTINGS_DOMAIN, 'DataRepository', '%{public}s', 'operation=hydrate-pve category=PERSISTENCE code=CREDENTIAL_READ_FAILED rollback=preserved');
-      return cluster;
-    }
   }
 
   // ========== 快捷命令 ==========
@@ -298,8 +175,6 @@ export class DataRepository {
   static async clearGameScores(game: string): Promise<void> {
     await DatabaseHelper.clearGameScores(game);
   }
-
-  // ========== 文件管理 ==========
 
   // ========== 设置 ==========
 
@@ -401,51 +276,12 @@ export class DataRepository {
   // ========== 统计 ==========
 
   static async getStats(): Promise<Stats> {
-    const servers = await DataRepository.getServers();
-    const alerts = await DataRepository.getAlerts();
-    const unresolvedAlerts = alerts.filter(a => !a.resolved);
-
     return {
-      total: servers.length,
+      total: 0,
       online: 0,
       warning: 0,
-      offline: servers.length,
-      alerts: unresolvedAlerts.length,
-      pveNodes: 0,
-      vmTotal: 0,
-      vmRunning: 0,
-      vmStopped: 0,
-      ctTotal: 0,
-      runningTasks: 0
+      offline: 0,
+      alerts: 0
     };
-  }
-
-  // ========== PVE 节点详情 ==========
-
-  static async getPveCluster(id: string): Promise<PveCluster | undefined> {
-    const clusters = await DataRepository.getPveClusters();
-    return clusters.find(c => c.id === id);
-  }
-
-  static async getVms(cluster: PveCluster, node?: string): Promise<RemoteResult<Vm[]>> {
-    return await PveService.getVms(cluster, node);
-  }
-
-  static async getStorages(cluster: PveCluster, node: string): Promise<RemoteResult<Storage[]>> {
-    return await PveService.getStorages(cluster, node);
-  }
-
-  static async getTasks(cluster: PveCluster, node: string): Promise<RemoteResult<PveTask[]>> {
-    return await PveService.getTasks(cluster, node);
-  }
-
-  static async getVm(cluster: PveCluster, node: string, vmid: number): Promise<RemoteResult<Vm | undefined>> {
-    const vms = await DataRepository.getVms(cluster, node);
-    if (!vms.success || vms.value === null) return new RemoteResult<Vm | undefined>(false, null, vms.failure);
-    return new RemoteResult<Vm | undefined>(true, vms.value.find((vm: Vm) => vm.vmid === vmid), null);
-  }
-
-  static async getSnapshots(cluster: PveCluster, node: string, vmid: number): Promise<RemoteResult<Snapshot[]>> {
-    return await PveService.getSnapshots(cluster, node, vmid);
   }
 }

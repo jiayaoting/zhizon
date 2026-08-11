@@ -48,23 +48,11 @@ export struct SettingsPage {
   @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
   @StorageLink('backgroundDisplayState') backgroundDisplayState: BackgroundDisplayState = BackgroundDisplayState.INVALID;
 
-  // 常规
-  @State autoReconnect: boolean = true;
-  @State defaultSshPort: string = '22';
-  @State connectionTimeout: string = '30s';
-  // 连接设置
-  @State defaultConnectionMode: string = 'direct';
   // 外观
   @State fontSizeSetting: string = '标准';
   @State fontFamily: string = 'JetBrains Mono';
-  // 终端
-  @State color256: boolean = true;
-  @State defaultFont: string = 'JetBrains Mono';
-  @State cursorStyle: string = '块状';
-  @State scrollLines: string = '1000';
   // 安全
   @State biometricUnlock: boolean = false;
-  @State hostKeyVerify: boolean = true;
   @State autoLock: string = '5 分钟';
   // 通知
   @State alertPush: boolean = true;
@@ -89,27 +77,15 @@ export struct SettingsPage {
   async aboutToAppear(): Promise<void> {
     this.loading = true;
     try {
-      const autoReconnectVal = await DataRepository.getSetting('autoReconnect', 'true');
-      this.autoReconnect = autoReconnectVal === 'true';
-      const color256Val = await DataRepository.getSetting('color256', 'true');
-      this.color256 = color256Val === 'true';
       const biometricUnlockVal = await DataRepository.getSetting('biometricUnlock', 'false');
       this.biometricUnlock = biometricUnlockVal === 'true';
-      const hostKeyVerifyVal = await DataRepository.getSetting('hostKeyVerify', 'true');
-      this.hostKeyVerify = hostKeyVerifyVal === 'true';
       const alertPushVal = await DataRepository.getSetting('alertPush', 'true');
       this.alertPush = alertPushVal === 'true';
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
 
-      this.defaultSshPort = await DataRepository.getSetting('defaultSshPort', '22');
-      this.connectionTimeout = await DataRepository.getSetting('connectionTimeout', '30s');
-      this.defaultConnectionMode = await DataRepository.getSetting('defaultConnectionMode', 'direct');
       this.fontSizeSetting = await DataRepository.getSetting('fontSize', '标准');
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'JetBrains Mono');
-      this.defaultFont = await DataRepository.getSetting('defaultFont', 'JetBrains Mono');
-      this.cursorStyle = await DataRepository.getSetting('cursorStyle', '块状');
-      this.scrollLines = await DataRepository.getSetting('scrollLines', '1000');
       this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
       this.doNotDisturb = await DataRepository.getSetting('doNotDisturb', '22:00-08:00');
       this.cpuThreshold = await DataRepository.getSetting('cpuThreshold', '85%');
@@ -418,47 +394,6 @@ export struct SettingsPage {
       }
       Scroll() {
           Column({ space: 16 }) {
-            // 常规
-            GroupCard({ title: '常规' }) {
-              Column({ space: 8 }) {
-                this.valueRow('默认 SSH 端口', this.defaultSshPort)
-                this.valueRow('连接超时', this.connectionTimeout)
-                this.toggleRow('自动重连', this.autoReconnect, (v: boolean) => {
-                  this.autoReconnect = v;
-                  DataRepository.setSetting('autoReconnect', v ? 'true' : 'false');
-                  this.toast(`自动重连：${v ? '已开启' : '已关闭'}`);
-                })
-              }
-              .width('100%')
-            }
-
-            // 连接设置
-            GroupCard({ title: '连接设置' }) {
-              Column({ space: 8 }) {
-                Row() {
-                  Text('连接模式')
-                    .fontSize(13)
-                    .fontColor(this.palette.textPrimary)
-                    .layoutWeight(1)
-                  Text('直连模式')
-                    .fontSize(11)
-                    .fontColor('#FFFFFF')
-                    .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-                    .borderRadius(5)
-                    .backgroundColor(this.palette.primary)
-                }
-                .width('100%')
-                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
-                .borderRadius(6)
-                .backgroundColor(this.palette.bgSurface2)
-                Text('直连模式在设备端直接发起 SSH 连接。Agent 模式暂不可用。')
-                  .fontSize(10)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-              }
-              .width('100%')
-            }
-
             // 外观（新设计）
             GroupCard({ title: '外观' }) {
               Column({ space: 12 }) {
@@ -516,21 +451,6 @@ export struct SettingsPage {
               .width('100%')
             }
 
-            // 终端
-            GroupCard({ title: '终端' }) {
-              Column({ space: 8 }) {
-                this.valueRow('默认字体', this.defaultFont)
-                this.valueRow('光标样式', this.cursorStyle)
-                this.valueRow('滚屏行数', this.scrollLines)
-                this.toggleRow('256 色', this.color256, (v: boolean) => {
-                  this.color256 = v;
-                  DataRepository.setSetting('color256', v ? 'true' : 'false');
-                  this.toast(`256 色：${v ? '已开启' : '已关闭'}`);
-                })
-              }
-              .width('100%')
-            }
-
             // 安全
             GroupCard({ title: '安全' }) {
               Column({ space: 8 }) {
@@ -541,11 +461,6 @@ export struct SettingsPage {
                   this.toast(`生物识别解锁：${v ? '已开启' : '已关闭'}`);
                 })
                 this.valueRow('自动锁定', this.autoLock)
-                this.toggleRow('主机指纹校验', this.hostKeyVerify, (v: boolean) => {
-                  this.hostKeyVerify = v;
-                  DataRepository.setSetting('hostKeyVerify', v ? 'true' : 'false');
-                  this.toast(`主机指纹校验：${v ? '已开启' : '已关闭'}`);
-                })
               }
               .width('100%')
             }

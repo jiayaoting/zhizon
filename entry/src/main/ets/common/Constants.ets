@@ -1,4 +1,4 @@
-// 智子 - 全局常量（沉浸光感重构版）
+// 智子 - 全局常量
 import { ColorThemeId } from './Theme';
 import { MainNavKey, PageKey } from './Navigation';
 
@@ -52,26 +52,15 @@ export class AppConstants {
   static readonly prefsName = 'zhizon_prefs';
   static readonly dbName = 'zhizon_db';
 
-  // 网络
-  static readonly defaultSshPort = 22;
-  static readonly defaultPvePort = 8006;
-  static readonly connectTimeout = 30000;
-  static readonly keepAliveInterval = 30;
-
   static readonly navItems: NavItem[] = [
     new NavItem(MainNavKey.Index, '首页', '🏠'),
-    new NavItem(MainNavKey.Servers, '服务器', '🖥️'),
-    new NavItem(MainNavKey.Pve, 'PVE', '🗂️'),
     new NavItem(MainNavKey.Toolbox, '工具箱', '🧰'),
     new NavItem(MainNavKey.More, '更多', '⋯')
   ];
 
   // 工具箱子页面
   static readonly toolboxItems: ToolboxItem[] = [
-    new ToolboxItem(PageKey.Terminal, 'SSH 终端', '⌨️', '远程终端连接'),
-    new ToolboxItem(PageKey.Files, '文件管理', '📁', 'SFTP 文件传输'),
     new ToolboxItem(PageKey.Commands, '快捷命令', '⚡', '命令库管理'),
-    new ToolboxItem(PageKey.Batch, '批量操作', '🔄', '多服务器执行'),
     new ToolboxItem(PageKey.Games, '游戏中心', '🎮', '休闲小游戏')
   ];
 

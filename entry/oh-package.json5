@@ -5,7 +5,5 @@
   "main": "",
   "author": "zhizon",
   "license": "MIT",
-  "dependencies": {
-    "@ohos/libssh": "^1.0.0"
-  }
+  "dependencies": {}
 }

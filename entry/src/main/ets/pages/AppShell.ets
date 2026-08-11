@@ -6,12 +6,7 @@ import { AppConstants, ToolboxItem } from '../common/Constants';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
   NavigationFailure, NavigationSource, NavigationFacade, mainPage, AppShellRouteParams } from '../common/Navigation';
 import { IndexPage } from './Index';
-import { ServersPage } from './Servers';
-import { PvePage } from './Pve';
-import { TerminalPage } from './Terminal';
-import { FilesPage } from './Files';
 import { CommandsPage } from './Commands';
-import { BatchPage } from './Batch';
 import { AlertsPage } from './Alerts';
 import { SettingsPage } from './Settings';
 import { GamesPage } from './Games';
@@ -78,22 +73,12 @@ struct AppShell {
   renderPage() {
     if (this.navigation.currentPage === PageKey.Index) {
       IndexPage({ onNavigate: (key: string): void => { this.selectPage(key); } })
-    } else if (this.navigation.currentPage === PageKey.Servers) {
-      ServersPage()
-    } else if (this.navigation.currentPage === PageKey.Pve) {
-      PvePage()
     } else if (this.navigation.currentPage === PageKey.Toolbox) {
       this.toolboxPage()
     } else if (this.navigation.currentPage === PageKey.More) {
       MorePage({ onSelectEntry: (key: PageKey): void => { this.selectMoreEntry(key); } })
-    } else if (this.navigation.currentPage === PageKey.Terminal) {
-      TerminalPage()
-    } else if (this.navigation.currentPage === PageKey.Files) {
-      FilesPage()
     } else if (this.navigation.currentPage === PageKey.Commands) {
       CommandsPage()
-    } else if (this.navigation.currentPage === PageKey.Batch) {
-      BatchPage()
     } else if (this.navigation.currentPage === PageKey.Alerts) {
       AlertsPage()
     } else if (this.navigation.currentPage === PageKey.Settings) {

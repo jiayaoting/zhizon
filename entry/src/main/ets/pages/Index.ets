@@ -1,18 +1,13 @@
-// 智子 - 全新首页（沉浸光感版）
-// 欢迎区 + 核心指标轮播 + 快速操作网格 + 最近活动时间线 + 服务器快照
-import { ThemePalette, defaultLightPalette, ThemeManager } from '../common/Theme';
+// 智子 - 首页（沉浸光感版）
+// 欢迎区 + 应用概览 + 快速操作网格 + 最近告警
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { AppConstants, ToolboxItem } from '../common/Constants';
-import { MetricCard } from '../components/MetricCard';
-import { StatusBadge } from '../components/StatusBadge';
-import { ProgressBar } from '../components/ProgressBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
-import { Server, PveCluster, Alert, Stats, PveNode } from '../model/Models';
+import { Alert, Stats, Command } from '../model/Models';
 
 const emptyStats: Stats = {
-  total: 0, online: 0, warning: 0, offline: 0, alerts: 0,
-  pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0,
-  ctTotal: 0, runningTasks: 0
+  total: 0, online: 0, warning: 0, offline: 0, alerts: 0
 };
 
 @Component
@@ -24,13 +19,15 @@ export struct IndexPage {
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @State stats: Stats = emptyStats;
-  @State servers: Server[] = [];
+  @State commands: Command[] = [];
   @State alerts: Alert[] = [];
   @State loading: boolean = true;
   onNavigate: (key: string) => void = () => {};
 
   // 快速操作入口
   private quickActions: ToolboxItem[] = AppConstants.toolboxItems;
+  // 可玩游戏数（俄罗斯方块 / 2048 / 贪吃蛇）
+  private readonly gameCount: number = 3;
 
   aboutToAppear() {
     this.currentTime = this.formatNow();
@@ -45,10 +42,10 @@ export struct IndexPage {
   private async loadData() {
     try {
       const stats = await DataRepository.getStats();
-      const servers = await DataRepository.getServers();
+      const commands = await DataRepository.getCommands();
       const alerts = await DataRepository.getAlerts();
       this.stats = stats;
-      this.servers = servers;
+      this.commands = commands;
       this.alerts = alerts;
     } finally {
       this.loading = false;
@@ -110,136 +107,93 @@ export struct IndexPage {
     .alignItems(VerticalAlign.Center)
   }
 
-  // ==================== 核心指标轮播 ====================
+  // ==================== 应用概览统计 ====================
   @Builder
-  metricsCarousel() {
-    Scroll() {
+  overviewStats() {
+    Column({ space: 0 }) {
+      Row() {
+        Text('应用概览')
+          .fontSize(16)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      .margin({ bottom: 12 })
+
       Row({ space: 10 }) {
-        // 服务器总数
-        Column() {
-          Row() {
-            Text('🖥️')
-              .fontSize(14)
-            Text('SSH 服务器')
-              .fontSize(11)
-              .fontColor(this.palette.textTertiary)
-              .margin({ left: 6 })
-          }
-          Text(`${this.stats.total}`)
-            .fontSize(28)
+        // 快捷命令
+        Column({ space: 6 }) {
+          Text('⚡')
+            .fontSize(20)
+          Text(`${this.commands.length}`)
+            .fontSize(24)
             .fontColor(this.palette.primary)
             .fontWeight(FontWeight.Bold)
             .fontFamily(this.palette.fontMono)
-            .margin({ top: 8 })
-          Text(`在线 ${this.stats.online} · 告警 ${this.stats.warning}`)
+          Text('快捷命令')
             .fontSize(10)
             .fontColor(this.palette.textTertiary)
-            .margin({ top: 4 })
         }
-        .width(140)
-        .padding(14)
+        .layoutWeight(1)
+        .padding({ top: 16, bottom: 16 })
         .borderRadius(12)
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Start)
+        .alignItems(HorizontalAlign.Center)
         .onClick(() => {
-          this.onNavigate('Servers');
+          this.onNavigate('Commands');
         })
 
-        // PVE 节点
-        Column() {
-          Row() {
-            Text('🗂️')
-              .fontSize(14)
-            Text('PVE 节点')
-              .fontSize(11)
-              .fontColor(this.palette.textTertiary)
-              .margin({ left: 6 })
-          }
-          Text(`${this.stats.pveNodes}`)
-            .fontSize(28)
-            .fontColor(this.palette.purple)
+        // 游戏中心
+        Column({ space: 6 }) {
+          Text('🎮')
+            .fontSize(20)
+          Text(`${this.gameCount}`)
+            .fontSize(24)
+            .fontColor(this.palette.warning)
             .fontWeight(FontWeight.Bold)
             .fontFamily(this.palette.fontMono)
-            .margin({ top: 8 })
-          Text(`VM ${this.stats.vmTotal} · CT ${this.stats.ctTotal}`)
+          Text('款游戏')
             .fontSize(10)
             .fontColor(this.palette.textTertiary)
-            .margin({ top: 4 })
         }
-        .width(140)
-        .padding(14)
+        .layoutWeight(1)
+        .padding({ top: 16, bottom: 16 })
         .borderRadius(12)
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Start)
+        .alignItems(HorizontalAlign.Center)
         .onClick(() => {
-          this.onNavigate('Pve');
+          this.onNavigate('Games');
         })
-
-        // 运行中 VM
-        Column() {
-          Row() {
-            Text('▶️')
-              .fontSize(14)
-            Text('运行中 VM')
-              .fontSize(11)
-              .fontColor(this.palette.textTertiary)
-              .margin({ left: 6 })
-          }
-          Text(`${this.stats.vmRunning}`)
-            .fontSize(28)
-            .fontColor(this.palette.info)
-            .fontWeight(FontWeight.Bold)
-            .fontFamily(this.palette.fontMono)
-            .margin({ top: 8 })
-          Text(`停止 ${this.stats.vmStopped}`)
-            .fontSize(10)
-            .fontColor(this.palette.textTertiary)
-            .margin({ top: 4 })
-        }
-        .width(140)
-        .padding(14)
-        .borderRadius(12)
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Start)
 
         // 未处理告警
-        Column() {
-          Row() {
-            Text('🔔')
-              .fontSize(14)
-            Text('未处理告警')
-              .fontSize(11)
-              .fontColor(this.palette.textTertiary)
-              .margin({ left: 6 })
-          }
+        Column({ space: 6 }) {
+          Text('🔔')
+            .fontSize(20)
           Text(`${this.stats.alerts}`)
-            .fontSize(28)
-            .fontColor(this.palette.danger)
+            .fontSize(24)
+            .fontColor(this.stats.alerts > 0 ? this.palette.danger : this.palette.success)
             .fontWeight(FontWeight.Bold)
             .fontFamily(this.palette.fontMono)
-            .margin({ top: 8 })
-          Text(`任务 ${this.stats.runningTasks}`)
+          Text('未处理告警')
             .fontSize(10)
             .fontColor(this.palette.textTertiary)
-            .margin({ top: 4 })
         }
-        .width(140)
-        .padding(14)
+        .layoutWeight(1)
+        .padding({ top: 16, bottom: 16 })
         .borderRadius(12)
         .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Start)
+        .alignItems(HorizontalAlign.Center)
         .onClick(() => {
           this.onNavigate('Alerts');
         })
       }
+      .width('100%')
       .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
     }
-    .scrollable(ScrollDirection.Horizontal)
-    .scrollBar(BarState.Off)
     .width('100%')
   }
 
@@ -270,9 +224,14 @@ export struct IndexPage {
                 .fontWeight(FontWeight.Medium)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(item.desc)
+                .fontSize(9)
+                .fontColor(this.palette.textTertiary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .width('100%')
-            .padding({ top: 16, bottom: 16 })
+            .padding({ top: 18, bottom: 18 })
             .borderRadius(12)
             .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
             .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
@@ -284,93 +243,10 @@ export struct IndexPage {
           }
         }, (item: ToolboxItem) => item.key)
       }
-      .columnsTemplate('1fr 1fr 1fr')
+      .columnsTemplate('1fr 1fr')
       .columnsGap(10)
       .rowsGap(10)
       .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-    }
-    .width('100%')
-  }
-
-  // ==================== 服务器状态快照 ====================
-  @Builder
-  serverSnapshot() {
-    Column({ space: 0 }) {
-      Row() {
-        Text('服务器状态')
-          .fontSize(16)
-          .fontColor(this.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
-        Blank()
-        Text(`${this.stats.online}/${this.stats.total} 在线`)
-          .fontSize(12)
-          .fontColor(this.palette.primary)
-      }
-      .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-      .margin({ bottom: 12 })
-
-      Scroll() {
-        Row({ space: 10 }) {
-          ForEach(this.servers.slice(0, 6), (s: Server) => {
-            Column({ space: 8 }) {
-              // 状态点 + 名称
-              Row({ space: 6 }) {
-                Circle({ width: 7, height: 7 })
-                  .fill(s.status === 'online' ? this.palette.success
-                    : s.status === 'warning' ? this.palette.warning
-                    : this.palette.textTertiary)
-                Text(s.name)
-                  .fontSize(12)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .width('100%')
-
-              // 微型进度条
-              Column({ space: 3 }) {
-                Row({ space: 2 }) {
-                  Text('CPU')
-                    .fontSize(9)
-                    .fontColor(this.palette.textTertiary)
-                    .width(26)
-                  ProgressBar({ value: s.metrics.cpu, barHeight: 3 })
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Center)
-
-                Row({ space: 2 }) {
-                  Text('MEM')
-                    .fontSize(9)
-                    .fontColor(this.palette.textTertiary)
-                    .width(26)
-                  ProgressBar({ value: s.metrics.mem, barHeight: 3 })
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Center)
-              }
-              .width('100%')
-            }
-            .width(130)
-            .padding(12)
-            .borderRadius(10)
-            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-            .alignItems(HorizontalAlign.Start)
-            .onClick(() => {
-              this.onNavigate('Servers');
-            })
-          }, (s: Server) => s.id)
-        }
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .width('100%')
     }
     .width('100%')
   }
@@ -475,14 +351,11 @@ export struct IndexPage {
             // 欢迎区
             this.welcomeSection()
 
-            // 核心指标轮播
-            this.metricsCarousel()
+            // 应用概览统计
+            this.overviewStats()
 
             // 快速操作网格
             this.quickActionsGrid()
-
-            // 服务器状态快照
-            this.serverSnapshot()
 
             // 最近告警
             this.recentAlerts()

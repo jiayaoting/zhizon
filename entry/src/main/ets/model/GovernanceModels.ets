@@ -4,12 +4,6 @@ export enum AppErrorCategory {
   THEME = 'THEME',
   BACKGROUND = 'BACKGROUND',
   PERSISTENCE = 'PERSISTENCE',
-  REMOTE_AUTHENTICATION = 'REMOTE_AUTHENTICATION',
-  REMOTE_TIMEOUT = 'REMOTE_TIMEOUT',
-  REMOTE_UNREACHABLE = 'REMOTE_UNREACHABLE',
-  REMOTE_PERMISSION = 'REMOTE_PERMISSION',
-  REMOTE_HTTP = 'REMOTE_HTTP',
-  REMOTE_PROTOCOL = 'REMOTE_PROTOCOL',
   GAME_ARGUMENT = 'GAME_ARGUMENT',
   SAFE_AREA = 'SAFE_AREA',
   INPUT = 'INPUT'
@@ -53,48 +47,9 @@ export class RecoverableResult<T> {
   }
 }
 
-export enum RemoteFailureCategory {
-  AUTHENTICATION = 'AUTHENTICATION',
-  TIMEOUT = 'TIMEOUT',
-  UNREACHABLE = 'UNREACHABLE',
-  PERMISSION = 'PERMISSION',
-  HTTP = 'HTTP',
-  PROTOCOL = 'PROTOCOL',
-  VALIDATION = 'VALIDATION'
-}
-
-export class RemoteFailure {
-  category: RemoteFailureCategory;
-  code: string;
-  message: string;
-  retryable: boolean;
-  httpStatus: number;
-
-  constructor(category: RemoteFailureCategory, code: string, message: string, retryable: boolean,
-    httpStatus: number = 0) {
-    this.category = category;
-    this.code = code;
-    this.message = message;
-    this.retryable = retryable;
-    this.httpStatus = httpStatus;
-  }
-}
-
-export class RemoteResult<T> {
-  success: boolean;
-  value: T | null;
-  failure: RemoteFailure | null;
-
-  constructor(success: boolean, value: T | null, failure: RemoteFailure | null) {
-    this.success = success;
-    this.value = value;
-    this.failure = failure;
-  }
-}
-
 export enum DefectSeverity { BLOCKING = 'BLOCKING', CRITICAL = 'CRITICAL', MAJOR = 'MAJOR', MINOR = 'MINOR' }
 export enum DefectStatus { ANALYZING = 'ANALYZING', NEEDS_INFO = 'NEEDS_INFO', TO_FIX = 'TO_FIX', TO_VERIFY = 'TO_VERIFY', CONFIRMED = 'CONFIRMED', NOT_REPRODUCED = 'NOT_REPRODUCED' }
-export enum AffectedFeature { STARTUP = 'STARTUP', NAVIGATION = 'NAVIGATION', DATA_SECURITY = 'DATA_SECURITY', REMOTE = 'REMOTE', PAGE = 'PAGE', THEME = 'THEME', BACKGROUND = 'BACKGROUND', DATA = 'DATA', GAME = 'GAME', SAFE_AREA = 'SAFE_AREA' }
+export enum AffectedFeature { STARTUP = 'STARTUP', NAVIGATION = 'NAVIGATION', DATA_SECURITY = 'DATA_SECURITY', PAGE = 'PAGE', THEME = 'THEME', BACKGROUND = 'BACKGROUND', DATA = 'DATA', GAME = 'GAME', SAFE_AREA = 'SAFE_AREA' }
 export enum EvidenceType { STATIC = 'STATIC', CODE = 'CODE', DEVICE = 'DEVICE', USER_CONFIRMATION = 'USER_CONFIRMATION' }
 export enum EvidenceConclusion { PASSED = 'PASSED', FAILED = 'FAILED', PENDING = 'PENDING' }
 
@@ -130,6 +85,5 @@ export class DefectTransitionCommand { defectKey: string; target: DefectStatus; 
 export class DefectStateHistory { id: string; defectKey: string; fromStatus: DefectStatus; toStatus: DefectStatus; operator: string; trigger: string; evidenceId: string; recordedAt: number; constructor(id: string, key: string, from: DefectStatus, to: DefectStatus, operator: string, trigger: string, evidenceId: string, time: number) { this.id = id; this.defectKey = key; this.fromStatus = from; this.toStatus = to; this.operator = operator; this.trigger = trigger; this.evidenceId = evidenceId; this.recordedAt = time; } }
 
 export class ValidationResult { valid: boolean; code: string; message: string; constructor(valid: boolean, code: string, message: string) { this.valid = valid; this.code = code; this.message = message; } }
-export class ServerInputValidation { host: ValidationResult; port: ValidationResult; timeoutMs: ValidationResult; constructor(host: ValidationResult, port: ValidationResult, timeoutMs: ValidationResult) { this.host = host; this.port = port; this.timeoutMs = timeoutMs; } }
 export class PreferenceSnapshot { followSystem: boolean; manualThemeMode: string; colorThemeId: string; fontSizeScale: string; backgroundUri: string; backgroundStrength: number; glassEffectEnabled: boolean; operationVersion: number; constructor(followSystem: boolean, manualThemeMode: string, colorThemeId: string, fontSizeScale: string, backgroundUri: string, backgroundStrength: number, glassEffectEnabled: boolean, operationVersion: number) { this.followSystem = followSystem; this.manualThemeMode = manualThemeMode; this.colorThemeId = colorThemeId; this.fontSizeScale = fontSizeScale; this.backgroundUri = backgroundUri; this.backgroundStrength = backgroundStrength; this.glassEffectEnabled = glassEffectEnabled; this.operationVersion = operationVersion; } }
 export class PreferencePersistenceResult { success: boolean; code: string; snapshot: PreferenceSnapshot; rollbackSnapshot: PreferenceSnapshot; constructor(success: boolean, code: string, snapshot: PreferenceSnapshot, rollbackSnapshot: PreferenceSnapshot) { this.success = success; this.code = code; this.snapshot = snapshot; this.rollbackSnapshot = rollbackSnapshot; } }
