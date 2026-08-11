@@ -6,9 +6,22 @@ import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorT
 import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 
 import { TopBar } from '../components/TopBar';
+
+// 字号选项
+interface FontSizeOption {
+  label: string;
+  value: string;
+  preview: number;
+}
+
+// 字体选项
+interface FontFamilyOption {
+  name: string;
+  family: string;
+}
 
 // 分组卡片组件
 @Component
@@ -51,11 +64,26 @@ export struct SettingsPage {
   // 外观
   @State fontSizeScale: string = 'standard';
   @State fontFamily: string = 'HarmonyOS Sans';
+  @State showFontSizeSheet: boolean = false;
+  @State showFontFamilySheet: boolean = false;
   // 安全
   @State biometricUnlock: boolean = false;
   @State autoLock: string = '5 分钟';
   // 数据
   @State autoBackup: boolean = false;
+
+  // 字号/字体选项
+  private fontSizeOptions: FontSizeOption[] = [
+    { label: '小', value: 'small', preview: 11 },
+    { label: '标准', value: 'standard', preview: 14 },
+    { label: '大', value: 'large', preview: 18 }
+  ];
+  private fontFamilyOptions: FontFamilyOption[] = [
+    { name: 'HarmonyOS Sans', family: 'HarmonyOS Sans' },
+    { name: 'JetBrains Mono', family: 'JetBrains Mono' },
+    { name: 'Fira Code', family: 'Fira Code' },
+    { name: 'Consolas', family: 'Consolas' }
+  ];
 
   // 主题颜色选项
   private themeColors: ColorThemeId[] = [
@@ -210,15 +238,12 @@ export struct SettingsPage {
   }
 
   private openFontSizePicker(): void {
-    ActionSheet.show({
-      title: '字号',
-      message: '选择全局字号大小',
-      sheets: [
-        { title: '小', action: () => { this.applyFontSize('small'); } },
-        { title: '标准', action: () => { this.applyFontSize('standard'); } },
-        { title: '大', action: () => { this.applyFontSize('large'); } }
-      ]
-    });
+    this.showFontSizeSheet = true;
+  }
+
+  private pickFontSize(value: string): void {
+    this.showFontSizeSheet = false;
+    this.applyFontSize(value);
   }
 
   private async applyFontFamily(family: string): Promise<void> {
@@ -230,16 +255,12 @@ export struct SettingsPage {
   }
 
   private openFontFamilyPicker(): void {
-    ActionSheet.show({
-      title: '字体',
-      message: '选择全局字体',
-      sheets: [
-        { title: 'HarmonyOS Sans', action: () => { this.applyFontFamily('HarmonyOS Sans'); } },
-        { title: 'JetBrains Mono', action: () => { this.applyFontFamily('JetBrains Mono'); } },
-        { title: 'Fira Code', action: () => { this.applyFontFamily('Fira Code'); } },
-        { title: 'Consolas', action: () => { this.applyFontFamily('Consolas'); } }
-      ]
-    });
+    this.showFontFamilySheet = true;
+  }
+
+  private pickFontFamily(family: string): void {
+    this.showFontFamilySheet = false;
+    this.applyFontFamily(family);
   }
 
   private confirmClearBackground(): void {
@@ -441,14 +462,156 @@ export struct SettingsPage {
     .width('100%')
   }
 
+  // 字号选择弹层
+  @Builder
+  fontSizeSheet() {
+    Column() {
+      // 遮罩
+      Column()
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .onClick(() => { this.showFontSizeSheet = false; })
+        .transition({ type: TransitionType.All, opacity: 0 })
+
+      // 底部面板
+      Column({ space: 4 }) {
+        Text('字号')
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Text('选择全局字号大小')
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textTertiary)
+          .margin({ bottom: 8 })
+
+        ForEach(this.fontSizeOptions, (option: FontSizeOption) => {
+          Row({ space: 12 }) {
+            Text('Aa 智子 123')
+              .fontSize(option.preview)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textPrimary)
+            Blank()
+            Text(option.label)
+              .fontSize(this.palette.fsSm)
+              .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textSecondary)
+            if (this.fontSizeScale === option.value) {
+              Text('✓')
+                .fontSize(14)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.palette.primary)
+            }
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 13, bottom: 13 })
+          .borderRadius(10)
+          .backgroundColor(this.fontSizeScale === option.value ?
+            this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+          .onClick(() => { this.pickFontSize(option.value); })
+        }, (option: FontSizeOption) => option.value)
+
+        Text('取消')
+          .fontSize(this.palette.fsBase)
+          .fontColor(this.palette.textSecondary)
+          .padding({ top: 12, bottom: 4 })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .onClick(() => { this.showFontSizeSheet = false; })
+      }
+      .width('100%')
+      .padding(20)
+      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
+      .borderRadius({ topLeft: 24, topRight: 24 })
+      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
+      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.End)
+  }
+
+  // 字体选择弹层
+  @Builder
+  fontFamilySheet() {
+    Column() {
+      // 遮罩
+      Column()
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .onClick(() => { this.showFontFamilySheet = false; })
+        .transition({ type: TransitionType.All, opacity: 0 })
+
+      // 底部面板
+      Column({ space: 4 }) {
+        Text('字体')
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Text('选择全局字体')
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textTertiary)
+          .margin({ bottom: 8 })
+
+        ForEach(this.fontFamilyOptions, (option: FontFamilyOption) => {
+          Row({ space: 12 }) {
+            Text('Aa 智子 123')
+              .fontSize(15)
+              .fontFamily(option.family)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
+            Blank()
+            Text(option.name)
+              .fontSize(this.palette.fsSm)
+              .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textSecondary)
+            if (this.fontFamily === option.family) {
+              Text('✓')
+                .fontSize(14)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.palette.primary)
+            }
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 13, bottom: 13 })
+          .borderRadius(10)
+          .backgroundColor(this.fontFamily === option.family ?
+            this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+          .onClick(() => { this.pickFontFamily(option.family); })
+        }, (option: FontFamilyOption) => option.family)
+
+        Text('取消')
+          .fontSize(this.palette.fsBase)
+          .fontColor(this.palette.textSecondary)
+          .padding({ top: 12, bottom: 4 })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .onClick(() => { this.showFontFamilySheet = false; })
+      }
+      .width('100%')
+      .padding(20)
+      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
+      .borderRadius({ topLeft: 24, topRight: 24 })
+      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
+      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.End)
+  }
+
   @Builder actionsBuilder() {}
 
   build() {
-    Column() {
-      TopBar({ title: '设置', subtitle: '智子 v1.0.0' }) {
-        this.actionsBuilder()
-      }
-      Scroll() {
+    Stack() {
+      Column() {
+        TopBar({ title: '设置', subtitle: '智子 v1.0.0' }) {
+          this.actionsBuilder()
+        }
+        Scroll() {
           Column({ space: 16 }) {
             // 外观（新设计）
             GroupCard({ title: '外观' }) {
@@ -555,12 +718,24 @@ export struct SettingsPage {
           }
         .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 0, bottom: 80 })
         .width('100%')
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .align(Alignment.Top)
       }
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
-      .align(Alignment.Top)
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Color.Transparent)
+
+      // 字号/字体选择弹层
+      if (this.showFontSizeSheet) {
+        this.fontSizeSheet()
+      }
+      if (this.showFontFamilySheet) {
+        this.fontFamilySheet()
+      }
     }
+    .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
   }
 }
