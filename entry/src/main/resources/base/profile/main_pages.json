@@ -4,6 +4,7 @@
     "pages/Tetris",
     "pages/Game2048",
     "pages/Snake",
-    "pages/GameHistory"
+    "pages/GameHistory",
+    "pages/LegalDoc"
   ]
 }

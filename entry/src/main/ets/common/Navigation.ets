@@ -106,6 +106,11 @@ export class GameHistoryRouteParams {
   constructor(game: string) { this.game = game; }
 }
 
+export class LegalDocRouteParams {
+  type: string;
+  constructor(type: string) { this.type = type; }
+}
+
 export class NavigationRouteOptions {
   url: string;
   params: AppShellRouteParams | GameHistoryRouteParams;

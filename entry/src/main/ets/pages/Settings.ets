@@ -7,6 +7,7 @@ import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
 import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { LegalDocRouteParams } from '../common/Navigation';
 
 import { TopBar } from '../components/TopBar';
 
@@ -271,6 +272,13 @@ export struct SettingsPage {
         value: '清除',
         action: () => { this.clearBackground(); }
       }
+    });
+  }
+
+  private openLegalDoc(type: string): void {
+    router.pushUrl({
+      url: 'pages/LegalDoc',
+      params: new LegalDocRouteParams(type)
     });
   }
 
@@ -708,9 +716,9 @@ export struct SettingsPage {
               Column({ space: 8 }) {
                 this.valueRow('版本', '1.0.0')
                 this.valueRow('检查更新', '')
-                this.valueRow('用户协议', '')
-                this.valueRow('隐私政策', '')
-                this.valueRow('开源许可', '')
+                this.valueRow('用户协议', '', () => { this.openLegalDoc('agreement'); })
+                this.valueRow('隐私政策', '', () => { this.openLegalDoc('privacy'); })
+                this.valueRow('开源许可', '', () => { this.openLegalDoc('license'); })
                 this.valueRow('反馈', '')
               }
               .width('100%')
