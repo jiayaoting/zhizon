@@ -6,6 +6,7 @@ import { TopBar } from '../components/TopBar';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { EmptyState } from '../components/EmptyState';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
@@ -17,6 +18,7 @@ export struct ServersPage {
   @State currentGroup: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @StorageProp('serversDirty') @Watch('onServersDirty') serversDirty: number = 0;
   @State loading: boolean = true;
   @State stats: Stats = { total: 0, online: 0, warning: 0, offline: 0, alerts: 0, pveNodes: 0, vmTotal: 0, vmRunning: 0, vmStopped: 0, ctTotal: 0, runningTasks: 0 };
@@ -326,7 +328,7 @@ export struct ServersPage {
       .fontColor(g === this.currentGroup ? this.palette.primary : this.palette.textSecondary)
       .padding({ left: 12, right: 12, top: 5, bottom: 5 })
       .borderRadius(14)
-      .backgroundColor(g === this.currentGroup ? this.palette.primaryDim : this.palette.bgSurface2)
+      .backgroundColor(g === this.currentGroup ? this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
       .onClick(() => { this.currentGroup = g; this.refreshServersDataSource(); })
   }
 
@@ -351,7 +353,7 @@ export struct ServersPage {
     Button(text)
       .fontSize(11)
       .fontColor(this.palette.textSecondary)
-      .backgroundColor(this.palette.bgSurface2)
+      .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
       .borderRadius(5)
       .height(24)
       .padding({ left: 8, right: 8 })
@@ -408,7 +410,7 @@ export struct ServersPage {
             .fontColor(this.palette.textSecondary)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(5)
-            .backgroundColor(this.palette.bgSurface2)
+            .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
         }, (t: string) => t)
         // 连接模式标签
         Text(s.connectionMode === 'direct' ? '直连' : 'Agent')
@@ -465,8 +467,9 @@ export struct ServersPage {
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 
   build() {

@@ -49,6 +49,11 @@ export interface ThemePalette {
   bgSurface2: string;
   bgElevated: string;
   bgHover: string;
+  // 玻璃材质背景（毛玻璃效果使用）
+  bgGlassBar: string;      // 顶栏/底栏玻璃色
+  bgGlassCard: string;     // 指标卡/列表卡玻璃色
+  bgGlassCard2: string;    // 卡片内次级元素玻璃色
+  borderGlass: string;     // 玻璃边框色
   // 边框
   borderSubtle: string;
   borderDefault: string;
@@ -108,6 +113,10 @@ function darkPalette(primary: string, primaryHover: string, primaryDim: string):
     bgSurface2: '#1A2030',
     bgElevated: '#232A3D',
     bgHover: '#2A3349',
+    bgGlassBar: 'rgba(19, 24, 38, 0.72)',
+    bgGlassCard: 'rgba(19, 24, 38, 0.60)',
+    bgGlassCard2: 'rgba(26, 32, 48, 0.65)',
+    borderGlass: 'rgba(61, 74, 99, 0.55)',
     borderSubtle: '#1E293B',
     borderDefault: '#2D3748',
     borderStrong: '#3D4A63',
@@ -159,6 +168,10 @@ function lightPalette(primary: string, primaryHover: string, primaryDim: string)
     bgSurface2: '#F0F1F5',
     bgElevated: '#FFFFFF',
     bgHover: '#EBEDF2',
+    bgGlassBar: 'rgba(255, 255, 255, 0.70)',
+    bgGlassCard: 'rgba(255, 255, 255, 0.62)',
+    bgGlassCard2: 'rgba(240, 241, 245, 0.68)',
+    borderGlass: 'rgba(209, 213, 219, 0.60)',
     borderSubtle: '#E5E7EB',
     borderDefault: '#D1D5DB',
     borderStrong: '#9CA3AF',
@@ -261,7 +274,8 @@ export enum PreferenceMutationType {
   COLOR_THEME = 'COLOR_THEME',
   FONT_SIZE = 'FONT_SIZE',
   BACKGROUND = 'BACKGROUND',
-  BACKGROUND_STRENGTH = 'BACKGROUND_STRENGTH'
+  BACKGROUND_STRENGTH = 'BACKGROUND_STRENGTH',
+  GLASS_EFFECT = 'GLASS_EFFECT'
 }
 
 export class PreferenceMutation {
@@ -361,6 +375,7 @@ export class ThemeManager {
   private manualMode: ThemeMode = ThemeMode.DARK;
   private effectiveMode: ThemeMode = ThemeMode.DARK;
   private backgroundPreference: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
+  private glassEffectEnabled: boolean = false;
   private fontSizeScale: string = 'standard';
   private context: Context | null = null;
   private initialized: boolean = false;
@@ -404,12 +419,18 @@ export class ThemeManager {
       // 加载字号配置
       const fontSize = await DataRepository.getSetting('fontSizeScale', 'standard');
       this.fontSizeScale = this.isFontSizeScale(fontSize) ? fontSize : 'standard';
+
+      // 加载毛玻璃开关
+      const glassEnabled = await DataRepository.getSetting('glassEffectEnabled', 'false');
+      this.glassEffectEnabled = glassEnabled === 'true';
+
       this.applyFontSize(this.fontSizeScale);
       DataRepository.initializePreferenceSnapshot(this.createPreferenceSnapshot(0));
 
       this.initialized = true;
-      hilog.info(DOMAIN, 'Theme', '主题管理器初始化完成: color=%{public}s dark=%{public}s followSys=%{public}s',
-        this.currentColorTheme, this.getIsDark() ? 'true' : 'false', this.followSystem ? 'true' : 'false');
+      hilog.info(DOMAIN, 'Theme', '主题管理器初始化完成: color=%{public}s dark=%{public}s followSys=%{public}s glass=%{public}s',
+        this.currentColorTheme, this.getIsDark() ? 'true' : 'false', this.followSystem ? 'true' : 'false',
+        this.glassEffectEnabled ? 'true' : 'false');
 
       // 首次写入 AppStorage
       this.applyTheme();
@@ -495,6 +516,7 @@ export class ThemeManager {
     AppStorage.setOrCreate('effectiveThemeMode', this.effectiveMode);
     AppStorage.setOrCreate('globalBackgroundUri', this.backgroundPreference.globalUri);
     AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundPreference.visibleStrength);
+    AppStorage.setOrCreate('glassEffectEnabled', this.glassEffectEnabled);
   }
 
   private publishInitialBackground(): void {
@@ -563,6 +585,17 @@ export class ThemeManager {
   async setBackgroundStrength(strength: number): Promise<PreferenceMutationResult> {
     return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.BACKGROUND_STRENGTH,
       false, '', strength));
+  }
+
+  // 设置毛玻璃效果开关
+  async setGlassEffect(enabled: boolean): Promise<PreferenceMutationResult> {
+    return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.GLASS_EFFECT,
+      enabled, '', 0));
+  }
+
+  // 获取毛玻璃效果是否开启
+  getGlassEffectEnabled(): boolean {
+    return this.glassEffectEnabled;
   }
 
   reportBackgroundLoadFailure(uri: string): void {
@@ -645,7 +678,7 @@ export class ThemeManager {
   private buildCandidate(base: PreferenceSnapshot, mutation: PreferenceMutation,
     operationVersion: number): PreferenceSnapshot | null {
     const candidate = new PreferenceSnapshot(base.followSystem, base.manualThemeMode, base.colorThemeId,
-      base.fontSizeScale, base.backgroundUri, base.backgroundStrength, operationVersion);
+      base.fontSizeScale, base.backgroundUri, base.backgroundStrength, base.glassEffectEnabled, operationVersion);
     if (mutation.type === PreferenceMutationType.FOLLOW_SYSTEM) {
       candidate.followSystem = mutation.booleanValue;
       if (!mutation.booleanValue) candidate.manualThemeMode = this.effectiveMode;
@@ -655,6 +688,7 @@ export class ThemeManager {
     else if (mutation.type === PreferenceMutationType.FONT_SIZE) candidate.fontSizeScale = mutation.stringValue;
     else if (mutation.type === PreferenceMutationType.BACKGROUND) candidate.backgroundUri = mutation.stringValue;
     else if (mutation.type === PreferenceMutationType.BACKGROUND_STRENGTH) candidate.backgroundStrength = mutation.numberValue;
+    else if (mutation.type === PreferenceMutationType.GLASS_EFFECT) candidate.glassEffectEnabled = mutation.booleanValue;
     else return null;
     return candidate;
   }
@@ -671,6 +705,7 @@ export class ThemeManager {
       snapshot.colorThemeId as ColorThemeId : ColorThemeId.CYAN;
     this.fontSizeScale = snapshot.fontSizeScale;
     this.backgroundPreference = this.backgroundFromSnapshot(snapshot);
+    this.glassEffectEnabled = snapshot.glassEffectEnabled;
     this.lastSuccessfulTheme = this.getThemeState();
     this.lastSuccessfulBackground = this.copyBackground(this.backgroundPreference);
     this.applyFontSize(this.fontSizeScale);
@@ -683,7 +718,7 @@ export class ThemeManager {
   private createPreferenceSnapshot(operationVersion: number): PreferenceSnapshot {
     return new PreferenceSnapshot(this.followSystem, this.manualMode, this.currentColorTheme,
       this.fontSizeScale, this.backgroundPreference.globalUri, this.backgroundPreference.visibleStrength,
-      operationVersion);
+      this.glassEffectEnabled, operationVersion);
   }
 
   private completeFollowSystemMutation(mutation: PreferenceMutation, operationVersion: number): void {

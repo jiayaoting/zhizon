@@ -1,12 +1,14 @@
 import { AppConstants, NavItem } from '../common/Constants';
 import { MainNavKey } from '../common/Navigation';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
 
 @Component
 export struct FixedBottomNav {
   @Prop selectedKey: MainNavKey;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   onSelect: (key: MainNavKey) => void = () => {};
 
   @Builder
@@ -48,13 +50,14 @@ export struct FixedBottomNav {
       }
       .width('100%')
       .height(56)
-      .backgroundColor(this.palette.bgSurface)
-      .border({ width: { top: 1 }, color: this.palette.borderSubtle })
+      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
+      .border({ width: { top: 1 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
       Row()
         .width('100%')
         .height(Math.max(0, this.navBarHeight))
-        .backgroundColor(this.palette.bgSurface)
+        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
     }
     .width('100%')
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
   }
 }

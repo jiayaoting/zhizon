@@ -1,5 +1,6 @@
 // 智子 - 通用组件：顶栏（沉浸光感版）
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
 import { router } from '@kit.ArkUI';
 
 @Component
@@ -10,6 +11,7 @@ export struct TopBar {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @BuilderParam actions: () => void = this.emptyActions;
 
   @Builder emptyActions() {}
@@ -26,7 +28,7 @@ export struct TopBar {
         .width(32)
         .height(32)
         .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .onClick(() => router.back())
@@ -56,5 +58,8 @@ export struct TopBar {
     .width('100%')
     .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: this.statusBarHeight + 16, bottom: 16 })
     .alignItems(VerticalAlign.Center)
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
+    .border({ width: { bottom: 1 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
   }
 }

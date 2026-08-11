@@ -1,5 +1,6 @@
 // 智子 - 通用组件：指标卡（沉浸光感版）
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
 
 @Component
 export struct MetricCard {
@@ -10,6 +11,7 @@ export struct MetricCard {
   @Prop color: string = '#00D9A3';
   @Prop badgeText: string = '';
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
 
   build() {
     Column({ space: 8 }) {
@@ -24,7 +26,7 @@ export struct MetricCard {
             .fontColor(this.palette.textSecondary)
             .padding({ left: 6, right: 6, top: 2, bottom: 2 })
             .borderRadius(8)
-            .backgroundColor(this.palette.bgSurface2)
+            .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
         }
       }
       .width('100%')
@@ -50,8 +52,9 @@ export struct MetricCard {
     }
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
     .alignItems(HorizontalAlign.Start)
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
   }
 }

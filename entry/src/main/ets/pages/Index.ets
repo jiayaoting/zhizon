@@ -5,6 +5,7 @@ import { AppConstants, ToolboxItem } from '../common/Constants';
 import { MetricCard } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
 import { Server, PveCluster, Alert, Stats, PveNode } from '../model/Models';
 
@@ -21,6 +22,7 @@ export struct IndexPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @State stats: Stats = emptyStats;
   @State servers: Server[] = [];
   @State alerts: Alert[] = [];
@@ -137,9 +139,10 @@ export struct IndexPage {
         .width(140)
         .padding(14)
         .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
+        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
         .onClick(() => {
           this.onNavigate('Servers');
         })
@@ -168,9 +171,10 @@ export struct IndexPage {
         .width(140)
         .padding(14)
         .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
+        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
         .onClick(() => {
           this.onNavigate('Pve');
         })
@@ -199,9 +203,10 @@ export struct IndexPage {
         .width(140)
         .padding(14)
         .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
+        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
 
         // 未处理告警
         Column() {
@@ -227,9 +232,10 @@ export struct IndexPage {
         .width(140)
         .padding(14)
         .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
         .alignItems(HorizontalAlign.Start)
+        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P1_CARD))
         .onClick(() => {
           this.onNavigate('Alerts');
         })
@@ -272,10 +278,11 @@ export struct IndexPage {
             .width('100%')
             .padding({ top: 16, bottom: 16 })
             .borderRadius(12)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
             .alignItems(HorizontalAlign.Center)
             .justifyContent(FlexAlign.Center)
+            .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
             .onClick(() => {
               this.onNavigate(item.key);
             })
@@ -356,9 +363,10 @@ export struct IndexPage {
             .width(130)
             .padding(12)
             .borderRadius(10)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
             .alignItems(HorizontalAlign.Start)
+            .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
             .onClick(() => {
               this.onNavigate('Servers');
             })

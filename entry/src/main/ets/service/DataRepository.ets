@@ -59,7 +59,7 @@ export function generateId(prefix: string): string {
 // 数据仓库 - 持久化版本
 export class DataRepository {
   private static preferenceSnapshot: PreferenceSnapshot = new PreferenceSnapshot(true, ThemeMode.DARK,
-    'cyan', 'standard', '', 50, 0);
+    'cyan', 'standard', '', 50, false, 0);
   static generateId(prefix: string): string { return generateId(prefix); }
 
   static async saveDefect(record: DefectRecord): Promise<RecoverableResult<DefectRecord>> {
@@ -105,13 +105,16 @@ export class DataRepository {
       await DatabaseHelper.setPreferenceSettings(JSON.stringify(storedTheme),
         JSON.stringify(new StoredBackgroundPreferenceValue(candidate.backgroundUri, candidate.backgroundStrength)),
         candidate.colorThemeId, candidate.fontSizeScale);
+      // 单独持久化毛玻璃开关
+      await DatabaseHelper.setSetting('glassEffectEnabled', candidate.glassEffectEnabled ? 'true' : 'false');
       DataRepository.preferenceSnapshot = DataRepository.copyPreferenceSnapshot(candidate);
       return new PreferencePersistenceResult(true, '', DataRepository.getPreferenceSnapshot(), rollback);
     } catch (e) { return new PreferencePersistenceResult(false, 'PERSISTENCE_FAILED', rollback, rollback); }
   }
   private static copyPreferenceSnapshot(source: PreferenceSnapshot): PreferenceSnapshot {
     return new PreferenceSnapshot(source.followSystem, source.manualThemeMode, source.colorThemeId,
-      source.fontSizeScale, source.backgroundUri, source.backgroundStrength, source.operationVersion);
+      source.fontSizeScale, source.backgroundUri, source.backgroundStrength, source.glassEffectEnabled,
+      source.operationVersion);
   }
   private static isColorTheme(value: string): boolean {
     return value === 'cyan' || value === 'ocean' || value === 'sunset' || value === 'aurora' ||

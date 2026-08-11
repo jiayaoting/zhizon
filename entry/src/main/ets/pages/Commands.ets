@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { EmptyState } from '../components/EmptyState';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { Command } from '../model/Models';
@@ -13,6 +14,7 @@ export struct CommandsPage {
   @State currentCat: string = '全部';
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @State commands: Command[] = [];
   @State loading: boolean = true;
   private categories: string[] = ['全部', '系统', '进程', '网络', 'Docker', '安全', '服务'];
@@ -81,7 +83,7 @@ export struct CommandsPage {
         .fontColor(this.palette.textTertiary)
         .padding({ left: 6, right: 6, top: 1, bottom: 1 })
         .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 9, bottom: 9 })
@@ -121,7 +123,7 @@ export struct CommandsPage {
         .width('100%')
         .padding(10)
         .borderRadius(6)
-        .backgroundColor(this.palette.bgSurface2)
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .onClick(() => {
@@ -135,12 +137,12 @@ export struct CommandsPage {
           .fontColor(this.palette.textSecondary)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface2)
+          .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
         Blank()
         Button('复制')
           .fontSize(11)
           .fontColor(this.palette.textSecondary)
-          .backgroundColor(this.palette.bgSurface2)
+          .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
           .borderRadius(6)
           .height(26)
           .onClick(() => {
@@ -162,8 +164,9 @@ export struct CommandsPage {
     .padding(14)
     .margin({ right: this.isSm ? 0 : 12, bottom: 12 })
     .borderRadius(10)
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 
   @Builder loadingBuilder() {

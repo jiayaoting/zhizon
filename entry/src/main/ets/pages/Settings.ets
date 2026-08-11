@@ -6,6 +6,7 @@ import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorT
 import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 
 import { TopBar } from '../components/TopBar';
 
@@ -14,6 +15,7 @@ import { TopBar } from '../components/TopBar';
 struct GroupCard {
   @Prop title: string;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @BuilderParam content: () => void = this.defaultContent;
 
   @Builder defaultContent() {}
@@ -29,9 +31,10 @@ struct GroupCard {
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
     .alignItems(HorizontalAlign.Start)
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 }
 
@@ -40,6 +43,7 @@ export struct SettingsPage {
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @StorageLink('isDarkMode') isDarkMode: boolean = true;
   @StorageLink('followSystemDark') followSystemDark: boolean = true;
   @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
@@ -82,6 +86,7 @@ export struct SettingsPage {
   @State showBgSettings: boolean = false;
   @State globalBgUri: string = '';
   @State backgroundStrength: number = 50;
+  @State glassEffectEnabled: boolean = false;
 
   async aboutToAppear(): Promise<void> {
     this.loading = true;
@@ -117,6 +122,8 @@ export struct SettingsPage {
       const background = ThemeManager.getInstance().getGlobalBackground();
       this.globalBgUri = background.globalUri;
       this.backgroundStrength = background.visibleStrength;
+      // 加载毛玻璃开关
+      this.glassEffectEnabled = ThemeManager.getInstance().getGlassEffectEnabled();
     } finally {
       this.loading = false;
     }
@@ -193,6 +200,17 @@ export struct SettingsPage {
     }
   }
 
+  private async updateGlassEffect(enabled: boolean): Promise<void> {
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setGlassEffect(enabled);
+    this.applyPreferenceResult(result);
+    if (result.success) {
+      this.glassEffectEnabled = enabled;
+      this.toast(enabled ? '已开启毛玻璃效果' : '已关闭毛玻璃效果');
+    } else {
+      this.toast('设置未保存，请重试');
+    }
+  }
+
   private async updateColorTheme(themeId: ColorThemeId): Promise<void> {
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setColorTheme(themeId);
     this.applyPreferenceResult(result);
@@ -229,7 +247,7 @@ export struct SettingsPage {
     .width('100%')
     .padding({ left: 12, right: 12, top: 11, bottom: 11 })
     .borderRadius(6)
-    .backgroundColor(this.palette.bgSurface2)
+    .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
     .onClick(() => this.toast(value ? `${label}：${value}` : label))
   }
 
@@ -246,7 +264,7 @@ export struct SettingsPage {
     .width('100%')
     .padding({ left: 12, right: 12, top: 11, bottom: 11 })
     .borderRadius(6)
-    .backgroundColor(this.palette.bgSurface2)
+    .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
   }
 
   // 颜色主题选择器
@@ -440,6 +458,21 @@ export struct SettingsPage {
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                 this.backgroundSettings()
+
+                // 毛玻璃效果
+                Text('毛玻璃效果')
+                  .fontSize(13)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .margin({ top: 4 })
+                this.toggleRow('启用毛玻璃效果', this.glassEffectEnabled, async (v: boolean) => {
+                  await this.updateGlassEffect(v);
+                })
+                Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
+                  .fontSize(10)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
 
                 this.valueRow('字号', this.fontSizeSetting)
                 this.valueRow('字体', this.fontFamily)

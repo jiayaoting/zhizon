@@ -6,6 +6,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusBadge } from '../components/StatusBadge';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository, formatSize } from '../service/DataRepository';
 import { SshService } from '../service/SshService';
@@ -29,6 +30,7 @@ interface TransferItem {
 export struct FilesPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @State files: FileItem[] = [];
   @State servers: Server[] = [];
   @State loading: boolean = true;
@@ -286,7 +288,7 @@ export struct FilesPage {
         Button('切换')
           .fontSize(11)
           .fontColor(this.palette.textSecondary)
-          .backgroundColor(this.palette.bgSurface2)
+          .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
           .borderRadius(5)
           .height(26)
           .padding({ left: 10, right: 10 })
@@ -295,8 +297,9 @@ export struct FilesPage {
     }
     .width('100%')
     .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: { bottom: 0.5 }, color: this.palette.borderSubtle })
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: { bottom: 0.5 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
     .onClick(() => {
       if (!this.selectedServer) {
         this.showPicker = true;
@@ -387,7 +390,7 @@ export struct FilesPage {
     .width('100%')
     .padding(12)
     .borderRadius(8)
-    .backgroundColor(this.palette.bgSurface2)
+    .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
   }
 
   build() {
@@ -458,10 +461,11 @@ export struct FilesPage {
               }
               .layoutWeight(1)
               .padding(12)
-              .backgroundColor(this.palette.bgSurface)
+              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
               .borderRadius(10)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
               .alignItems(HorizontalAlign.Start)
+              .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
 
               // 中间分隔线
               Divider()
@@ -517,10 +521,11 @@ export struct FilesPage {
               }
               .layoutWeight(1)
               .padding(12)
-              .backgroundColor(this.palette.bgSurface)
+              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
               .borderRadius(10)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
               .alignItems(HorizontalAlign.Start)
+              .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
             }
             .layoutWeight(1)
             .width('100%')
@@ -592,7 +597,7 @@ export struct FilesPage {
             }
             .width(28)
             .height(28)
-            .backgroundColor(this.palette.bgSurface2)
+            .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
             .onClick(() => {
               this.showPicker = false;
             })
@@ -676,7 +681,8 @@ export struct FilesPage {
         .width(this.isSm ? '90%' : '72%')
         .constraintSize({ maxWidth: 480 })
         .borderRadius(16)
-        .backgroundColor(this.palette.bgSurface)
+        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
         .shadow({
           radius: 24,
           color: 'rgba(0,0,0,0.4)',

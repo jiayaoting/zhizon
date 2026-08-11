@@ -6,6 +6,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState } from '../components/EmptyState';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { ArrayDataSource } from '../common/ArrayDataSource';
 import { DataRepository } from '../service/DataRepository';
 import { Alert } from '../model/Models';
@@ -19,6 +20,7 @@ export struct AlertsPage {
   @State loading: boolean = true;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   private filters: string[] = ['全部', '未处理', '严重', '警告', '信息'];
   private alertsDataSource: ArrayDataSource<Alert> = new ArrayDataSource<Alert>();
 
@@ -122,7 +124,7 @@ export struct AlertsPage {
       .fontColor(f === this.alertFilter ? Color.White : this.palette.textSecondary)
       .padding({ left: 12, right: 12, top: 5, bottom: 5 })
       .borderRadius(14)
-      .backgroundColor(f === this.alertFilter ? this.palette.primary : this.palette.bgSurface2)
+      .backgroundColor(f === this.alertFilter ? this.palette.primary : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
       .border({ width: 1, color: f === this.alertFilter ? this.palette.primary : this.palette.borderSubtle })
       .onClick(() => { this.alertFilter = f; this.refreshAlertsDataSource(); })
   }
@@ -195,9 +197,10 @@ export struct AlertsPage {
     }
     .width('100%')
     .borderRadius(10)
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
     .opacity(this.isResolved(a) ? 0.5 : 1)
+    .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P2_LIST))
   }
 
   @Builder loadingBuilder() {
