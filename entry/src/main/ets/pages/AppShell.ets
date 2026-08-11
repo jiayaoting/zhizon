@@ -39,6 +39,15 @@ struct AppShell {
     // 导航容器为路由托管，无独立资源需要释放
   }
 
+  // 返回键拦截：子页面返回首页，首页才退出到桌面
+  onBackPress(): boolean {
+    if (this.navigation.currentPage === PageKey.Index) {
+      return false;
+    }
+    this.selectMain(MainNavKey.Index);
+    return true;
+  }
+
   private handleNavigationResult(key: string, result: NavigationResult): void {
     if (!result.success) {
       const failure = result as NavigationFailure;
