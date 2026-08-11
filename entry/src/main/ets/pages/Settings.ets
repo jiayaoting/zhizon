@@ -54,12 +54,6 @@ export struct SettingsPage {
   // 安全
   @State biometricUnlock: boolean = false;
   @State autoLock: string = '5 分钟';
-  // 通知
-  @State alertPush: boolean = true;
-  @State doNotDisturb: string = '22:00-08:00';
-  @State cpuThreshold: string = '85%';
-  @State memoryThreshold: string = '90%';
-  @State diskThreshold: string = '95%';
   // 数据
   @State autoBackup: boolean = false;
 
@@ -79,18 +73,12 @@ export struct SettingsPage {
     try {
       const biometricUnlockVal = await DataRepository.getSetting('biometricUnlock', 'false');
       this.biometricUnlock = biometricUnlockVal === 'true';
-      const alertPushVal = await DataRepository.getSetting('alertPush', 'true');
-      this.alertPush = alertPushVal === 'true';
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
 
       this.fontSizeSetting = await DataRepository.getSetting('fontSize', '标准');
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'JetBrains Mono');
       this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
-      this.doNotDisturb = await DataRepository.getSetting('doNotDisturb', '22:00-08:00');
-      this.cpuThreshold = await DataRepository.getSetting('cpuThreshold', '85%');
-      this.memoryThreshold = await DataRepository.getSetting('memoryThreshold', '90%');
-      this.diskThreshold = await DataRepository.getSetting('diskThreshold', '95%');
 
       // 加载背景图配置
       const background = ThemeManager.getInstance().getGlobalBackground();
@@ -461,22 +449,6 @@ export struct SettingsPage {
                   this.toast(`生物识别解锁：${v ? '已开启' : '已关闭'}`);
                 })
                 this.valueRow('自动锁定', this.autoLock)
-              }
-              .width('100%')
-            }
-
-            // 通知
-            GroupCard({ title: '通知' }) {
-              Column({ space: 8 }) {
-                this.toggleRow('告警推送', this.alertPush, (v: boolean) => {
-                  this.alertPush = v;
-                  DataRepository.setSetting('alertPush', v ? 'true' : 'false');
-                  this.toast(`告警推送：${v ? '已开启' : '已关闭'}`);
-                })
-                this.valueRow('勿扰时段', this.doNotDisturb)
-                this.valueRow('CPU 阈值', this.cpuThreshold)
-                this.valueRow('内存阈值', this.memoryThreshold)
-                this.valueRow('磁盘阈值', this.diskThreshold)
               }
               .width('100%')
             }

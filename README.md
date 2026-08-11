@@ -1,23 +1,22 @@
 # 智子 (Zhizon)
 
-> HarmonyOS NEXT 原生应用 · 快捷命令库 + 休闲娱乐 + 告警通知
+> HarmonyOS NEXT 原生应用 · 游戏中心 + 多主题系统
 
 ## 项目简介
 
-智子是一款运行于鸿蒙 6+ 系统的**轻量工具应用**，提供：
+智子是一款运行于鸿蒙 6+ 系统的**轻量休闲应用**，提供：
 
-- ⚡ **快捷命令库**：分类管理常用命令，一键复制，使用次数统计
 - 🎮 **游戏中心**：俄罗斯方块、2048、贪吃蛇，5 级难度可选
-- 🔔 **告警通知**：告警记录查看与处理，三色分级展示
 - 📱 **全设备自适应**：手机（底部 Tab）、平板、折叠屏自动适配
 - 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果
+- 📊 **游戏战绩**：分数记录与历史排行
 
 ## 技术栈
 
 - **开发语言**：ArkTS
 - **UI 框架**：ArkUI 声明式 + Stage 模型
 - **目标 SDK**：HarmonyOS 6.1.1 (API 24)
-- **数据存储**：RelationalStore (RDB v4) · 6 张持久化表
+- **数据存储**：RelationalStore (RDB v4) · 5 张持久化表
 - **响应式布局**：`@StorageLink` 跨组件状态 + `display` API · 3 档断点
 - **多主题**：ThemePalette 接口 + 6 色彩主题 + 亮/暗模式 + 自定义背景 + 毛玻璃开关
 
@@ -48,35 +47,27 @@ zhizon/
 │       │   │   └── FailureHandling.ets    # 错误处理工具
 │       │   │
 │       │   ├── model/         # 数据模型 (2 个文件)
-│       │   │   ├── Models.ets             # Command + Alert + Stats 接口
 │       │   │   └── GovernanceModels.ets   # 治理模型（缺陷追踪 + 偏好快照）
 │       │   │
 │       │   ├── service/       # 业务服务层 (7 个文件)
-│       │   │   ├── DatabaseHelper.ets     # RDB v4 + 6 表 CRUD + 默认数据
-│       │   │   ├── DataRepository.ets     # 数据门面 + 格式化 + 缺陷管理 + 偏好持久化
+│       │   │   ├── DatabaseHelper.ets     # RDB v4 + 5 表 CRUD
+│       │   │   ├── DataRepository.ets     # 数据门面 + 缺陷管理 + 偏好持久化
 │       │   │   ├── BackgroundImporter.ets # 自定义背景图导入
 │       │   │   ├── WindowEnvironmentProvider.ets # 窗口环境感知
 │       │   │   ├── DefectWorkflow.ets     # 缺陷状态机工作流
 │       │   │   ├── DefectClassifier.ets   # 缺陷分类器
 │       │   │   └── PickerAdapter.ets      # 文件选择器适配
 │       │   │
-│       │   ├── components/    # 通用组件 (10 个)
-│       │   │   ├── NavSidebar.ets          # 导航侧栏（compact 模式）
+│       │   ├── components/    # 通用组件 (5 个)
 │       │   │   ├── TopBar.ets              # 顶栏（响应式）
-│       │   │   ├── StatusBadge.ets         # 状态徽章
-│       │   │   ├── ProgressBar.ets         # 进度条（阈值变色）
-│       │   │   ├── MetricCard.ets          # 指标卡
-│       │   │   ├── EmptyState.ets          # 空状态
 │       │   │   ├── DifficultyOption.ets    # 难度选择项
 │       │   │   ├── FixedBottomNav.ets      # 固定底部导航
 │       │   │   ├── GlassEffect.ets         # 毛玻璃效果工具
 │       │   │   └── GlobalBackgroundLayer.ets # 全局背景层
 │       │   │
-│       │   └── pages/         # 页面 (11 个)
+│       │   └── pages/         # 页面 (9 个)
 │       │       ├── AppShell.ets           # 自适应主框架
-│       │       ├── Index.ets              # 首页仪表盘
-│       │       ├── Commands.ets           # 快捷命令库
-│       │       ├── Alerts.ets             # 告警中心
+│       │       ├── Index.ets              # 首页（游戏入口 + 最佳战绩）
 │       │       ├── Settings.ets           # 设置
 │       │       ├── More.ets               # 更多菜单
 │       │       ├── Games.ets              # 游戏中心
@@ -105,11 +96,9 @@ zhizon/
 | 页面 | 说明 |
 |------|------|
 | AppShell | 自适应主框架（手机底部 Tab / 平板侧边栏） |
-| Index | 首页仪表盘（欢迎区 + 应用概览 + 快速操作 + 最近告警） |
-| Commands | 快捷命令库（分类管理 + 一键复制） |
-| Alerts | 告警中心（三色分级 + 标记已处理） |
+| Index | 首页（欢迎区 + 游戏入口大卡 + 最佳战绩 + 难度速览） |
 | Settings | 设置（主题 + 背景 + 毛玻璃 + 深色模式） |
-| More | 更多菜单入口 |
+| More | 更多菜单入口（设置） |
 | Games | 游戏中心（3 游戏 + 5 级难度） |
 | Tetris | 俄罗斯方块 |
 | Game2048 | 2048 |

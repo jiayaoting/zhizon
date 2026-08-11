@@ -10,9 +10,7 @@ export enum PageKey {
   Index = 'Index',
   Toolbox = 'Toolbox',
   More = 'More',
-  Commands = 'Commands',
   Games = 'Games',
-  Alerts = 'Alerts',
   Settings = 'Settings'
 }
 
@@ -128,9 +126,7 @@ const PAGE_REGISTRY: PageRegistration[] = [
   new PageRegistration(PageKey.Index, MainNavKey.Index, PageAvailability.EMBEDDED, 'pages/AppShell'),
   new PageRegistration(PageKey.Toolbox, MainNavKey.Toolbox, PageAvailability.EMBEDDED, 'pages/AppShell'),
   new PageRegistration(PageKey.More, MainNavKey.More, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.Commands, MainNavKey.Toolbox, PageAvailability.EMBEDDED, 'pages/AppShell'),
   new PageRegistration(PageKey.Games, MainNavKey.Toolbox, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.Alerts, MainNavKey.More, PageAvailability.EMBEDDED, 'pages/AppShell'),
   new PageRegistration(PageKey.Settings, MainNavKey.More, PageAvailability.EMBEDDED, 'pages/AppShell')
 ];
 
@@ -155,9 +151,7 @@ export function pageFromString(key: string): PageKey | null {
   if (key === PageKey.Index) return PageKey.Index;
   if (key === PageKey.Toolbox) return PageKey.Toolbox;
   if (key === PageKey.More) return PageKey.More;
-  if (key === PageKey.Commands) return PageKey.Commands;
   if (key === PageKey.Games) return PageKey.Games;
-  if (key === PageKey.Alerts) return PageKey.Alerts;
   if (key === PageKey.Settings) return PageKey.Settings;
   return null;
 }

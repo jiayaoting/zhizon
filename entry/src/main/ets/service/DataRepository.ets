@@ -1,5 +1,4 @@
 // 智子 - 数据仓库（基于数据库持久化）
-import { Command, Alert, Stats } from '../model/Models';
 import { DatabaseHelper, ScoreEntry } from './DatabaseHelper';
 import { ThemePreference, ThemeMode, GlobalBackgroundPreference } from '../common/ThemeContracts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -29,23 +28,6 @@ class LegacyBackgroundConfig {
 
 function isSandboxBackgroundReference(uri: string): boolean {
   return uri.length === 0 || uri.startsWith('file://') || uri.indexOf('://') < 0;
-}
-
-// 格式化运行时间
-export function formatUptime(seconds: number): string {
-  if (!seconds) return '-';
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}天 ${h}小时`;
-  if (h > 0) return `${h}小时 ${m}分钟`;
-  return `${m}分钟`;
-}
-
-// 格式化大小（GB -> TB）
-export function formatSize(gb: number): string {
-  if (gb >= 1024) return (gb / 1024).toFixed(1) + ' TB';
-  return gb.toFixed(1) + ' GB';
 }
 
 // 生成唯一 ID
@@ -116,42 +98,6 @@ export class DataRepository {
   }
   private static isFontSizeScale(value: string): boolean {
     return value === 'small' || value === 'standard' || value === 'large';
-  }
-
-  // ========== 快捷命令 ==========
-
-  static async getCommands(): Promise<Command[]> {
-    return await DatabaseHelper.getCommands();
-  }
-
-  static async addCommand(cmd: Command): Promise<void> {
-    await DatabaseHelper.addCommand(cmd);
-  }
-
-  static async incrementCommandUses(id: string): Promise<void> {
-    await DatabaseHelper.incrementCommandUses(id);
-  }
-
-  static async deleteCommand(id: string): Promise<void> {
-    await DatabaseHelper.deleteCommand(id);
-  }
-
-  // ========== 告警 ==========
-
-  static async getAlerts(): Promise<Alert[]> {
-    return await DatabaseHelper.getAlerts();
-  }
-
-  static async addAlert(alert: Alert): Promise<void> {
-    await DatabaseHelper.addAlert(alert);
-  }
-
-  static async resolveAlert(id: string): Promise<void> {
-    await DatabaseHelper.resolveAlert(id);
-  }
-
-  static async resolveAllAlerts(): Promise<void> {
-    await DatabaseHelper.resolveAllAlerts();
   }
 
   // ========== 游戏战绩 ==========
@@ -271,17 +217,5 @@ export class DataRepository {
     stored.globalUri = preference.globalUri;
     stored.visibleStrength = preference.visibleStrength;
     await DatabaseHelper.setSetting('globalBackgroundPreference', JSON.stringify(stored));
-  }
-
-  // ========== 统计 ==========
-
-  static async getStats(): Promise<Stats> {
-    return {
-      total: 0,
-      online: 0,
-      warning: 0,
-      offline: 0,
-      alerts: 0
-    };
   }
 }

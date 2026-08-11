@@ -2,7 +2,6 @@
 import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { Command, Alert } from '../model/Models';
 import { AffectedFeature, DefectInput, DefectRecord, DefectSeverity, DefectStateHistory, DefectStatus, EvidenceConclusion, EvidenceType, FixEvidence, FixResult } from '../model/GovernanceModels';
 
 export interface ScoreEntry {
@@ -16,30 +15,6 @@ export interface ScoreEntry {
 const DB_NAME = 'zhizon.db';
 const DB_VERSION = 4;
 const DB_DOMAIN = 0x9201;
-
-const SQL_CREATE_COMMANDS = `
-  CREATE TABLE IF NOT EXISTS commands (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    cmd TEXT NOT NULL,
-    category TEXT DEFAULT '通用',
-    uses INTEGER DEFAULT 0,
-    created_at INTEGER
-  )
-`;
-
-const SQL_CREATE_ALERTS = `
-  CREATE TABLE IF NOT EXISTS alerts (
-    id TEXT PRIMARY KEY,
-    level TEXT DEFAULT 'info',
-    source TEXT,
-    title TEXT NOT NULL,
-    detail TEXT,
-    time TEXT,
-    resolved INTEGER DEFAULT 0,
-    created_at INTEGER
-  )
-`;
 
 const SQL_CREATE_SETTINGS = `
   CREATE TABLE IF NOT EXISTS settings (
@@ -93,8 +68,6 @@ export class DatabaseHelper {
     DatabaseHelper.store = await relationalStore.getRdbStore(context, config);
 
     // 创建表
-    await DatabaseHelper.store.executeSql(SQL_CREATE_COMMANDS);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_ALERTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_SETTINGS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_GAME_SCORES);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECTS);
@@ -104,119 +77,11 @@ export class DatabaseHelper {
     if (DatabaseHelper.store.version < DB_VERSION) {
       DatabaseHelper.store.version = DB_VERSION;
     }
-
-    // 清理历史种子假数据（对旧版本播种的假 id 生效）
-    await DatabaseHelper.cleanupLegacySeedData();
   }
 
   static getStore(): relationalStore.RdbStore {
     if (!DatabaseHelper.store) throw new Error('Database not initialized');
     return DatabaseHelper.store;
-  }
-
-  // ========== 快捷命令 CRUD ==========
-
-  static async getCommands(): Promise<Command[]> {
-    const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('commands');
-    predicates.orderByDesc('uses');
-    const resultSet = await store.query(predicates);
-    const commands: Command[] = [];
-
-    while (resultSet.goToNextRow()) {
-      commands.push({
-        id: resultSet.getString(resultSet.getColumnIndex('id')),
-        name: resultSet.getString(resultSet.getColumnIndex('name')),
-        cmd: resultSet.getString(resultSet.getColumnIndex('cmd')),
-        category: resultSet.getString(resultSet.getColumnIndex('category')),
-        uses: resultSet.getLong(resultSet.getColumnIndex('uses'))
-      });
-    }
-    resultSet.close();
-    return commands;
-  }
-
-  static async addCommand(cmd: Command): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    const valueBucket: relationalStore.ValuesBucket = {
-      id: cmd.id,
-      name: cmd.name,
-      cmd: cmd.cmd,
-      category: cmd.category,
-      uses: cmd.uses,
-      created_at: Date.now()
-    };
-    await store.insert('commands', valueBucket);
-  }
-
-  static async incrementCommandUses(id: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    await store.executeSql('UPDATE commands SET uses = uses + 1 WHERE id = ?', [id]);
-  }
-
-  static async deleteCommand(id: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('commands');
-    predicates.equalTo('id', id);
-    await store.delete(predicates);
-  }
-
-  // ========== 告警 CRUD ==========
-
-  static async getAlerts(resolvedOnly?: boolean): Promise<Alert[]> {
-    const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('alerts');
-    predicates.orderByDesc('created_at');
-    if (resolvedOnly !== undefined) {
-      predicates.equalTo('resolved', resolvedOnly ? 1 : 0);
-    }
-    const resultSet = await store.query(predicates);
-    const alerts: Alert[] = [];
-
-    while (resultSet.goToNextRow()) {
-      alerts.push({
-        id: resultSet.getString(resultSet.getColumnIndex('id')),
-        level: (resultSet.getString(resultSet.getColumnIndex('level')) || 'info') as 'critical' | 'warning' | 'info',
-        source: resultSet.getString(resultSet.getColumnIndex('source')) || '',
-        title: resultSet.getString(resultSet.getColumnIndex('title')),
-        detail: resultSet.getString(resultSet.getColumnIndex('detail')) || '',
-        time: resultSet.getString(resultSet.getColumnIndex('time')) || '',
-        resolved: resultSet.getLong(resultSet.getColumnIndex('resolved')) === 1
-      });
-    }
-    resultSet.close();
-    return alerts;
-  }
-
-  static async addAlert(alert: Alert): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    const valueBucket: relationalStore.ValuesBucket = {
-      id: alert.id,
-      level: alert.level,
-      source: alert.source,
-      title: alert.title,
-      detail: alert.detail,
-      time: alert.time,
-      resolved: alert.resolved ? 1 : 0,
-      created_at: Date.now()
-    };
-    await store.insert('alerts', valueBucket);
-  }
-
-  static async resolveAlert(id: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('alerts');
-    predicates.equalTo('id', id);
-    const bucket: relationalStore.ValuesBucket = { resolved: 1 };
-    await store.update(bucket, predicates);
-  }
-
-  static async resolveAllAlerts(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('alerts');
-    predicates.equalTo('resolved', 0);
-    const bucket: relationalStore.ValuesBucket = { resolved: 1 };
-    await store.update(bucket, predicates);
   }
 
   // ========== 游戏战绩 ==========
@@ -427,17 +292,5 @@ export class DatabaseHelper {
     try { exists = resultSet.goToNextRow(); } finally { resultSet.close(); }
     const bucket: relationalStore.ValuesBucket = { key: key, value: value };
     if (exists) await store.update(bucket, predicates); else await store.insert('settings', bucket);
-  }
-
-  // 清理历史种子假数据（旧版本播种的 cxx 残留，幂等：无此 id 时静默跳过）
-  private static async cleanupLegacySeedData(): Promise<void> {
-    const legacyCmdIds: string[] = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9', 'c10', 'c11', 'c12'];
-    const store = DatabaseHelper.getStore();
-    for (const id of legacyCmdIds) {
-      const predicates = new relationalStore.RdbPredicates('commands');
-      predicates.equalTo('id', id);
-      await store.delete(predicates);
-    }
-    hilog.info(DB_DOMAIN, 'DatabaseHelper', '%{public}s', 'Zhizon: legacy seed data cleaned');
   }
 }

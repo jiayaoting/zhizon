@@ -1,14 +1,28 @@
 // 智子 - 首页（沉浸光感版）
-// 欢迎区 + 应用概览 + 快速操作网格 + 最近告警
+// 欢迎区 + 游戏入口大卡 + 最近游戏战绩
+import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
-import { AppConstants, ToolboxItem } from '../common/Constants';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
-import { Alert, Stats, Command } from '../model/Models';
+import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
+  GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
+import { PageKey } from '../common/Navigation';
 
-const emptyStats: Stats = {
-  total: 0, online: 0, warning: 0, offline: 0, alerts: 0
-};
+interface HomeGameEntry {
+  gameId: GameId;
+  name: string;
+  icon: string;
+  desc: string;
+  color: string;
+}
+
+interface ScoreRow {
+  gameId: GameId;
+  name: string;
+  icon: string;
+  color: string;
+  best: number;
+}
 
 @Component
 export struct IndexPage {
@@ -18,35 +32,59 @@ export struct IndexPage {
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @State stats: Stats = emptyStats;
-  @State commands: Command[] = [];
-  @State alerts: Alert[] = [];
+  @State scoreRows: ScoreRow[] = [];
   @State loading: boolean = true;
   onNavigate: (key: string) => void = () => {};
 
-  // 快速操作入口
-  private quickActions: ToolboxItem[] = AppConstants.toolboxItems;
-  // 可玩游戏数（俄罗斯方块 / 2048 / 贪吃蛇）
-  private readonly gameCount: number = 3;
+  // 首页游戏入口
+  private homeGames: HomeGameEntry[] = [
+    {
+      gameId: GameId.TETRIS,
+      name: '俄罗斯方块',
+      icon: '🧱',
+      desc: '经典方块消除，触屏手势 + 按钮双控制',
+      color: this.palette.primary
+    },
+    {
+      gameId: GameId.GAME_2048,
+      name: '2048',
+      icon: '🔢',
+      desc: '滑动合并数字，挑战 2048 极限',
+      color: this.palette.warning
+    },
+    {
+      gameId: GameId.SNAKE,
+      name: '贪吃蛇',
+      icon: '🐍',
+      desc: '控制方向吃食物，不断变长',
+      color: this.palette.success
+    }
+  ];
 
   aboutToAppear() {
     this.currentTime = this.formatNow();
     this.greeting = this.getGreeting();
-    this.loadData();
+    this.loadScores();
   }
 
   aboutToDisappear(): void {
-    // 概览数据为单次拉取，无持久资源需要释放
+    // 单次拉取，无持久资源需要释放
   }
 
-  private async loadData() {
+  private async loadScores() {
     try {
-      const stats = await DataRepository.getStats();
-      const commands = await DataRepository.getCommands();
-      const alerts = await DataRepository.getAlerts();
-      this.stats = stats;
-      this.commands = commands;
-      this.alerts = alerts;
+      const rows: ScoreRow[] = [];
+      for (const game of this.homeGames) {
+        const best = await DataRepository.getGameHighScore(game.gameId);
+        rows.push({
+          gameId: game.gameId,
+          name: game.name,
+          icon: game.icon,
+          color: game.color,
+          best: best
+        });
+      }
+      this.scoreRows = rows;
     } finally {
       this.loading = false;
     }
@@ -68,10 +106,12 @@ export struct IndexPage {
     return `${d.getFullYear()}年${pad(d.getMonth() + 1)}月${pad(d.getDate())}日 星期${weekDays[d.getDay()]}`;
   }
 
-  private alertColor(level: string): string {
-    if (level === 'critical') return this.palette.danger;
-    if (level === 'warning') return this.palette.warning;
-    return this.palette.info;
+  // 默认中等难度启动游戏
+  private async openGame(game: HomeGameEntry): Promise<void> {
+    const request: GameLaunchRequest = new GameLaunchRequest(game.gameId, DifficultyLevel.MEDIUM,
+      PageKey.Games, GameLaunchFacade.nextVersion());
+    const result: GameLaunchResult = await GameLaunchFacade.open(request);
+    if (!result.success) promptAction.showToast({ message: result.message });
   }
 
   // ==================== 欢迎区 ====================
@@ -107,156 +147,12 @@ export struct IndexPage {
     .alignItems(VerticalAlign.Center)
   }
 
-  // ==================== 应用概览统计 ====================
+  // ==================== 游戏入口大卡 ====================
   @Builder
-  overviewStats() {
+  gameEntryCards() {
     Column({ space: 0 }) {
       Row() {
-        Text('应用概览')
-          .fontSize(16)
-          .fontColor(this.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
-      }
-      .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-      .margin({ bottom: 12 })
-
-      Row({ space: 10 }) {
-        // 快捷命令
-        Column({ space: 6 }) {
-          Text('⚡')
-            .fontSize(20)
-          Text(`${this.commands.length}`)
-            .fontSize(24)
-            .fontColor(this.palette.primary)
-            .fontWeight(FontWeight.Bold)
-            .fontFamily(this.palette.fontMono)
-          Text('快捷命令')
-            .fontSize(10)
-            .fontColor(this.palette.textTertiary)
-        }
-        .layoutWeight(1)
-        .padding({ top: 16, bottom: 16 })
-        .borderRadius(12)
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Center)
-        .onClick(() => {
-          this.onNavigate('Commands');
-        })
-
-        // 游戏中心
-        Column({ space: 6 }) {
-          Text('🎮')
-            .fontSize(20)
-          Text(`${this.gameCount}`)
-            .fontSize(24)
-            .fontColor(this.palette.warning)
-            .fontWeight(FontWeight.Bold)
-            .fontFamily(this.palette.fontMono)
-          Text('款游戏')
-            .fontSize(10)
-            .fontColor(this.palette.textTertiary)
-        }
-        .layoutWeight(1)
-        .padding({ top: 16, bottom: 16 })
-        .borderRadius(12)
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Center)
-        .onClick(() => {
-          this.onNavigate('Games');
-        })
-
-        // 未处理告警
-        Column({ space: 6 }) {
-          Text('🔔')
-            .fontSize(20)
-          Text(`${this.stats.alerts}`)
-            .fontSize(24)
-            .fontColor(this.stats.alerts > 0 ? this.palette.danger : this.palette.success)
-            .fontWeight(FontWeight.Bold)
-            .fontFamily(this.palette.fontMono)
-          Text('未处理告警')
-            .fontSize(10)
-            .fontColor(this.palette.textTertiary)
-        }
-        .layoutWeight(1)
-        .padding({ top: 16, bottom: 16 })
-        .borderRadius(12)
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-        .alignItems(HorizontalAlign.Center)
-        .onClick(() => {
-          this.onNavigate('Alerts');
-        })
-      }
-      .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-    }
-    .width('100%')
-  }
-
-  // ==================== 快速操作网格 ====================
-  @Builder
-  quickActionsGrid() {
-    Column({ space: 0 }) {
-      // 标题
-      Row() {
-        Text('快速操作')
-          .fontSize(16)
-          .fontColor(this.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
-      }
-      .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-      .margin({ bottom: 12 })
-
-      Grid() {
-        ForEach(this.quickActions, (item: ToolboxItem) => {
-          GridItem() {
-            Column({ space: 8 }) {
-              Text(item.icon)
-                .fontSize(28)
-              Text(item.label)
-                .fontSize(11)
-                .fontColor(this.palette.textSecondary)
-                .fontWeight(FontWeight.Medium)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(item.desc)
-                .fontSize(9)
-                .fontColor(this.palette.textTertiary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-            .width('100%')
-            .padding({ top: 18, bottom: 18 })
-            .borderRadius(12)
-            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-            .alignItems(HorizontalAlign.Center)
-            .justifyContent(FlexAlign.Center)
-            .onClick(() => {
-              this.onNavigate(item.key);
-            })
-          }
-        }, (item: ToolboxItem) => item.key)
-      }
-      .columnsTemplate('1fr 1fr')
-      .columnsGap(10)
-      .rowsGap(10)
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-    }
-    .width('100%')
-  }
-
-  // ==================== 最近告警 ====================
-  @Builder
-  recentAlerts() {
-    Column({ space: 0 }) {
-      Row() {
-        Text('最近告警')
+        Text('游戏中心')
           .fontSize(16)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
@@ -265,65 +161,162 @@ export struct IndexPage {
           .fontSize(12)
           .fontColor(this.palette.primary)
           .onClick(() => {
-            this.onNavigate('Alerts');
+            this.onNavigate('Games');
           })
       }
       .width('100%')
       .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
       .margin({ bottom: 12 })
 
-      Column({ space: 8 }) {
-        ForEach(this.alerts.slice(0, 3), (a: Alert) => {
-          Row() {
-            // 左侧色条
-            Column()
-              .width(3)
-              .height('100%')
-              .backgroundColor(this.alertColor(a.level))
-              .borderRadius(1.5)
+      Column({ space: 10 }) {
+        ForEach(this.homeGames, (game: HomeGameEntry) => {
+          Row({ space: 14 }) {
+            // 图标
+            Stack() {
+              Circle({ width: 48, height: 48 })
+                .fill(game.color)
+              Text(game.icon)
+                .fontSize(24)
+            }
+            .width(48)
+            .height(48)
 
+            // 标题 + 描述
             Column({ space: 4 }) {
-              Row() {
-                Text(a.title)
-                  .fontSize(13)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .layoutWeight(1)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(a.time)
-                  .fontSize(10)
-                  .fontColor(this.palette.textTertiary)
-                  .fontFamily(this.palette.fontMono)
-              }
-              .width('100%')
-
-              Text(a.source)
-                .fontSize(10)
+              Text(game.name)
+                .fontSize(15)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+              Text(game.desc)
+                .fontSize(11)
                 .fontColor(this.palette.textTertiary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
-            .layoutWeight(1)
-            .padding({ left: 12, top: 10, bottom: 10, right: 12 })
             .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            // 开始按钮
+            Button('开始')
+              .fontSize(12)
+              .fontColor(Color.White)
+              .backgroundColor(game.color)
+              .borderRadius(14)
+              .height(28)
+              .padding({ left: 14, right: 14 })
+              .onClick(() => {
+                this.openGame(game);
+              })
           }
           .width('100%')
-          .borderRadius(10)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
-        }, (a: Alert) => a.id)
-
-        if (this.alerts.length === 0) {
-          Text('暂无告警，一切正常 ✓')
-            .fontSize(13)
-            .fontColor(this.palette.textTertiary)
-            .width('100%')
-            .textAlign(TextAlign.Center)
-            .padding(20)
-        }
+          .padding(14)
+          .borderRadius(12)
+          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+          .alignItems(VerticalAlign.Center)
+        }, (game: HomeGameEntry) => game.gameId)
       }
       .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+    }
+    .width('100%')
+  }
+
+  // ==================== 最近游戏战绩 ====================
+  @Builder
+  recentScores() {
+    Column({ space: 0 }) {
+      Row() {
+        Text('最佳战绩')
+          .fontSize(16)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Blank()
+        Text('历史记录 ›')
+          .fontSize(12)
+          .fontColor(this.palette.primary)
+          .onClick(() => {
+            this.onNavigate('Games');
+          })
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      .margin({ bottom: 12 })
+
+      Row({ space: 10 }) {
+        ForEach(this.scoreRows, (row: ScoreRow) => {
+          Column({ space: 6 }) {
+            Text(row.icon)
+              .fontSize(20)
+            Text(row.name)
+              .fontSize(11)
+              .fontColor(this.palette.textSecondary)
+              .fontWeight(FontWeight.Medium)
+            Text(`${row.best}`)
+              .fontSize(22)
+              .fontColor(row.color)
+              .fontWeight(FontWeight.Bold)
+              .fontFamily(this.palette.fontMono)
+            Text('最高分')
+              .fontSize(9)
+              .fontColor(this.palette.textTertiary)
+          }
+          .layoutWeight(1)
+          .padding({ top: 16, bottom: 16 })
+          .borderRadius(12)
+          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+          .alignItems(HorizontalAlign.Center)
+        }, (row: ScoreRow) => row.gameId)
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+    }
+    .width('100%')
+  }
+
+  // ==================== 难度速览 ====================
+  @Builder
+  difficultyQuickView() {
+    Column({ space: 0 }) {
+      Row() {
+        Text('难度速览')
+          .fontSize(16)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      .margin({ bottom: 12 })
+
+      Scroll() {
+        Row({ space: 10 }) {
+          ForEach(DIFFICULTY_DEFINITIONS, (def: DifficultyDefinition) => {
+            Column({ space: 4 }) {
+              Text(def.icon)
+                .fontSize(20)
+              Text(def.label)
+                .fontSize(11)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+              Text(def.description)
+                .fontSize(9)
+                .fontColor(this.palette.textTertiary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+            .width(110)
+            .padding({ top: 14, bottom: 14 })
+            .borderRadius(12)
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+            .alignItems(HorizontalAlign.Center)
+          }, (def: DifficultyDefinition) => def.level)
+        }
+        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
     }
     .width('100%')
   }
@@ -351,14 +344,14 @@ export struct IndexPage {
             // 欢迎区
             this.welcomeSection()
 
-            // 应用概览统计
-            this.overviewStats()
+            // 游戏入口大卡
+            this.gameEntryCards()
 
-            // 快速操作网格
-            this.quickActionsGrid()
+            // 最佳战绩
+            this.recentScores()
 
-            // 最近告警
-            this.recentAlerts()
+            // 难度速览
+            this.difficultyQuickView()
 
             // 底部留白
             Column().height(20)

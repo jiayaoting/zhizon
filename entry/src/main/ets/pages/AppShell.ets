@@ -6,8 +6,6 @@ import { AppConstants, ToolboxItem } from '../common/Constants';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
   NavigationFailure, NavigationSource, NavigationFacade, mainPage, AppShellRouteParams } from '../common/Navigation';
 import { IndexPage } from './Index';
-import { CommandsPage } from './Commands';
-import { AlertsPage } from './Alerts';
 import { SettingsPage } from './Settings';
 import { GamesPage } from './Games';
 import { MorePage } from './More';
@@ -77,10 +75,6 @@ struct AppShell {
       this.toolboxPage()
     } else if (this.navigation.currentPage === PageKey.More) {
       MorePage({ onSelectEntry: (key: PageKey): void => { this.selectMoreEntry(key); } })
-    } else if (this.navigation.currentPage === PageKey.Commands) {
-      CommandsPage()
-    } else if (this.navigation.currentPage === PageKey.Alerts) {
-      AlertsPage()
     } else if (this.navigation.currentPage === PageKey.Settings) {
       SettingsPage()
     } else if (this.navigation.currentPage === PageKey.Games) {

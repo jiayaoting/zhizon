@@ -60,12 +60,10 @@ export class AppConstants {
 
   // 工具箱子页面
   static readonly toolboxItems: ToolboxItem[] = [
-    new ToolboxItem(PageKey.Commands, '快捷命令', '⚡', '命令库管理'),
     new ToolboxItem(PageKey.Games, '游戏中心', '🎮', '休闲小游戏')
   ];
 
   static readonly moreItems: MoreItem[] = [
-    new MoreItem(PageKey.Alerts, '告警', '🔔', '查看和处理系统告警'),
     new MoreItem(PageKey.Settings, '设置', '⚙️', '主题、背景与应用设置')
   ];
 }

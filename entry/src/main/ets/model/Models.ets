@@ -1,30 +1,3 @@
 // 智子 - 数据模型定义
-
-// 快捷命令
-export interface Command {
-  id: string;
-  name: string;
-  cmd: string;
-  category: string;
-  uses: number;
-}
-
-// 告警
-export interface Alert {
-  id: string;
-  level: 'critical' | 'warning' | 'info';
-  source: string;
-  title: string;
-  detail: string;
-  time: string;
-  resolved: boolean;
-}
-
-// 统计数据
-export interface Stats {
-  total: number;
-  online: number;
-  warning: number;
-  offline: number;
-  alerts: number;
-}
+// 当前应用聚焦游戏中心与多主题系统，业务模型由各页面内联定义。
+// 本文件保留为模型聚合入口，后续新增领域模型可在此扩展。
