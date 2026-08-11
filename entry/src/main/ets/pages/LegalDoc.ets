@@ -193,10 +193,17 @@ function licenseSections(): DocSection[] {
       paragraphs: [
         '应用内可选字体均为免费商用授权，不涉及版权风险：',
         'HarmonyOS Sans：系统内置字体，随 HarmonyOS 系统免费授权使用，版权归华为技术有限公司所有。',
-        'Inter：SIL Open Font License 1.1 开源协议，可免费商用，版权归 The Inter Project Authors。',
-        'JetBrains Mono：SIL Open Font License 1.1 开源协议，可免费商用，版权归 The JetBrains Mono Project Authors。',
-        'Fira Code：SIL Open Font License 1.1 开源协议，可免费商用，版权归 The Fira Code Project Authors。',
-        '以上开源字体文件已随应用打包，完整许可文本见各字体项目官方发布页。'
+        'Inter：SIL Open Font License 1.1，可免费商用，版权归 The Inter Project Authors。',
+        'JetBrains Mono：SIL OFL 1.1，可免费商用，版权归 The JetBrains Mono Project Authors。',
+        'Fira Code：SIL OFL 1.1，可免费商用，版权归 The Fira Code Project Authors。',
+        'Lobster：SIL OFL 1.1，艺术展示体，版权归 The Lobster Project Authors。',
+        'Pacifico：SIL OFL 1.1，手写波浪体，版权归 The Pacifico Project Authors。',
+        'Bebas Neue：SIL OFL 1.1，紧凑标题体，版权归 The Bebas Neue Project Authors。',
+        'Righteous：SIL OFL 1.1，圆润展示体，版权归 The Righteous Project Authors。',
+        'Press Start 2P：SIL OFL 1.1，像素风游戏字体，版权归 The Press Start 2P Project Authors。',
+        'Orbitron：SIL OFL 1.1，科技感几何体，版权归 The Orbitron Project Authors。',
+        'Dancing Script：SIL OFL 1.1，优雅手写斜体，版权归 The Dancing Script Project Authors。',
+        '以上开源字体文件及其 OFL 许可文本均已随应用打包（rawfile/fonts 目录）。'
       ]
     },
     {

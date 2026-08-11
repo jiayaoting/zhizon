@@ -85,7 +85,14 @@ export struct SettingsPage {
     { name: 'HarmonyOS Sans', family: 'HarmonyOS Sans', category: '系统' },
     { name: 'Inter', family: 'Inter', category: '无衬线' },
     { name: 'JetBrains Mono', family: 'JetBrains Mono', category: '等宽' },
-    { name: 'Fira Code', family: 'Fira Code', category: '等宽' }
+    { name: 'Fira Code', family: 'Fira Code', category: '等宽' },
+    { name: 'Lobster', family: 'Lobster', category: '艺术' },
+    { name: 'Pacifico', family: 'Pacifico', category: '艺术' },
+    { name: 'Bebas Neue', family: 'Bebas Neue', category: '艺术' },
+    { name: 'Righteous', family: 'Righteous', category: '艺术' },
+    { name: 'Press Start 2P', family: 'Press Start 2P', category: '艺术' },
+    { name: 'Orbitron', family: 'Orbitron', category: '艺术' },
+    { name: 'Dancing Script', family: 'Dancing Script', category: '艺术' }
   ];
 
   // 主题颜色选项
@@ -578,35 +585,44 @@ export struct SettingsPage {
           .fontColor(this.palette.textTertiary)
           .margin({ bottom: 8 })
 
-        ForEach(this.fontFamilyOptions, (option: FontFamilyOption) => {
-          Row({ space: 12 }) {
-            Column({ space: 3 }) {
-              Text(option.name)
-                .fontSize(this.palette.fsSm)
-                .fontFamily(option.family)
-                .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
-                .fontWeight(FontWeight.Medium)
-              Text('Aa 智子 123 — ' + option.category)
-                .fontSize(11)
-                .fontFamily(option.family)
-                .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textTertiary)
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-            if (this.fontFamily === option.family) {
-              Text('✓')
-                .fontSize(14)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.palette.primary)
-            }
+        Scroll() {
+          Column({ space: 4 }) {
+            ForEach(this.fontFamilyOptions, (option: FontFamilyOption) => {
+              Row({ space: 12 }) {
+                Column({ space: 3 }) {
+                  Text(option.name)
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(option.family)
+                    .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
+                    .fontWeight(FontWeight.Medium)
+                  Text('Aa 智子 123 — ' + option.category)
+                    .fontSize(11)
+                    .fontFamily(option.family)
+                    .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                if (this.fontFamily === option.family) {
+                  Text('✓')
+                    .fontSize(14)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.palette.primary)
+                }
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 13, bottom: 13 })
+              .borderRadius(10)
+              .backgroundColor(this.fontFamily === option.family ?
+                this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+              .onClick(() => { this.pickFontFamily(option.family); })
+            }, (option: FontFamilyOption) => option.family)
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 13, bottom: 13 })
-          .borderRadius(10)
-          .backgroundColor(this.fontFamily === option.family ?
-            this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
-          .onClick(() => { this.pickFontFamily(option.family); })
-        }, (option: FontFamilyOption) => option.family)
+          .padding({ right: 2 })
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
 
         Text('取消')
           .fontSize(this.palette.fsBase)
@@ -617,6 +633,7 @@ export struct SettingsPage {
           .onClick(() => { this.showFontFamilySheet = false; })
       }
       .width('100%')
+      .height('70%')
       .padding(20)
       .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
       .borderRadius({ topLeft: 24, topRight: 24 })

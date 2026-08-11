@@ -254,25 +254,25 @@ export const defaultLightPalette: ThemePalette = buildPalette(ColorThemeId.CYAN,
 export const defaultDarkPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, true);
 
 // ============================================================
-// 字号缩放偏移
+// 字号缩放比例
 // ============================================================
-function fontSizeDelta(scale: string): number {
-  if (scale === 'small') return -2;
-  if (scale === 'large') return 2;
-  return 0;
+function fontSizeRatio(scale: string): number {
+  if (scale === 'small') return 0.9;
+  if (scale === 'large') return 1.15;
+  return 1;
 }
 
 // 按字号档位缩放 fs 系列，并注入全局字体（原地修改 palette）
 function applyFontPreferences(palette: ThemePalette, fontSizeScale: string, fontFamily: string): void {
-  const delta: number = fontSizeDelta(fontSizeScale);
-  palette.fsXs = Math.max(8, palette.fsXs + delta);
-  palette.fsSm = Math.max(9, palette.fsSm + delta);
-  palette.fsBase = Math.max(10, palette.fsBase + delta);
-  palette.fsMd = Math.max(11, palette.fsMd + delta);
-  palette.fsLg = Math.max(12, palette.fsLg + delta);
-  palette.fsXl = Math.max(14, palette.fsXl + delta);
-  palette.fs2xl = Math.max(18, palette.fs2xl + delta);
-  palette.fs3xl = Math.max(22, palette.fs3xl + delta);
+  const ratio: number = fontSizeRatio(fontSizeScale);
+  palette.fsXs = Math.max(8, Math.round(palette.fsXs * ratio));
+  palette.fsSm = Math.max(9, Math.round(palette.fsSm * ratio));
+  palette.fsBase = Math.max(10, Math.round(palette.fsBase * ratio));
+  palette.fsMd = Math.max(11, Math.round(palette.fsMd * ratio));
+  palette.fsLg = Math.max(12, Math.round(palette.fsLg * ratio));
+  palette.fsXl = Math.max(14, Math.round(palette.fsXl * ratio));
+  palette.fs2xl = Math.max(18, Math.round(palette.fs2xl * ratio));
+  palette.fs3xl = Math.max(22, Math.round(palette.fs3xl * ratio));
   if (fontFamily.length > 0 && fontFamily !== 'HarmonyOS Sans') {
     palette.fontSans = fontFamily + ', HarmonyOS Sans, sans-serif';
   }
@@ -547,8 +547,8 @@ export class ThemeManager {
 
   // 获取缩放后的字号（供组件使用）
   static scaledFontSize(base: number, scale: string): number {
-    if (scale === 'small') return Math.max(8, base - 2);
-    if (scale === 'large') return base + 2;
+    if (scale === 'small') return Math.max(8, Math.round(base * 0.9));
+    if (scale === 'large') return Math.round(base * 1.15);
     return base;
   }
 
@@ -788,7 +788,10 @@ export class ThemeManager {
   // 校验字体是否在应用支持列表中（全部为免费商用授权）
   private isSupportedFontFamily(value: string): boolean {
     return value === 'HarmonyOS Sans' || value === 'Inter' ||
-      value === 'JetBrains Mono' || value === 'Fira Code';
+      value === 'JetBrains Mono' || value === 'Fira Code' ||
+      value === 'Lobster' || value === 'Pacifico' || value === 'Bebas Neue' ||
+      value === 'Righteous' || value === 'Press Start 2P' ||
+      value === 'Orbitron' || value === 'Dancing Script';
   }
 
   private isColorTheme(value: string): boolean {
