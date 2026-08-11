@@ -29,7 +29,7 @@ class LegacyBackgroundConfig {
 }
 
 function isSandboxBackgroundReference(uri: string): boolean {
-  return uri.length === 0 || uri.indexOf('://') < 0;
+  return uri.length === 0 || uri.startsWith('file://') || uri.indexOf('://') < 0;
 }
 
 // 格式化运行时间
