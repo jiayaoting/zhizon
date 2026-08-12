@@ -293,6 +293,8 @@ export struct IndexPage {
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
               .fontWeight(FontWeight.Medium)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
             Text(`${row.best}`)
               .fontSize(this.scoreFontSize(row.best))
               .fontColor(row.color)
@@ -305,6 +307,7 @@ export struct IndexPage {
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textTertiary)
           }
+          .width(0)
           .layoutWeight(1)
           .padding({ top: 16, bottom: 16 })
           .borderRadius(12)
