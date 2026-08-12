@@ -122,6 +122,15 @@ export function modelDisplayName(entry: LlmModelEntry): string {
   return providerName;
 }
 
+// 模型显示名称（LlmConfig 版本，ArkTS 不支持结构类型转换）
+export function modelDisplayNameFromConfig(config: LlmConfig): string {
+  if (config.displayName.trim().length > 0) return config.displayName.trim();
+  const template = providerTemplateById(config.providerId);
+  const providerName: string = template !== null ? template.name : '自定义';
+  if (config.model.trim().length > 0) return providerName + ' · ' + config.model.trim();
+  return providerName;
+}
+
 // 对话消息
 export class ChatMessage {
   role: string;

@@ -4,7 +4,8 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
-import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName } from '../common/LlmModels';
+import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
+  modelDisplayNameFromConfig } from '../common/LlmModels';
 
 @Entry
 @Component
@@ -57,7 +58,7 @@ struct Chat {
     this.activeConfig = await ChatRepository.loadActiveConfig();
     this.configReady = this.activeConfig !== null && this.activeConfig.configured;
     if (this.configReady && this.activeConfig !== null) {
-      this.configHint = modelDisplayName(this.activeConfig);
+      this.configHint = modelDisplayNameFromConfig(this.activeConfig);
     } else {
       this.configHint = '请先完成配置';
     }
@@ -469,159 +470,163 @@ struct Chat {
   }
 
   build() {
-    Column() {
-      TopBar({
-        title: 'AI 对话',
-        subtitle: this.showSearch ? '搜索模式' : this.configHint,
-        showBack: true
-      }) {
-        Row({ space: 12 }) {
-          Text('🔍')
-            .fontSize(16)
-            .fontFamily(this.palette.fontSans)
-            .opacity(this.showSearch ? 0.5 : 1)
-            .onClick(() => {
-              if (this.messages.length > 0) {
-                this.showSearch = !this.showSearch;
-                if (!this.showSearch) {
-                  this.searchQuery = '';
-                  this.searchRole = 'all';
+    Stack() {
+      Column() {
+        TopBar({
+          title: 'AI 对话',
+          subtitle: this.showSearch ? '搜索模式' : this.configHint,
+          showBack: true
+        }) {
+          Row({ space: 12 }) {
+            Text('🔍')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .opacity(this.showSearch ? 0.5 : 1)
+              .onClick(() => {
+                if (this.messages.length > 0) {
+                  this.showSearch = !this.showSearch;
+                  if (!this.showSearch) {
+                    this.searchQuery = '';
+                    this.searchRole = 'all';
+                  }
+                } else {
+                  promptAction.showToast({ message: '暂无对话记录可搜索' });
                 }
-              } else {
-                promptAction.showToast({ message: '暂无对话记录可搜索' });
+              })
+            Text('🧹')
+              .fontSize(18)
+              .fontFamily(this.palette.fontSans)
+              .onClick(() => { this.clearChat(); })
+            Text('⚙️')
+              .fontSize(18)
+              .fontFamily(this.palette.fontSans)
+              .onClick(() => { this.openConfig(); })
+          }
+        }
+
+        // 搜索栏
+        if (this.showSearch) {
+          this.searchBar()
+        }
+
+        // 消息列表
+        if (this.messages.length === 0) {
+          this.emptyWelcome()
+        } else if (this.showSearch && this.searchResultCount() === 0) {
+          this.searchEmpty()
+        } else {
+          List({ space: 12, scroller: this.scrollController }) {
+            ForEach(this.showSearch ? this.displayMessages() : this.messages,
+              (message: ChatMessage, index: number) => {
+              ListItem() {
+                this.messageBubble(message, index)
               }
-            })
-          Text('🧹')
-            .fontSize(18)
-            .fontFamily(this.palette.fontSans)
-            .onClick(() => { this.clearChat(); })
-          Text('⚙️')
-            .fontSize(18)
-            .fontFamily(this.palette.fontSans)
-            .onClick(() => { this.openConfig(); })
+            }, (message: ChatMessage, index: number) => message.time.toString() + '_' + index.toString())
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.Spring)
+          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12 })
         }
-      }
 
-      // 搜索栏
-      if (this.showSearch) {
-        this.searchBar()
-      }
-
-      // 消息列表
-      if (this.messages.length === 0) {
-        this.emptyWelcome()
-      } else if (this.showSearch && this.searchResultCount() === 0) {
-        this.searchEmpty()
-      } else {
-        List({ space: 12, scroller: this.scrollController }) {
-          ForEach(this.showSearch ? this.displayMessages() : this.messages,
-            (message: ChatMessage, index: number) => {
-            ListItem() {
-              this.messageBubble(message, index)
+        // 底部区域
+        if (this.showSearch) {
+          // 搜索模式下显示退出按钮
+          Row() {
+            Text('退出搜索，返回对话')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.primary)
+              .fontWeight(FontWeight.Medium)
+          }
+          .width('100%')
+          .height(44)
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(10)
+          .onClick(() => { this.exitSearch(); })
+          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
+            bottom: Math.max(8, this.navBarHeight) })
+        } else {
+          Column({ space: 8 }) {
+            if (!this.configReady) {
+              Row() {
+                Text('⚠️ 尚未配置大模型 API，点击去配置')
+                  .fontSize(11)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.warning)
+                  .layoutWeight(1)
+                Text('去配置 ›')
+                  .fontSize(11)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.primary)
+                  .fontWeight(FontWeight.Medium)
+              }
+              .width('100%')
+              .padding(10)
+              .borderRadius(8)
+              .backgroundColor(this.palette.bgSurface)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .onClick(() => { this.openConfig(); })
             }
-          }, (message: ChatMessage, index: number) => message.time.toString() + '_' + index.toString())
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.Spring)
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12 })
-      }
-
-      // 底部区域
-      if (this.showSearch) {
-        // 搜索模式下显示退出按钮
-        Row() {
-          Text('退出搜索，返回对话')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.primary)
-            .fontWeight(FontWeight.Medium)
-        }
-        .width('100%')
-        .height(44)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
-        .borderRadius(10)
-        .onClick(() => { this.exitSearch(); })
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
-          bottom: Math.max(8, this.navBarHeight) })
-      } else {
-        Column({ space: 8 }) {
-          if (!this.configReady) {
-            Row() {
-              Text('⚠️ 尚未配置大模型 API，点击去配置')
+            // 当前模型切换
+            Row({ space: 6 }) {
+              Text('🤖')
+                .fontSize(12)
+                .fontFamily(this.palette.fontSans)
+              Text(this.currentModelName())
                 .fontSize(11)
                 .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.warning)
-                .layoutWeight(1)
-              Text('去配置 ›')
-                .fontSize(11)
+                .fontColor(this.palette.textSecondary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text('▾')
+                .fontSize(10)
                 .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.primary)
-                .fontWeight(FontWeight.Medium)
+                .fontColor(this.palette.textTertiary)
             }
             .width('100%')
-            .padding(10)
+            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
             .borderRadius(8)
             .backgroundColor(this.palette.bgSurface)
             .border({ width: 1, color: this.palette.borderSubtle })
-            .onClick(() => { this.openConfig(); })
-          }
-          // 当前模型切换
-          Row({ space: 6 }) {
-            Text('🤖')
-              .fontSize(12)
-              .fontFamily(this.palette.fontSans)
-            Text(this.currentModelName())
-              .fontSize(11)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text('▾')
-              .fontSize(10)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+            .onClick(() => {
+              if (this.models.length > 0) {
+                this.showModelPicker = true;
+              } else {
+                promptAction.showToast({ message: '请先配置模型' });
+              }
+            })
+            this.inputBar()
           }
           .width('100%')
-          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
-          .onClick(() => {
-            if (this.models.length > 0) {
-              this.showModelPicker = true;
-            } else {
-              promptAction.showToast({ message: '请先配置模型' });
-            }
-          })
-          this.inputBar()
+          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8, bottom: Math.max(8, this.navBarHeight) })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.palette.bgBase)
+
+      // 模型选择弹层
+      if (this.showModelPicker) {
+        Stack() {
+          Column() {
+            Blank()
+            this.modelPicker()
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.End)
         }
         .width('100%')
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8, bottom: Math.max(8, this.navBarHeight) })
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.35)')
+        .onClick(() => { this.showModelPicker = false; })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
-
-    // 模型选择弹层
-    if (this.showModelPicker) {
-      Stack() {
-        Column() {
-          Blank()
-          this.modelPicker()
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.End)
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor('rgba(0,0,0,0.35)')
-      .onClick(() => { this.showModelPicker = false; })
-    }
   }
 }
