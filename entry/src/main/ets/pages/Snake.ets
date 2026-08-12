@@ -8,11 +8,10 @@ import { DataRepository } from '../service/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
+import { DeviceMetrics } from '../common/DeviceMetrics';
 
 const COLS: number = 16;
 const ROWS: number = 16;
-const CELL_SIZE_SM: number = 20;
-const CELL_SIZE_LG: number = 26;
 
 interface Point {
   x: number;
@@ -69,6 +68,20 @@ export struct SnakePage {
     const m: number = Math.floor(seconds / 60);
     const s: number = Math.floor(seconds % 60);
     return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`;
+  }
+
+  // 自适应棋盘格子尺寸
+  private boardCellSize(): number {
+    if (this.isSm) {
+      // 手机端：TopBar + 方向键(3行) + 信息栏 + 间距 + 安全区
+      return DeviceMetrics.fitCellSize(COLS, ROWS, 370, 12, 24);
+    }
+    // 平板端：TopBar + 方向键(更大按钮) + 安全区
+    return DeviceMetrics.fitCellSize(COLS, ROWS, 330, 14, 30);
+  }
+
+  private boardSide(): number {
+    return COLS * this.boardCellSize();
   }
 
   private showScoreFloat(text: string): void {
@@ -835,8 +848,8 @@ export struct SnakePage {
               if (this.isGameOver) { this.gameOverOverlay() }
               if (this.isPaused) { this.pauseOverlay() }
             }
-            .width('100%')
-            .layoutWeight(1)
+            .width(this.boardSide())
+            .height(this.boardSide())
             .alignContent(Alignment.Center)
 
             Column({ space: 8 }) {
@@ -881,7 +894,8 @@ export struct SnakePage {
                 if (this.isGameOver) { this.gameOverOverlay() }
                 if (this.isPaused) { this.pauseOverlay() }
               }
-              .layoutWeight(1)
+              .width(this.boardSide())
+              .height(this.boardSide())
               .alignContent(Alignment.Center)
 
               this.directionPad()

@@ -8,6 +8,7 @@ import { DataRepository } from '../service/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
+import { DeviceMetrics } from '../common/DeviceMetrics';
 
 const BOARD_SIZE: number = 4;
 const WIN_SCORE: number = 2048;
@@ -84,6 +85,16 @@ export struct Game2048Page {
     const m: number = Math.floor(seconds / 60);
     const s: number = Math.floor(seconds % 60);
     return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`;
+  }
+
+  // 自适应棋盘边长
+  private boardSide(): number {
+    if (this.isSm) {
+      // 手机端：TopBar + 记分牌 + 间距 + 安全区
+      return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 220, 20, 60);
+    }
+    // 平板端：TopBar + 安全区
+    return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 140, 24, 72);
   }
 
   private showScoreFloat(text: string): void {
@@ -825,8 +836,8 @@ export struct Game2048Page {
                 if (this.isGameOver) { this.gameOverOverlay() }
                 if (this.isPaused) { this.pauseOverlay() }
               }
-              .width('100%')
-              .layoutWeight(1)
+              .width(this.boardSide())
+              .height(this.boardSide())
               .alignContent(Alignment.Center)
             }
             .layoutWeight(1)
@@ -847,7 +858,8 @@ export struct Game2048Page {
                   if (this.isGameOver) { this.gameOverOverlay() }
                   if (this.isPaused) { this.pauseOverlay() }
                 }
-                .width(360)
+                .width(this.boardSide())
+                .height(this.boardSide())
                 .alignContent(Alignment.Center)
               }
               .alignItems(HorizontalAlign.Center)

@@ -9,6 +9,7 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { SUDOKU_SIZE, copyBoard, countSolutions, generateSolution } from '../service/SudokuSolver';
+import { DeviceMetrics } from '../common/DeviceMetrics';
 
 // ============================================================
 // 页面组件
@@ -44,6 +45,20 @@ export struct SudokuPage {
   private titleText: string = '数独';
   private gameStartTime: number = 0;
   private solution: number[][] = [];
+
+  // 自适应棋盘格子尺寸
+  private boardCellSize(): number {
+    if (this.isSm) {
+      // 手机端：TopBar + 提示条 + 信息栏 + 操作栏 + 数字键盘 + 间距 + 安全区
+      return DeviceMetrics.fitCellSize(SUDOKU_SIZE, SUDOKU_SIZE, 410, 22, 40);
+    }
+    // 平板端：TopBar + 安全区
+    return DeviceMetrics.fitCellSize(SUDOKU_SIZE, SUDOKU_SIZE, 140, 24, 52);
+  }
+
+  private boardSide(): number {
+    return SUDOKU_SIZE * this.boardCellSize();
+  }
 
   // 每难度挖空数
   private holesFor(level: DifficultyLevel): number {
@@ -651,6 +666,8 @@ export struct SudokuPage {
         .border({ width: { bottom: r === 2 || r === 5 ? 2 : 0.5 }, color: this.palette.borderStrong })
       }, (row: SudokuCell[], r: number) => r.toString())
     }
+    .width('100%')
+    .height('100%')
     .border({ width: 2, color: this.palette.borderStrong })
     .borderRadius(6)
     .backgroundColor(this.palette.bgSurface)
@@ -802,8 +819,8 @@ export struct SudokuPage {
                 if (this.isWin) { this.winOverlay() }
                 if (this.isPaused) { this.pauseOverlay() }
               }
-              .width('100%')
-              .layoutWeight(1)
+              .width(this.boardSide())
+              .height(this.boardSide())
               .alignContent(Alignment.Center)
               this.numPad()
             }
@@ -822,7 +839,8 @@ export struct SudokuPage {
                   if (this.isWin) { this.winOverlay() }
                   if (this.isPaused) { this.pauseOverlay() }
                 }
-                .width(420)
+                .width(this.boardSide())
+                .height(this.boardSide())
                 .alignContent(Alignment.Center)
               }
               .alignItems(HorizontalAlign.Center)

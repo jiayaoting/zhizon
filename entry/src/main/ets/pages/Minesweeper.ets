@@ -8,6 +8,7 @@ import { DataRepository } from '../service/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
+import { DeviceMetrics } from '../common/DeviceMetrics';
 
 // 难度配置
 class MinesweeperConfig {
@@ -366,10 +367,22 @@ export struct MinesweeperPage {
     }
   }
 
-  // 棋盘宽高比（cols/rows），用于约束外层容器
-  private boardAspectRatio(): number {
-    if (this.rows <= 0) return 1;
-    return this.cols / this.rows;
+  // 自适应棋盘格子尺寸
+  private boardCell(): number {
+    if (this.isSm) {
+      // 手机端：TopBar + 信息栏 + 模式栏 + 间距 + 安全区
+      return DeviceMetrics.fitCellSize(this.cols, this.rows, 270, 10, 30);
+    }
+    // 平板端：TopBar + 安全区
+    return DeviceMetrics.fitCellSize(this.cols, this.rows, 140, 12, 36);
+  }
+
+  private boardWidth(): number {
+    return this.cols * this.boardCell();
+  }
+
+  private boardHeight(): number {
+    return this.rows * this.boardCell();
   }
 
   // ---- 棋盘 ----
@@ -409,6 +422,8 @@ export struct MinesweeperPage {
         .layoutWeight(1)
       }, (row: MineCell[], rowIdx: number) => rowIdx.toString())
     }
+    .width('100%')
+    .height('100%')
     .border({ width: 2, color: this.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
@@ -802,8 +817,8 @@ export struct MinesweeperPage {
                 if (this.isGameOver || this.isWin) { this.gameOverOverlay() }
                 if (this.isPaused) { this.pauseOverlay() }
               }
-              .width('100%')
-              .layoutWeight(1)
+              .width(this.boardWidth())
+              .height(this.boardHeight())
               this.modeBar()
             }
             .layoutWeight(1)
@@ -822,8 +837,8 @@ export struct MinesweeperPage {
                   if (this.isGameOver || this.isWin) { this.gameOverOverlay() }
                   if (this.isPaused) { this.pauseOverlay() }
                 }
-                .width('100%')
-                .aspectRatio(this.boardAspectRatio())
+                .width(this.boardWidth())
+                .height(this.boardHeight())
                 .alignContent(Alignment.Center)
                 this.modeBar()
               }
