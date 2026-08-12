@@ -11,7 +11,7 @@ import { GameHistoryRouteParams } from '../common/Navigation';
 
 const COLS: number = 10;
 const ROWS: number = 20;
-const CELL_SIZE_SM: number = 16;
+const CELL_SIZE_SM: number = 18;
 const CELL_SIZE_LG: number = 24;
 
 // 方块形状定义（4个旋转状态，每个状态4个坐标块）
@@ -567,7 +567,6 @@ export struct TetrisPage {
       }, (rowIdx: number) => rowIdx.toString())
     }
     .width('100%')
-    .aspectRatio(0.5)
     .border({ width: 2, color: this.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
@@ -1060,8 +1059,8 @@ export struct TetrisPage {
             if (this.isGameOver) { this.gameOverOverlay() }
             if (this.isPaused) { this.pauseOverlay() }
           }
-          .width('100%')
-          .aspectRatio(0.5)
+          .width(COLS * CELL_SIZE_SM)
+          .height(ROWS * CELL_SIZE_SM)
           .alignContent(Alignment.Center)
 
           // 旋转按钮
@@ -1100,7 +1099,8 @@ export struct TetrisPage {
             if (this.isGameOver) { this.gameOverOverlay() }
             if (this.isPaused) { this.pauseOverlay() }
           }
-          .layoutWeight(1)
+          .width(COLS * CELL_SIZE_LG)
+          .height(ROWS * CELL_SIZE_LG)
           .alignContent(Alignment.Center)
 
           // 右侧：下一个 + 旋转 + 信息
