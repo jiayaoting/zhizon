@@ -11,7 +11,8 @@ export enum PageKey {
   Toolbox = 'Toolbox',
   More = 'More',
   Games = 'Games',
-  Settings = 'Settings'
+  Settings = 'Settings',
+  Chat = 'Chat'
 }
 
 export enum NavigationSource {
@@ -109,6 +110,11 @@ export class GameHistoryRouteParams {
 export class LegalDocRouteParams {
   type: string;
   constructor(type: string) { this.type = type; }
+}
+
+export class ChatRouteParams {
+  from: string;
+  constructor(from: string = '') { this.from = from; }
 }
 
 export class NavigationRouteOptions {

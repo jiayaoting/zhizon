@@ -8,6 +8,8 @@
     "pages/Breakout",
     "pages/GameHistory",
     "pages/LegalDoc",
-    "pages/Sudoku"
+    "pages/Sudoku",
+    "pages/Chat",
+    "pages/ChatConfig"
   ]
 }

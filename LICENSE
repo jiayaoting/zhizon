@@ -1,0 +1,51 @@
+MIT License
+
+Copyright (c) 2026 智子开发者 (Zhizon Developers)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## AI 开发声明
+
+本应用「智子 (Zhizon)」由 AI（大语言模型）辅助开发。开发过程中，AI 参与了以下环节的代码生成与内容创作，所有 AI 生成内容均经过人类开发者审核与确认：
+
+- ArkTS 代码编写与构建
+- ArkUI 声明式 UI 组件构建
+- 游戏逻辑（俄罗斯方块、2048、贪吃蛇、扫雷、打砖块、数独）实现
+- 多主题系统（6 套配色 + 亮/暗模式 + 毛玻璃）设计
+- AI 对话功能（OpenAI 兼容 API 集成 + SSE 流式响应）
+- 响应式跨设备布局适配
+- 字体注册管理
+- 法律文档（用户协议、隐私政策、开源许可）起草
+
+本应用的开源性质不因 AI 参与开发而改变。所有源代码遵循 MIT License 发布。
+
+## 引用与修改要求
+
+引用或修改本应用代码时，请遵守以下要求：
+
+1. 保留原始版权声明与 MIT 许可声明
+2. 在显著位置注明出处，包括原始 GitHub 仓库地址：https://github.com/jiayaoting/zhizon
+3. 若修改后发布，请在修改处或文档中注明修改内容与修改时间
+4. 不得移除或隐藏本应用中的开源许可信息与版权声明
+
+## 项目地址
+
+GitHub: https://github.com/jiayaoting/zhizon

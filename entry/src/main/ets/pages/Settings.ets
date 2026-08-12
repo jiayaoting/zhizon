@@ -371,6 +371,10 @@ export struct SettingsPage {
     });
   }
 
+  private openChatConfig(): void {
+    router.pushUrl({ url: 'pages/ChatConfig' });
+  }
+
   // ---- 头像 ----
   private isSupportedAvatar(id: string): boolean {
     for (let i: number = 0; i < AVATAR_OPTIONS.length; i++) {
@@ -1156,6 +1160,14 @@ export struct SettingsPage {
                 this.valueRow('头像', this.avatarLabelText(), () => {
                   this.openAvatarPicker();
                 })
+              }
+              .width('100%')
+            }
+
+            // AI 对话
+            GroupCard({ title: 'AI 对话' }) {
+              Column({ space: 8 }) {
+                this.valueRow('大模型 API 配置', '接口 / Key / 模型', () => { this.openChatConfig(); })
               }
               .width('100%')
             }

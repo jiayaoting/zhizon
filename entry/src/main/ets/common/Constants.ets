@@ -60,7 +60,8 @@ export class AppConstants {
 
   // 工具箱子页面
   static readonly toolboxItems: ToolboxItem[] = [
-    new ToolboxItem(PageKey.Games, '游戏中心', '🎮', '休闲小游戏')
+    new ToolboxItem(PageKey.Games, '游戏中心', '🎮', '休闲小游戏'),
+    new ToolboxItem(PageKey.Chat, 'AI 对话', '🗨️', '配置大模型 API 进行对话')
   ];
 
   static readonly moreItems: MoreItem[] = [

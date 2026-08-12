@@ -80,6 +80,10 @@ struct AppShell {
   }
 
   private selectMoreEntry(key: PageKey): void {
+    if (key === PageKey.Chat) {
+      router.pushUrl({ url: 'pages/Chat' });
+      return;
+    }
     const result = NavigationFacade.navigate(this.navigation, key, NavigationSource.ENTRY);
     this.handleNavigationResult(key, result);
   }
@@ -87,6 +91,14 @@ struct AppShell {
   private selectPage(key: string): void {
     const result = NavigationFacade.navigateLegacy(this.navigation, key, NavigationSource.LEGACY);
     this.handleNavigationResult(key, result);
+  }
+
+  private openToolboxEntry(item: ToolboxItem): void {
+    if (item.key === PageKey.Chat) {
+      router.pushUrl({ url: 'pages/Chat' });
+      return;
+    }
+    this.selectPage(item.key);
   }
 
   @Builder
@@ -170,7 +182,7 @@ struct AppShell {
             .borderRadius(8)
             .backgroundColor(this.palette.bgSurface)
             .border({ width: 1, color: this.palette.borderSubtle })
-            .onClick(() => { this.selectPage(item.key); })
+            .onClick(() => { this.openToolboxEntry(item); })
           }, (item: ToolboxItem) => item.key)
         }
         .padding(this.environment.width < 600 ? 16 : 24)
