@@ -794,6 +794,20 @@ export struct SudokuPage {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 暂停/继续
+      Row() {
+        Text(this.isPaused ? '▶' : '⏸')
+          .fontSize(16)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.togglePause(); })
+
       // 使用说明
       Row() {
         Text('📖')
