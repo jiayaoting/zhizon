@@ -10,7 +10,7 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
 
-const BOARD_SIZE: number = 4;
+const BOARD_SIZE: number = 6;
 const WIN_SCORE: number = 2048;
 
 interface TileStyle {
@@ -92,10 +92,10 @@ export struct Game2048Page {
   private boardSide(): number {
     if (this.isSm) {
       // 手机端：TopBar + 记分牌 + 间距 + 安全区
-      return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 220, 20, 60);
+      return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 240, 12, 72);
     }
     // 平板端：TopBar + 安全区
-    return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 140, 24, 72);
+    return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 160, 16, 96);
   }
 
   private showScoreFloat(text: string): void {
@@ -111,11 +111,11 @@ export struct Game2048Page {
 
   // 难度对应的4出现概率和初始瓦片数
   private difficultyConfigs: DifficultyConfig2048[] = [
-    { level: DifficultyLevel.VERY_EASY, prob4: 0.0, initTiles: 2 },
-    { level: DifficultyLevel.EASY, prob4: 0.05, initTiles: 2 },
-    { level: DifficultyLevel.MEDIUM, prob4: 0.10, initTiles: 2 },
-    { level: DifficultyLevel.HARD, prob4: 0.20, initTiles: 2 },
-    { level: DifficultyLevel.HELL, prob4: 0.30, initTiles: 4 }
+    { level: DifficultyLevel.VERY_EASY, prob4: 0.0, initTiles: 3 },
+    { level: DifficultyLevel.EASY, prob4: 0.05, initTiles: 3 },
+    { level: DifficultyLevel.MEDIUM, prob4: 0.10, initTiles: 4 },
+    { level: DifficultyLevel.HARD, prob4: 0.20, initTiles: 4 },
+    { level: DifficultyLevel.HELL, prob4: 0.30, initTiles: 6 }
   ];
 
   private difficultyConfig(level: DifficultyLevel): DifficultyConfig2048 {

@@ -404,8 +404,11 @@ export struct MinesweeperPage {
             .aspectRatio(1)
             .borderRadius(2)
             .border({ width: this.cursorR === rowIdx && this.cursorC === colIdx ? 2 : 0.5,
-              color: this.cursorR === rowIdx && this.cursorC === colIdx ? this.palette.primary : this.palette.borderDefault })
+              color: this.cursorR === rowIdx && this.cursorC === colIdx ? this.palette.primary :
+                (cell.revealed ? this.palette.borderSubtle : this.palette.borderDefault) })
             .backgroundColor(this.cellColor(cell))
+            .shadow(cell.revealed ? { radius: 0 } :
+              { radius: 2, color: 'rgba(0,0,0,0.28)', offsetX: 0, offsetY: 1 })
             .justifyContent(FlexAlign.Center)
             .onClick(() => {
               if (this.flagMode) {
@@ -432,12 +435,12 @@ export struct MinesweeperPage {
   }
 
   private cellColor(cell: MineCell): string {
-    if (cell.revealed) {
+    if (!cell.revealed) {
+      // 未翻开：凸起按钮效果，使用更亮的表面色
+      if (cell.flagged) return this.palette.primaryDim;
       return this.palette.bgSurface2;
     }
-    if (cell.flagged) {
-      return this.palette.primaryDim;
-    }
+    // 已翻开：平坦凹陷效果
     return this.palette.bgSurface;
   }
 
