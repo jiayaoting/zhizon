@@ -78,6 +78,13 @@ export struct IndexPage {
       icon: '🎱',
       desc: '弹球击碎所有砖块',
       color: this.palette.danger
+    },
+    {
+      gameId: GameId.SUDOKU,
+      name: '数独',
+      icon: '🧩',
+      desc: '数字推理，每行每列每宫填 1-9 不重复',
+      color: this.palette.info
     }
   ];
 
@@ -318,42 +325,45 @@ export struct IndexPage {
       .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
       .margin({ bottom: 12 })
 
-      Row({ space: 10 }) {
-        ForEach(this.scoreRows, (row: ScoreRow) => {
-          Column({ space: 6 }) {
-            Text(row.icon)
-              .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-            Text(row.name)
-              .fontSize(11)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
-              .fontWeight(FontWeight.Medium)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(`${row.best}`)
-              .fontSize(this.scoreFontSize(row.best))
-              .fontColor(row.color)
-              .fontWeight(FontWeight.Bold)
-              .fontFamily(this.palette.fontMono)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text('最高分')
-              .fontSize(9)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-          }
-          .width(0)
-          .layoutWeight(1)
-          .padding({ top: 16, bottom: 16 })
-          .borderRadius(12)
-          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
-          .alignItems(HorizontalAlign.Center)
-        }, (row: ScoreRow) => row.gameId)
+      Scroll() {
+        Row({ space: 10 }) {
+          ForEach(this.scoreRows, (row: ScoreRow) => {
+            Column({ space: 6 }) {
+              Text(row.icon)
+                .fontSize(20)
+                .fontFamily(this.palette.fontSans)
+              Text(row.name)
+                .fontSize(11)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textSecondary)
+                .fontWeight(FontWeight.Medium)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(`${row.best}`)
+                .fontSize(this.scoreFontSize(row.best))
+                .fontColor(row.color)
+                .fontWeight(FontWeight.Bold)
+                .fontFamily(this.palette.fontMono)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text('最高分')
+                .fontSize(9)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+            }
+            .width(110)
+            .padding({ top: 16, bottom: 16 })
+            .borderRadius(12)
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+            .alignItems(HorizontalAlign.Center)
+          }, (row: ScoreRow) => row.gameId)
+        }
+        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
       }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
       .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
     }
     .width('100%')
   }

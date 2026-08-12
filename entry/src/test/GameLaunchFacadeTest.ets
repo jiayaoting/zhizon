@@ -21,5 +21,15 @@ export default function GameLaunchFacadeTest() {
       expect(GameLaunchFacade.validate(invalidVersion, GameId.TETRIS).success).assertFalse();
       expect(GameLaunchFacade.parse(invalidParams, GameId.TETRIS).success).assertFalse();
     });
+
+    it('supports sudoku registration and launch validation', 0, () => {
+      const registration = GameLaunchFacade.registration(GameId.SUDOKU);
+      expect(registration !== null).assertTrue();
+      expect(registration !== null && registration.routeUrl).assertEqual('pages/Sudoku');
+      const request = new GameLaunchRequest(GameId.SUDOKU, DifficultyLevel.HARD, PageKey.Games, 1);
+      expect(GameLaunchFacade.validate(request, GameId.SUDOKU).success).assertTrue();
+      const params = new GameRouteParams(request);
+      expect(GameLaunchFacade.parse(params, GameId.SUDOKU).success).assertTrue();
+    });
   });
 }

@@ -59,6 +59,13 @@ export struct GamesPage {
       icon: '🎱',
       desc: '经典街机弹球，击碎所有砖块闯关',
       color: this.palette.danger
+    },
+    {
+      gameId: GameId.SUDOKU,
+      name: '数独',
+      icon: '🧩',
+      desc: '数字推理经典，每行每列每宫填 1-9 不重复',
+      color: this.palette.info
     }
   ];
 

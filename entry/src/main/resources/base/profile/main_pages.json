@@ -7,6 +7,7 @@
     "pages/Minesweeper",
     "pages/Breakout",
     "pages/GameHistory",
-    "pages/LegalDoc"
+    "pages/LegalDoc",
+    "pages/Sudoku"
   ]
 }

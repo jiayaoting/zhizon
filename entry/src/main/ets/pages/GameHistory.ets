@@ -7,18 +7,25 @@ import { TopBar } from '../components/TopBar';
 import { GameHistoryRouteParams } from '../common/Navigation';
 
 function isGameHistoryKey(key: string): boolean {
-  return key === '2048' || key === 'Snake' || key === 'Tetris';
+  return key === '2048' || key === 'Snake' || key === 'Tetris' || key === 'Minesweeper' ||
+    key === 'Breakout' || key === 'SUDOKU';
 }
 
 function gameIcon(key: string): string {
   if (key === 'Snake') return '🐍';
   if (key === 'Tetris') return '🧱';
+  if (key === 'Minesweeper') return '💣';
+  if (key === 'Breakout') return '🎱';
+  if (key === 'SUDOKU') return '🧩';
   return '🔢';
 }
 
 function gameName(key: string): string {
   if (key === 'Snake') return '贪吃蛇';
   if (key === 'Tetris') return '俄罗斯方块';
+  if (key === 'Minesweeper') return '扫雷';
+  if (key === 'Breakout') return '打砖块';
+  if (key === 'SUDOKU') return '数独';
   return '2048';
 }
 
@@ -56,7 +63,7 @@ export struct GameHistoryPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
-  private gameKeys: string[] = ['2048', 'Snake', 'Tetris'];
+  private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU'];
 
   aboutToAppear(): void {
     const params: GameHistoryRouteParams | null = router.getParams() as GameHistoryRouteParams | null;
