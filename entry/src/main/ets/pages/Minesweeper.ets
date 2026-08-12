@@ -1,4 +1,4 @@
-// 智子 - 扫雷
+// 智子 - 扫雷（重做版：@Observed + @ObjectLink 标准状态管理架构）
 import { promptAction, router } from '@kit.ArkUI';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
@@ -30,7 +30,8 @@ function configFor(level: DifficultyLevel): MinesweeperConfig {
   return new MinesweeperConfig(16, 30, 99);
 }
 
-// 格子状态（普通类，通过 @State board 整体替换触发 UI 渲染）
+// 格子状态：@Observed 使属性变化可被 @ObjectLink 精确观察
+@Observed
 class MineCell {
   isMine: boolean = false;
   adjacent: number = 0;
@@ -41,6 +42,73 @@ class MineCell {
 interface MinePos {
   r: number;
   c: number;
+}
+
+// 单个格子组件：@ObjectLink 绑定格子对象，状态变化立即驱动本组件刷新
+@Component
+struct MineCellView {
+  @ObjectLink cell: MineCell;
+  @Prop isCursor: boolean = false;
+  @Prop fontSize: number = 14;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  onReveal: () => void = () => {};
+  onFlag: () => void = () => {};
+
+  private cellColor(): string {
+    if (this.cell.revealed) {
+      // 已翻开：深色凹陷，与未翻开形成强烈明暗对比
+      return this.palette.isDark ? '#0B101B' : '#C0C9D6';
+    }
+    if (this.cell.flagged) return this.palette.primaryDim;
+    // 未翻开：明亮凸起
+    return this.palette.isDark ? '#333F58' : '#FFFFFF';
+  }
+
+  private cellText(): string {
+    if (!this.cell.revealed) {
+      if (this.cell.flagged) return '🚩';
+      return '';
+    }
+    if (this.cell.isMine) return '💣';
+    if (this.cell.adjacent === 0) return '';
+    return this.cell.adjacent.toString();
+  }
+
+  private cellTextColor(): string {
+    if (!this.cell.revealed) return this.palette.textPrimary;
+    if (this.cell.isMine) return this.palette.danger;
+    if (this.cell.adjacent === 1) return this.palette.info;
+    if (this.cell.adjacent === 2) return this.palette.success;
+    if (this.cell.adjacent === 3) return this.palette.danger;
+    return this.palette.textTertiary;
+  }
+
+  build() {
+    Row() {
+      Text(this.cellText())
+        .fontSize(this.fontSize)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.cellTextColor())
+        .fontWeight(FontWeight.Bold)
+    }
+    .layoutWeight(1)
+    .aspectRatio(1)
+    .borderRadius(2)
+    .border({ width: this.isCursor ? 2 : 1,
+      color: this.isCursor ? this.palette.primary :
+        (this.cell.revealed ? this.palette.borderSubtle :
+          (this.palette.isDark ? '#3D4A63' : '#AEB8C6')) })
+    .backgroundColor(this.cellColor())
+    .shadow({ radius: this.cell.revealed ? 0 : 3,
+      color: this.palette.isDark ? 'rgba(0,0,0,0.50)' : 'rgba(30,41,59,0.28)',
+      offsetX: 0, offsetY: this.cell.revealed ? 0 : 2 })
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => { this.onReveal(); })
+    .gesture(
+      LongPressGesture({ repeat: false, duration: 500 })
+        .onAction(() => { this.onFlag(); })
+    )
+  }
 }
 
 @Entry
@@ -138,7 +206,6 @@ export struct MinesweeperPage {
       this.board[r][c].isMine = true;
       placed += 1;
     }
-    // 计算邻雷数
     for (let r: number = 0; r < this.rows; r++) {
       for (let c: number = 0; c < this.cols; c++) {
         if (this.board[r][c].isMine) continue;
@@ -162,27 +229,8 @@ export struct MinesweeperPage {
     return count;
   }
 
-  // 强制刷新棋盘：重建全新对象数组，配合 ForEach 状态化 key 确保 UI 一定重新渲染
-  private refreshBoard(): void {
-    const copy: MineCell[][] = [];
-    for (let r: number = 0; r < this.board.length; r++) {
-      const row: MineCell[] = [];
-      for (let c: number = 0; c < this.board[r].length; c++) {
-        const src: MineCell = this.board[r][c];
-        const n = new MineCell();
-        n.isMine = src.isMine;
-        n.adjacent = src.adjacent;
-        n.revealed = src.revealed;
-        n.flagged = src.flagged;
-        row.push(n);
-      }
-      copy.push(row);
-    }
-    this.board = copy;
-  }
-
   // ---- 翻开格子 ----
-  revealCell(r: number, c: number): void {
+  private revealCell(r: number, c: number): void {
     if (!this.gameStarted || this.isGameOver || this.isPaused || this.isWin) return;
     if (r < 0 || r >= this.rows || c < 0 || c >= this.cols) return;
     const cell: MineCell = this.board[r][c];
@@ -199,7 +247,6 @@ export struct MinesweeperPage {
       this.isGameOver = true;
       this.stopTimer();
       this.vibrate(80);
-      // 展示所有雷
       for (let rr: number = 0; rr < this.rows; rr++) {
         for (let cc: number = 0; cc < this.cols; cc++) {
           if (this.board[rr][cc].isMine && !this.board[rr][cc].flagged) {
@@ -208,13 +255,11 @@ export struct MinesweeperPage {
         }
       }
       this.score = 0;
-      this.refreshBoard();
       return;
     }
 
     this.vibrate(5);
     this.floodReveal(r, c);
-    this.refreshBoard();
     this.checkWin();
   }
 
@@ -242,7 +287,7 @@ export struct MinesweeperPage {
   }
 
   // ---- 标旗 ----
-  toggleFlag(r: number, c: number): void {
+  private toggleFlag(r: number, c: number): void {
     if (!this.gameStarted || this.isGameOver || this.isPaused || this.isWin) return;
     const cell: MineCell = this.board[r][c];
     if (cell.revealed) return;
@@ -255,8 +300,6 @@ export struct MinesweeperPage {
       this.remainingMines -= 1;
       this.vibrate(5);
     }
-    this.refreshBoard();
-    // 全旗=全雷 判定胜利
     this.checkWin();
   }
 
@@ -392,10 +435,8 @@ export struct MinesweeperPage {
   // 自适应棋盘格子尺寸
   private boardCell(): number {
     if (this.isSm) {
-      // 手机端：TopBar + 信息栏 + 模式栏 + 间距 + 安全区
       return DeviceMetrics.fitCellSize(this.cols, this.rows, 270, 10, 30);
     }
-    // 平板端：TopBar + 安全区
     return DeviceMetrics.fitCellSize(this.cols, this.rows, 140, 12, 36);
   }
 
@@ -414,38 +455,20 @@ export struct MinesweeperPage {
       ForEach(this.board, (row: MineCell[], rowIdx: number) => {
         Row() {
           ForEach(row, (cell: MineCell, colIdx: number) => {
-            Row() {
-              Text(this.cellText(cell))
-                .fontSize(this.cellFontSize())
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.cellTextColor(cell))
-                .fontWeight(FontWeight.Bold)
-            }
-            .layoutWeight(1)
-            .aspectRatio(1)
-            .borderRadius(2)
-            .border({ width: this.cursorR === rowIdx && this.cursorC === colIdx ? 2 : 1,
-              color: this.cursorR === rowIdx && this.cursorC === colIdx ? this.palette.primary :
-                (cell.revealed ? this.palette.borderSubtle :
-                  (this.palette.isDark ? '#3D4A63' : '#AEB8C6')) })
-            .backgroundColor(this.cellColor(cell))
-            .shadow({ radius: cell.revealed ? 0 : 3,
-              color: this.palette.isDark ? 'rgba(0,0,0,0.50)' : 'rgba(30,41,59,0.28)',
-              offsetX: 0, offsetY: cell.revealed ? 0 : 2 })
-            .justifyContent(FlexAlign.Center)
-            .onClick(() => {
-              if (this.flagMode) {
-                this.toggleFlag(rowIdx, colIdx);
-              } else {
-                this.revealCell(rowIdx, colIdx);
-              }
+            MineCellView({
+              cell: cell,
+              isCursor: this.cursorR === rowIdx && this.cursorC === colIdx,
+              fontSize: this.cellFontSize(),
+              onReveal: (): void => {
+                if (this.flagMode) {
+                  this.toggleFlag(rowIdx, colIdx);
+                } else {
+                  this.revealCell(rowIdx, colIdx);
+                }
+              },
+              onFlag: (): void => { this.toggleFlag(rowIdx, colIdx); }
             })
-            .gesture(
-              LongPressGesture({ repeat: false, duration: 500 })
-                .onAction(() => { this.toggleFlag(rowIdx, colIdx); })
-            )
-          }, (cell: MineCell, colIdx: number) =>
-            colIdx.toString() + '_' + (cell.revealed ? 'r' : '') + (cell.flagged ? 'f' : ''))
+          }, (cell: MineCell, colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
       }, (row: MineCell[], rowIdx: number) => rowIdx.toString())
@@ -456,35 +479,6 @@ export struct MinesweeperPage {
     .borderRadius(6)
     .padding(2)
     .backgroundColor(this.palette.bgSurface)
-  }
-
-  private cellColor(cell: MineCell): string {
-    if (cell.revealed) {
-      // 已翻开：深色凹陷（近黑/深灰），与未翻开形成强烈明暗对比
-      return this.palette.isDark ? '#0B101B' : '#C0C9D6';
-    }
-    if (cell.flagged) return this.palette.primaryDim;
-    // 未翻开：明亮凸起（亮灰/纯白）
-    return this.palette.isDark ? '#333F58' : '#FFFFFF';
-  }
-
-  private cellText(cell: MineCell): string {
-    if (!cell.revealed) {
-      if (cell.flagged) return '🚩';
-      return '';
-    }
-    if (cell.isMine) return '💣';
-    if (cell.adjacent === 0) return '';
-    return cell.adjacent.toString();
-  }
-
-  private cellTextColor(cell: MineCell): string {
-    if (!cell.revealed) return this.palette.textPrimary;
-    if (cell.isMine) return this.palette.danger;
-    if (cell.adjacent === 1) return this.palette.info;
-    if (cell.adjacent === 2) return this.palette.success;
-    if (cell.adjacent === 3) return this.palette.danger;
-    return this.palette.textTertiary;
   }
 
   private cellFontSize(): number {
@@ -583,7 +577,6 @@ export struct MinesweeperPage {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
-      // 使用说明
       Row() {
         Text('📖')
           .fontSize(14)
