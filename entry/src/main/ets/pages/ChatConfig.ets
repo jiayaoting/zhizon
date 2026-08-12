@@ -59,7 +59,8 @@ struct ChatConfig {
     const m: LlmModelEntry = this.models[index];
     this.editingIndex = index;
     this.displayName = m.displayName;
-    this.providerId = m.providerId || 'deepseek';
+    // 保留原 providerId，不强制兜底为 deepseek，避免覆盖用户自定义配置
+    this.providerId = m.providerId && m.providerId.length > 0 ? m.providerId : 'custom';
     this.baseUrl = m.baseUrl;
     this.apiKey = m.apiKey;
     this.model = m.model;
@@ -601,6 +602,11 @@ struct ChatConfig {
           .borderRadius(8)
           .backgroundColor(this.palette.bgSurface)
           .border({ width: 1, color: this.palette.borderSubtle })
+          .bindSheet($$this.showProviderSheet, () => { this.providerSheet() }, {
+            height: SheetSize.FIT_CONTENT,
+            dragBar: false,
+            backgroundColor: this.palette.bgBase
+          })
           .onClick(() => { this.showProviderSheet = true; })
         }
         .width('100%')
@@ -625,6 +631,11 @@ struct ChatConfig {
             .borderRadius(8)
             .backgroundColor(this.palette.bgSurface)
             .border({ width: 1, color: this.palette.borderSubtle })
+            .bindSheet($$this.showFormatSheet, () => { this.formatSheet() }, {
+              height: SheetSize.FIT_CONTENT,
+              dragBar: false,
+              backgroundColor: this.palette.bgBase
+            })
             .onClick(() => { this.showFormatSheet = true; })
           }
           .width('100%')
@@ -707,6 +718,11 @@ struct ChatConfig {
               .onClick(() => { this.showModelSheet = true; })
           }
           .width('100%')
+          .bindSheet($$this.showModelSheet, () => { this.modelSheet() }, {
+            height: SheetSize.FIT_CONTENT,
+            dragBar: false,
+            backgroundColor: this.palette.bgBase
+          })
         }
         .width('100%')
 
@@ -964,57 +980,6 @@ struct ChatConfig {
       .height('100%')
       .backgroundColor(this.palette.bgBase)
       .padding({ bottom: Math.max(0, this.navBarHeight) })
-
-      // 服务商选择弹层
-      if (this.showProviderSheet) {
-        Stack() {
-          Column() {
-            Blank()
-            this.providerSheet()
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
-        .onClick(() => { this.showProviderSheet = false; })
-      }
-
-      // 模型选择弹层
-      if (this.showModelSheet) {
-        Stack() {
-          Column() {
-            Blank()
-            this.modelSheet()
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
-        .onClick(() => { this.showModelSheet = false; })
-      }
-
-      // API 格式选择弹层
-      if (this.showFormatSheet) {
-        Stack() {
-          Column() {
-            Blank()
-            this.formatSheet()
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
-        .onClick(() => { this.showFormatSheet = false; })
-      }
     }
     .width('100%')
     .height('100%')

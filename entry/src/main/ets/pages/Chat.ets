@@ -1,11 +1,114 @@
 // 智子 - AI 对话页
 import { promptAction, router } from '@kit.ArkUI';
+import { pasteboard } from '@kit.BasicServicesKit';
+import { http } from '@kit.NetworkKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
+import { GlassStyle, GlassLevel } from '../components/GlassEffect';
+import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
 import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
   modelDisplayNameFromConfig } from '../common/LlmModels';
+
+// 单条消息气泡子组件：用 @ObjectLink 监听 @Observed ChatMessage 的 content 变化
+// 流式 delta 仅修改 message.content 即可触发本组件刷新，无需重建整个消息列表
+@Component
+struct MessageBubble {
+  @ObjectLink message: ChatMessage;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
+  @Prop index: number = 0;
+  onRetry: (index: number) => void = () => {};
+  private formatTime(time: number): string {
+    if (time <= 0) return '';
+    const d: Date = new Date(time);
+    const hh: string = d.getHours().toString().padStart(2, '0');
+    const mm: string = d.getMinutes().toString().padStart(2, '0');
+    return hh + ':' + mm;
+  }
+
+  private copyContent(): void {
+    try {
+      const pb = pasteboard.getSystemPasteboard();
+      const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.message.content);
+      pb.setData(data);
+      promptAction.showToast({ message: '已复制到剪贴板' });
+    } catch (e) {
+      promptAction.showToast({ message: '复制失败' });
+    }
+  }
+
+  build() {
+    Row() {
+      if (this.message.role === 'user') {
+        Blank()
+        Column({ space: 4 }) {
+          Text(this.message.content)
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor('#FFFFFF')
+            .lineHeight(20)
+            .padding(12)
+            .borderRadius(12)
+            .backgroundColor(this.palette.primary)
+            .constraintSize({ maxWidth: this.isSm ? 260 : 420 })
+        }
+        .alignItems(HorizontalAlign.End)
+        .gesture(LongPressGesture().onAction(() => { this.copyContent(); }))
+      } else {
+        Column({ space: 4 }) {
+          Row({ space: 6 }) {
+            Text('🤖')
+              .fontSize(14)
+              .fontFamily(this.palette.fontSans)
+            Text('智子 AI')
+              .fontSize(11)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+            Text(this.formatTime(this.message.time))
+              .fontSize(9)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+          }
+          Text(this.message.content.length > 0 ? this.message.content : '…')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .lineHeight(20)
+            .padding(12)
+            .borderRadius(12)
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+            .border({ width: 1,
+              color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+            .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+            .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+          // 失败时显示重试按钮
+          if (this.message.content.length > 0 &&
+            this.message.content.indexOf('⚠️ 请求失败') === 0) {
+            Row() {
+              Text('↻ 重试')
+                .fontSize(this.palette.fsXs)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.primary)
+                .fontWeight(FontWeight.Medium)
+            }
+            .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+            .borderRadius(8)
+            .backgroundColor(this.palette.bgSurface)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .onClick(() => { this.onRetry(this.index); })
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .gesture(LongPressGesture().onAction(() => { this.copyContent(); }))
+      }
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+  }
+}
 
 @Entry
 @Component
@@ -13,6 +116,7 @@ struct Chat {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
 
   @State messages: ChatMessage[] = [];
   @State inputText: string = '';
@@ -27,18 +131,23 @@ struct Chat {
   @State activeModelId: string = '';
   @State showModelPicker: boolean = false;
   private activeConfig: LlmConfig | null = null;
+  // 当前流式请求的 httpRequest 引用，停止按钮调用 destroy() 中断
+  private streamRequest: http.HttpRequest | null = null;
+  // 上次失败时缓存的 user 消息，用于重试
+  private lastUserText: string = '';
 
   // 搜索
   @State showSearch: boolean = false;
   @State searchQuery: string = '';
   @State searchRole: string = 'all';
 
-  private scrollController: Scroller = new Scroller();
+  private readonly scrollController: Scroller = new Scroller();
 
   aboutToAppear(): void {
     this.load();
   }
 
+  // onPageShow 仅在页面被路由栈顶显示时触发，router.pushUrl 子页返回也会触发
   onPageShow(): void {
     this.refreshModels();
   }
@@ -46,8 +155,9 @@ struct Chat {
   private async load(): Promise<void> {
     this.messages = await ChatRepository.loadHistory();
     if (this.messages.length === 0) {
-      this.messages.push(new ChatMessage('assistant',
-        '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。'));
+      const welcome: ChatMessage = ChatMessage.create('assistant',
+        '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
+      this.messages = [welcome];
     }
     await this.refreshModels();
   }
@@ -99,12 +209,16 @@ struct Chat {
       secondaryButton: {
         value: '清空',
         fontColor: Color.Red,
-        action: () => {
+        action: async () => {
           this.messages = [];
           this.streamingContent = '';
           this.showSearch = false;
           this.searchQuery = '';
-          ChatRepository.clearHistory();
+          await ChatRepository.clearHistory();
+          // 清空后恢复欢迎语，保持一致体验
+          const welcome: ChatMessage = ChatMessage.create('assistant',
+            '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
+          this.messages = [welcome];
         }
       }
     });
@@ -127,8 +241,9 @@ struct Chat {
       return;
     }
     this.inputText = '';
-    const userMessage: ChatMessage = new ChatMessage('user', text);
-    const assistantMessage: ChatMessage = new ChatMessage('assistant', '');
+    this.lastUserText = text;
+    const userMessage: ChatMessage = ChatMessage.create('user', text);
+    const assistantMessage: ChatMessage = ChatMessage.create('assistant', '');
     const newMessages: ChatMessage[] = this.messages.concat([userMessage, assistantMessage]);
     this.messages = newMessages;
     this.sending = true;
@@ -138,34 +253,80 @@ struct Chat {
 
     const history: ChatMessage[] = ChatRepository.requestMessages(newMessages.slice(0, newMessages.length - 1));
     const result: LlmResult = await LlmClient.postCompletionStream(config, history, (delta: string) => {
-      const next: string = this.streamingContent + delta;
-      this.streamingContent = next;
-      const list: ChatMessage[] = this.messages.concat([]);
-      const lastIndex: number = list.length - 1;
-      list[lastIndex].content = next;
-      this.messages = list;
+      // 流式增量更新：仅修改 @Observed ChatMessage 的 content 属性
+      // MessageBubble 子组件通过 @ObjectLink 自动感知变化，无需重建整个 messages 数组
+      this.streamingContent = this.streamingContent + delta;
+      assistantMessage.content = this.streamingContent;
       this.scrollToBottom();
     });
     this.sending = false;
     this.streaming = false;
-    const list: ChatMessage[] = this.messages.concat([]);
-    const lastIndex: number = list.length - 1;
+    this.streamRequest = null;
     if (result.success) {
-      list[lastIndex].content = result.content;
+      assistantMessage.content = result.content;
       this.streamingContent = '';
     } else {
-      list[lastIndex].content = '⚠️ 请求失败：' + result.errorMessage;
+      assistantMessage.content = '⚠️ 请求失败：' + result.errorMessage;
       this.streamingContent = '';
     }
-    this.messages = list;
     await ChatRepository.saveHistory(this.messages);
     this.scrollToBottom();
   }
 
+  // 停止当前流式请求
+  private stopStreaming(): void {
+    if (this.streamRequest !== null) {
+      try {
+        this.streamRequest.destroy();
+      } catch (e) {
+      }
+      this.streamRequest = null;
+    }
+    this.streaming = false;
+    this.sending = false;
+    if (this.streamingContent.length === 0) {
+      // 若停止时无内容，移除最后一条空的 assistant 消息
+      if (this.messages.length > 0) {
+        const last: ChatMessage = this.messages[this.messages.length - 1];
+        if (last.role === 'assistant' && last.content.length === 0) {
+          this.messages = this.messages.slice(0, this.messages.length - 1);
+        }
+      }
+    } else {
+      // 有内容则保留已收到的部分
+      if (this.messages.length > 0) {
+        const last: ChatMessage = this.messages[this.messages.length - 1];
+        if (last.role === 'assistant') {
+          last.content = this.streamingContent;
+        }
+      }
+    }
+    this.streamingContent = '';
+    ChatRepository.saveHistory(this.messages);
+  }
+
+  // 重试上次失败的请求
+  private async retryLast(): Promise<void> {
+    if (this.sending || this.streaming) return;
+    if (this.lastUserText.length === 0) {
+      promptAction.showToast({ message: '无可重试的消息' });
+      return;
+    }
+    const text: string = this.lastUserText;
+    // 移除最后一条失败的 assistant 消息
+    if (this.messages.length > 0) {
+      const last: ChatMessage = this.messages[this.messages.length - 1];
+      if (last.role === 'assistant' && last.content.indexOf('⚠️ 请求失败') === 0) {
+        this.messages = this.messages.slice(0, this.messages.length - 1);
+      }
+    }
+    this.inputText = text;
+    await this.send();
+  }
+
+  // 直接滚动到底部，去除 setTimeout 队列堆积
   private scrollToBottom(): void {
-    setTimeout(() => {
-      this.scrollController.scrollEdge(Edge.Bottom);
-    }, 30);
+    this.scrollController.scrollEdge(Edge.Bottom);
   }
 
   private formatTime(time: number): string {
@@ -245,9 +406,10 @@ struct Chat {
       .width('100%')
       .padding({ left: 12, right: 4 })
       .height(44)
-      .backgroundColor(this.palette.bgSurface)
+      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
       .borderRadius(10)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+      .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
 
       Row({ space: 6 }) {
         this.filterChip('全部', 'all')
@@ -308,56 +470,6 @@ struct Chat {
   }
 
   @Builder
-  messageBubble(message: ChatMessage, index: number) {
-    Row() {
-      if (message.role === 'user') {
-        Blank()
-        Column({ space: 4 }) {
-          Text(message.content)
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor('#FFFFFF')
-            .lineHeight(20)
-            .padding(12)
-            .borderRadius(12)
-            .backgroundColor(this.palette.primary)
-            .constraintSize({ maxWidth: this.isSm ? 260 : 420 })
-        }
-        .alignItems(HorizontalAlign.End)
-      } else {
-        Column({ space: 4 }) {
-          Row({ space: 6 }) {
-            Text('🤖')
-              .fontSize(14)
-              .fontFamily(this.palette.fontSans)
-            Text('智子 AI')
-              .fontSize(11)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-            Text(this.formatTime(message.time))
-              .fontSize(9)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-          }
-          Text(message.content.length > 0 ? message.content : '…')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .lineHeight(20)
-            .padding(12)
-            .borderRadius(12)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
-        }
-        .alignItems(HorizontalAlign.Start)
-      }
-    }
-    .width('100%')
-    .alignItems(VerticalAlign.Top)
-  }
-
-  @Builder
   inputBar() {
     Row({ space: 8 }) {
       TextInput({ text: this.inputText, placeholder: '输入消息…' })
@@ -372,19 +484,42 @@ struct Chat {
         .layoutWeight(1)
         .onChange((value: string) => { this.onInputChange(value); })
         .onSubmit(() => { this.send(); })
-      Row() {
-        Text(this.sending || this.streaming ? '…' : '发送')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor('#FFFFFF')
-          .fontWeight(FontWeight.Medium)
+      // 流式过程中显示停止按钮，否则显示发送按钮
+      if (this.streaming) {
+        Row() {
+          Text('■')
+            .fontSize(14)
+            .fontFamily(this.palette.fontSans)
+            .fontColor('#FFFFFF')
+        }
+        .height(44)
+        .padding({ left: 16, right: 16 })
+        .borderRadius(10)
+        .backgroundColor(this.palette.danger)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => { this.stopStreaming(); })
+      } else {
+        Row() {
+          if (this.sending) {
+            LoadingProgress()
+              .width(16)
+              .height(16)
+              .color('#FFFFFF')
+          } else {
+            Text('发送')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor('#FFFFFF')
+              .fontWeight(FontWeight.Medium)
+          }
+        }
+        .height(44)
+        .padding({ left: 16, right: 16 })
+        .borderRadius(10)
+        .backgroundColor(this.palette.primary)
+        .justifyContent(FlexAlign.Center)
+        .onClick(() => { this.send(); })
       }
-      .height(44)
-      .padding({ left: 16, right: 16 })
-      .borderRadius(10)
-      .backgroundColor(this.palette.primary)
-      .justifyContent(FlexAlign.Center)
-      .onClick(() => { this.send(); })
     }
     .width('100%')
   }
@@ -471,6 +606,8 @@ struct Chat {
 
   build() {
     Stack() {
+      // 全局背景层：与首页/其他子页保持一致的视觉氛围
+      GlobalBackgroundLayer()
       Column() {
         TopBar({
           title: 'AI 对话',
@@ -519,9 +656,11 @@ struct Chat {
             ForEach(this.showSearch ? this.displayMessages() : this.messages,
               (message: ChatMessage, index: number) => {
               ListItem() {
-                this.messageBubble(message, index)
+                // 使用子组件，通过 @ObjectLink 监听 @Observed ChatMessage 的变化
+                MessageBubble({ message: message, index: index,
+                  onRetry: (i: number): void => { this.retryLast(); } })
               }
-            }, (message: ChatMessage, index: number) => message.time.toString() + '_' + index.toString())
+            }, (message: ChatMessage) => message.id)
           }
           .layoutWeight(1)
           .width('100%')
@@ -543,8 +682,9 @@ struct Chat {
           .width('100%')
           .height(44)
           .justifyContent(FlexAlign.Center)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+          .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
           .borderRadius(10)
           .onClick(() => { this.exitSearch(); })
           .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
@@ -567,8 +707,9 @@ struct Chat {
               .width('100%')
               .padding(10)
               .borderRadius(8)
-              .backgroundColor(this.palette.bgSurface)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+              .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+              .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
               .onClick(() => { this.openConfig(); })
             }
             // 当前模型切换
@@ -590,8 +731,14 @@ struct Chat {
             .width('100%')
             .padding({ left: 10, right: 10, top: 6, bottom: 6 })
             .borderRadius(8)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+            .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+            .bindSheet($$this.showModelPicker, () => { this.modelPicker() }, {
+              height: SheetSize.FIT_CONTENT,
+              dragBar: false,
+              backgroundColor: this.palette.bgBase
+            })
             .onClick(() => {
               if (this.models.length > 0) {
                 this.showModelPicker = true;
@@ -608,23 +755,6 @@ struct Chat {
       .width('100%')
       .height('100%')
       .backgroundColor(this.palette.bgBase)
-
-      // 模型选择弹层
-      if (this.showModelPicker) {
-        Stack() {
-          Column() {
-            Blank()
-            this.modelPicker()
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
-        .onClick(() => { this.showModelPicker = false; })
-      }
     }
     .width('100%')
     .height('100%')

@@ -131,16 +131,31 @@ export function modelDisplayNameFromConfig(config: LlmConfig): string {
   return providerName;
 }
 
-// 对话消息
+// 对话消息（@Observed 用于流式增量更新，仅修改 content 即可触发 UI 刷新，无需重建整个数组）
+@Observed
 export class ChatMessage {
-  role: string;
+  id: string;
+  role: string; // user / assistant / system
   content: string;
   time: number;
 
-  constructor(role: string, content: string, time: number = Date.now()) {
+  constructor(id: string, role: string, content: string, time: number = Date.now()) {
+    this.id = id;
     this.role = role;
     this.content = content;
     this.time = time;
+  }
+
+  // 便捷工厂方法：自动生成 id
+  static create(role: string, content: string, time: number = Date.now()): ChatMessage {
+    return new ChatMessage(ChatMessage.newId(), role, content, time);
+  }
+
+  // 生成唯一消息 id：时间戳 + 随机串
+  static newId(): string {
+    const ts: string = Date.now().toString(36);
+    const rand: string = Math.random().toString(36).substring(2, 8);
+    return 'msg-' + ts + '-' + rand;
   }
 }
 
@@ -226,11 +241,13 @@ export class StoredLlmConfig {
 
 // 聊天历史持久化结构
 export class StoredChatMessage {
+  id: string;
   role: string;
   content: string;
   time: number;
 
-  constructor(role: string, content: string, time: number) {
+  constructor(id: string, role: string, content: string, time: number) {
+    this.id = id;
     this.role = role;
     this.content = content;
     this.time = time;

@@ -1,9 +1,9 @@
 // 智子 - 大模型客户端（OpenAI Chat Completions + Anthropic Messages + SSE 流式）
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
 const REQUEST_TIMEOUT = 60000;
-const TEXT_DECODER: util.TextDecoder = new util.TextDecoder();
 
 export class LlmClient {
   // 非流式单次对话（用于测试连接）
@@ -13,7 +13,7 @@ export class LlmClient {
     if (config.needsKey && !config.apiKey.trim()) {
       return new LlmResult(false, '', 'EMPTY_API_KEY', 'API Key 不能为空');
     }
-    const messages: ChatMessage[] = [new ChatMessage('user', '你好，请回复"连接成功"四个字。')];
+    const messages: ChatMessage[] = [ChatMessage.create('user', '你好，请回复"连接成功"四个字。')];
     try {
       const result = await LlmClient.postCompletion(config, messages);
       return result;
@@ -64,8 +64,9 @@ export class LlmClient {
       if (stream && onDelta !== undefined) {
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           buffer = buffer + LlmClient.arrayBufferToString(data);
-          const events: string[] = LlmClient.extractSseEvents(buffer);
-          buffer = LlmClient.remainingBuffer(buffer, events);
+          const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+          const events: string[] = parseResult.events;
+          buffer = LlmClient.remainingBuffer(buffer, parseResult);
           for (let i: number = 0; i < events.length; i++) {
             const delta: string = LlmClient.openAIDeltaFromSse(events[i]);
             if (delta.length > 0) {
@@ -91,9 +92,10 @@ export class LlmClient {
       }
       if (stream && onDelta !== undefined) {
         if (buffer.trim().length > 0) {
-          const events: string[] = LlmClient.extractSseEvents(buffer);
-          for (let i: number = 0; i < events.length; i++) {
-            const delta: string = LlmClient.openAIDeltaFromSse(events[i]);
+          const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+          const tailEvents: string[] = tailResult.events;
+          for (let i: number = 0; i < tailEvents.length; i++) {
+            const delta: string = LlmClient.openAIDeltaFromSse(tailEvents[i]);
             if (delta.length > 0) {
               fullContent = fullContent + delta;
               onDelta(delta);
@@ -147,8 +149,9 @@ export class LlmClient {
       if (stream && onDelta !== undefined) {
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           buffer = buffer + LlmClient.arrayBufferToString(data);
-          const events: string[] = LlmClient.extractSseEvents(buffer);
-          buffer = LlmClient.remainingBuffer(buffer, events);
+          const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+          const events: string[] = parseResult.events;
+          buffer = LlmClient.remainingBuffer(buffer, parseResult);
           for (let i: number = 0; i < events.length; i++) {
             const delta: string = LlmClient.anthropicDeltaFromSse(events[i]);
             if (delta.length > 0) {
@@ -175,9 +178,10 @@ export class LlmClient {
       }
       if (stream && onDelta !== undefined) {
         if (buffer.trim().length > 0) {
-          const events: string[] = LlmClient.extractSseEvents(buffer);
-          for (let i: number = 0; i < events.length; i++) {
-            const delta: string = LlmClient.anthropicDeltaFromSse(events[i]);
+          const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+          const tailEvents: string[] = tailResult.events;
+          for (let i: number = 0; i < tailEvents.length; i++) {
+            const delta: string = LlmClient.anthropicDeltaFromSse(tailEvents[i]);
             if (delta.length > 0) {
               fullContent = fullContent + delta;
               onDelta(delta);
@@ -268,31 +272,37 @@ export class LlmClient {
 
   // ---- SSE 通用解析 ----
 
-  private static extractSseEvents(buffer: string): string[] {
+  private static extractSseEvents(buffer: string): SseParseResult {
     const events: string[] = [];
-    let index: number = 0;
-    while (true) {
-      const idx: number = buffer.indexOf('\n\n', index);
-      if (idx < 0) break;
-      const event: string = buffer.substring(index, idx);
-      events.push(event);
-      index = idx + 2;
+    let pos: number = 0;
+    while (pos < buffer.length) {
+      const rnIdx: number = buffer.indexOf('\r\n\r\n', pos);
+      const nIdx: number = buffer.indexOf('\n\n', pos);
+      let sepIdx: number = -1;
+      let sepLen: number = 0;
+      if (rnIdx >= 0 && (nIdx < 0 || rnIdx <= nIdx)) {
+        sepIdx = rnIdx;
+        sepLen = 4;
+      } else if (nIdx >= 0) {
+        sepIdx = nIdx;
+        sepLen = 2;
+      } else {
+        break;
+      }
+      events.push(buffer.substring(pos, sepIdx));
+      pos = sepIdx + sepLen;
     }
-    return events;
+    return new SseParseResult(events, pos);
   }
 
-  private static remainingBuffer(buffer: string, consumed: string[]): string {
-    let consumedLen: number = 0;
-    for (let i: number = 0; i < consumed.length; i++) {
-      consumedLen = consumedLen + consumed[i].length + 2;
-    }
-    return buffer.substring(consumedLen);
+  private static remainingBuffer(buffer: string, parseResult: SseParseResult): string {
+    return buffer.substring(parseResult.consumed);
   }
 
   // ---- OpenAI SSE 增量提取 ----
 
   private static openAIDeltaFromSse(event: string): string {
-    const lines: string[] = event.split('\n');
+    const lines: string[] = event.split(/\r?\n/);
     let data: string = '';
     for (let i: number = 0; i < lines.length; i++) {
       const line: string = lines[i];
@@ -330,7 +340,7 @@ export class LlmClient {
   // ---- Anthropic SSE 增量提取 ----
 
   private static anthropicDeltaFromSse(event: string): string {
-    const lines: string[] = event.split('\n');
+    const lines: string[] = event.split(/\r?\n/);
     let data: string = '';
     for (let i: number = 0; i < lines.length; i++) {
       const line: string = lines[i];
@@ -364,7 +374,8 @@ export class LlmClient {
 
   private static arrayBufferToString(buffer: ArrayBuffer): string {
     try {
-      return TEXT_DECODER.decodeToString(new Uint8Array(buffer));
+      const decoder: util.TextDecoder = new util.TextDecoder();
+      return decoder.decodeToString(new Uint8Array(buffer));
     } catch (e) {
       return '';
     }
@@ -410,12 +421,25 @@ export class LlmClient {
     return '服务返回错误（HTTP ' + code.toString() + '）';
   }
 
-  private static toResult(e: Error): LlmResult {
-    const message: string = e.message || '网络请求失败';
+  private static toResult(e: Object): LlmResult {
+    const err: BusinessError = e as BusinessError;
+    const message: string = (err && typeof err.message === 'string' && err.message.length > 0)
+      ? err.message : '网络请求失败';
     if (message.indexOf('timeout') >= 0) return new LlmResult(false, '', 'TIMEOUT', '请求超时，请检查网络或接口地址');
     if (message.indexOf('connect') >= 0 || message.indexOf('resolve') >= 0) {
       return new LlmResult(false, '', 'NETWORK', '网络连接失败，请检查网络与接口地址');
     }
     return new LlmResult(false, '', 'REQUEST_FAILED', message);
+  }
+}
+
+// SSE 解析结果：包含已切分的事件和已消费的字符数
+class SseParseResult {
+  events: string[];
+  consumed: number;
+
+  constructor(events: string[], consumed: number) {
+    this.events = events;
+    this.consumed = consumed;
   }
 }

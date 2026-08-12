@@ -174,7 +174,10 @@ export class ChatRepository {
         const content: string = typeof item.content === 'string' ? item.content : '';
         const time: number = typeof item.time === 'number' ? item.time as number : 0;
         if (role.length > 0 && content.length > 0) {
-          messages.push(new ChatMessage(role, content, time));
+          // 兼容旧数据：无 id 时自动补全
+          const id: string = typeof item.id === 'string' && (item.id as string).length > 0
+            ? item.id as string : ChatMessage.newId();
+          messages.push(new ChatMessage(id, role, content, time));
         }
       }
       return messages;
@@ -185,8 +188,12 @@ export class ChatRepository {
 
   static async saveHistory(messages: ChatMessage[]): Promise<void> {
     try {
-      const storedMessages: StoredChatMessage[] = messages.map((m: ChatMessage) =>
-        new StoredChatMessage(m.role, m.content, m.time));
+      // 限制最多保留最近 200 条，超出时截断最旧的消息
+      const MAX_HISTORY = 200;
+      const trimmed: ChatMessage[] = messages.length > MAX_HISTORY
+        ? messages.slice(messages.length - MAX_HISTORY) : messages;
+      const storedMessages: StoredChatMessage[] = trimmed.map((m: ChatMessage) =>
+        new StoredChatMessage(m.id, m.role, m.content, m.time));
       const payload: string = JSON.stringify(storedMessages);
       await DataRepository.setSetting(KEY_HISTORY, payload);
     } catch (e) {
@@ -197,8 +204,23 @@ export class ChatRepository {
     await DataRepository.setSetting(KEY_HISTORY, '');
   }
 
-  // 转换为请求上下文（最多保留最近 20 条）
-  static requestMessages(history: ChatMessage[]): ChatMessage[] {
-    return history.slice(-20);
+  // 转换为请求上下文：
+  // - 跳过 system role（应通过专门的 systemPrompt 参数注入，此处仅保留 user/assistant）
+  // - 按字符数估算 token（总字符数 / 4），从最新向前累加直到接近 maxTokens 的 80%
+  // - 默认 maxTokens 上下文窗口为 8000 token，可由调用方覆盖
+  static requestMessages(history: ChatMessage[], maxContextTokens: number = 8000): ChatMessage[] {
+    const conversation: ChatMessage[] = history.filter((m: ChatMessage): boolean =>
+      m.role === 'user' || m.role === 'assistant');
+    const tokenBudget: number = Math.floor(maxContextTokens * 0.8);
+    let tokenAcc: number = 0;
+    const selected: ChatMessage[] = [];
+    for (let i: number = conversation.length - 1; i >= 0; i--) {
+      const m: ChatMessage = conversation[i];
+      const approxTokens: number = Math.ceil(m.content.length / 4);
+      if (tokenAcc + approxTokens > tokenBudget && selected.length > 0) break;
+      selected.unshift(m);
+      tokenAcc = tokenAcc + approxTokens;
+    }
+    return selected;
   }
 }
