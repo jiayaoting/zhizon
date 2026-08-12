@@ -163,6 +163,12 @@ export struct MinesweeperPage {
     return count;
   }
 
+  // 强制刷新棋盘：@Observed 对象属性修改后重建数组引用，确保 UI 重新渲染
+  private refreshBoard(): void {
+    const copy: MineCell[][] = this.board.concat([]);
+    this.board = copy;
+  }
+
   // ---- 翻开格子 ----
   revealCell(r: number, c: number): void {
     if (!this.gameStarted || this.isGameOver || this.isPaused || this.isWin) return;
@@ -190,11 +196,13 @@ export struct MinesweeperPage {
         }
       }
       this.score = 0;
+      this.refreshBoard();
       return;
     }
 
     this.vibrate(5);
     this.floodReveal(r, c);
+    this.refreshBoard();
     this.checkWin();
   }
 
@@ -235,6 +243,7 @@ export struct MinesweeperPage {
       this.remainingMines -= 1;
       this.vibrate(5);
     }
+    this.refreshBoard();
     // 全旗=全雷 判定胜利
     this.checkWin();
   }
