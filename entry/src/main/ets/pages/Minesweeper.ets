@@ -30,8 +30,7 @@ function configFor(level: DifficultyLevel): MinesweeperConfig {
   return new MinesweeperConfig(16, 30, 99);
 }
 
-// 格子状态
-@Observed
+// 格子状态（普通类，通过 @State board 整体替换触发 UI 渲染）
 class MineCell {
   isMine: boolean = false;
   adjacent: number = 0;
@@ -461,12 +460,12 @@ export struct MinesweeperPage {
 
   private cellColor(cell: MineCell): string {
     if (cell.revealed) {
-      // 已翻开：暗色凹陷，与棋盘背景融为一体
-      return this.palette.isDark ? '#0E1420' : '#C7CFDB';
+      // 已翻开：深色凹陷（近黑/深灰），与未翻开形成强烈明暗对比
+      return this.palette.isDark ? '#0B101B' : '#C0C9D6';
     }
     if (cell.flagged) return this.palette.primaryDim;
-    // 未翻开：明亮凸起，与翻开格子形成强烈明暗对比
-    return this.palette.isDark ? '#2E3A52' : '#FFFFFF';
+    // 未翻开：明亮凸起（亮灰/纯白）
+    return this.palette.isDark ? '#333F58' : '#FFFFFF';
   }
 
   private cellText(cell: MineCell): string {
