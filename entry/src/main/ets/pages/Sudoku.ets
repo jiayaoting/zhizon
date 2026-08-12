@@ -36,6 +36,7 @@ export struct SudokuPage {
   @State bestTime: number = 0;
   @State newRecord: boolean = false;
   @State showHintTip: boolean = false;
+  @State showHelp: boolean = false;
   @State flashWin: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
@@ -791,9 +792,81 @@ export struct SudokuPage {
   }
 
   @Builder
-  actionsBuilder() {}
+  actionsBuilder() {
+    Row({ space: 12 }) {
+      // 使用说明
+      Row() {
+        Text('📖')
+          .fontSize(14)
+          .fontFamily(this.palette.fontSans)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.showHelp = true; })
+    }
+  }
 
-  // ==================== 主布局 ====================
+  // ---- 使用说明 ----
+  @Builder
+  helpDialog() {
+    Stack() {
+      Column() {
+        Blank()
+        Column() {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showHelp = false; })
+          }
+          .width('100%')
+          .padding({ right: 4, top: 4 })
+
+          Scroll() {
+            Text('📖 数独\n\n' +
+              '【目标】\n在 9×9 的格子中填入数字 1-9，使每行、每列、每个 3×3 宫格内数字都不重复。\n\n' +
+              '【操作】\n' +
+              '• 点击选中格子，再点击下方数字按钮填入\n' +
+              '• 笔记模式：点击笔记按钮后，可在格子上标记候选数字\n' +
+              '• 点击已填入数字的格子再按数字按钮可清除\n' +
+              '• 提示按钮：自动填入一个正确数字\n\n' +
+              '【规则】\n' +
+              '• 每行 1-9 不重复\n' +
+              '• 每列 1-9 不重复\n' +
+              '• 每个 3×3 宫格 1-9 不重复\n' +
+              '• 题目中给定的数字不可修改\n' +
+              '• 填完所有空格即为胜利')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .lineHeight(22)
+              .width('100%')
+          }
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxHeight: 400 })
+          .padding({ left: 20, right: 20, bottom: 16 })
+        }
+        .width('100%')
+        .borderRadius(16)
+        .backgroundColor(this.palette.bgBase)
+        .padding({ bottom: Math.max(16, this.navBarHeight) })
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.35)')
+    .onClick(() => { this.showHelp = false; })
+  }
+
   build() {
     Stack() {
       Column() {
@@ -897,6 +970,8 @@ export struct SudokuPage {
         if (event.type !== KeyType.Down) return;
         this.handleKey(event.keyCode);
       })
+
+      if (this.showHelp) { this.helpDialog() }
     }
     .width('100%')
     .height('100%')

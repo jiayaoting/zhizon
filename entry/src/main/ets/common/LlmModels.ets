@@ -56,6 +56,8 @@ export function providerTemplateById(id: string): LlmProviderTemplate | null {
 
 // 配置模型
 export class LlmConfig {
+  id: string = '';
+  displayName: string = '';
   providerId: string = '';
   baseUrl: string = '';
   apiKey: string = '';
@@ -72,6 +74,52 @@ export class LlmConfig {
     if (this.baseUrl.indexOf('127.0.0.1') >= 0 || this.baseUrl.indexOf('localhost') >= 0) return false;
     return true;
   }
+}
+
+// 单个模型条目（配置页管理多个模型时使用，含 API Key）
+export class LlmModelEntry {
+  id: string = '';
+  displayName: string = '';
+  providerId: string = '';
+  baseUrl: string = '';
+  apiKey: string = '';
+  model: string = '';
+  temperature: number = 0.7;
+  apiFormat: ApiFormat = 'openai';
+  maxTokens: number = 4096;
+
+  get configured(): boolean {
+    return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
+  }
+
+  get needsKey(): boolean {
+    if (this.baseUrl.indexOf('127.0.0.1') >= 0 || this.baseUrl.indexOf('localhost') >= 0) return false;
+    return true;
+  }
+}
+
+// 模型条目转请求配置
+export function entryToConfig(entry: LlmModelEntry): LlmConfig {
+  const config = new LlmConfig();
+  config.id = entry.id;
+  config.displayName = entry.displayName;
+  config.providerId = entry.providerId;
+  config.baseUrl = entry.baseUrl;
+  config.apiKey = entry.apiKey;
+  config.model = entry.model;
+  config.temperature = entry.temperature;
+  config.apiFormat = entry.apiFormat;
+  config.maxTokens = entry.maxTokens;
+  return config;
+}
+
+// 模型显示名称：优先使用用户自定义名称，否则用服务商 + 模型名
+export function modelDisplayName(entry: LlmModelEntry): string {
+  if (entry.displayName.trim().length > 0) return entry.displayName.trim();
+  const template = providerTemplateById(entry.providerId);
+  const providerName: string = template !== null ? template.name : '自定义';
+  if (entry.model.trim().length > 0) return providerName + ' · ' + entry.model.trim();
+  return providerName;
 }
 
 // 对话消息
@@ -145,6 +193,8 @@ export class AnthropicRequestBody {
 
 // 配置持久化结构（不含 API Key，Key 单独加密存储）
 export class StoredLlmConfig {
+  id: string;
+  displayName: string;
   providerId: string;
   baseUrl: string;
   model: string;
@@ -152,8 +202,10 @@ export class StoredLlmConfig {
   apiFormat: string;
   maxTokens: number;
 
-  constructor(providerId: string, baseUrl: string, model: string, temperature: number,
-    apiFormat: string = 'openai', maxTokens: number = 4096) {
+  constructor(id: string, displayName: string, providerId: string, baseUrl: string, model: string,
+    temperature: number, apiFormat: string = 'openai', maxTokens: number = 4096) {
+    this.id = id;
+    this.displayName = displayName;
     this.providerId = providerId;
     this.baseUrl = baseUrl;
     this.model = model;

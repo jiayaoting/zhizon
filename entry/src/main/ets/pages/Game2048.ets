@@ -63,6 +63,7 @@ export struct Game2048Page {
   @State floatScore: string = '';
   @State showFloatScore: boolean = false;
   @State newRecord: boolean = false;
+  @State showHelp: boolean = false;
   @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
@@ -732,6 +733,19 @@ export struct Game2048Page {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 使用说明
+      Row() {
+        Text('📖')
+          .fontSize(14)
+          .fontFamily(this.palette.fontSans)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.showHelp = true; })
+
       Row() {
         Text('🏆')
           .fontSize(14)
@@ -810,6 +824,61 @@ export struct Game2048Page {
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
     }
+  }
+
+  // ---- 使用说明 ----
+  @Builder
+  helpDialog() {
+    Stack() {
+      Column() {
+        Blank()
+        Column() {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showHelp = false; })
+          }
+          .width('100%')
+          .padding({ right: 4, top: 4 })
+
+          Scroll() {
+            Text('📖 2048\n\n' +
+              '【目标】\n滑动合并相同数字，最终合并出 2048 方块。\n\n' +
+              '【操作】\n' +
+              '• 方向键 / 滑动屏幕：向对应方向滑动，所有方块一起移动\n' +
+              '• 相同数字的方块碰撞后合并为它们的和\n' +
+              '• 每次移动后会在空白位置随机生成一个 2 或 4\n\n' +
+              '【规则】\n' +
+              '• 棋盘满格且无法继续合并时游戏结束\n' +
+              '• 合并出 2048 方块即为胜利，可继续挑战更高分\n' +
+              '• 不同难度影响初始方块数量和 4 的出现概率')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .lineHeight(22)
+              .width('100%')
+          }
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxHeight: 400 })
+          .padding({ left: 20, right: 20, bottom: 16 })
+        }
+        .width('100%')
+        .borderRadius(16)
+        .backgroundColor(this.palette.bgBase)
+        .padding({ bottom: Math.max(16, this.navBarHeight) })
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.35)')
+    .onClick(() => { this.showHelp = false; })
   }
 
   build() {
@@ -944,6 +1013,8 @@ export struct Game2048Page {
           .transition({ type: TransitionType.Insert, translate: { x: '-50%', y: -50 }, opacity: 0 })
           .animation({ duration: 800, curve: Curve.Friction })
       }
+
+      if (this.showHelp) { this.helpDialog() }
     }
     .width('100%')
     .height('100%')

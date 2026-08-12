@@ -43,6 +43,7 @@ export struct SnakePage {
   @State autoPaused: boolean = false;
   @State floatScore: string = '';
   @State showFloatScore: boolean = false;
+  @State showHelp: boolean = false;
   @State newRecord: boolean = false;
   @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
@@ -742,6 +743,19 @@ export struct SnakePage {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 使用说明
+      Row() {
+        Text('📖')
+          .fontSize(14)
+          .fontFamily(this.palette.fontSans)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.showHelp = true; })
+
       // 战绩
       Row() {
         Text('🏆')
@@ -806,6 +820,61 @@ export struct SnakePage {
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
     }
+  }
+
+  // ---- 使用说明 ----
+  @Builder
+  helpDialog() {
+    Stack() {
+      Column() {
+        Blank()
+        Column() {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showHelp = false; })
+          }
+          .width('100%')
+          .padding({ right: 4, top: 4 })
+
+          Scroll() {
+            Text('📖 贪吃蛇\n\n' +
+              '【目标】\n控制蛇移动吃掉食物，每吃一个蛇身增长，尽可能得高分。\n\n' +
+              '【操作】\n' +
+              '• 方向键 / 滑动屏幕：控制蛇的移动方向\n' +
+              '• 蛇不能掉头（不能直接反向移动）\n' +
+              '• 按空格键或点击暂停按钮可暂停/继续\n\n' +
+              '【规则】\n' +
+              '• 蛇头撞到墙壁或自己的身体则游戏结束\n' +
+              '• 每吃一个食物得 10 分，蛇身长度 +1\n' +
+              '• 难度越高，蛇的移动速度越快')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .lineHeight(22)
+              .width('100%')
+          }
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxHeight: 400 })
+          .padding({ left: 20, right: 20, bottom: 16 })
+        }
+        .width('100%')
+        .borderRadius(16)
+        .backgroundColor(this.palette.bgBase)
+        .padding({ bottom: Math.max(16, this.navBarHeight) })
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.35)')
+    .onClick(() => { this.showHelp = false; })
   }
 
   build() {
@@ -957,6 +1026,8 @@ export struct SnakePage {
           .transition({ type: TransitionType.Insert, translate: { x: '-50%', y: -50 }, opacity: 0 })
           .animation({ duration: 800, curve: Curve.Friction })
       }
+
+      if (this.showHelp) { this.helpDialog() }
     }
     .width('100%')
     .height('100%')

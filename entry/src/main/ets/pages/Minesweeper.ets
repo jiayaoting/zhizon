@@ -50,8 +50,9 @@ export struct MinesweeperPage {
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
   @State isGameOver: boolean = false;
-  @State isWin: boolean = false;
+  @State showHelp: boolean = false;
   @State isPaused: boolean = false;
+  @State isWin: boolean = false;
   @State autoPaused: boolean = false;
   @State flagMode: boolean = false;
   @State board: MineCell[][] = [];
@@ -555,6 +556,19 @@ export struct MinesweeperPage {
   @Builder
   actionsBuilder() {
     Row({ space: 12 }) {
+      // 使用说明
+      Row() {
+        Text('📖')
+          .fontSize(14)
+          .fontFamily(this.palette.fontSans)
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface2)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => { this.showHelp = true; })
+
       Row() {
         Text('🏆')
           .fontSize(14)
@@ -795,6 +809,62 @@ export struct MinesweeperPage {
     }
   }
 
+  // ---- 使用说明 ----
+  @Builder
+  helpDialog() {
+    Stack() {
+      Column() {
+        Blank()
+        Column() {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showHelp = false; })
+          }
+          .width('100%')
+          .padding({ right: 4, top: 4 })
+
+          Scroll() {
+            Text('📖 扫雷\n\n' +
+              '【目标】\n翻开所有非地雷的格子，找出所有地雷的位置。\n\n' +
+              '【操作】\n' +
+              '• 点击格子：翻开格子\n' +
+              '• 长按 / 标记按钮：标记/取消标记地雷（🚩）\n' +
+              '• 翻开的数字表示周围 8 格中地雷的数量\n\n' +
+              '【规则】\n' +
+              '• 点到地雷则游戏结束\n' +
+              '• 数字格表明周围地雷数，帮助推理安全格\n' +
+              '• 标记所有地雷并翻开所有安全格即为胜利\n' +
+              '• 首次点击必定安全（不会踩雷）')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .lineHeight(22)
+              .width('100%')
+          }
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxHeight: 400 })
+          .padding({ left: 20, right: 20, bottom: 16 })
+        }
+        .width('100%')
+        .borderRadius(16)
+        .backgroundColor(this.palette.bgBase)
+        .padding({ bottom: Math.max(16, this.navBarHeight) })
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.35)')
+    .onClick(() => { this.showHelp = false; })
+  }
+
   build() {
     Stack() {
       Column() {
@@ -902,6 +972,8 @@ export struct MinesweeperPage {
         if (event.type !== KeyType.Down) return;
         this.handleKey(event.keyCode);
       })
+
+      if (this.showHelp) { this.helpDialog() }
     }
     .width('100%')
     .height('100%')

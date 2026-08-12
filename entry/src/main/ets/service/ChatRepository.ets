@@ -1,63 +1,163 @@
-// 智子 - AI 对话仓库（API Key 加密存取 + 会话历史持久化）
+// 智子 - AI 对话仓库（多模型配置 + API Key 加密存取 + 会话历史持久化）
 import { DataRepository } from './DataRepository';
 import { CryptoHelper } from '../common/CryptoHelper';
-import { ApiFormat, ChatMessage, LlmConfig, StoredChatMessage, StoredLlmConfig } from '../common/LlmModels';
+import { ApiFormat, ChatMessage, LlmConfig, LlmModelEntry, StoredChatMessage, StoredLlmConfig,
+  entryToConfig } from '../common/LlmModels';
 
-const KEY_CONFIG = 'llmConfig';
-const KEY_API_KEY = 'llmApiKey';
+const KEY_MODELS = 'llmModels';
+const KEY_MODEL_KEYS = 'llmModelKeys';
+const KEY_ACTIVE_MODEL = 'llmActiveModelId';
 const KEY_HISTORY = 'llmChatHistory';
+// 旧版单配置键（迁移用）
+const KEY_LEGACY_CONFIG = 'llmConfig';
+const KEY_LEGACY_API_KEY = 'llmApiKey';
 
 export class ChatRepository {
-  // ---- 配置 ----
+  // ---- 模型列表 ----
 
-  static async loadConfig(): Promise<LlmConfig> {
-    const config = new LlmConfig();
+  // 加载全部模型（自动解密各自 API Key）
+  static async loadModels(): Promise<LlmModelEntry[]> {
     try {
-      const raw: string = await DataRepository.getSetting(KEY_CONFIG, '');
-      if (raw.length > 0) {
-        const parsed: Record<string, Object> = JSON.parse(raw) as Record<string, Object>;
-        config.providerId = typeof parsed.providerId === 'string' ? parsed.providerId : '';
-        config.baseUrl = typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '';
-        config.model = typeof parsed.model === 'string' ? parsed.model : '';
-        if (typeof parsed.temperature === 'number') config.temperature = parsed.temperature as number;
-        if (typeof parsed.apiFormat === 'string') config.apiFormat = parsed.apiFormat as ApiFormat;
-        if (typeof parsed.maxTokens === 'number') config.maxTokens = parsed.maxTokens as number;
+      const raw: string = await DataRepository.getSetting(KEY_MODELS, '');
+      if (raw.length === 0) {
+        // 首次升级：尝试迁移旧版单配置
+        await ChatRepository.migrateLegacyConfig();
+        const migrated: string = await DataRepository.getSetting(KEY_MODELS, '');
+        if (migrated.length === 0) return [];
+        return await ChatRepository.parseModels(migrated);
       }
-      config.apiKey = await ChatRepository.loadApiKey();
+      return await ChatRepository.parseModels(raw);
     } catch (e) {
+      return [];
     }
-    return config;
   }
 
-  static async saveConfig(config: LlmConfig): Promise<void> {
-    const stored: StoredLlmConfig = new StoredLlmConfig(config.providerId, config.baseUrl, config.model,
-      config.temperature, config.apiFormat, config.maxTokens);
-    await DataRepository.setSetting(KEY_CONFIG, JSON.stringify(stored));
-    await ChatRepository.saveApiKey(config.apiKey);
+  // 保存全部模型（API Key 各自加密存储）
+  static async saveModels(models: LlmModelEntry[]): Promise<void> {
+    const stored: StoredLlmConfig[] = [];
+    const keys: Record<string, string> = {};
+    for (let i: number = 0; i < models.length; i++) {
+      const m: LlmModelEntry = models[i];
+      stored.push(new StoredLlmConfig(m.id, m.displayName, m.providerId, m.baseUrl, m.model,
+        m.temperature, m.apiFormat, m.maxTokens));
+      if (m.apiKey.trim().length > 0) {
+        keys[m.id] = await CryptoHelper.encrypt(m.apiKey.trim());
+      } else {
+        keys[m.id] = '';
+      }
+    }
+    await DataRepository.setSetting(KEY_MODELS, JSON.stringify(stored));
+    await DataRepository.setSetting(KEY_MODEL_KEYS, JSON.stringify(keys));
+    // 迁移完成后清理旧键，避免重复迁移
+    await DataRepository.setSetting(KEY_LEGACY_CONFIG, '');
+    await DataRepository.setSetting(KEY_LEGACY_API_KEY, '');
   }
 
-  static async clearConfig(): Promise<void> {
-    await DataRepository.setSetting(KEY_CONFIG, '');
-    await DataRepository.setSetting(KEY_API_KEY, '');
+  // 删除指定模型；若删除的是当前激活模型，自动切换到列表第一个
+  static async deleteModel(id: string): Promise<void> {
+    const models: LlmModelEntry[] = await ChatRepository.loadModels();
+    const filtered: LlmModelEntry[] = [];
+    for (let i: number = 0; i < models.length; i++) {
+      if (models[i].id !== id) filtered.push(models[i]);
+    }
+    await ChatRepository.saveModels(filtered);
+    const activeId: string = await ChatRepository.loadActiveModelId();
+    if (activeId === id) {
+      if (filtered.length > 0) {
+        await ChatRepository.setActiveModelId(filtered[0].id);
+      } else {
+        await ChatRepository.setActiveModelId('');
+      }
+    }
   }
 
-  private static async loadApiKey(): Promise<string> {
+  // 生成新模型 id
+  static newModelId(): string {
+    return 'm' + Date.now().toString();
+  }
+
+  // ---- 当前激活模型 ----
+
+  static async loadActiveModelId(): Promise<string> {
     try {
-      const token: string = await DataRepository.getSetting(KEY_API_KEY, '');
-      if (token.length === 0) return '';
-      return await CryptoHelper.decrypt(token);
+      return await DataRepository.getSetting(KEY_ACTIVE_MODEL, '');
     } catch (e) {
       return '';
     }
   }
 
-  private static async saveApiKey(apiKey: string): Promise<void> {
-    if (!apiKey.trim()) {
-      await DataRepository.setSetting(KEY_API_KEY, '');
-      return;
+  static async setActiveModelId(id: string): Promise<void> {
+    await DataRepository.setSetting(KEY_ACTIVE_MODEL, id);
+  }
+
+  // 加载当前激活模型的完整配置；无配置返回 null
+  static async loadActiveConfig(): Promise<LlmConfig | null> {
+    const models: LlmModelEntry[] = await ChatRepository.loadModels();
+    if (models.length === 0) return null;
+    const activeId: string = await ChatRepository.loadActiveModelId();
+    for (let i: number = 0; i < models.length; i++) {
+      if (models[i].id === activeId) return entryToConfig(models[i]);
     }
-    const encrypted: string = await CryptoHelper.encrypt(apiKey.trim());
-    await DataRepository.setSetting(KEY_API_KEY, encrypted);
+    return entryToConfig(models[0]);
+  }
+
+  // ---- 内部 ----
+
+  private static async parseModels(raw: string): Promise<LlmModelEntry[]> {
+    const parsed: Array<Record<string, Object>> = JSON.parse(raw) as Array<Record<string, Object>>;
+    const keysRaw: string = await DataRepository.getSetting(KEY_MODEL_KEYS, '');
+    const keys: Record<string, string> = keysRaw.length > 0 ? JSON.parse(keysRaw) as Record<string, string> : {};
+    const models: LlmModelEntry[] = [];
+    for (let i: number = 0; i < parsed.length; i++) {
+      const item: Record<string, Object> = parsed[i];
+      const entry = new LlmModelEntry();
+      entry.id = typeof item.id === 'string' ? item.id : '';
+      entry.displayName = typeof item.displayName === 'string' ? item.displayName : '';
+      entry.providerId = typeof item.providerId === 'string' ? item.providerId : '';
+      entry.baseUrl = typeof item.baseUrl === 'string' ? item.baseUrl : '';
+      entry.model = typeof item.model === 'string' ? item.model : '';
+      if (typeof item.temperature === 'number') entry.temperature = item.temperature as number;
+      if (typeof item.apiFormat === 'string') entry.apiFormat = item.apiFormat as ApiFormat;
+      if (typeof item.maxTokens === 'number') entry.maxTokens = item.maxTokens as number;
+      const enc: string = keys[entry.id];
+      if (enc !== undefined && enc.length > 0) {
+        try {
+          entry.apiKey = await CryptoHelper.decrypt(enc);
+        } catch (e) {
+          entry.apiKey = '';
+        }
+      }
+      if (entry.id.length > 0) models.push(entry);
+    }
+    return models;
+  }
+
+  // 旧版单配置 → 多模型格式迁移
+  private static async migrateLegacyConfig(): Promise<void> {
+    try {
+      const raw: string = await DataRepository.getSetting(KEY_LEGACY_CONFIG, '');
+      if (raw.length === 0) return;
+      const parsed: Record<string, Object> = JSON.parse(raw) as Record<string, Object>;
+      const entry = new LlmModelEntry();
+      entry.id = ChatRepository.newModelId();
+      entry.providerId = typeof parsed.providerId === 'string' ? parsed.providerId : '';
+      entry.baseUrl = typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '';
+      entry.model = typeof parsed.model === 'string' ? parsed.model : '';
+      if (typeof parsed.temperature === 'number') entry.temperature = parsed.temperature as number;
+      if (typeof parsed.apiFormat === 'string') entry.apiFormat = parsed.apiFormat as ApiFormat;
+      if (typeof parsed.maxTokens === 'number') entry.maxTokens = parsed.maxTokens as number;
+      const token: string = await DataRepository.getSetting(KEY_LEGACY_API_KEY, '');
+      if (token.length > 0) {
+        try {
+          entry.apiKey = await CryptoHelper.decrypt(token);
+        } catch (e) {
+          entry.apiKey = '';
+        }
+      }
+      await ChatRepository.saveModels([entry]);
+      await ChatRepository.setActiveModelId(entry.id);
+    } catch (e) {
+    }
   }
 
   // ---- 会话历史 ----

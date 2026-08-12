@@ -5,7 +5,6 @@
     "pages/Game2048",
     "pages/Snake",
     "pages/Minesweeper",
-    "pages/Breakout",
     "pages/GameHistory",
     "pages/LegalDoc",
     "pages/Sudoku",

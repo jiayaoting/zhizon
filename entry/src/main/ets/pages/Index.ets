@@ -73,13 +73,6 @@ export struct IndexPage {
       color: this.palette.purple
     },
     {
-      gameId: GameId.BREAKOUT,
-      name: '打砖块',
-      icon: '🎱',
-      desc: '弹球击碎所有砖块',
-      color: this.palette.danger
-    },
-    {
       gameId: GameId.SUDOKU,
       name: '数独',
       icon: '🧩',

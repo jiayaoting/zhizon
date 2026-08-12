@@ -4,7 +4,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
-import { ChatMessage, LlmConfig, LlmResult, providerTemplateById } from '../common/LlmModels';
+import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName } from '../common/LlmModels';
 
 @Entry
 @Component
@@ -21,6 +21,12 @@ struct Chat {
   @State streamingContent: string = '';
   @State streaming: boolean = false;
 
+  // 模型切换
+  @State models: LlmModelEntry[] = [];
+  @State activeModelId: string = '';
+  @State showModelPicker: boolean = false;
+  private activeConfig: LlmConfig | null = null;
+
   // 搜索
   @State showSearch: boolean = false;
   @State searchQuery: string = '';
@@ -32,25 +38,49 @@ struct Chat {
     this.load();
   }
 
+  onPageShow(): void {
+    this.refreshModels();
+  }
+
   private async load(): Promise<void> {
-    const config: LlmConfig = await ChatRepository.loadConfig();
-    this.configReady = config.configured;
-    if (config.configured) {
-      const templateName: string = this.providerName(config.providerId);
-      this.configHint = templateName + ' · ' + config.model;
-    } else {
-      this.configHint = '请先完成配置';
-    }
     this.messages = await ChatRepository.loadHistory();
     if (this.messages.length === 0) {
       this.messages.push(new ChatMessage('assistant',
         '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。'));
     }
+    await this.refreshModels();
   }
 
-  private providerName(providerId: string): string {
-    const template = providerTemplateById(providerId);
-    return template !== null ? template.name : '自定义';
+  private async refreshModels(): Promise<void> {
+    this.models = await ChatRepository.loadModels();
+    this.activeModelId = await ChatRepository.loadActiveModelId();
+    this.activeConfig = await ChatRepository.loadActiveConfig();
+    this.configReady = this.activeConfig !== null && this.activeConfig.configured;
+    if (this.configReady && this.activeConfig !== null) {
+      this.configHint = modelDisplayName(this.activeConfig);
+    } else {
+      this.configHint = '请先完成配置';
+    }
+  }
+
+  private currentModelName(): string {
+    if (this.activeConfig !== null && this.activeConfig.displayName.trim().length > 0) {
+      return this.activeConfig.displayName.trim();
+    }
+    if (this.activeConfig !== null && this.activeConfig.model.trim().length > 0) {
+      return this.activeConfig.model.trim();
+    }
+    return '未选择模型';
+  }
+
+  private async selectModel(index: number): Promise<void> {
+    const m: LlmModelEntry = this.models[index];
+    await ChatRepository.setActiveModelId(m.id);
+    this.activeModelId = m.id;
+    this.activeConfig = await ChatRepository.loadActiveConfig();
+    this.configReady = this.activeConfig !== null && this.activeConfig.configured;
+    this.configHint = modelDisplayName(m);
+    this.showModelPicker = false;
   }
 
   private openConfig(): void {
@@ -86,8 +116,8 @@ struct Chat {
   private async send(): Promise<void> {
     const text: string = this.inputText.trim();
     if (text.length === 0 || this.sending || this.streaming) return;
-    const config: LlmConfig = await ChatRepository.loadConfig();
-    if (!config.configured) {
+    const config: LlmConfig | null = this.activeConfig;
+    if (config === null || !config.configured) {
       promptAction.showToast({ message: '请先配置大模型 API' });
       return;
     }
@@ -358,6 +388,86 @@ struct Chat {
     .width('100%')
   }
 
+  @Builder
+  modelPicker() {
+    Column() {
+      Row() {
+        Row()
+          .width(36)
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(this.palette.borderSubtle)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 10, bottom: 4 })
+
+      Row() {
+        Text('选择模型')
+          .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Blank()
+        Text('✕')
+          .fontSize(16)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .padding(8)
+          .onClick(() => { this.showModelPicker = false; })
+      }
+      .width('100%')
+      .padding({ left: 4, right: 4, bottom: 8 })
+
+      Scroll() {
+        Column({ space: 4 }) {
+          ForEach(this.models, (m: LlmModelEntry, index: number) => {
+            Row({ space: 10 }) {
+              Column({ space: 2 }) {
+                Text(modelDisplayName(m))
+                  .fontSize(this.palette.fsSm)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(m.id === this.activeModelId ? FontWeight.Bold : FontWeight.Medium)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(m.model)
+                  .fontSize(10)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              if (m.id === this.activeModelId) {
+                Text('✓')
+                  .fontSize(16)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.primary)
+                  .fontWeight(FontWeight.Bold)
+              }
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(8)
+            .backgroundColor(m.id === this.activeModelId ? this.palette.primaryDim : this.palette.bgSurface)
+            .border({ width: m.id === this.activeModelId ? 1 : 0,
+              color: m.id === this.activeModelId ? this.palette.primary : Color.Transparent })
+            .onClick(() => { this.selectModel(index); })
+          }, (m: LlmModelEntry) => m.id)
+        }
+        .width('100%')
+      }
+      .scrollBar(BarState.Off)
+      .constraintSize({ maxHeight: 360 })
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
+    .backgroundColor(this.palette.bgBase)
+    .borderRadius({ topLeft: 16, topRight: 16 })
+  }
+
   build() {
     Column() {
       TopBar({
@@ -459,6 +569,34 @@ struct Chat {
             .border({ width: 1, color: this.palette.borderSubtle })
             .onClick(() => { this.openConfig(); })
           }
+          // 当前模型切换
+          Row({ space: 6 }) {
+            Text('🤖')
+              .fontSize(12)
+              .fontFamily(this.palette.fontSans)
+            Text(this.currentModelName())
+              .fontSize(11)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text('▾')
+              .fontSize(10)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+          }
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .borderRadius(8)
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: 1, color: this.palette.borderSubtle })
+          .onClick(() => {
+            if (this.models.length > 0) {
+              this.showModelPicker = true;
+            } else {
+              promptAction.showToast({ message: '请先配置模型' });
+            }
+          })
           this.inputBar()
         }
         .width('100%')
@@ -468,5 +606,22 @@ struct Chat {
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bgBase)
+
+    // 模型选择弹层
+    if (this.showModelPicker) {
+      Stack() {
+        Column() {
+          Blank()
+          this.modelPicker()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.showModelPicker = false; })
+    }
   }
 }

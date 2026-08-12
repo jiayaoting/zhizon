@@ -43,7 +43,6 @@ export enum GameId {
   GAME_2048 = 'GAME_2048',
   SNAKE = 'SNAKE',
   MINESWEEPER = 'MINESWEEPER',
-  BREAKOUT = 'BREAKOUT',
   SUDOKU = 'SUDOKU'
 }
 
@@ -112,7 +111,6 @@ export const GAME_REGISTRY: GameRegistration[] = [
   new GameRegistration(GameId.GAME_2048, 'pages/Game2048', '2048'),
   new GameRegistration(GameId.SNAKE, 'pages/Snake', '贪吃蛇'),
   new GameRegistration(GameId.MINESWEEPER, 'pages/Minesweeper', '扫雷'),
-  new GameRegistration(GameId.BREAKOUT, 'pages/Breakout', '打砖块'),
   new GameRegistration(GameId.SUDOKU, 'pages/Sudoku', '数独')
 ];
 
@@ -126,7 +124,6 @@ function gameIdFromString(value: string): GameId | null {
   if (value === GameId.GAME_2048) return GameId.GAME_2048;
   if (value === GameId.SNAKE) return GameId.SNAKE;
   if (value === GameId.MINESWEEPER) return GameId.MINESWEEPER;
-  if (value === GameId.BREAKOUT) return GameId.BREAKOUT;
   if (value === GameId.SUDOKU) return GameId.SUDOKU;
   return null;
 }
