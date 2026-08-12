@@ -163,9 +163,22 @@ export struct MinesweeperPage {
     return count;
   }
 
-  // 强制刷新棋盘：@Observed 对象属性修改后重建数组引用，确保 UI 重新渲染
+  // 强制刷新棋盘：重建全新对象数组，配合 ForEach 状态化 key 确保 UI 一定重新渲染
   private refreshBoard(): void {
-    const copy: MineCell[][] = this.board.concat([]);
+    const copy: MineCell[][] = [];
+    for (let r: number = 0; r < this.board.length; r++) {
+      const row: MineCell[] = [];
+      for (let c: number = 0; c < this.board[r].length; c++) {
+        const src: MineCell = this.board[r][c];
+        const n = new MineCell();
+        n.isMine = src.isMine;
+        n.adjacent = src.adjacent;
+        n.revealed = src.revealed;
+        n.flagged = src.flagged;
+        row.push(n);
+      }
+      copy.push(row);
+    }
     this.board = copy;
   }
 
@@ -432,7 +445,8 @@ export struct MinesweeperPage {
               LongPressGesture({ repeat: false, duration: 500 })
                 .onAction(() => { this.toggleFlag(rowIdx, colIdx); })
             )
-          }, (cell: MineCell, colIdx: number) => colIdx.toString())
+          }, (cell: MineCell, colIdx: number) =>
+            colIdx.toString() + '_' + (cell.revealed ? 'r' : '') + (cell.flagged ? 'f' : ''))
         }
         .layoutWeight(1)
       }, (row: MineCell[], rowIdx: number) => rowIdx.toString())
