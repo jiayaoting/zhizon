@@ -403,12 +403,14 @@ export struct MinesweeperPage {
             .layoutWeight(1)
             .aspectRatio(1)
             .borderRadius(2)
-            .border({ width: this.cursorR === rowIdx && this.cursorC === colIdx ? 2 : 0.5,
+            .border({ width: this.cursorR === rowIdx && this.cursorC === colIdx ? 2 : 1,
               color: this.cursorR === rowIdx && this.cursorC === colIdx ? this.palette.primary :
-                (cell.revealed ? this.palette.borderSubtle : this.palette.borderDefault) })
+                (cell.revealed ? this.palette.borderSubtle :
+                  (this.palette.isDark ? '#3D4A63' : '#AEB8C6')) })
             .backgroundColor(this.cellColor(cell))
-            .shadow(cell.revealed ? { radius: 0 } :
-              { radius: 2, color: 'rgba(0,0,0,0.28)', offsetX: 0, offsetY: 1 })
+            .shadow({ radius: cell.revealed ? 0 : 3,
+              color: this.palette.isDark ? 'rgba(0,0,0,0.50)' : 'rgba(30,41,59,0.28)',
+              offsetX: 0, offsetY: cell.revealed ? 0 : 2 })
             .justifyContent(FlexAlign.Center)
             .onClick(() => {
               if (this.flagMode) {
@@ -435,13 +437,13 @@ export struct MinesweeperPage {
   }
 
   private cellColor(cell: MineCell): string {
-    if (!cell.revealed) {
-      // 未翻开：凸起按钮效果，使用更亮的表面色
-      if (cell.flagged) return this.palette.primaryDim;
-      return this.palette.bgSurface2;
+    if (cell.revealed) {
+      // 已翻开：暗色凹陷，与棋盘背景融为一体
+      return this.palette.isDark ? '#0E1420' : '#C7CFDB';
     }
-    // 已翻开：平坦凹陷效果
-    return this.palette.bgSurface;
+    if (cell.flagged) return this.palette.primaryDim;
+    // 未翻开：明亮凸起，与翻开格子形成强烈明暗对比
+    return this.palette.isDark ? '#2E3A52' : '#FFFFFF';
   }
 
   private cellText(cell: MineCell): string {
