@@ -5,9 +5,11 @@ import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorT
   ThemeManager, ThemeMode, PreferenceMutationResult, PreferenceFailureReason } from '../common/Theme';
 import { BackgroundDisplayState } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
+import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
 import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
 import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { LegalDocRouteParams } from '../common/Navigation';
+import { AvatarOption, AVATAR_OPTIONS, CUSTOM_AVATAR_ID, avatarLabel } from '../common/AvatarOptions';
 
 import { TopBar } from '../components/TopBar';
 
@@ -78,7 +80,10 @@ export struct SettingsPage {
   @State showFontSizeSheet: boolean = false;
   @State showFontFamilySheet: boolean = false;
   @State showAppIconSheet: boolean = false;
+  @State showAvatarSheet: boolean = false;
   @State appIconId: string = 'liquid';
+  @State avatarId: string = 'liquid';
+  @State avatarUri: string = '';
   // 安全
   @State biometricUnlock: boolean = false;
   @State autoLock: string = '5 分钟';
@@ -145,6 +150,12 @@ export struct SettingsPage {
       this.appIconId = await DataRepository.getSetting('appIconId', 'liquid');
       if (!this.isSupportedAppIcon(this.appIconId)) {
         this.appIconId = 'liquid';
+      }
+
+      this.avatarId = await DataRepository.getSetting('avatarId', 'liquid');
+      this.avatarUri = await DataRepository.getSetting('avatarUri', '');
+      if (this.avatarId !== CUSTOM_AVATAR_ID && !this.isSupportedAvatar(this.avatarId)) {
+        this.avatarId = 'liquid';
       }
 
       // 加载背景图配置
@@ -358,6 +369,71 @@ export struct SettingsPage {
       url: 'pages/LegalDoc',
       params: new LegalDocRouteParams(type)
     });
+  }
+
+  // ---- 头像 ----
+  private isSupportedAvatar(id: string): boolean {
+    for (let i: number = 0; i < AVATAR_OPTIONS.length; i++) {
+      if (AVATAR_OPTIONS[i].id === id) return true;
+    }
+    return false;
+  }
+
+  private avatarLabelText(): string {
+    if (this.avatarId === CUSTOM_AVATAR_ID) return '自定义图片';
+    return avatarLabel(this.avatarId);
+  }
+
+  private openAvatarPicker(): void {
+    this.showAvatarSheet = true;
+  }
+
+  private async pickAvatar(id: string): Promise<void> {
+    this.showAvatarSheet = false;
+    if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
+      BackgroundImporter.removeSandboxFile(this.avatarUri);
+    }
+    this.avatarId = id;
+    this.avatarUri = '';
+    await DataRepository.setSetting('avatarId', id);
+    await DataRepository.setSetting('avatarUri', '');
+    this.toast(`头像：${this.avatarLabelText()}`);
+  }
+
+  private async pickCustomAvatar(): Promise<void> {
+    const picked: ImagePickResult = await PickerAdapter.pickSingleImage();
+    if (picked.state === ImagePickState.CANCELLED) return;
+    if (picked.state === ImagePickState.FAILED) {
+      this.toast('选择头像失败');
+      return;
+    }
+    const context = getContext(this);
+    const imported: BackgroundImportResult = await BackgroundImporter.importToSandbox(context, picked.uri);
+    if (!imported.success) {
+      this.toast('无法读取所选图片，请重新选择');
+      return;
+    }
+    if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
+      BackgroundImporter.removeSandboxFile(this.avatarUri);
+    }
+    this.showAvatarSheet = false;
+    this.avatarId = CUSTOM_AVATAR_ID;
+    this.avatarUri = imported.sandboxUri;
+    await DataRepository.setSetting('avatarId', CUSTOM_AVATAR_ID);
+    await DataRepository.setSetting('avatarUri', imported.sandboxUri);
+    this.toast('头像已更新为自定义图片');
+  }
+
+  private async clearCustomAvatar(): Promise<void> {
+    if (this.avatarUri.length > 0) {
+      BackgroundImporter.removeSandboxFile(this.avatarUri);
+    }
+    this.showAvatarSheet = false;
+    this.avatarId = 'liquid';
+    this.avatarUri = '';
+    await DataRepository.setSetting('avatarId', 'liquid');
+    await DataRepository.setSetting('avatarUri', '');
+    this.toast('头像已恢复默认');
   }
 
   @Builder valueRow(label: string, value: string, onClick?: () => void) {
@@ -826,6 +902,177 @@ export struct SettingsPage {
     .justifyContent(FlexAlign.End)
   }
 
+  // 头像选择弹层
+  @Builder
+  avatarSheet() {
+    Column() {
+      // 遮罩
+      Column()
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .onClick(() => { this.showAvatarSheet = false; })
+        .transition({ type: TransitionType.All, opacity: 0 })
+
+      // 底部面板
+      Column({ space: 4 }) {
+        Text('头像')
+          .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Text('选择头像样式，或从相册选择自定义图片')
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .margin({ bottom: 8 })
+
+        Scroll() {
+          Column({ space: 8 }) {
+            // 自定义图片入口
+            Row({ space: 12 }) {
+              Stack() {
+                if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
+                  Image(this.avatarUri)
+                    .width(48)
+                    .height(48)
+                    .borderRadius(24)
+                    .objectFit(ImageFit.Cover)
+                    .border({
+                      width: 2,
+                      color: this.palette.primary
+                    })
+                } else {
+                  Circle({ width: 48, height: 48 })
+                    .fill(this.palette.bgSurface2)
+                    .border({
+                      width: this.avatarId === CUSTOM_AVATAR_ID ? 2 : 1,
+                      color: this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.borderSubtle
+                    })
+                  Text('＋')
+                    .fontSize(24)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.primary)
+                    .fontWeight(FontWeight.Bold)
+                }
+              }
+              Column({ space: 2 }) {
+                Text('自定义图片')
+                  .fontSize(this.palette.fsSm)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                Text('从相册选择一张图片作为头像')
+                  .fontSize(11)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.textTertiary)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              if (this.avatarId === CUSTOM_AVATAR_ID) {
+                Text('✓')
+                  .fontSize(14)
+                  .fontFamily(this.palette.fontSans)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.palette.primary)
+              }
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+            .borderRadius(10)
+            .backgroundColor(this.avatarId === CUSTOM_AVATAR_ID ?
+              this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+            .onClick(() => { this.pickCustomAvatar(); })
+
+            ForEach(AVATAR_OPTIONS, (option: AvatarOption) => {
+              Row({ space: 12 }) {
+                Stack() {
+                  Circle({ width: 48, height: 48 })
+                    .fill(LinearGradient({
+                      angle: 135,
+                      colors: [[option.colors[0], 0.0], [option.colors[1], 1.0]]
+                    }))
+                    .border({
+                      width: this.avatarId === option.id ? 2 : 1,
+                      color: this.avatarId === option.id ? this.palette.primary : this.palette.borderSubtle
+                    })
+                  Text('Z')
+                    .fontSize(20)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(Color.White)
+                    .fontWeight(FontWeight.Bold)
+                }
+                Column({ space: 2 }) {
+                  Text(option.label)
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.avatarId === option.id ? this.palette.primary : this.palette.textPrimary)
+                    .fontWeight(FontWeight.Medium)
+                  Text(option.style)
+                    .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.avatarId === option.id ? this.palette.primary : this.palette.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                if (this.avatarId === option.id) {
+                  Text('✓')
+                    .fontSize(14)
+                    .fontFamily(this.palette.fontSans)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(this.palette.primary)
+                }
+              }
+              .width('100%')
+              .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+              .borderRadius(10)
+              .backgroundColor(this.avatarId === option.id ?
+                this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+              .onClick(() => { this.pickAvatar(option.id); })
+            }, (option: AvatarOption) => option.id)
+
+            if (this.avatarId === CUSTOM_AVATAR_ID) {
+              Text('恢复默认')
+                .fontSize(this.palette.fsBase)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.danger)
+                .padding({ top: 8, bottom: 4 })
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .onClick(() => { this.clearCustomAvatar(); })
+            }
+          }
+          .width('100%')
+          .padding({ right: 2 })
+        }
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+
+        Text('取消')
+          .fontSize(this.palette.fsBase)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textSecondary)
+          .padding({ top: 12, bottom: 4 })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .onClick(() => { this.showAvatarSheet = false; })
+      }
+      .width('100%')
+      .height('70%')
+      .padding(20)
+      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
+      .borderRadius({ topLeft: 24, topRight: 24 })
+      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
+      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.End)
+  }
+
   @Builder actionsBuilder() {}
 
   build() {
@@ -902,6 +1149,9 @@ export struct SettingsPage {
                 this.valueRow('应用图标', this.appIconLabel(this.appIconId), () => {
                   this.openAppIconPicker();
                 })
+                this.valueRow('头像', this.avatarLabelText(), () => {
+                  this.openAvatarPicker();
+                })
               }
               .width('100%')
             }
@@ -968,6 +1218,9 @@ export struct SettingsPage {
       }
       if (this.showAppIconSheet) {
         this.appIconSheet()
+      }
+      if (this.showAvatarSheet) {
+        this.avatarSheet()
       }
     }
     .width('100%')

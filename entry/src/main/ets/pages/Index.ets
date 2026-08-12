@@ -5,6 +5,7 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
+import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
   GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
 import { PageKey } from '../common/Navigation';
@@ -37,6 +38,8 @@ export struct IndexPage {
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @State scoreRows: ScoreRow[] = [];
   @State loading: boolean = true;
+  @State avatarId: string = 'liquid';
+  @State avatarUri: string = '';
   onNavigate: (key: string) => void = () => {};
 
   // 首页游戏入口
@@ -81,11 +84,18 @@ export struct IndexPage {
   aboutToAppear() {
     this.currentTime = this.formatNow();
     this.greeting = this.getGreeting();
+    this.loadAvatar();
     this.loadScores();
   }
 
   aboutToDisappear(): void {
     // 单次拉取，无持久资源需要释放
+  }
+
+  private async loadAvatar(): Promise<void> {
+    const id = await DataRepository.getSetting('avatarId', 'liquid');
+    this.avatarId = id;
+    this.avatarUri = await DataRepository.getSetting('avatarUri', '');
   }
 
   private async loadScores() {
@@ -160,23 +170,35 @@ export struct IndexPage {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      // 用户头像（液态渐变风格，与应用图标呼应）
+      // 用户头像（可在设置中修改样式或选择自定义图片）
       Stack() {
-        Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
-          .fill(LinearGradient({
-            angle: 135,
-            colors: [[this.palette.primary, 0.0], [this.palette.purple, 1.0]]
-          }))
-          .shadow({ radius: 12, color: this.palette.primary + '55', offsetX: 0, offsetY: 4 })
-        Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
-          .fill(Color.Transparent)
-          .border({ width: 1.5, color: '#80FFFFFF' })
-        Text('Z')
-          .fontSize(this.isSm ? 16 : 18)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(Color.White)
-          .fontWeight(FontWeight.Bold)
+        if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
+          Image(this.avatarUri)
+            .width(this.isSm ? 40 : 44)
+            .height(this.isSm ? 40 : 44)
+            .borderRadius(this.isSm ? 20 : 22)
+            .objectFit(ImageFit.Cover)
+            .border({ width: 1.5, color: '#80FFFFFF' })
+        } else {
+          Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
+            .fill(LinearGradient({
+              angle: 135,
+              colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
+            }))
+            .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
+          Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
+            .fill(Color.Transparent)
+            .border({ width: 1.5, color: '#80FFFFFF' })
+          Text('Z')
+            .fontSize(this.isSm ? 16 : 18)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(Color.White)
+            .fontWeight(FontWeight.Bold)
+        }
       }
+      .onClick(() => {
+        this.onNavigate('Settings');
+      })
     }
     .width('100%')
     .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8 })
