@@ -107,6 +107,16 @@ export struct IndexPage {
     }
   }
 
+  // 分数位数越多字号越小，避免超出卡片宽度
+  private scoreFontSize(score: number): number {
+    const len: number = score.toString().length;
+    if (len >= 7) return 11;
+    if (len >= 6) return 13;
+    if (len >= 5) return 16;
+    if (len >= 4) return 19;
+    return 22;
+  }
+
   private getGreeting(): string {
     const h = new Date().getHours();
     if (h < 6) return '夜深了';
@@ -284,10 +294,12 @@ export struct IndexPage {
               .fontColor(this.palette.textSecondary)
               .fontWeight(FontWeight.Medium)
             Text(`${row.best}`)
-              .fontSize(22)
+              .fontSize(this.scoreFontSize(row.best))
               .fontColor(row.color)
               .fontWeight(FontWeight.Bold)
               .fontFamily(this.palette.fontMono)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
             Text('最高分')
               .fontSize(9)
               .fontFamily(this.palette.fontSans)
