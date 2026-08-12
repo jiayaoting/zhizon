@@ -160,15 +160,21 @@ export struct IndexPage {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      // 用户头像
+      // 用户头像（液态渐变风格，与应用图标呼应）
       Stack() {
-        Circle({ width: 40, height: 40 })
-          .fill(this.palette.bgElevated)
-          .border({ width: 2, color: this.palette.primary })
+        Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
+          .fill(LinearGradient({
+            angle: 135,
+            colors: [[this.palette.primary, 0.0], [this.palette.purple, 1.0]]
+          }))
+          .shadow({ radius: 12, color: this.palette.primary + '55', offsetX: 0, offsetY: 4 })
+        Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
+          .fill(Color.Transparent)
+          .border({ width: 1.5, color: '#80FFFFFF' })
         Text('Z')
-          .fontSize(16)
+          .fontSize(this.isSm ? 16 : 18)
           .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontColor(Color.White)
           .fontWeight(FontWeight.Bold)
       }
     }
