@@ -78,14 +78,14 @@ export struct SudokuPage {
     this.solution = solution;
     const target: number = this.holesFor(this.difficulty);
     const given: number[][] = copyBoard(solution);
-    const positions: Array<[number, number]> = [];
+    const positions: number[][] = [];
     for (let r: number = 0; r < SUDOKU_SIZE; r++) {
       for (let c: number = 0; c < SUDOKU_SIZE; c++) positions.push([r, c]);
     }
     // 洗牌挖空顺序
     for (let i: number = positions.length - 1; i > 0; i--) {
       const j: number = Math.floor(Math.random() * (i + 1));
-      const tmp: Array<[number, number]> = positions[i];
+      const tmp: number[] = positions[i];
       positions[i] = positions[j];
       positions[j] = tmp;
     }
@@ -643,7 +643,7 @@ export struct SudokuPage {
               width: this.cellBorderWidth(r, c),
               color: this.cellBorderColor(r, c)
             })
-            .justifyContent(FlexAlign.Center)
+            .alignContent(Alignment.Center)
             .onClick(() => { this.selectCell(r, c); })
           }, (cell: SudokuCell, c: number) => c.toString())
         }
