@@ -12,6 +12,8 @@ import { MorePage } from './More';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { FontRegistry } from '../components/FontRegistry';
 import { PrivacyDialog } from '../components/PrivacyDialog';
+import { LockOverlay } from '../components/LockOverlay';
+import { SecurityService } from '../service/SecurityService';
 import { StartupState } from '../entryability/EntryAbility';
 import { WindowEnvironmentConfidence, WindowEnvironmentSnapshot, WindowDeviceType,
   WindowOrientation } from '../service/WindowEnvironmentProvider';
@@ -28,8 +30,11 @@ struct AppShell {
       WindowEnvironmentConfidence.FALLBACK);
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @State privacyConsented: boolean = false;
+  @StorageLink('appLocked') appLocked: boolean = false;
 
   aboutToAppear(): void {
+    // 启动时按自动锁定策略初始化锁定状态
+    SecurityService.checkAndLockOnForeground();
     const params: AppShellRouteParams | null = router.getParams() as AppShellRouteParams | null;
     if (params !== undefined && params !== null && params.page !== undefined) {
       const initialResult: NavigationResult = NavigationFacade.navigateLegacy(this.navigation, params.page,
@@ -255,6 +260,15 @@ struct AppShell {
           PrivacyDialog({
             onConsent: (): void => {
               this.privacyConsented = true;
+            }
+          })
+        }
+
+        // 锁屏覆盖层（设置了主密码且触发自动锁定时显示）
+        if (this.appLocked) {
+          LockOverlay({
+            onUnlocked: (): void => {
+              this.appLocked = false;
             }
           })
         }

@@ -10,6 +10,8 @@ import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/Picke
 import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { LegalDocRouteParams } from '../common/Navigation';
 import { AvatarOption, AVATAR_OPTIONS, CUSTOM_AVATAR_ID, avatarLabel } from '../common/AvatarOptions';
+import { SecurityService, autoLockLabel, AUTO_LOCK_OPTIONS } from '../service/SecurityService';
+import { BiometricHelper } from '../service/BiometricHelper';
 
 import { TopBar } from '../components/TopBar';
 
@@ -86,7 +88,17 @@ export struct SettingsPage {
   @State avatarUri: string = '';
   // 安全
   @State biometricUnlock: boolean = false;
-  @State autoLock: string = '5 分钟';
+  @State autoLock: string = '关闭';
+  @State hasMasterPassword: boolean = false;
+  // 主密码弹窗
+  @State showPasswordSheet: boolean = false;
+  @State passwordInput: string = '';
+  @State passwordConfirm: string = '';
+  @State passwordMode: string = 'set'; // set / change / clear / verify
+  @State passwordError: string = '';
+  @State passwordBusy: boolean = false;
+  // 自动锁定选择弹窗
+  @State showAutoLockSheet: boolean = false;
   // 数据
   @State autoBackup: boolean = false;
 
@@ -140,13 +152,14 @@ export struct SettingsPage {
       this.biometricUnlock = biometricUnlockVal === 'true';
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
+      this.hasMasterPassword = await SecurityService.hasPassword();
+      this.autoLock = autoLockLabel(await SecurityService.getAutoLockValue());
 
       this.fontSizeScale = await DataRepository.getSetting('fontSizeScale', 'standard');
       this.fontFamily = await DataRepository.getSetting('fontFamily', 'HarmonyOS Sans');
       if (!this.isSupportedFont(this.fontFamily)) {
         this.fontFamily = 'HarmonyOS Sans';
       }
-      this.autoLock = await DataRepository.getSetting('autoLock', '5 分钟');
       this.appIconId = await DataRepository.getSetting('appIconId', 'liquid');
       if (!this.isSupportedAppIcon(this.appIconId)) {
         this.appIconId = 'liquid';
@@ -173,6 +186,139 @@ export struct SettingsPage {
 
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
+  }
+
+  // ==================== 安全 ====================
+
+  // 点击主密码行：未设置 → 设置；已设置 → 修改/清除
+  private onMasterPasswordRow(): void {
+    if (this.hasMasterPassword) {
+      // 已设置：先验证当前密码，弹出 修改 / 清除 选择
+      this.passwordMode = 'verify';
+      this.passwordInput = '';
+      this.passwordConfirm = '';
+      this.passwordError = '';
+      this.showPasswordSheet = true;
+    } else {
+      this.passwordMode = 'set';
+      this.passwordInput = '';
+      this.passwordConfirm = '';
+      this.passwordError = '';
+      this.showPasswordSheet = true;
+    }
+  }
+
+  // 验证模式通过后：提供 修改 / 清除 两个入口
+  private onVerifySuccess(): void {
+    this.showPasswordSheet = false;
+    AlertDialog.show({
+      title: '主密码',
+      message: '已设置主密码，选择要执行的操作：',
+      primaryButton: {
+        value: '修改密码',
+        action: () => {
+          this.passwordMode = 'change';
+          this.passwordInput = '';
+          this.passwordConfirm = '';
+          this.passwordError = '';
+          this.showPasswordSheet = true;
+        }
+      },
+      secondaryButton: {
+        value: '清除密码',
+        fontColor: Color.Red,
+        action: () => {
+          this.clearMasterPassword();
+        }
+      }
+    });
+  }
+
+  private async clearMasterPassword(): Promise<void> {
+    await SecurityService.clearPassword();
+    this.hasMasterPassword = false;
+    this.biometricUnlock = false;
+    this.autoLock = '关闭';
+    this.toast('主密码已清除，相关安全功能已关闭');
+  }
+
+  // 确认设置/修改密码
+  private async confirmPassword(): Promise<void> {
+    const pwd: string = this.passwordInput;
+    const confirm: string = this.passwordConfirm;
+    if (pwd.length < 4) {
+      this.passwordError = '密码至少 4 位';
+      return;
+    }
+    if (this.passwordMode === 'set' || this.passwordMode === 'change') {
+      if (pwd !== confirm) {
+        this.passwordError = '两次输入的密码不一致';
+        return;
+      }
+    }
+    this.passwordBusy = true;
+    if (this.passwordMode === 'set') {
+      await SecurityService.setPassword(pwd);
+      this.hasMasterPassword = true;
+      this.showPasswordSheet = false;
+      this.toast('主密码已设置');
+    } else if (this.passwordMode === 'change') {
+      await SecurityService.setPassword(pwd);
+      this.hasMasterPassword = true;
+      this.showPasswordSheet = false;
+      this.toast('主密码已修改');
+    } else if (this.passwordMode === 'verify') {
+      const ok: boolean = await SecurityService.verifyPassword(pwd);
+      if (ok) {
+        this.showPasswordSheet = false;
+        this.onVerifySuccess();
+      } else {
+        this.passwordError = '密码错误，请重试';
+      }
+    }
+    this.passwordBusy = false;
+  }
+
+  // 生物识别开关：未设置主密码时不允许开启
+  private async onBiometricToggle(v: boolean): Promise<void> {
+    if (v && !this.hasMasterPassword) {
+      this.toast('请先设置主密码');
+      this.biometricUnlock = false;
+      return;
+    }
+    if (v) {
+      if (!BiometricHelper.isSupported()) {
+        this.toast('当前设备不支持或未录入生物识别');
+        this.biometricUnlock = false;
+        return;
+      }
+      const ok: boolean = await BiometricHelper.authenticate('验证身份以开启生物识别解锁');
+      if (!ok) {
+        this.toast('身份验证未通过');
+        this.biometricUnlock = false;
+        return;
+      }
+      this.biometricUnlock = true;
+      await SecurityService.setBiometricEnabled(true);
+      this.toast('生物识别解锁：已开启');
+    } else {
+      this.biometricUnlock = false;
+      await SecurityService.setBiometricEnabled(false);
+      this.toast('生物识别解锁：已关闭');
+    }
+  }
+
+  // 自动锁定选择
+  private async onAutoLockSelect(value: number): Promise<void> {
+    if (value !== 0 && !this.hasMasterPassword) {
+      this.toast('请先设置主密码');
+      this.showAutoLockSheet = false;
+      return;
+    }
+    await SecurityService.setAutoLockValue(value);
+    this.autoLock = autoLockLabel(value);
+    this.showAutoLockSheet = false;
+    this.toast('自动锁定：' + autoLockLabel(value));
   }
 
   // 打开系统文件选择器选取背景图
@@ -1083,6 +1229,195 @@ export struct SettingsPage {
 
   @Builder actionsBuilder() {}
 
+  // ---- 主密码弹窗 ----
+  @Builder
+  passwordSheet() {
+    Stack() {
+      Column() {
+        Blank()
+        Column({ space: 12 }) {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showPasswordSheet = false; })
+          }
+          .width('100%')
+          .padding({ right: 4, top: 4 })
+
+          Text(this.passwordMode === 'set' ? '设置主密码' :
+            (this.passwordMode === 'change' ? '修改主密码' : '验证主密码'))
+            .fontSize(this.palette.fsLg)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .fontWeight(FontWeight.Bold)
+            .width('100%')
+
+          Text(this.passwordMode === 'verify' ? '请输入当前主密码以继续操作' :
+            '设置后可用于解锁应用，至少 4 位')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+            .width('100%')
+
+          TextInput({ text: this.passwordInput, placeholder: '请输入密码' })
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .placeholderColor(this.palette.textTertiary)
+            .backgroundColor(this.palette.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .height(44)
+            .type(InputType.Password)
+            .width('100%')
+            .onChange((value: string) => { this.passwordInput = value; })
+
+          if (this.passwordMode === 'set' || this.passwordMode === 'change') {
+            TextInput({ text: this.passwordConfirm, placeholder: '请再次输入密码' })
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .placeholderColor(this.palette.textTertiary)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(8)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .height(44)
+              .type(InputType.Password)
+              .width('100%')
+              .onChange((value: string) => { this.passwordConfirm = value; })
+          }
+
+          if (this.passwordError.length > 0) {
+            Text(this.passwordError)
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.danger)
+              .width('100%')
+          }
+
+          Row({ space: 12 }) {
+            Button('取消')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .height(40)
+              .layoutWeight(1)
+              .backgroundColor(this.palette.bgSurface2)
+              .fontColor(this.palette.textPrimary)
+              .borderRadius(8)
+              .onClick(() => { this.showPasswordSheet = false; })
+            Button(this.passwordBusy ? '处理中…' : '确认')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .height(40)
+              .layoutWeight(1)
+              .backgroundColor(this.palette.primary)
+              .fontColor('#FFFFFF')
+              .borderRadius(8)
+              .enabled(!this.passwordBusy)
+              .onClick(() => { this.confirmPassword(); })
+          }
+          .width('100%')
+
+          Text('主密码仅以加盐哈希保存在本机，无法找回，请妥善保管。')
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+            .lineHeight(15)
+            .width('100%')
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: Math.max(20, this.navBarHeight) })
+        .borderRadius({ topLeft: 16, topRight: 16 })
+        .backgroundColor(this.palette.bgBase)
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.4)')
+    .onClick(() => { this.showPasswordSheet = false; })
+  }
+
+  // ---- 自动锁定选择弹窗 ----
+  @Builder
+  autoLockSheet() {
+    Stack() {
+      Column() {
+        Blank()
+        Column({ space: 4 }) {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showAutoLockSheet = false; })
+          }
+          .width('100%')
+          .padding({ right: 4, top: 4 })
+
+          Text('自动锁定')
+            .fontSize(this.palette.fsLg)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .fontWeight(FontWeight.Bold)
+            .width('100%')
+            .padding({ left: 4, bottom: 8 })
+
+          ForEach(AUTO_LOCK_OPTIONS, (value: number) => {
+            Row() {
+              Text(autoLockLabel(value))
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .layoutWeight(1)
+              if (this.autoLock === autoLockLabel(value)) {
+                Text('✓')
+                  .fontSize(16)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.primary)
+                  .fontWeight(FontWeight.Bold)
+              }
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(8)
+            .backgroundColor(this.autoLock === autoLockLabel(value) ? this.palette.primaryDim : this.palette.bgSurface)
+            .border({ width: this.autoLock === autoLockLabel(value) ? 1 : 0,
+              color: this.autoLock === autoLockLabel(value) ? this.palette.primary : Color.Transparent })
+            .onClick(() => { this.onAutoLockSelect(value); })
+          }, (value: number) => value.toString())
+
+          Text('开启后，应用切到后台超过设定时间将锁定，需主密码或生物识别解锁。')
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+            .lineHeight(15)
+            .width('100%')
+            .padding({ left: 4, right: 4, top: 8 })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: Math.max(20, this.navBarHeight) })
+        .borderRadius({ topLeft: 16, topRight: 16 })
+        .backgroundColor(this.palette.bgBase)
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.4)')
+    .onClick(() => { this.showAutoLockSheet = false; })
+  }
+
   build() {
     Stack() {
       Column() {
@@ -1175,13 +1510,15 @@ export struct SettingsPage {
             // 安全
             GroupCard({ title: '安全' }) {
               Column({ space: 8 }) {
-                this.valueRow('主密码', '已设置')
-                this.toggleRow('生物识别解锁', this.biometricUnlock, (v: boolean) => {
-                  this.biometricUnlock = v;
-                  DataRepository.setSetting('biometricUnlock', v ? 'true' : 'false');
-                  this.toast(`生物识别解锁：${v ? '已开启' : '已关闭'}`);
+                this.valueRow('主密码', this.hasMasterPassword ? '已设置' : '未设置', () => {
+                  this.onMasterPasswordRow();
                 })
-                this.valueRow('自动锁定', this.autoLock)
+                this.toggleRow('生物识别解锁', this.biometricUnlock, (v: boolean) => {
+                  this.onBiometricToggle(v);
+                })
+                this.valueRow('自动锁定', this.autoLock, () => {
+                  this.showAutoLockSheet = true;
+                })
               }
               .width('100%')
             }
@@ -1237,6 +1574,13 @@ export struct SettingsPage {
       }
       if (this.showAvatarSheet) {
         this.avatarSheet()
+      }
+      // 安全弹层
+      if (this.showPasswordSheet) {
+        this.passwordSheet()
+      }
+      if (this.showAutoLockSheet) {
+        this.autoLockSheet()
       }
     }
     .width('100%')

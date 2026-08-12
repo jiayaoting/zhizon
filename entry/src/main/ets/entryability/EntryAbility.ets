@@ -5,6 +5,7 @@ import { DatabaseHelper } from '../service/DatabaseHelper';
 import { CryptoHelper } from '../common/CryptoHelper';
 import { ThemeManager, ThemePalette, PreferenceFailureReason } from '../common/Theme';
 import { WindowEnvironmentProvider } from '../service/WindowEnvironmentProvider';
+import { SecurityService } from '../service/SecurityService';
 
 const DOMAIN = 0x9201;
 
@@ -138,9 +139,11 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'EntryAbility', 'onForeground');
+    SecurityService.checkAndLockOnForeground();
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, 'EntryAbility', 'onBackground');
+    SecurityService.onBackground();
   }
 }

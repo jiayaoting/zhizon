@@ -5,6 +5,7 @@
     { "name": "EntryAbility_label", "value": "智子" },
     { "name": "media_permission_reason", "value": "用于设置自定义背景图片" },
     { "name": "vibrate_permission_reason", "value": "用于游戏操作触觉反馈" },
-    { "name": "internet_permission_reason", "value": "用于 AI 对话功能连接大模型服务商接口" }
+    { "name": "internet_permission_reason", "value": "用于 AI 对话功能连接大模型服务商接口" },
+    { "name": "biometric_permission_reason", "value": "用于生物识别解锁应用" }
   ]
 }
