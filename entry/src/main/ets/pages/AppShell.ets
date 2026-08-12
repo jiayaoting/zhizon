@@ -34,7 +34,9 @@ struct AppShell {
 
   aboutToAppear(): void {
     // 启动时按自动锁定策略初始化锁定状态
-    SecurityService.checkAndLockOnForeground();
+    SecurityService.checkAndLockOnForeground().catch((e: Error) => {
+      hilog.warn(0x9201, 'AppShell', '安全锁定检查失败 %{public}s', e.message);
+    });
     const params: AppShellRouteParams | null = router.getParams() as AppShellRouteParams | null;
     if (params !== undefined && params !== null && params.page !== undefined) {
       const initialResult: NavigationResult = NavigationFacade.navigateLegacy(this.navigation, params.page,

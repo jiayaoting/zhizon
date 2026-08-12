@@ -149,8 +149,7 @@ export struct SettingsPage {
   async aboutToAppear(): Promise<void> {
     this.loading = true;
     try {
-      const biometricUnlockVal = await DataRepository.getSetting('biometricUnlock', 'false');
-      this.biometricUnlock = biometricUnlockVal === 'true';
+      this.biometricUnlock = await SecurityService.isBiometricEnabled();
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
       this.hasMasterPassword = await SecurityService.hasPassword();
@@ -1233,38 +1232,59 @@ export struct SettingsPage {
   // ---- 主密码弹窗 ----
   @Builder
   passwordSheet() {
-    Stack() {
-      Column() {
-        Blank()
-        Column({ space: 12 }) {
-          Row() {
-            Blank()
-            Text('✕')
-              .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .padding(8)
-              .onClick(() => { this.showPasswordSheet = false; })
-          }
-          .width('100%')
-          .padding({ right: 4, top: 4 })
+    Column() {
+      // 遮罩
+      Column()
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .onClick(() => { this.showPasswordSheet = false; })
+        .transition({ type: TransitionType.All, opacity: 0 })
 
-          Text(this.passwordMode === 'set' ? '设置主密码' :
-            (this.passwordMode === 'change' ? '修改主密码' : '验证主密码'))
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .fontWeight(FontWeight.Bold)
-            .width('100%')
-
-          Text(this.passwordMode === 'verify' ? '请输入当前主密码以继续操作' :
-            '设置后可用于解锁应用，至少 4 位')
-            .fontSize(this.palette.fsSm)
+      // 底部面板
+      Column({ space: 12 }) {
+        Row() {
+          Blank()
+          Text('✕')
+            .fontSize(16)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
-            .width('100%')
+            .padding(8)
+            .onClick(() => { this.showPasswordSheet = false; })
+        }
+        .width('100%')
+        .padding({ right: 4, top: 4 })
 
-          TextInput({ text: this.passwordInput, placeholder: '请输入密码' })
+        Text(this.passwordMode === 'set' ? '设置主密码' :
+          (this.passwordMode === 'change' ? '修改主密码' : '验证主密码'))
+          .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+
+        Text(this.passwordMode === 'verify' ? '请输入当前主密码以继续操作' :
+          '设置后可用于解锁应用，至少 4 位')
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .width('100%')
+
+        TextInput({ text: this.passwordInput, placeholder: '请输入密码' })
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .placeholderColor(this.palette.textTertiary)
+          .backgroundColor(this.palette.bgSurface)
+          .borderRadius(8)
+          .border({ width: 1, color: this.palette.borderSubtle })
+          .height(44)
+          .type(InputType.Password)
+          .width('100%')
+          .onChange((value: string) => { this.passwordInput = value; })
+
+        if (this.passwordMode === 'set' || this.passwordMode === 'change') {
+          TextInput({ text: this.passwordConfirm, placeholder: '请再次输入密码' })
             .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
@@ -1275,148 +1295,133 @@ export struct SettingsPage {
             .height(44)
             .type(InputType.Password)
             .width('100%')
-            .onChange((value: string) => { this.passwordInput = value; })
+            .onChange((value: string) => { this.passwordConfirm = value; })
+        }
 
-          if (this.passwordMode === 'set' || this.passwordMode === 'change') {
-            TextInput({ text: this.passwordConfirm, placeholder: '请再次输入密码' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
-              .type(InputType.Password)
-              .width('100%')
-              .onChange((value: string) => { this.passwordConfirm = value; })
-          }
-
-          if (this.passwordError.length > 0) {
-            Text(this.passwordError)
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.danger)
-              .width('100%')
-          }
-
-          Row({ space: 12 }) {
-            Button('取消')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .height(40)
-              .layoutWeight(1)
-              .backgroundColor(this.palette.bgSurface2)
-              .fontColor(this.palette.textPrimary)
-              .borderRadius(8)
-              .onClick(() => { this.showPasswordSheet = false; })
-            Button(this.passwordBusy ? '处理中…' : '确认')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .height(40)
-              .layoutWeight(1)
-              .backgroundColor(this.palette.primary)
-              .fontColor('#FFFFFF')
-              .borderRadius(8)
-              .enabled(!this.passwordBusy)
-              .onClick(() => { this.confirmPassword(); })
-          }
-          .width('100%')
-
-          Text('主密码仅以加盐哈希保存在本机，无法找回，请妥善保管。')
-            .fontSize(10)
+        if (this.passwordError.length > 0) {
+          Text(this.passwordError)
+            .fontSize(this.palette.fsXs)
             .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
-            .lineHeight(15)
+            .fontColor(this.palette.danger)
             .width('100%')
         }
+
+        Row({ space: 12 }) {
+          Button('取消')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .height(40)
+            .layoutWeight(1)
+            .backgroundColor(this.palette.bgSurface2)
+            .fontColor(this.palette.textPrimary)
+            .borderRadius(8)
+            .onClick(() => { this.showPasswordSheet = false; })
+          Button(this.passwordBusy ? '处理中…' : '确认')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .height(40)
+            .layoutWeight(1)
+            .backgroundColor(this.palette.primary)
+            .fontColor('#FFFFFF')
+            .borderRadius(8)
+            .enabled(!this.passwordBusy)
+            .onClick(() => { this.confirmPassword(); })
+        }
         .width('100%')
-        .padding({ left: 20, right: 20, bottom: Math.max(20, this.navBarHeight) })
-        .borderRadius({ topLeft: 16, topRight: 16 })
-        .backgroundColor(this.palette.bgBase)
+
+        Text('主密码仅以加盐哈希保存在本机，无法找回，请妥善保管。')
+          .fontSize(10)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .lineHeight(15)
+          .width('100%')
       }
       .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.End)
+      .padding(20)
+      .backgroundColor(this.palette.bgBase)
+      .borderRadius({ topLeft: 16, topRight: 16 })
+      .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.4)')
-    .onClick(() => { this.showPasswordSheet = false; })
+    .justifyContent(FlexAlign.End)
   }
 
   // ---- 自动锁定选择弹窗 ----
   @Builder
   autoLockSheet() {
-    Stack() {
-      Column() {
-        Blank()
-        Column({ space: 4 }) {
-          Row() {
-            Blank()
-            Text('✕')
-              .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .padding(8)
-              .onClick(() => { this.showAutoLockSheet = false; })
-          }
-          .width('100%')
-          .padding({ right: 4, top: 4 })
+    Column() {
+      // 遮罩
+      Column()
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .onClick(() => { this.showAutoLockSheet = false; })
+        .transition({ type: TransitionType.All, opacity: 0 })
 
-          Text('自动锁定')
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .fontWeight(FontWeight.Bold)
-            .width('100%')
-            .padding({ left: 4, bottom: 8 })
-
-          ForEach(AUTO_LOCK_OPTIONS, (value: number) => {
-            Row() {
-              Text(autoLockLabel(value))
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .layoutWeight(1)
-              if (this.autoLock === autoLockLabel(value)) {
-                Text('✓')
-                  .fontSize(16)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.primary)
-                  .fontWeight(FontWeight.Bold)
-              }
-            }
-            .width('100%')
-            .padding(12)
-            .borderRadius(8)
-            .backgroundColor(this.autoLock === autoLockLabel(value) ? this.palette.primaryDim : this.palette.bgSurface)
-            .border({ width: this.autoLock === autoLockLabel(value) ? 1 : 0,
-              color: this.autoLock === autoLockLabel(value) ? this.palette.primary : Color.Transparent })
-            .onClick(() => { this.onAutoLockSelect(value); })
-          }, (value: number) => value.toString())
-
-          Text('开启后，应用切到后台超过设定时间将锁定，需主密码或生物识别解锁。')
-            .fontSize(10)
+      // 底部面板
+      Column({ space: 4 }) {
+        Row() {
+          Blank()
+          Text('✕')
+            .fontSize(16)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
-            .lineHeight(15)
-            .width('100%')
-            .padding({ left: 4, right: 4, top: 8 })
+            .padding(8)
+            .onClick(() => { this.showAutoLockSheet = false; })
         }
         .width('100%')
-        .padding({ left: 20, right: 20, bottom: Math.max(20, this.navBarHeight) })
-        .borderRadius({ topLeft: 16, topRight: 16 })
-        .backgroundColor(this.palette.bgBase)
+        .padding({ right: 4, top: 4 })
+
+        Text('自动锁定')
+          .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+          .width('100%')
+          .padding({ left: 4, bottom: 8 })
+
+        ForEach(AUTO_LOCK_OPTIONS, (value: number) => {
+          Row() {
+            Text(autoLockLabel(value))
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .layoutWeight(1)
+            if (this.autoLock === autoLockLabel(value)) {
+              Text('✓')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.primary)
+                .fontWeight(FontWeight.Bold)
+            }
+          }
+          .width('100%')
+          .padding(12)
+          .borderRadius(8)
+          .backgroundColor(this.autoLock === autoLockLabel(value) ? this.palette.primaryDim : this.palette.bgSurface)
+          .border({ width: this.autoLock === autoLockLabel(value) ? 1 : 0,
+            color: this.autoLock === autoLockLabel(value) ? this.palette.primary : Color.Transparent })
+          .onClick(() => { this.onAutoLockSelect(value); })
+        }, (value: number) => value.toString())
+
+        Text('开启后，应用切到后台超过设定时间将锁定，需主密码或生物识别解锁。')
+          .fontSize(10)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .lineHeight(15)
+          .width('100%')
+          .padding({ left: 4, right: 4, top: 8 })
       }
       .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.End)
+      .padding(20)
+      .backgroundColor(this.palette.bgBase)
+      .borderRadius({ topLeft: 16, topRight: 16 })
+      .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.4)')
-    .onClick(() => { this.showAutoLockSheet = false; })
+    .justifyContent(FlexAlign.End)
   }
 
   build() {

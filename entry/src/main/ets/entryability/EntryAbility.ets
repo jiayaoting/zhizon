@@ -139,11 +139,15 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, 'EntryAbility', 'onForeground');
-    SecurityService.checkAndLockOnForeground();
+    SecurityService.checkAndLockOnForeground().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'EntryAbility', '安全锁定检查失败 %{public}s', e.message);
+    });
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, 'EntryAbility', 'onBackground');
-    SecurityService.onBackground();
+    SecurityService.onBackground().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'EntryAbility', '后台锁定处理失败 %{public}s', e.message);
+    });
   }
 }
