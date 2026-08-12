@@ -9,6 +9,7 @@ import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
   GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
 import { PageKey } from '../common/Navigation';
+import { ParticleBackground } from '../components/ParticleBackground';
 
 interface HomeGameEntry {
   gameId: GameId;
@@ -413,64 +414,72 @@ export struct IndexPage {
   }
 
   build() {
-    Column() {
-      if (this.loading) {
-        Column() {
-          LoadingProgress()
-            .width(36)
-            .height(36)
-            .color(this.palette.primary)
-          Text('加载中...')
-            .fontSize(14)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
-            .margin({ top: 12 })
-        }
-        .width('100%')
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-      } else {
-        Scroll() {
-          Column({ space: 20 }) {
-            // 大屏居中限制
-            Column({ space: 20 }) {
-              // 欢迎区
-              this.welcomeSection()
+    Stack() {
+      // 星尘粒子背景
+      ParticleBackground()
 
-              // 游戏入口大卡
-              this.gameEntryCards()
-
-              // 最佳战绩
-              this.recentScores()
-
-              // 难度速览
-              this.difficultyQuickView()
-
-              // 底部留白
-              Column().height(20)
-            }
-            .width('100%')
-            .constraintSize({ maxWidth: this.isLg ? 720 : undefined })
+      Column() {
+        if (this.loading) {
+          Column() {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(this.palette.primary)
+            Text('加载中...')
+              .fontSize(14)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+              .margin({ top: 12 })
           }
           .width('100%')
-          .padding({ top: this.statusBarHeight + (this.isSm ? 16 : 24) })
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .align(Alignment.Top)
-        .focusable(true)
-        .onKeyEvent((event: KeyEvent) => {
-          if (event.type !== KeyType.Down) return;
-          const code: KeyCode = event.keyCode;
-          if (code === KeyCode.KEYCODE_TAB) {
-            // 默认 Tab 行为由系统处理，此处仅确保页面可聚焦
-            return;
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+        } else {
+          Scroll() {
+            Column({ space: 20 }) {
+              // 大屏居中限制
+              Column({ space: 20 }) {
+                // 欢迎区
+                this.welcomeSection()
+
+                // 游戏入口大卡
+                this.gameEntryCards()
+
+                // 最佳战绩
+                this.recentScores()
+
+                // 难度速览
+                this.difficultyQuickView()
+
+                // 底部留白
+                Column().height(20)
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: this.isLg ? 720 : undefined })
+            }
+            .width('100%')
+            .padding({ top: this.statusBarHeight + (this.isSm ? 16 : 24) })
           }
-        })
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+          .align(Alignment.Top)
+          .focusable(true)
+          .onKeyEvent((event: KeyEvent) => {
+            if (event.type !== KeyType.Down) return;
+            const code: KeyCode = event.keyCode;
+            if (code === KeyCode.KEYCODE_TAB) {
+              // 默认 Tab 行为由系统处理，此处仅确保页面可聚焦
+              return;
+            }
+          })
+        }
       }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Color.Transparent)
     }
+    .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
   }
 }
