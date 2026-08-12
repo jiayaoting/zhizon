@@ -988,7 +988,7 @@ export struct SettingsPage {
               Row({ space: 12 }) {
                 Stack() {
                   Circle({ width: 48, height: 48 })
-                    .fill(LinearGradient({
+                    .fill(new LinearGradient({
                       angle: 135,
                       colors: [[option.colors[0], 0.0], [option.colors[1], 1.0]]
                     }))

@@ -181,7 +181,7 @@ export struct IndexPage {
             .border({ width: 1.5, color: '#80FFFFFF' })
         } else {
           Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
-            .fill(LinearGradient({
+            .fill(new LinearGradient({
               angle: 135,
               colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
             }))
