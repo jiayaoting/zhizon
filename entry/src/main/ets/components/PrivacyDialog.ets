@@ -43,20 +43,17 @@ export struct PrivacyDialog {
   }
 
   build() {
-    if (!this.visible) {
-      return;
-    }
+    if (this.visible) {
+      Stack() {
+        // 半透明遮罩
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor('#00000066')
+          .onClick(() => {}) // 阻止点击穿透
 
-    Stack() {
-      // 半透明遮罩
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor('#00000066')
-        .onClick(() => {}) // 阻止点击穿透
-
-      // 弹窗卡片
-      Column() {
+        // 弹窗卡片
+        Column() {
         // 标题区域
         Column({ space: 8 }) {
           Text('欢迎使用智子')
@@ -99,20 +96,23 @@ export struct PrivacyDialog {
         .backgroundColor(this.palette.bgSurface)
 
         // 查看完整协议
-        Row({ space: 12 }) {
+        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
           Text('查看完整')
             .fontSize(this.palette.fsXs)
             .fontColor(this.palette.textTertiary)
             .fontFamily(this.palette.fontSans)
+            .margin({ right: 12 })
           Text('用户协议')
             .fontSize(this.palette.fsXs)
             .fontColor(this.palette.primary)
             .fontFamily(this.palette.fontSans)
+            .margin({ right: 12 })
             .onClick(() => { this.openLegalDoc('agreement'); })
           Text('隐私政策')
             .fontSize(this.palette.fsXs)
             .fontColor(this.palette.primary)
             .fontFamily(this.palette.fontSans)
+            .margin({ right: 12 })
             .onClick(() => { this.openLegalDoc('privacy'); })
           Text('开源许可')
             .fontSize(this.palette.fsXs)
@@ -121,9 +121,7 @@ export struct PrivacyDialog {
             .onClick(() => { this.openLegalDoc('license'); })
         }
         .width('100%')
-        .justifyContent(FlexAlign.Center)
         .padding({ top: 12, bottom: 8 })
-        .flexWrap(FlexWrap.Wrap)
 
         // 同意复选框
         Row({ space: 8 }) {
@@ -157,16 +155,17 @@ export struct PrivacyDialog {
           })
       }
       .width(this.isSm ? '88%' : '70%')
-      .maxWidth(400)
+      .constraintSize({ maxWidth: 400 })
       .padding(24)
       .borderRadius(16)
       .backgroundColor(this.palette.bgElevated)
       .shadow({ radius: 24, color: '#00000033', offsetX: 0, offsetY: 8 })
       .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Center)
+      .clip(true)
     }
-    .width('100%')
-    .height('100%')
-    .align(Alignment.Center)
-    .clip(true)
   }
 }

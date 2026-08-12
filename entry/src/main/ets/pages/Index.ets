@@ -1,7 +1,7 @@
 // 智子 - 首页（沉浸光感版）
 // 欢迎区 + 游戏入口大卡 + 最近游戏战绩
 import { promptAction } from '@kit.ArkUI';
-import { KeyCode, KeyType } from '@ohos.multimodalInput.keyCode';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';

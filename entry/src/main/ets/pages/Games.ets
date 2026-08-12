@@ -1,6 +1,5 @@
 // 智子 - 游戏中心
 import { promptAction } from '@kit.ArkUI';
-import { KeyCode, KeyType } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { PAGE_PADDING, CARD_RADIUS } from '../common/Constants';

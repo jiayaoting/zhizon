@@ -44,6 +44,7 @@ const BRICK_H: number = 16;
 const BRICK_GAP: number = 3;
 const START_LIVES: number = 3;
 
+@Entry
 @Component
 export struct BreakoutPage {
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;

@@ -43,6 +43,7 @@ interface MinePos {
   c: number;
 }
 
+@Entry
 @Component
 export struct MinesweeperPage {
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
@@ -398,7 +399,10 @@ export struct MinesweeperPage {
                 this.revealCell(rowIdx, colIdx);
               }
             })
-            .onLongPress(() => { this.toggleFlag(rowIdx, colIdx); })
+            .gesture(
+              LongPressGesture({ repeat: false, duration: 500 })
+                .onAction(() => { this.toggleFlag(rowIdx, colIdx); })
+            )
           }, (cell: MineCell, colIdx: number) => colIdx.toString())
         }
         .layoutWeight(1)
@@ -445,47 +449,6 @@ export struct MinesweeperPage {
     if (n <= 12) return 12;
     if (n <= 16) return 10;
     return 8;
-  }
-
-  // ---- 棋盘 ----
-  @Builder
-  gameBoard() {
-    Column() {
-      ForEach(this.board, (row: MineCell[], rowIdx: number) => {
-        Row() {
-          ForEach(row, (cell: MineCell, colIdx: number) => {
-            Row()
-              .layoutWeight(1)
-              .aspectRatio(1)
-              .margin(0.5)
-              .borderRadius(2)
-              .border({ width: 0.5, color: this.palette.borderDefault })
-              .backgroundColor(this.cellColor(cell))
-              .justifyContent(FlexAlign.Center)
-              .onClick(() => {
-                if (this.flagMode) {
-                  this.toggleFlag(rowIdx, colIdx);
-                } else {
-                  this.revealCell(rowIdx, colIdx);
-                }
-              })
-              .onLongPress(() => { this.toggleFlag(rowIdx, colIdx); })
-              .child(
-                Text(this.cellText(cell))
-                  .fontSize(this.cellFontSize())
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.cellTextColor(cell))
-                  .fontWeight(FontWeight.Bold)
-              )
-          }, (cell: MineCell, colIdx: number) => colIdx.toString())
-        }
-        .layoutWeight(1)
-      }, (row: MineCell[], rowIdx: number) => rowIdx.toString())
-    }
-    .border({ width: 2, color: this.palette.borderDefault })
-    .borderRadius(6)
-    .padding(2)
-    .backgroundColor(this.palette.bgSurface)
   }
 
   // ---- 信息面板 ----
