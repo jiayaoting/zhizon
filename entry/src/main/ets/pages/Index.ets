@@ -1,6 +1,6 @@
 // 智子 - 首页（沉浸光感版）
 // 欢迎区 + 游戏入口大卡 + 最近游戏战绩
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
@@ -8,7 +8,7 @@ import { DataRepository } from '../service/DataRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
   GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
-import { PageKey } from '../common/Navigation';
+import { PageKey, GameHistoryRouteParams } from '../common/Navigation';
 import { ParticleBackground } from '../components/ParticleBackground';
 
 interface HomeGameEntry {
@@ -99,11 +99,21 @@ export struct IndexPage {
     this.avatarUri = await DataRepository.getSetting('avatarUri', '');
   }
 
+  // 游戏 GameId 枚举 → 数据库存储的 game key 映射
+  private gameScoreKey(gameId: GameId): string {
+    if (gameId === GameId.TETRIS) return 'Tetris';
+    if (gameId === GameId.GAME_2048) return '2048';
+    if (gameId === GameId.SNAKE) return 'Snake';
+    if (gameId === GameId.MINESWEEPER) return 'Minesweeper';
+    if (gameId === GameId.SUDOKU) return 'SUDOKU';
+    return '';
+  }
+
   private async loadScores() {
     try {
       const rows: ScoreRow[] = [];
       for (const game of this.homeGames) {
-        const best = await DataRepository.getGameHighScore(game.gameId);
+        const best = await DataRepository.getGameHighScore(this.gameScoreKey(game.gameId));
         rows.push({
           gameId: game.gameId,
           name: game.name,
@@ -312,7 +322,7 @@ export struct IndexPage {
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .onClick(() => {
-            this.onNavigate('Games');
+            router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('2048') });
           })
       }
       .width('100%')
