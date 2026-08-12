@@ -121,7 +121,7 @@ export struct TetrisPage {
   private boardCellSize(): number {
     if (this.isSm) {
       // 手机端：TopBar + 信息栏 + 下一个 + 旋转按钮 + 间距 + 安全区
-      return DeviceMetrics.fitCellSize(COLS, ROWS, 300, 14, 24);
+      return DeviceMetrics.fitCellSize(COLS, ROWS, 350, 14, 24);
     }
     // 平板端：TopBar + 安全区
     return DeviceMetrics.fitCellSize(COLS, ROWS, 140, 16, 30);
@@ -606,6 +606,7 @@ export struct TetrisPage {
     .backgroundColor(this.palette.bgSurface2)
     .justifyContent(FlexAlign.Center)
     .border({ width: 1, color: this.palette.borderSubtle })
+    .margin({ top: 4, bottom: this.isSm ? 8 : 0 })
     .onClick(() => { this.rotatePiece(); })
   }
 

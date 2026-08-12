@@ -49,8 +49,8 @@ export struct SudokuPage {
   // 自适应棋盘格子尺寸
   private boardCellSize(): number {
     if (this.isSm) {
-      // 手机端：TopBar + 提示条 + 信息栏 + 操作栏 + 数字键盘 + 间距 + 安全区
-      return DeviceMetrics.fitCellSize(SUDOKU_SIZE, SUDOKU_SIZE, 410, 22, 40);
+      // 手机端：TopBar + 提示条 + 信息栏 + 操作栏 + 数字键盘(160) + 间距 + 安全区
+      return DeviceMetrics.fitCellSize(SUDOKU_SIZE, SUDOKU_SIZE, 442, 16, 40);
     }
     // 平板端：TopBar + 安全区
     return DeviceMetrics.fitCellSize(SUDOKU_SIZE, SUDOKU_SIZE, 140, 24, 52);
@@ -575,7 +575,7 @@ export struct SudokuPage {
             .fontColor(this.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
             .layoutWeight(1)
-            .aspectRatio(1)
+            .height(48)
             .textAlign(TextAlign.Center)
             .borderRadius(8)
             .backgroundColor(this.palette.bgSurface)
@@ -592,7 +592,7 @@ export struct SudokuPage {
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
-          .aspectRatio(1)
+          .height(48)
           .textAlign(TextAlign.Center)
           .borderRadius(8)
           .backgroundColor(this.palette.bgSurface)
@@ -604,7 +604,7 @@ export struct SudokuPage {
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
-          .aspectRatio(1)
+          .height(48)
           .textAlign(TextAlign.Center)
           .borderRadius(8)
           .backgroundColor(this.palette.bgSurface)
@@ -616,7 +616,7 @@ export struct SudokuPage {
           .fontColor(this.palette.danger)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
-          .aspectRatio(1)
+          .height(48)
           .textAlign(TextAlign.Center)
           .borderRadius(8)
           .backgroundColor(this.palette.bgSurface)
