@@ -1,7 +1,7 @@
-// 智子 - 大模型客户端（OpenAI 兼容 /chat/completions + SSE 流式）
+// 智子 - 大模型客户端（OpenAI Chat Completions + Anthropic Messages + SSE 流式）
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
-import { ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
+import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
 const REQUEST_TIMEOUT = 60000;
 const TEXT_DECODER: util.TextDecoder = new util.TextDecoder();
 
@@ -10,7 +10,7 @@ export class LlmClient {
   static async testConnection(config: LlmConfig): Promise<LlmResult> {
     if (!config.baseUrl.trim()) return new LlmResult(false, '', 'EMPTY_BASE_URL', '接口地址不能为空');
     if (!config.model.trim()) return new LlmResult(false, '', 'EMPTY_MODEL', '模型名称不能为空');
-    if (!config.needsKey && !config.apiKey.trim()) {
+    if (config.needsKey && !config.apiKey.trim()) {
       return new LlmResult(false, '', 'EMPTY_API_KEY', 'API Key 不能为空');
     }
     const messages: ChatMessage[] = [new ChatMessage('user', '你好，请回复"连接成功"四个字。')];
@@ -24,72 +24,58 @@ export class LlmClient {
 
   // 非流式请求完整返回
   static async postCompletion(config: LlmConfig, messages: ChatMessage[]): Promise<LlmResult> {
-    const httpRequest = http.createHttp();
-    try {
-      const url: string = LlmClient.normalizeUrl(config.baseUrl);
-      const header: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-      if (!config.needsKey) {
-        header['Authorization'] = 'Bearer ' + config.apiKey.trim();
-      }
-      const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
-        new ChatRequestMessage(m.role, m.content));
-      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, false);
-      const response = await httpRequest.request(url, {
-        method: http.RequestMethod.POST,
-        header: header,
-        extraData: JSON.stringify(body),
-        connectTimeout: REQUEST_TIMEOUT,
-        readTimeout: REQUEST_TIMEOUT,
-        expectDataType: http.HttpDataType.STRING,
-        usingCache: false
-      });
-      const code: number = response.responseCode;
-      if (code !== 200) {
-        return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(response.result, code));
-      }
-      const text: string = typeof response.result === 'string' ? response.result : JSON.stringify(response.result);
-      const content: string = LlmClient.extractContent(text);
-      if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
-      return new LlmResult(true, content, '', '');
-    } catch (e) {
-      return LlmClient.toResult(e);
-    } finally {
-      httpRequest.destroy();
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAnthropic(config, messages, false);
     }
+    return LlmClient.postOpenAI(config, messages, false);
   }
 
   // 流式请求：onDelta 逐片回调，返回完整内容
   static async postCompletionStream(config: LlmConfig, messages: ChatMessage[],
     onDelta: (delta: string) => void): Promise<LlmResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAnthropicStream(config, messages, onDelta);
+    }
+    return LlmClient.postOpenAIStream(config, messages, onDelta);
+  }
+
+  // ---- OpenAI Chat Completions ----
+
+  private static async postOpenAI(config: LlmConfig, messages: ChatMessage[], stream: boolean,
+    onDelta?: (delta: string) => void): Promise<LlmResult> {
     const httpRequest = http.createHttp();
     let fullContent: string = '';
     let buffer: string = '';
     try {
-      const url: string = LlmClient.normalizeUrl(config.baseUrl);
+      const url: string = LlmClient.openAIUrl(config.baseUrl);
       const header: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream'
+        'Content-Type': 'application/json'
       };
-      if (!config.needsKey) {
+      if (stream) {
+        header['Accept'] = 'text/event-stream';
+      }
+      if (config.needsKey) {
         header['Authorization'] = 'Bearer ' + config.apiKey.trim();
       }
       const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
         new ChatRequestMessage(m.role, m.content));
-      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, true);
-      httpRequest.on('dataReceive', (data: ArrayBuffer) => {
-        buffer = buffer + LlmClient.arrayBufferToString(data);
-        const events: string[] = LlmClient.extractSseEvents(buffer);
-        buffer = LlmClient.remainingBuffer(buffer, events);
-        for (let i: number = 0; i < events.length; i++) {
-          const delta: string = LlmClient.contentFromSseEvent(events[i]);
-          if (delta.length > 0) {
-            fullContent = fullContent + delta;
-            onDelta(delta);
+      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, stream);
+
+      if (stream && onDelta !== undefined) {
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          buffer = buffer + LlmClient.arrayBufferToString(data);
+          const events: string[] = LlmClient.extractSseEvents(buffer);
+          buffer = LlmClient.remainingBuffer(buffer, events);
+          for (let i: number = 0; i < events.length; i++) {
+            const delta: string = LlmClient.openAIDeltaFromSse(events[i]);
+            if (delta.length > 0) {
+              fullContent = fullContent + delta;
+              onDelta(delta);
+            }
           }
-        }
-      });
+        });
+      }
+
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: header,
@@ -103,19 +89,24 @@ export class LlmClient {
       if (code !== 200) {
         return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(response.result, code));
       }
-      // 兜底：请求完成后仍可能有残留 buffer 未解析
-      if (buffer.trim().length > 0) {
-        const events: string[] = LlmClient.extractSseEvents(buffer);
-        for (let i: number = 0; i < events.length; i++) {
-          const delta: string = LlmClient.contentFromSseEvent(events[i]);
-          if (delta.length > 0) {
-            fullContent = fullContent + delta;
-            onDelta(delta);
+      if (stream && onDelta !== undefined) {
+        if (buffer.trim().length > 0) {
+          const events: string[] = LlmClient.extractSseEvents(buffer);
+          for (let i: number = 0; i < events.length; i++) {
+            const delta: string = LlmClient.openAIDeltaFromSse(events[i]);
+            if (delta.length > 0) {
+              fullContent = fullContent + delta;
+              onDelta(delta);
+            }
           }
         }
+        if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+        return new LlmResult(true, fullContent, '', '');
       }
-      if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
-      return new LlmResult(true, fullContent, '', '');
+      const text: string = typeof response.result === 'string' ? response.result : JSON.stringify(response.result);
+      const content: string = LlmClient.openAIContent(text);
+      if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+      return new LlmResult(true, content, '', '');
     } catch (e) {
       return LlmClient.toResult(e);
     } finally {
@@ -124,7 +115,98 @@ export class LlmClient {
     }
   }
 
-  private static normalizeUrl(baseUrl: string): string {
+  private static async postOpenAIStream(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void): Promise<LlmResult> {
+    return LlmClient.postOpenAI(config, messages, true, onDelta);
+  }
+
+  // ---- Anthropic Messages ----
+
+  private static async postAnthropic(config: LlmConfig, messages: ChatMessage[], stream: boolean,
+    onDelta?: (delta: string) => void): Promise<LlmResult> {
+    const httpRequest = http.createHttp();
+    let fullContent: string = '';
+    let buffer: string = '';
+    try {
+      const url: string = LlmClient.anthropicUrl(config.baseUrl);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01'
+      };
+      if (stream) {
+        header['Accept'] = 'text/event-stream';
+      }
+      if (config.needsKey) {
+        header['x-api-key'] = config.apiKey.trim();
+      }
+      const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
+        new ChatRequestMessage(m.role, m.content));
+      const body: AnthropicRequestBody = new AnthropicRequestBody(config.model.trim(), config.maxTokens,
+        requestMessages, stream);
+
+      if (stream && onDelta !== undefined) {
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          buffer = buffer + LlmClient.arrayBufferToString(data);
+          const events: string[] = LlmClient.extractSseEvents(buffer);
+          buffer = LlmClient.remainingBuffer(buffer, events);
+          for (let i: number = 0; i < events.length; i++) {
+            const delta: string = LlmClient.anthropicDeltaFromSse(events[i]);
+            if (delta.length > 0) {
+              fullContent = fullContent + delta;
+              onDelta(delta);
+            }
+          }
+        });
+      }
+
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(body),
+        connectTimeout: REQUEST_TIMEOUT,
+        readTimeout: REQUEST_TIMEOUT,
+        expectDataType: http.HttpDataType.STRING,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmResult(false, '', 'HTTP_' + code.toString(),
+          LlmClient.anthropicErrorMessage(response.result, code));
+      }
+      if (stream && onDelta !== undefined) {
+        if (buffer.trim().length > 0) {
+          const events: string[] = LlmClient.extractSseEvents(buffer);
+          for (let i: number = 0; i < events.length; i++) {
+            const delta: string = LlmClient.anthropicDeltaFromSse(events[i]);
+            if (delta.length > 0) {
+              fullContent = fullContent + delta;
+              onDelta(delta);
+            }
+          }
+        }
+        if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+        return new LlmResult(true, fullContent, '', '');
+      }
+      const text: string = typeof response.result === 'string' ? response.result : JSON.stringify(response.result);
+      const content: string = LlmClient.anthropicContent(text);
+      if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+      return new LlmResult(true, content, '', '');
+    } catch (e) {
+      return LlmClient.toResult(e);
+    } finally {
+      httpRequest.off('dataReceive');
+      httpRequest.destroy();
+    }
+  }
+
+  private static async postAnthropicStream(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void): Promise<LlmResult> {
+    return LlmClient.postAnthropic(config, messages, true, onDelta);
+  }
+
+  // ---- URL 规范化 ----
+
+  private static openAIUrl(baseUrl: string): string {
     let url: string = baseUrl.trim();
     if (url.endsWith('/')) url = url.substring(0, url.length - 1);
     if (url.endsWith('/chat/completions')) return url;
@@ -132,7 +214,17 @@ export class LlmClient {
     return url + '/chat/completions';
   }
 
-  private static extractContent(jsonText: string): string {
+  private static anthropicUrl(baseUrl: string): string {
+    let url: string = baseUrl.trim();
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    if (url.endsWith('/v1/messages')) return url;
+    if (url.endsWith('/messages')) return url;
+    return url + '/v1/messages';
+  }
+
+  // ---- OpenAI 响应解析 ----
+
+  private static openAIContent(jsonText: string): string {
     try {
       const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
       const choices: Object = parsed.choices;
@@ -151,7 +243,31 @@ export class LlmClient {
     }
   }
 
-  // 从 SSE 文本流中提取完整事件（按空行分隔），返回已消费的事件
+  // ---- Anthropic 响应解析 ----
+
+  private static anthropicContent(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const content: Object = parsed.content;
+      if (content !== undefined && Array.isArray(content)) {
+        const blocks: Object[] = content as Object[];
+        let text: string = '';
+        for (let i: number = 0; i < blocks.length; i++) {
+          const block: Record<string, Object> = blocks[i] as Record<string, Object>;
+          if (block.type === 'text' && block.text !== undefined) {
+            text = text + String(block.text);
+          }
+        }
+        return text;
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---- SSE 通用解析 ----
+
   private static extractSseEvents(buffer: string): string[] {
     const events: string[] = [];
     let index: number = 0;
@@ -165,7 +281,6 @@ export class LlmClient {
     return events;
   }
 
-  // 提取未消费的 buffer（最后一段不完整的 SSE 块）
   private static remainingBuffer(buffer: string, consumed: string[]): string {
     let consumedLen: number = 0;
     for (let i: number = 0; i < consumed.length; i++) {
@@ -174,8 +289,9 @@ export class LlmClient {
     return buffer.substring(consumedLen);
   }
 
-  // 从单个 SSE 事件提取增量内容
-  private static contentFromSseEvent(event: string): string {
+  // ---- OpenAI SSE 增量提取 ----
+
+  private static openAIDeltaFromSse(event: string): string {
     const lines: string[] = event.split('\n');
     let data: string = '';
     for (let i: number = 0; i < lines.length; i++) {
@@ -211,6 +327,41 @@ export class LlmClient {
     }
   }
 
+  // ---- Anthropic SSE 增量提取 ----
+
+  private static anthropicDeltaFromSse(event: string): string {
+    const lines: string[] = event.split('\n');
+    let data: string = '';
+    for (let i: number = 0; i < lines.length; i++) {
+      const line: string = lines[i];
+      if (line.startsWith('data:')) {
+        const value: string = line.substring(5).trim();
+        if (data.length > 0) data = data + value;
+        else data = value;
+      }
+    }
+    if (data.length === 0) return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const eventType: string = typeof parsed.type === 'string' ? parsed.type : '';
+      if (eventType === 'content_block_delta') {
+        const delta: Object = parsed.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          if (deltaObj.type === 'text_delta') {
+            const text: Object = deltaObj.text;
+            if (text !== undefined) return String(text);
+          }
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---- 工具方法 ----
+
   private static arrayBufferToString(buffer: ArrayBuffer): string {
     try {
       return TEXT_DECODER.decodeToString(new Uint8Array(buffer));
@@ -233,6 +384,26 @@ export class LlmClient {
     } catch (e) {
     }
     if (code === 401) return 'API Key 无效或未授权，请检查配置';
+    if (code === 403) return '访问被拒绝，请检查 API Key 权限';
+    if (code === 404) return '接口地址或模型名称错误';
+    if (code === 429) return '请求过于频繁或额度不足';
+    return '服务返回错误（HTTP ' + code.toString() + '）';
+  }
+
+  private static anthropicErrorMessage(body: Object, code: number): string {
+    try {
+      if (typeof body === 'string' && (body as string).length > 0) {
+        const parsed: Record<string, Object> = JSON.parse(body as string) as Record<string, Object>;
+        const error: Object = parsed.error;
+        if (error !== undefined) {
+          const errorObj: Record<string, Object> = error as Record<string, Object>;
+          const message: Object = errorObj.message;
+          if (message !== undefined) return String(message);
+        }
+      }
+    } catch (e) {
+    }
+    if (code === 401) return 'API Key 无效或未授权，请检查 x-api-key';
     if (code === 403) return '访问被拒绝，请检查 API Key 权限';
     if (code === 404) return '接口地址或模型名称错误';
     if (code === 429) return '请求过于频繁或额度不足';

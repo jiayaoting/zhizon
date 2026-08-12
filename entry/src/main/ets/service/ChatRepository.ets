@@ -1,7 +1,7 @@
 // 智子 - AI 对话仓库（API Key 加密存取 + 会话历史持久化）
 import { DataRepository } from './DataRepository';
 import { CryptoHelper } from '../common/CryptoHelper';
-import { ChatMessage, LlmConfig, StoredChatMessage, StoredLlmConfig } from '../common/LlmModels';
+import { ApiFormat, ChatMessage, LlmConfig, StoredChatMessage, StoredLlmConfig } from '../common/LlmModels';
 
 const KEY_CONFIG = 'llmConfig';
 const KEY_API_KEY = 'llmApiKey';
@@ -20,6 +20,8 @@ export class ChatRepository {
         config.baseUrl = typeof parsed.baseUrl === 'string' ? parsed.baseUrl : '';
         config.model = typeof parsed.model === 'string' ? parsed.model : '';
         if (typeof parsed.temperature === 'number') config.temperature = parsed.temperature as number;
+        if (typeof parsed.apiFormat === 'string') config.apiFormat = parsed.apiFormat as ApiFormat;
+        if (typeof parsed.maxTokens === 'number') config.maxTokens = parsed.maxTokens as number;
       }
       config.apiKey = await ChatRepository.loadApiKey();
     } catch (e) {
@@ -29,7 +31,7 @@ export class ChatRepository {
 
   static async saveConfig(config: LlmConfig): Promise<void> {
     const stored: StoredLlmConfig = new StoredLlmConfig(config.providerId, config.baseUrl, config.model,
-      config.temperature);
+      config.temperature, config.apiFormat, config.maxTokens);
     await DataRepository.setSetting(KEY_CONFIG, JSON.stringify(stored));
     await ChatRepository.saveApiKey(config.apiKey);
   }

@@ -91,7 +91,7 @@ struct Chat {
       promptAction.showToast({ message: '请先配置大模型 API' });
       return;
     }
-    if (!config.needsKey && !config.apiKey) {
+    if (config.needsKey && !config.apiKey) {
       promptAction.showToast({ message: '请先配置 API Key' });
       return;
     }

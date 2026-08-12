@@ -1,4 +1,7 @@
-// 智子 - 大模型服务商模板（OpenAI 兼容协议）
+// API 格式类型
+export type ApiFormat = 'openai' | 'anthropic';
+
+// 智子 - 大模型服务商模板
 export class LlmProviderTemplate {
   id: string;
   name: string;
@@ -6,20 +9,31 @@ export class LlmProviderTemplate {
   defaultModel: string;
   models: string[];
   isLocal: boolean;
+  apiFormat: ApiFormat;
 
-  constructor(id: string, name: string, baseUrl: string, defaultModel: string, models: string[], isLocal: boolean = false) {
+  constructor(id: string, name: string, baseUrl: string, defaultModel: string, models: string[],
+    apiFormat: ApiFormat = 'openai', isLocal: boolean = false) {
     this.id = id;
     this.name = name;
     this.baseUrl = baseUrl;
     this.defaultModel = defaultModel;
     this.models = models;
+    this.apiFormat = apiFormat;
     this.isLocal = isLocal;
   }
 }
 
+export const API_FORMAT_LABELS: Record<string, string> = {
+  'openai': 'OpenAI Chat Completions',
+  'anthropic': 'Anthropic Messages'
+};
+
 export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   new LlmProviderTemplate('openai', 'OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini',
     ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1']),
+  new LlmProviderTemplate('anthropic', 'Anthropic', 'https://api.anthropic.com', 'claude-sonnet-4-20250514',
+    ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
+      'claude-3-opus-20240229'], 'anthropic'),
   new LlmProviderTemplate('deepseek', 'DeepSeek', 'https://api.deepseek.com/v1', 'deepseek-chat',
     ['deepseek-chat', 'deepseek-reasoner']),
   new LlmProviderTemplate('qwen', '通义千问', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus',
@@ -29,7 +43,8 @@ export const LLM_PROVIDER_TEMPLATES: LlmProviderTemplate[] = [
   new LlmProviderTemplate('zhipu', '智谱 GLM', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4-flash',
     ['glm-4-flash', 'glm-4-plus', 'glm-4-air']),
   new LlmProviderTemplate('ollama', 'Ollama（本地）', 'http://127.0.0.1:11434/v1', 'llama3.2',
-    [], true)
+    [], 'openai', true),
+  new LlmProviderTemplate('custom', '自定义', '', '', [], 'openai')
 ];
 
 export function providerTemplateById(id: string): LlmProviderTemplate | null {
@@ -46,13 +61,16 @@ export class LlmConfig {
   apiKey: string = '';
   model: string = '';
   temperature: number = 0.7;
+  apiFormat: ApiFormat = 'openai';
+  maxTokens: number = 4096;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
   }
 
   get needsKey(): boolean {
-    return this.baseUrl.indexOf('127.0.0.1') >= 0 || this.baseUrl.indexOf('localhost') >= 0;
+    if (this.baseUrl.indexOf('127.0.0.1') >= 0 || this.baseUrl.indexOf('localhost') >= 0) return false;
+    return true;
   }
 }
 
@@ -110,18 +128,38 @@ export class ChatRequestBody {
   }
 }
 
+// Anthropic Messages 请求体
+export class AnthropicRequestBody {
+  model: string;
+  max_tokens: number;
+  messages: ChatRequestMessage[];
+  stream: boolean;
+
+  constructor(model: string, maxTokens: number, messages: ChatRequestMessage[], stream: boolean) {
+    this.model = model;
+    this.max_tokens = maxTokens;
+    this.messages = messages;
+    this.stream = stream;
+  }
+}
+
 // 配置持久化结构（不含 API Key，Key 单独加密存储）
 export class StoredLlmConfig {
   providerId: string;
   baseUrl: string;
   model: string;
   temperature: number;
+  apiFormat: string;
+  maxTokens: number;
 
-  constructor(providerId: string, baseUrl: string, model: string, temperature: number) {
+  constructor(providerId: string, baseUrl: string, model: string, temperature: number,
+    apiFormat: string = 'openai', maxTokens: number = 4096) {
     this.providerId = providerId;
     this.baseUrl = baseUrl;
     this.model = model;
     this.temperature = temperature;
+    this.apiFormat = apiFormat;
+    this.maxTokens = maxTokens;
   }
 }
 

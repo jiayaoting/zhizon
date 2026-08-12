@@ -4,7 +4,8 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
-import { LLM_PROVIDER_TEMPLATES, LlmConfig, LlmProviderTemplate, LlmResult, providerTemplateById } from '../common/LlmModels';
+import { API_FORMAT_LABELS, ApiFormat, LLM_PROVIDER_TEMPLATES, LlmConfig, LlmProviderTemplate, LlmResult,
+  providerTemplateById } from '../common/LlmModels';
 
 @Entry
 @Component
@@ -18,12 +19,16 @@ struct ChatConfig {
   @State apiKey: string = '';
   @State model: string = '';
   @State temperature: number = 0.7;
+  @State apiFormat: ApiFormat = 'openai';
+  @State maxTokens: number = 4096;
   @State showKey: boolean = false;
   @State testing: boolean = false;
   @State showProviderSheet: boolean = false;
   @State showModelSheet: boolean = false;
+  @State showFormatSheet: boolean = false;
   @State saved: boolean = false;
   @State tempText: string = '0.7';
+  @State maxTokensText: string = '4096';
 
   aboutToAppear(): void {
     this.load();
@@ -36,13 +41,17 @@ struct ChatConfig {
     this.apiKey = config.apiKey;
     this.model = config.model;
     this.temperature = config.temperature;
+    this.apiFormat = config.apiFormat || 'openai';
+    this.maxTokens = config.maxTokens || 4096;
     this.tempText = config.temperature.toFixed(1);
+    this.maxTokensText = this.maxTokens.toString();
     this.saved = config.configured;
     if (!this.baseUrl.trim()) {
       const template: LlmProviderTemplate | null = providerTemplateById(this.providerId);
       if (template !== null) {
         this.baseUrl = template.baseUrl;
         this.model = template.defaultModel;
+        this.apiFormat = template.apiFormat;
       }
     }
   }
@@ -51,6 +60,7 @@ struct ChatConfig {
     this.providerId = template.id;
     this.baseUrl = template.baseUrl;
     this.model = template.defaultModel;
+    this.apiFormat = template.apiFormat;
     this.showProviderSheet = false;
   }
 
@@ -59,13 +69,18 @@ struct ChatConfig {
     return template !== null ? template.name : '自定义';
   }
 
-  private currentTemplate(): LlmProviderTemplate | null {
-    return providerTemplateById(this.providerId);
+  private formatLabel(): string {
+    const label: string = API_FORMAT_LABELS[this.apiFormat];
+    return label !== undefined ? label : 'OpenAI Chat Completions';
   }
 
   private isLocalProvider(): boolean {
     const template: LlmProviderTemplate | null = providerTemplateById(this.providerId);
     return template !== null && template.isLocal;
+  }
+
+  private isCustomProvider(): boolean {
+    return this.providerId === 'custom';
   }
 
   private modelOptions(): string[] {
@@ -81,16 +96,22 @@ struct ChatConfig {
     config.apiKey = this.apiKey.trim();
     config.model = this.model.trim();
     config.temperature = this.temperature;
+    config.apiFormat = this.apiFormat;
+    config.maxTokens = this.maxTokens;
     if (!config.baseUrl) {
       promptAction.showToast({ message: '请填写接口地址' });
       return;
     }
-    if (!config.needsKey && !config.apiKey) {
+    if (config.needsKey && !config.apiKey) {
       promptAction.showToast({ message: '请填写 API Key' });
       return;
     }
     if (!config.model) {
       promptAction.showToast({ message: '请填写模型名称' });
+      return;
+    }
+    if (config.apiFormat === 'anthropic' && config.maxTokens <= 0) {
+      promptAction.showToast({ message: '请填写有效的 max_tokens' });
       return;
     }
     await ChatRepository.saveConfig(config);
@@ -105,7 +126,9 @@ struct ChatConfig {
     config.apiKey = this.apiKey.trim();
     config.model = this.model.trim();
     config.temperature = this.temperature;
-    if (!config.baseUrl || (!config.needsKey && !config.apiKey) || !config.model) {
+    config.apiFormat = this.apiFormat;
+    config.maxTokens = this.maxTokens;
+    if (!config.baseUrl || (config.needsKey && !config.apiKey) || !config.model) {
       promptAction.showToast({ message: '请先完整填写配置' });
       return;
     }
@@ -124,6 +147,14 @@ struct ChatConfig {
     const value: number = Number(text);
     if (!Number.isNaN(value) && value >= 0 && value <= 2) {
       this.temperature = value;
+    }
+  }
+
+  private onMaxTokensChange(text: string): void {
+    this.maxTokensText = text;
+    const value: number = Number(text);
+    if (!Number.isNaN(value) && value > 0 && value <= 200000) {
+      this.maxTokens = value;
     }
   }
 
@@ -148,68 +179,222 @@ struct ChatConfig {
 
   @Builder
   providerSheet() {
-    Column({ space: 6 }) {
-      Text('选择服务商')
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .margin({ bottom: 6 })
-      ForEach(LLM_PROVIDER_TEMPLATES, (template: LlmProviderTemplate) => {
-        Row({ space: 10 }) {
-          Column({ space: 2 }) {
-            Text(template.name)
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .fontWeight(template.id === this.providerId ? FontWeight.Bold : FontWeight.Medium)
-            Text(template.baseUrl)
-              .fontSize(10)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          if (template.id === this.providerId) {
-            Text('✓')
-              .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.primary)
-              .fontWeight(FontWeight.Bold)
-          }
+    Column() {
+      // 拖拽指示条
+      Row() {
+        Row()
+          .width(36)
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(this.palette.borderSubtle)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 10, bottom: 4 })
+
+      // 标题
+      Row() {
+        Text('选择服务商')
+          .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Blank()
+        Text('✕')
+          .fontSize(16)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .padding(8)
+          .onClick(() => { this.showProviderSheet = false; })
+      }
+      .width('100%')
+      .padding({ left: 4, right: 4, bottom: 8 })
+
+      // 列表
+      Scroll() {
+        Column({ space: 4 }) {
+          ForEach(LLM_PROVIDER_TEMPLATES, (template: LlmProviderTemplate) => {
+            Row({ space: 10 }) {
+              Column({ space: 2 }) {
+                Row({ space: 6 }) {
+                  Text(template.name)
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textPrimary)
+                    .fontWeight(template.id === this.providerId ? FontWeight.Bold : FontWeight.Medium)
+                  if (template.id === 'custom') {
+                    Text('+')
+                      .fontSize(11)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.primary)
+                      .fontWeight(FontWeight.Bold)
+                      .padding({ left: 4, right: 4, top: 1, bottom: 1 })
+                      .borderRadius(4)
+                      .backgroundColor(this.palette.primaryDim)
+                  }
+                }
+                if (template.id !== 'custom' && template.baseUrl.length > 0) {
+                  Text(template.baseUrl)
+                    .fontSize(10)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textTertiary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                } else if (template.id === 'custom') {
+                  Text('手动填写接口地址与模型')
+                    .fontSize(10)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textTertiary)
+                }
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              if (template.id === this.providerId) {
+                Text('✓')
+                  .fontSize(16)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.primary)
+                  .fontWeight(FontWeight.Bold)
+              }
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(8)
+            .backgroundColor(template.id === this.providerId ? this.palette.primaryDim : this.palette.bgSurface)
+            .border({ width: template.id === this.providerId ? 1 : 0,
+              color: template.id === this.providerId ? this.palette.primary : Color.Transparent })
+            .onClick(() => { this.applyTemplate(template); })
+          }, (template: LlmProviderTemplate) => template.id)
         }
         .width('100%')
-        .padding(12)
-        .borderRadius(8)
-        .backgroundColor(template.id === this.providerId ? this.palette.primaryDim : this.palette.bgSurface)
-        .border({ width: template.id === this.providerId ? 1 : 0,
-          color: template.id === this.providerId ? this.palette.primary : Color.Transparent })
-        .onClick(() => { this.applyTemplate(template); })
-      }, (template: LlmProviderTemplate) => template.id)
+      }
+      .scrollBar(BarState.Off)
+      .constraintSize({ maxHeight: 360 })
     }
     .width('100%')
-    .padding(16)
+    .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
+    .backgroundColor(this.palette.bgBase)
+    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   @Builder
   modelSheet() {
-    Column({ space: 6 }) {
-      Text('选择模型')
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .margin({ bottom: 6 })
-      ForEach(this.modelOptions(), (modelName: string) => {
-        Row() {
-          Text(modelName)
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .layoutWeight(1)
-          if (modelName === this.model) {
+    Column() {
+      Row() {
+        Row()
+          .width(36)
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(this.palette.borderSubtle)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 10, bottom: 4 })
+
+      Row() {
+        Text('选择模型')
+          .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Blank()
+        Text('✕')
+          .fontSize(16)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .padding(8)
+          .onClick(() => { this.showModelSheet = false; })
+      }
+      .width('100%')
+      .padding({ left: 4, right: 4, bottom: 8 })
+
+      Scroll() {
+        Column({ space: 4 }) {
+          ForEach(this.modelOptions(), (modelName: string) => {
+            Row() {
+              Text(modelName)
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .layoutWeight(1)
+              if (modelName === this.model) {
+                Text('✓')
+                  .fontSize(16)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.primary)
+                  .fontWeight(FontWeight.Bold)
+              }
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(8)
+            .backgroundColor(modelName === this.model ? this.palette.primaryDim : this.palette.bgSurface)
+            .border({ width: modelName === this.model ? 1 : 0,
+              color: modelName === this.model ? this.palette.primary : Color.Transparent })
+            .onClick(() => {
+              this.model = modelName;
+              this.showModelSheet = false;
+            })
+          }, (modelName: string) => modelName)
+        }
+        .width('100%')
+      }
+      .scrollBar(BarState.Off)
+      .constraintSize({ maxHeight: 300 })
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
+    .backgroundColor(this.palette.bgBase)
+    .borderRadius({ topLeft: 16, topRight: 16 })
+  }
+
+  @Builder
+  formatSheet() {
+    Column() {
+      Row() {
+        Row()
+          .width(36)
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(this.palette.borderSubtle)
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 10, bottom: 4 })
+
+      Row() {
+        Text('选择 API 格式')
+          .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Blank()
+        Text('✕')
+          .fontSize(16)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .padding(8)
+          .onClick(() => { this.showFormatSheet = false; })
+      }
+      .width('100%')
+      .padding({ left: 4, right: 4, bottom: 8 })
+
+      Column({ space: 4 }) {
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('OpenAI Chat Completions')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(this.apiFormat === 'openai' ? FontWeight.Bold : FontWeight.Medium)
+            Text('适用于 OpenAI / DeepSeek / 通义千问 等兼容接口')
+              .fontSize(10)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          if (this.apiFormat === 'openai') {
             Text('✓')
               .fontSize(16)
               .fontFamily(this.palette.fontSans)
@@ -220,17 +405,53 @@ struct ChatConfig {
         .width('100%')
         .padding(12)
         .borderRadius(8)
-        .backgroundColor(modelName === this.model ? this.palette.primaryDim : this.palette.bgSurface)
-        .border({ width: modelName === this.model ? 1 : 0,
-          color: modelName === this.model ? this.palette.primary : Color.Transparent })
+        .backgroundColor(this.apiFormat === 'openai' ? this.palette.primaryDim : this.palette.bgSurface)
+        .border({ width: this.apiFormat === 'openai' ? 1 : 0,
+          color: this.apiFormat === 'openai' ? this.palette.primary : Color.Transparent })
         .onClick(() => {
-          this.model = modelName;
-          this.showModelSheet = false;
+          this.apiFormat = 'openai';
+          this.showFormatSheet = false;
         })
-      }, (modelName: string) => modelName)
+
+        Row({ space: 10 }) {
+          Column({ space: 2 }) {
+            Text('Anthropic Messages')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(this.apiFormat === 'anthropic' ? FontWeight.Bold : FontWeight.Medium)
+            Text('适用于 Anthropic Claude 系列模型')
+              .fontSize(10)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          if (this.apiFormat === 'anthropic') {
+            Text('✓')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.primary)
+              .fontWeight(FontWeight.Bold)
+          }
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(8)
+        .backgroundColor(this.apiFormat === 'anthropic' ? this.palette.primaryDim : this.palette.bgSurface)
+        .border({ width: this.apiFormat === 'anthropic' ? 1 : 0,
+          color: this.apiFormat === 'anthropic' ? this.palette.primary : Color.Transparent })
+        .onClick(() => {
+          this.apiFormat = 'anthropic';
+          this.showFormatSheet = false;
+        })
+      }
+      .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
+    .backgroundColor(this.palette.bgBase)
+    .borderRadius({ topLeft: 16, topRight: 16 })
   }
 
   @Builder
@@ -257,7 +478,7 @@ struct ChatConfig {
       Column() {
         TopBar({
           title: 'AI 对话配置',
-          subtitle: '接入 OpenAI 兼容接口',
+          subtitle: 'OpenAI / Anthropic 兼容接口',
           showBack: true
         }) {}
 
@@ -286,10 +507,36 @@ struct ChatConfig {
           }
           .width('100%')
 
+          // API 格式（仅自定义时显示）
+          if (this.isCustomProvider()) {
+            Column({ space: 6 }) {
+              this.rowLabel('API 格式', '选择接口协议类型')
+              Row() {
+                Text(this.formatLabel())
+                  .fontSize(this.palette.fsSm)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .layoutWeight(1)
+                Text('›')
+                  .fontSize(16)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+              }
+              .width('100%')
+              .padding(12)
+              .borderRadius(8)
+              .backgroundColor(this.palette.bgSurface)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .onClick(() => { this.showFormatSheet = true; })
+            }
+            .width('100%')
+          }
+
           // 接口地址
           Column({ space: 6 }) {
-            this.rowLabel('接口地址 (Base URL)', '如 https://api.deepseek.com/v1')
-            TextInput({ text: this.baseUrl, placeholder: 'https://api.example.com/v1' })
+            this.rowLabel('接口地址 (Base URL)',
+              this.apiFormat === 'anthropic' ? '如 https://api.anthropic.com' : '如 https://api.deepseek.com/v1')
+            TextInput({ text: this.baseUrl, placeholder: 'https://api.example.com' })
               .fontSize(this.palette.fsSm)
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
@@ -304,7 +551,9 @@ struct ChatConfig {
 
           // API Key
           Column({ space: 6 }) {
-            this.rowLabel('API Key', this.isLocalProvider() ? '本地服务无需填写' : '仅加密保存在本机，不会上传')
+            this.rowLabel('API Key',
+              this.isLocalProvider() ? '本地服务无需填写' :
+                (this.apiFormat === 'anthropic' ? '使用 x-api-key 请求头' : '仅加密保存在本机，不会上传'))
             Row({ space: 8 }) {
               TextInput({ text: this.apiKey, placeholder: 'sk-...' })
                 .fontSize(this.palette.fsSm)
@@ -362,6 +611,26 @@ struct ChatConfig {
             .width('100%')
           }
           .width('100%')
+
+          // max_tokens（Anthropic 格式时显示）
+          if (this.apiFormat === 'anthropic') {
+            Column({ space: 6 }) {
+              this.rowLabel('max_tokens', '最大输出 Token 数（1-200000）')
+              TextInput({ text: this.maxTokensText, placeholder: '4096' })
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .placeholderColor(this.palette.textTertiary)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(8)
+                .border({ width: 1, color: this.palette.borderSubtle })
+                .height(44)
+                .type(InputType.Number)
+                .width('100%')
+                .onChange((value: string) => { this.onMaxTokensChange(value); })
+            }
+            .width('100%')
+          }
 
           // 温度
           Column({ space: 6 }) {
@@ -435,45 +704,61 @@ struct ChatConfig {
       .scrollBar(BarState.Off)
     }
     .width('100%')
-      .height('100%')
-      .backgroundColor(this.palette.bgBase)
-      .padding({ bottom: Math.max(0, this.navBarHeight) })
-
-      // 服务商选择弹层
-      if (this.showProviderSheet) {
-        Stack() {
-          Column() {
-            Blank()
-            this.providerSheet()
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
-        .onClick(() => { this.showProviderSheet = false; })
-      }
-
-      // 模型选择弹层
-      if (this.showModelSheet) {
-        Stack() {
-          Column() {
-            Blank()
-            this.modelSheet()
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
-        .onClick(() => { this.showModelSheet = false; })
-      }
-    }
-    .width('100%')
     .height('100%')
+    .backgroundColor(this.palette.bgBase)
+    .padding({ bottom: Math.max(0, this.navBarHeight) })
+
+    // 服务商选择弹层
+    if (this.showProviderSheet) {
+      Stack() {
+        Column() {
+          Blank()
+          this.providerSheet()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.showProviderSheet = false; })
+    }
+
+    // 模型选择弹层
+    if (this.showModelSheet) {
+      Stack() {
+        Column() {
+          Blank()
+          this.modelSheet()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.showModelSheet = false; })
+    }
+
+    // API 格式选择弹层
+    if (this.showFormatSheet) {
+      Stack() {
+        Column() {
+          Blank()
+          this.formatSheet()
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.showFormatSheet = false; })
+    }
   }
+  .width('100%')
+  .height('100%')
 }
