@@ -133,7 +133,8 @@ export class SecurityService {
     const combined: Uint8Array = new Uint8Array(salt.length + pwdBytes.length);
     combined.set(salt, 0);
     combined.set(pwdBytes, salt.length);
-    await md.update({ data: combined });
+    const input: cryptoFramework.DataBlob = { data: combined };
+    await md.update(input);
     const digest: cryptoFramework.DataBlob = await md.digest();
     return SecurityService.bytesToB64(digest.data);
   }

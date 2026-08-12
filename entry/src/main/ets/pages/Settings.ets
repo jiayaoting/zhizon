@@ -75,6 +75,7 @@ export struct SettingsPage {
   @StorageLink('followSystemDark') followSystemDark: boolean = true;
   @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
   @StorageLink('backgroundDisplayState') backgroundDisplayState: BackgroundDisplayState = BackgroundDisplayState.INVALID;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
 
   // 外观
   @State fontSizeScale: string = 'standard';
