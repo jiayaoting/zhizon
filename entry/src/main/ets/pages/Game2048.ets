@@ -129,7 +129,10 @@ export struct Game2048Page {
   private initBoard(): void {
     const b: number[][] = [];
     for (let r: number = 0; r < BOARD_SIZE; r++) {
-      const row: number[] = [0, 0, 0, 0];
+      const row: number[] = [];
+      for (let c: number = 0; c < BOARD_SIZE; c++) {
+        row.push(0);
+      }
       b.push(row);
     }
     this.board = b;
@@ -236,7 +239,8 @@ export struct Game2048Page {
       }
     } else if (direction === 'up') {
       for (let r: number = 0; r < BOARD_SIZE; r++) {
-        const row: number[] = [0, 0, 0, 0];
+        const row: number[] = [];
+        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(0);
         newBoard.push(row);
       }
       for (let c: number = 0; c < BOARD_SIZE; c++) {
@@ -247,7 +251,8 @@ export struct Game2048Page {
       }
     } else if (direction === 'down') {
       for (let r: number = 0; r < BOARD_SIZE; r++) {
-        const row: number[] = [0, 0, 0, 0];
+        const row: number[] = [];
+        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(0);
         newBoard.push(row);
       }
       for (let c: number = 0; c < BOARD_SIZE; c++) {
