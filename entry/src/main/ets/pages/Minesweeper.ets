@@ -130,6 +130,9 @@ export struct MinesweeperPage {
   @State newRecord: boolean = false;
   @State cursorR: number = 0;
   @State cursorC: number = 0;
+  // 棋盘版本号：每次重新开局递增，强制 ForEach 销毁重建所有格子组件，
+  // 确保 @ObjectLink 重新绑定全新格子对象（修复重新开始后 UI 不更新）
+  @State boardEpoch: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
@@ -191,6 +194,7 @@ export struct MinesweeperPage {
     this.board = grid;
     this.remainingMines = this.mineCount;
     this.firstClick = true;
+    this.boardEpoch += 1;
   }
 
   // 首次翻开后布雷（保证首开安全）
@@ -385,6 +389,11 @@ export struct MinesweeperPage {
       this.autoPaused = false;
       this.isPaused = false;
       promptAction.showToast({ message: '已恢复游戏' });
+      return;
+    }
+    // 页面实例若被缓存复用（返回后重进显示旧终局），自动开新局
+    if (this.gameStarted && (this.isGameOver || this.isWin)) {
+      this.restartGame();
     }
   }
 
@@ -468,10 +477,11 @@ export struct MinesweeperPage {
               },
               onFlag: (): void => { this.toggleFlag(rowIdx, colIdx); }
             })
-          }, (cell: MineCell, colIdx: number) => colIdx.toString())
+          }, (cell: MineCell, colIdx: number) =>
+            rowIdx.toString() + '_' + colIdx.toString() + '_' + this.boardEpoch.toString())
         }
         .layoutWeight(1)
-      }, (row: MineCell[], rowIdx: number) => rowIdx.toString())
+      }, (row: MineCell[], rowIdx: number) => rowIdx.toString() + '_' + this.boardEpoch.toString())
     }
     .width('100%')
     .height('100%')
