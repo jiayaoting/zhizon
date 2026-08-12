@@ -83,3 +83,57 @@ export class LlmResult {
     this.errorMessage = errorMessage;
   }
 }
+
+// OpenAI 兼容请求消息（/chat/completions messages 项）
+export class ChatRequestMessage {
+  role: string;
+  content: string;
+
+  constructor(role: string, content: string) {
+    this.role = role;
+    this.content = content;
+  }
+}
+
+// OpenAI 兼容请求体（/chat/completions）
+export class ChatRequestBody {
+  model: string;
+  messages: ChatRequestMessage[];
+  temperature: number;
+  stream: boolean;
+
+  constructor(model: string, messages: ChatRequestMessage[], temperature: number, stream: boolean) {
+    this.model = model;
+    this.messages = messages;
+    this.temperature = temperature;
+    this.stream = stream;
+  }
+}
+
+// 配置持久化结构（不含 API Key，Key 单独加密存储）
+export class StoredLlmConfig {
+  providerId: string;
+  baseUrl: string;
+  model: string;
+  temperature: number;
+
+  constructor(providerId: string, baseUrl: string, model: string, temperature: number) {
+    this.providerId = providerId;
+    this.baseUrl = baseUrl;
+    this.model = model;
+    this.temperature = temperature;
+  }
+}
+
+// 聊天历史持久化结构
+export class StoredChatMessage {
+  role: string;
+  content: string;
+  time: number;
+
+  constructor(role: string, content: string, time: number) {
+    this.role = role;
+    this.content = content;
+    this.time = time;
+  }
+}

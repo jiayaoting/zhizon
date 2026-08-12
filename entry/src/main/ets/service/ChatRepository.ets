@@ -1,7 +1,7 @@
 // 智子 - AI 对话仓库（API Key 加密存取 + 会话历史持久化）
 import { DataRepository } from './DataRepository';
 import { CryptoHelper } from '../common/CryptoHelper';
-import { ChatMessage, LlmConfig } from '../common/LlmModels';
+import { ChatMessage, LlmConfig, StoredChatMessage, StoredLlmConfig } from '../common/LlmModels';
 
 const KEY_CONFIG = 'llmConfig';
 const KEY_API_KEY = 'llmApiKey';
@@ -28,13 +28,9 @@ export class ChatRepository {
   }
 
   static async saveConfig(config: LlmConfig): Promise<void> {
-    const payload = JSON.stringify({
-      providerId: config.providerId,
-      baseUrl: config.baseUrl,
-      model: config.model,
-      temperature: config.temperature
-    });
-    await DataRepository.setSetting(KEY_CONFIG, payload);
+    const stored: StoredLlmConfig = new StoredLlmConfig(config.providerId, config.baseUrl, config.model,
+      config.temperature);
+    await DataRepository.setSetting(KEY_CONFIG, JSON.stringify(stored));
     await ChatRepository.saveApiKey(config.apiKey);
   }
 
@@ -87,11 +83,9 @@ export class ChatRepository {
 
   static async saveHistory(messages: ChatMessage[]): Promise<void> {
     try {
-      const payload = JSON.stringify(messages.map((m: ChatMessage) => ({
-        role: m.role,
-        content: m.content,
-        time: m.time
-      })));
+      const storedMessages: StoredChatMessage[] = messages.map((m: ChatMessage) =>
+        new StoredChatMessage(m.role, m.content, m.time));
+      const payload: string = JSON.stringify(storedMessages);
       await DataRepository.setSetting(KEY_HISTORY, payload);
     } catch (e) {
     }

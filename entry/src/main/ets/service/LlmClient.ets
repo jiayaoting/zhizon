@@ -1,7 +1,7 @@
 // 智子 - 大模型客户端（OpenAI 兼容 /chat/completions + SSE 流式）
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
-import { ChatMessage, LlmConfig, LlmResult } from '../common/LlmModels';
+import { ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
 const REQUEST_TIMEOUT = 60000;
 const TEXT_DECODER: util.TextDecoder = new util.TextDecoder();
 
@@ -33,12 +33,9 @@ export class LlmClient {
       if (!config.needsKey) {
         header['Authorization'] = 'Bearer ' + config.apiKey.trim();
       }
-      const body = {
-        model: config.model.trim(),
-        messages: messages.map((m: ChatMessage): Record<string, string> => ({ role: m.role, content: m.content })),
-        temperature: config.temperature,
-        stream: false
-      };
+      const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
+        new ChatRequestMessage(m.role, m.content));
+      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, false);
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: header,
@@ -78,12 +75,9 @@ export class LlmClient {
       if (!config.needsKey) {
         header['Authorization'] = 'Bearer ' + config.apiKey.trim();
       }
-      const body = {
-        model: config.model.trim(),
-        messages: messages.map((m: ChatMessage): Record<string, string> => ({ role: m.role, content: m.content })),
-        temperature: config.temperature,
-        stream: true
-      };
+      const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
+        new ChatRequestMessage(m.role, m.content));
+      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, true);
       httpRequest.on('dataReceive', (data: ArrayBuffer) => {
         buffer = buffer + LlmClient.arrayBufferToString(data);
         const events: string[] = LlmClient.extractSseEvents(buffer);
