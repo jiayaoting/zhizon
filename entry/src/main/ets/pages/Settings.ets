@@ -987,11 +987,15 @@ export struct SettingsPage {
             ForEach(AVATAR_OPTIONS, (option: AvatarOption) => {
               Row({ space: 12 }) {
                 Stack() {
-                  Circle({ width: 48, height: 48 })
-                    .fill(new LinearGradient({
+                  // 渐变底
+                  Column()
+                    .width(48)
+                    .height(48)
+                    .borderRadius(24)
+                    .linearGradient({
                       angle: 135,
                       colors: [[option.colors[0], 0.0], [option.colors[1], 1.0]]
-                    }))
+                    })
                     .border({
                       width: this.avatarId === option.id ? 2 : 1,
                       color: this.avatarId === option.id ? this.palette.primary : this.palette.borderSubtle

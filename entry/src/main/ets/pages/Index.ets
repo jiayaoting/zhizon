@@ -180,15 +180,23 @@ export struct IndexPage {
             .objectFit(ImageFit.Cover)
             .border({ width: 1.5, color: '#80FFFFFF' })
         } else {
-          Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
-            .fill(new LinearGradient({
+          // 渐变底
+          Column()
+            .width(this.isSm ? 40 : 44)
+            .height(this.isSm ? 40 : 44)
+            .borderRadius(this.isSm ? 20 : 22)
+            .linearGradient({
               angle: 135,
               colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
-            }))
+            })
             .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
-          Circle({ width: this.isSm ? 40 : 44, height: this.isSm ? 40 : 44 })
-            .fill(Color.Transparent)
+          // 描边圆环
+          Column()
+            .width(this.isSm ? 40 : 44)
+            .height(this.isSm ? 40 : 44)
+            .borderRadius(this.isSm ? 20 : 22)
             .border({ width: 1.5, color: '#80FFFFFF' })
+          // Z 字
           Text('Z')
             .fontSize(this.isSm ? 16 : 18)
             .fontFamily(this.palette.fontSans)
