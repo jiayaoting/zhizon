@@ -269,48 +269,50 @@ export struct GamesPage {
   }
 
   build() {
-    Column() {
-      TopBar({ title: '游戏中心', subtitle: '休闲娱乐' })
+    Stack() {
+      Column() {
+        TopBar({ title: '游戏中心', subtitle: '休闲娱乐' })
 
-      Scroll() {
-        Column({ space: 12 }) {
-          this.difficultyPicker()
+        Scroll() {
+          Column({ space: 12 }) {
+            this.difficultyPicker()
 
-          // 标题区
-          Text('可用游戏')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 4, top: 8, bottom: 4 })
-            .width('100%')
+            // 标题区
+            Text('可用游戏')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .fontWeight(FontWeight.Medium)
+              .padding({ left: 4, top: 8, bottom: 4 })
+              .width('100%')
 
-          ForEach(this.games, (game: GameEntry, index: number) => {
-            this.gameCard(game, index)
-          }, (game: GameEntry) => game.gameId)
-
-
+            ForEach(this.games, (game: GameEntry, index: number) => {
+              this.gameCard(game, index)
+            }, (game: GameEntry) => game.gameId)
+          }
+          .width('100%')
+          .padding({
+            left: this.isSm ? 16 : 24,
+            right: this.isSm ? 16 : 24,
+            bottom: 24
+          })
         }
-        .width('100%')
-        .padding({
-          left: this.isSm ? 16 : 24,
-          right: this.isSm ? 16 : 24,
-          bottom: 24
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
+        .focusable(true)
+        .onKeyEvent((event: KeyEvent) => {
+          // 确保页面可聚焦，Tab 导航由系统处理
+          return;
         })
       }
       .layoutWeight(1)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring)
-      .focusable(true)
-      .onKeyEvent((event: KeyEvent) => {
-        // 确保页面可聚焦，Tab 导航由系统处理
-        return;
-      })
-    }
-    .layoutWeight(1)
-    .height('100%')
-    .backgroundColor(Color.Transparent)
+      .height('100%')
+      .backgroundColor(Color.Transparent)
 
-    this.helpDialog()
+      this.helpDialog()
+    }
+    .width('100%')
+    .height('100%')
   }
 }
