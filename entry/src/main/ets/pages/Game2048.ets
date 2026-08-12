@@ -65,6 +65,7 @@ export struct Game2048Page {
   @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
 
   private titleText: string = '2048';
   private gameStartTime: number = 0;
@@ -893,6 +894,7 @@ export struct Game2048Page {
       .layoutWeight(1)
       .height('100%')
       .backgroundColor(this.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {

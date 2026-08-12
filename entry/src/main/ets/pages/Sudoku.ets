@@ -38,6 +38,7 @@ export struct SudokuPage {
   @State flashWin: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
 
   private timerId: number = -1;
   private titleText: string = '数独';
@@ -871,6 +872,7 @@ export struct SudokuPage {
       .layoutWeight(1)
       .height('100%')
       .backgroundColor(this.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {

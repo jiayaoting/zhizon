@@ -95,6 +95,7 @@ export struct TetrisPage {
   @State playSeconds: number = 0;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
@@ -1142,6 +1143,7 @@ export struct TetrisPage {
       .layoutWeight(1)
       .height('100%')
       .backgroundColor(this.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {
