@@ -44,7 +44,8 @@ export class GameAction {
 // AI 展示档位：速度索引 → 每步展示窗口（毫秒）
 export const AI_SPEED_OPTIONS: string[] = ['慢', '中', '快', '极速'];
 export const AI_SPEED_DELAYS: number[] = [800, 400, 200, 0];
-export const AI_DECISION_TIMEOUT: number = 30000;
+// 决策超时：思考型模型（非流式）需等完整思考+正文生成，30 秒常不够，放宽到 120 秒
+export const AI_DECISION_TIMEOUT: number = 120000;
 
 export class GameAIService {
   // ---- 模型管理 ----
@@ -128,9 +129,11 @@ export class GameAIService {
       const timer: number = setTimeout(() => {
         if (!settled) {
           settled = true;
-          resolve(new LlmResult(false, '', 'DECISION_TIMEOUT', 'AI 决策超时，请稍后重试'));
+          resolve(new LlmResult(false, '', 'DECISION_TIMEOUT',
+            'AI 决策超时：思考型模型响应较慢，请稍候或换用非思考模型'));
         }
       }, timeoutMs);
+      // 非流式请求：游戏决策只需最终动作，流式无法提前结束（思考型模型仍需等正文输出）
       LlmClient.postCompletion(config, messages).then((result: LlmResult) => {
         if (!settled) {
           settled = true;
