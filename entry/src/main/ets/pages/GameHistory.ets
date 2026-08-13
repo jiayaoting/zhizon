@@ -92,34 +92,37 @@ export struct GameHistoryPage {
     Column() {
       TopBar({ title: '游戏战绩', showBack: true })
 
-      // 游戏切换标签
-      Row({ space: 0 }) {
-        ForEach(this.gameKeys, (key: string) => {
-          Row({ space: 4 }) {
-            Text(gameIcon(key))
-              .fontSize(14)
-              .fontFamily(this.palette.fontSans)
-            Text(gameName(key))
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.gameKey === key ? this.palette.textPrimary : this.palette.textTertiary)
-              .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
-          }
-          .layoutWeight(1)
-          .height(36)
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(8)
-          .backgroundColor(this.gameKey === key ? this.palette.primary + '20' : Color.Transparent)
-          .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? this.palette.primary : Color.Transparent })
-          .margin({ right: 8 })
-          .onClick(() => {
-            this.gameKey = key;
-            this.loadScores();
+      // 游戏切换标签（横向滚动，避免内容超出屏幕宽度）
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(this.gameKeys, (key: string) => {
+            Row({ space: 4 }) {
+              Text(gameIcon(key))
+                .fontSize(14)
+                .fontFamily(this.palette.fontSans)
+              Text(gameName(key))
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.gameKey === key ? this.palette.textPrimary : this.palette.textTertiary)
+                .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
+            }
+            .height(36)
+            .padding({ left: 12, right: 12 })
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.gameKey === key ? this.palette.primary + '20' : Color.Transparent)
+            .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? this.palette.primary : Color.Transparent })
+            .onClick(() => {
+              this.gameKey = key;
+              this.loadScores();
+            })
           })
-        })
+        }
+        .padding({ left: 16, right: 16, top: 12, bottom: 8 })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+      .scrollable(ScrollDirection.Horizontal)
+      .edgeEffect(EdgeEffect.None)
 
       // 排行列表
       if (this.scores.length === 0 && !this.loading) {
