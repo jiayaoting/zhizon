@@ -513,13 +513,79 @@ export struct MinesweeperPage {
     this.aiSpeedIndex = index;
   }
 
-  // AI 决策循环：纯回合制，每轮 决策 → 执行动作（翻开/标旗）
+  // 确定性推理一步：扫描所有已翻开数字格，尝试翻开确定安全的格、标记确定的地雷。
+  // 返回是否作出了任何动作（有动作则继续推理，直到僵局才交给大模型）。
+  private inferStep(): boolean {
+    let madeMove: boolean = false;
+    for (let r: number = 0; r < this.rows; r++) {
+      for (let c: number = 0; c < this.cols; c++) {
+        const cell: MineCell = this.board[r][c];
+        if (!cell.revealed || cell.isMine || cell.adjacent === 0) continue;
+        let flagged: number = 0;
+        const hidden: MinePos[] = [];
+        for (let dr: number = -1; dr <= 1; dr++) {
+          for (let dc: number = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr: number = r + dr;
+            const nc: number = c + dc;
+            if (nr < 0 || nr >= this.rows || nc < 0 || nc >= this.cols) continue;
+            const nb: MineCell = this.board[nr][nc];
+            if (nb.flagged) {
+              flagged += 1;
+            } else if (!nb.revealed) {
+              hidden.push({ r: nr, c: nc });
+            }
+          }
+        }
+        if (cell.adjacent === flagged) {
+          // 周围旗子数已等于雷数：其余隐藏格全部安全 → 翻开
+          for (let i: number = 0; i < hidden.length; i++) {
+            this.revealCell(hidden[i].r, hidden[i].c);
+            madeMove = true;
+            if (this.isGameOver || this.isWin) return true;
+          }
+        } else if (hidden.length > 0 && hidden.length === cell.adjacent - flagged) {
+          // 隐藏格数量正好等于剩余雷数：全部是雷 → 标记
+          for (let i: number = 0; i < hidden.length; i++) {
+            this.toggleFlag(hidden[i].r, hidden[i].c);
+            madeMove = true;
+            if (this.isGameOver || this.isWin) return true;
+          }
+        }
+      }
+    }
+    return madeMove;
+  }
+
+  private inferDelay(): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);
+    });
+  }
+
+  // AI 决策循环：先本地确定性推理翻开/标旗，推理僵局后再调大模型决策
   private async aiLoop(): Promise<void> {
     if (!this.aiRunning || this.aiLoopActive) return;
     this.aiLoopActive = true;
     while (this.aiRunning) {
       if (this.isGameOver || this.isWin || this.isPaused) break;
       if (this.aiConfig === null) break;
+
+      // 阶段一：本地确定性推理，直到推理不出新动作（明显提速，减少大模型调用）
+      this.aiStatus = 'AI 推理中…';
+      let progressed: boolean = true;
+      while (progressed && this.aiRunning) {
+        if (this.isGameOver || this.isWin || this.isPaused) break;
+        progressed = this.inferStep();
+        if (progressed && this.aiSpeedIndex < AI_SPEED_DELAYS.length &&
+          AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+          await this.inferDelay();
+        }
+      }
+      if (!this.aiRunning) break;
+      if (this.isGameOver || this.isWin || this.isPaused) break;
+
+      // 阶段二：推理僵局，调用大模型决策
       this.aiStatus = 'AI 思考中…';
       const stateText: string = GameAIService.serializeMinesweeper(this.board, this.rows, this.cols);
       const messages = GameAIService.buildMessages('Minesweeper', this.difficulty, stateText);
