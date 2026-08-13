@@ -1,4 +1,5 @@
 // 智子 - 游戏 AI 托管面板（模型选择 / 速度控制 / 启停）
+import { LengthMetrics } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { AI_SPEED_OPTIONS } from '../service/GameAIService';
 
@@ -42,7 +43,9 @@ export struct GameAIPanel {
             height: '70%',
             dragBar: true,
             showClose: true,
-            backgroundColor: this.palette.bgBase
+            backgroundColor: this.palette.bgBase,
+            // 显式指定弹窗顶部圆角（LengthMetrics 类型），避免系统内部解析 radius 报类型错误
+            radius: { topStart: LengthMetrics.vp(20), topEnd: LengthMetrics.vp(20) }
           })
         Row() {
           Text(this.running ? '⏹ 停止' : '▶ AI 托管')
