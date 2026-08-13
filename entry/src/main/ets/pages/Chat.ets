@@ -3,6 +3,9 @@ import { promptAction, router } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { http } from '@kit.NetworkKit';
 import { webview } from '@kit.ArkWeb';
+import { systemShare } from '@kit.ShareKit';
+import { uniformTypeDescriptor as utd } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
@@ -41,17 +44,6 @@ struct MessageBubble {
     const hh: string = d.getHours().toString().padStart(2, '0');
     const mm: string = d.getMinutes().toString().padStart(2, '0');
     return hh + ':' + mm;
-  }
-
-  private copyContent(): void {
-    try {
-      const pb = pasteboard.getSystemPasteboard();
-      const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.message.content);
-      pb.setData(data);
-      promptAction.showToast({ message: '已复制到剪贴板' });
-    } catch (e) {
-      promptAction.showToast({ message: '复制失败' });
-    }
   }
 
   private isFailure(): boolean {
@@ -279,6 +271,9 @@ struct Chat {
   @State selectionMode: boolean = false;
   @State selectedIds: string[] = [];
 
+  // 长按操作面板：显示单条消息的复制/分享/多选/删除
+  @State actionSheetIndex: number = -1;
+
   // 全屏 markdown 查看
   @State fullscreenIndex: number = -1;
   private fullscreenController: webview.WebviewController = new webview.WebviewController();
@@ -505,17 +500,141 @@ struct Chat {
     return hh + ':' + mm;
   }
 
-  // ---- 多选删除 ----
+  // ---- 消息操作（复制/分享/删除） ----
 
-  // 长按消息进入多选模式
-  private enterSelectionMode(index: number): void {
-    this.selectionMode = true;
-    this.selectedIds = [];
+  // 长按消息：弹出单条操作面板（复制/分享/多选/删除）
+  private showActionSheet(index: number): void {
+    this.actionSheetIndex = index;
+  }
+
+  private closeActionSheet(): void {
+    this.actionSheetIndex = -1;
+  }
+
+  // 操作面板消息预览文本（截取前 80 字）
+  private actionSheetPreviewText(): string {
+    const m: ChatMessage | null = this.actionSheetMessage();
+    if (m === null) return '';
+    const roleName: string = m.role === 'user' ? '用户' : '智子 AI';
+    const raw: string = roleName + '：' + m.content;
+    return raw.length > 80 ? raw.substring(0, 80) + '…' : raw;
+  }
+
+  private actionSheetMessage(): ChatMessage | null {
     const displayed: ChatMessage[] = this.displayMessages();
-    if (index >= 0 && index < displayed.length) {
-      this.selectedIds = [displayed[index].id];
+    if (this.actionSheetIndex < 0 || this.actionSheetIndex >= displayed.length) return null;
+    return displayed[this.actionSheetIndex];
+  }
+
+  // 单条复制
+  private copyMessage(index: number): void {
+    const displayed: ChatMessage[] = this.displayMessages();
+    if (index < 0 || index >= displayed.length) return;
+    this.copyText(displayed[index].content);
+    this.closeActionSheet();
+  }
+
+  // 复制文本到剪贴板
+  private copyText(text: string): void {
+    if (text.length === 0) return;
+    try {
+      const pb = pasteboard.getSystemPasteboard();
+      const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      pb.setData(data);
+      promptAction.showToast({ message: '已复制到剪贴板' });
+    } catch (e) {
+      promptAction.showToast({ message: '复制失败' });
     }
   }
+
+  // 单条分享：拉起系统分享面板
+  private shareMessage(index: number): void {
+    const displayed: ChatMessage[] = this.displayMessages();
+    if (index < 0 || index >= displayed.length) return;
+    const m: ChatMessage = displayed[index];
+    this.shareText(this.formatMessageForShare(m));
+    this.closeActionSheet();
+  }
+
+  // 批量分享
+  private shareSelected(): void {
+    if (this.selectedIds.length === 0) {
+      promptAction.showToast({ message: '请先选择消息' });
+      return;
+    }
+    this.shareText(this.formatSelectedForShare());
+  }
+
+  // 拼接单条消息为分享文本
+  private formatMessageForShare(m: ChatMessage): string {
+    const roleName: string = m.role === 'user' ? '用户' : '智子 AI';
+    let text: string = roleName + '：' + m.content;
+    if (m.reasoning.trim().length > 0) {
+      text = roleName + '（思考过程）\n' + m.reasoning.trim() + '\n\n' + text;
+    }
+    return text + '\n\n—— 来自 智子 AI 助手';
+  }
+
+  // 拼接选中的多条消息（按时间顺序）
+  private formatSelectedForShare(): string {
+    const selected: ChatMessage[] = this.messages.filter((m: ChatMessage): boolean =>
+      this.selectedIds.indexOf(m.id) >= 0);
+    selected.sort((a: ChatMessage, b: ChatMessage): number => a.time - b.time);
+    let text: string = '';
+    for (let i: number = 0; i < selected.length; i++) {
+      const m: ChatMessage = selected[i];
+      const roleName: string = m.role === 'user' ? '用户' : '智子 AI';
+      if (i > 0) text = text + '\n\n';
+      text = text + roleName + '：' + m.content;
+    }
+    return text + '\n\n—— 来自 智子 AI 助手';
+  }
+
+  // 批量复制
+  private copySelected(): void {
+    if (this.selectedIds.length === 0) {
+      promptAction.showToast({ message: '请先选择消息' });
+      return;
+    }
+    this.copyText(this.formatSelectedForShare());
+    this.exitSelectionMode();
+  }
+
+  // 拉起系统分享面板分享文本
+  private shareText(text: string): void {
+    if (text.length === 0) return;
+    try {
+      const data: systemShare.SharedData = new systemShare.SharedData({
+        utd: utd.UniformDataType.PLAIN_TEXT,
+        content: text
+      });
+      const controller: systemShare.ShareController = new systemShare.ShareController(data);
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      controller.show(context);
+    } catch (e) {
+      promptAction.showToast({ message: '分享失败' });
+    }
+  }
+
+  // 多选模式中单条删除：从选中列表移除
+  private deleteSingle(index: number): void {
+    const displayed: ChatMessage[] = this.displayMessages();
+    if (index < 0 || index >= displayed.length) return;
+    const target: ChatMessage = displayed[index];
+    this.selectedIds = [target.id];
+    this.deleteSelected();
+    this.closeActionSheet();
+  }
+
+  // 进入多选模式（从操作面板触发）
+  private enterMultiSelectFromSheet(): void {
+    const m: ChatMessage | null = this.actionSheetMessage();
+    this.selectionMode = true;
+    this.selectedIds = m !== null ? [m.id] : [];
+    this.closeActionSheet();
+  }
+
+  // ---- 多选删除 ----
 
   private isSelected(id: string): boolean {
     return this.selectedIds.indexOf(id) >= 0;
@@ -939,7 +1058,7 @@ struct Chat {
                   selected: this.isSelected(message.id),
                   isStreaming: this.streaming,
                   onRetry: (i: number): void => { this.retryLast(); },
-                  onLongPressMessage: (i: number): void => { this.enterSelectionMode(i); },
+                  onLongPressMessage: (i: number): void => { this.showActionSheet(i); },
                   onToggleSelect: (i: number): void => { this.toggleSelect(i); },
                   onExpandReasoning: (i: number): void => { this.expandReasoning(i); },
                   onFullscreen: (i: number): void => { this.openFullscreen(i); } })
@@ -955,7 +1074,7 @@ struct Chat {
 
         // 底部区域
         if (this.selectionMode) {
-          Row({ space: 12 }) {
+          Row({ space: 8 }) {
             Button(this.selectedIds.length === 0 ? '全选' : '取消全选')
               .fontSize(this.palette.fsSm)
               .fontFamily(this.palette.fontSans)
@@ -971,6 +1090,24 @@ struct Chat {
                   this.selectedIds = this.messages.map((m: ChatMessage): string => m.id);
                 }
               })
+            Button('复制')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .height(40)
+              .layoutWeight(1)
+              .backgroundColor(this.palette.bgSurface)
+              .fontColor(this.palette.textPrimary)
+              .borderRadius(8)
+              .onClick(() => { this.copySelected(); })
+            Button('分享')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .height(40)
+              .layoutWeight(1)
+              .backgroundColor(this.palette.bgSurface)
+              .fontColor(this.palette.textPrimary)
+              .borderRadius(8)
+              .onClick(() => { this.shareSelected(); })
             Button('删除 (' + this.selectedIds.length.toString() + ')')
               .fontSize(this.palette.fsSm)
               .fontFamily(this.palette.fontSans)
@@ -1066,6 +1203,105 @@ struct Chat {
       .backgroundColor(this.palette.bgBase)
 
       if (this.showModelPicker) { this.modelPicker() }
+
+      // 长按消息操作面板（复制/分享/多选/删除）
+      if (this.actionSheetIndex >= 0) {
+        Stack() {
+          Column() {
+            Column({ space: 0 }) {
+              // 消息预览（截取前 80 字）
+              Text(this.actionSheetPreviewText())
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+                .lineHeight(18)
+                .maxLines(3)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .padding(12)
+              // 操作按钮
+              Row({ space: 0 }) {
+                Column({ space: 4 }) {
+                  Text('📋')
+                    .fontSize(22)
+                    .fontFamily(this.palette.fontSans)
+                  Text('复制')
+                    .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textSecondary)
+                }
+                .layoutWeight(1)
+                .padding({ top: 8, bottom: 8 })
+                .onClick(() => { this.copyMessage(this.actionSheetIndex); })
+
+                Column({ space: 4 }) {
+                  Text('📤')
+                    .fontSize(22)
+                    .fontFamily(this.palette.fontSans)
+                  Text('分享')
+                    .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textSecondary)
+                }
+                .layoutWeight(1)
+                .padding({ top: 8, bottom: 8 })
+                .onClick(() => { this.shareMessage(this.actionSheetIndex); })
+
+                Column({ space: 4 }) {
+                  Text('☑️')
+                    .fontSize(22)
+                    .fontFamily(this.palette.fontSans)
+                  Text('多选')
+                    .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textSecondary)
+                }
+                .layoutWeight(1)
+                .padding({ top: 8, bottom: 8 })
+                .onClick(() => { this.enterMultiSelectFromSheet(); })
+
+                Column({ space: 4 }) {
+                  Text('🗑️')
+                    .fontSize(22)
+                    .fontFamily(this.palette.fontSans)
+                  Text('删除')
+                    .fontSize(11)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textSecondary)
+                }
+                .layoutWeight(1)
+                .padding({ top: 8, bottom: 8 })
+                .onClick(() => { this.deleteSingle(this.actionSheetIndex); })
+              }
+              .width('100%')
+              .padding({ top: 8, bottom: 8 })
+
+              // 取消
+              Text('取消')
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textSecondary)
+                .fontWeight(FontWeight.Medium)
+                .width('100%')
+                .height(44)
+                .textAlign(TextAlign.Center)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(10)
+                .onClick(() => { this.closeActionSheet(); })
+            }
+            .width('100%')
+            .padding(12)
+            .backgroundColor(this.palette.bgBase)
+            .borderRadius({ topLeft: 16, topRight: 16 })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.End)
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.35)')
+        .onClick(() => { this.closeActionSheet(); })
+      }
 
       // 全屏 markdown 查看（双击助手消息打开）
       if (this.fullscreenIndex >= 0) {
