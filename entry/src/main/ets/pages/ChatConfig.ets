@@ -1,5 +1,6 @@
 // 智子 - AI 对话配置页（多模型管理：列表 + 编辑）
 import { promptAction } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ChatRepository } from '../service/ChatRepository';
@@ -287,7 +288,13 @@ struct ChatConfig {
     } else {
       list.push(entry);
     }
-    await ChatRepository.saveModels(list);
+    try {
+      await ChatRepository.saveModels(list);
+    } catch (e) {
+      const err: BusinessError = e as BusinessError;
+      promptAction.showToast({ message: '保存失败：' + (err.message ? err.message : '存储异常') });
+      return;
+    }
     // 首次添加时自动设为激活模型
     if (this.models.length === 0) {
       await ChatRepository.setActiveModelId(entry.id);

@@ -58,8 +58,7 @@ export class CryptoHelper {
           { tag: huks.HuksTag.HUKS_TAG_KEY_SIZE, value: huks.HuksKeySize.HUKS_AES_KEY_SIZE_256 },
           { tag: huks.HuksTag.HUKS_TAG_PADDING, value: huks.HuksKeyPadding.HUKS_PADDING_NONE },
           { tag: huks.HuksTag.HUKS_TAG_BLOCK_MODE, value: huks.HuksCipherMode.HUKS_MODE_GCM },
-          { tag: huks.HuksTag.HUKS_TAG_NONCE, value: iv },
-          { tag: huks.HuksTag.HUKS_TAG_ASSOCIATED_DATA, value: new Uint8Array(0) }
+          { tag: huks.HuksTag.HUKS_TAG_NONCE, value: iv }
         ],
         inData: plainBytes
       };
@@ -121,7 +120,6 @@ export class CryptoHelper {
           { tag: huks.HuksTag.HUKS_TAG_PADDING, value: huks.HuksKeyPadding.HUKS_PADDING_NONE },
           { tag: huks.HuksTag.HUKS_TAG_BLOCK_MODE, value: huks.HuksCipherMode.HUKS_MODE_GCM },
           { tag: huks.HuksTag.HUKS_TAG_NONCE, value: iv },
-          { tag: huks.HuksTag.HUKS_TAG_ASSOCIATED_DATA, value: new Uint8Array(0) },
           { tag: huks.HuksTag.HUKS_TAG_AE_TAG, value: tag }
         ],
         inData: ciphertext
