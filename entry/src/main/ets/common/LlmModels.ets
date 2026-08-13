@@ -225,12 +225,15 @@ export class ChatRequestBody {
   messages: ChatRequestMessage[];
   temperature: number;
   stream: boolean;
+  thinkingEnabled: boolean;
 
-  constructor(model: string, messages: ChatRequestMessage[], temperature: number, stream: boolean) {
+  constructor(model: string, messages: ChatRequestMessage[], temperature: number, stream: boolean,
+    thinkingEnabled: boolean = false) {
     this.model = model;
     this.messages = messages;
     this.temperature = temperature;
     this.stream = stream;
+    this.thinkingEnabled = thinkingEnabled;
   }
 }
 
@@ -240,12 +243,15 @@ export class AnthropicRequestBody {
   max_tokens: number;
   messages: ChatRequestMessage[];
   stream: boolean;
+  thinkingEnabled: boolean;
 
-  constructor(model: string, maxTokens: number, messages: ChatRequestMessage[], stream: boolean) {
+  constructor(model: string, maxTokens: number, messages: ChatRequestMessage[], stream: boolean,
+    thinkingEnabled: boolean = false) {
     this.model = model;
     this.max_tokens = maxTokens;
     this.messages = messages;
     this.stream = stream;
+    this.thinkingEnabled = thinkingEnabled;
   }
 }
 

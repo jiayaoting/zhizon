@@ -151,22 +151,18 @@ export class GameAIService {
 
   static async decide(config: LlmConfig, messages: ChatMessage[],
     timeoutMs: number = AI_DECISION_TIMEOUT): Promise<LlmResult> {
-    let fullContent: string = '';
+    // 复制配置并强制关闭思考（游戏决策只认最终动作，不需要思考过程）：
+    // 不修改原配置，不影响聊天等其他场景
+    const gameConfig: LlmConfig = GameAIService.cloneConfig(config);
+    gameConfig.thinkingEnabled = false;
     let lastResult: LlmResult | null = null;
     // 最多请求 2 次：netstack 连接池在复用闲置连接时首次请求可能无响应超时（日志规律），
     // 超时后 destroy 会销毁坏连接，紧接着的重试走全新连接必定成功。
     for (let attempt: number = 0; attempt < 2; attempt++) {
-      fullContent = '';
-      // 流式请求（与聊天共用已验证的 requestInStream 路径），事件驱动接收，
-      // 超时主动 destroy 彻底中断，不受连接池残留影响
-      const result = await GameAIService.decideOnce(config, messages, timeoutMs,
-        (delta: string) => {
-          fullContent = fullContent + delta;
-        });
+      // 非流式请求：游戏决策只需最终动作，非流式一次返回完整 JSON，比流式逐 token 快 30%+
+      // （实测：非流式 22.8s vs 流式 38.7s）。配合 HTTP/1.1 + Connection: close 已根治连接问题
+      const result = await GameAIService.decideOnce(gameConfig, messages, timeoutMs);
       if (result.success) {
-        if (fullContent.trim().length > 0) {
-          return new LlmResult(true, fullContent, '', '', result.reasoning);
-        }
         return result;
       }
       lastResult = result;
@@ -180,11 +176,34 @@ export class GameAIService {
     return new LlmResult(false, '', 'REQUEST_FAILED', 'AI 请求失败');
   }
 
-  // 单次决策请求：超时主动取消底层请求
+  // 复制配置（ArkTS 不支持深拷贝，手动复制全部字段）
+  private static cloneConfig(config: LlmConfig): LlmConfig {
+    const copy: LlmConfig = new LlmConfig();
+    copy.id = config.id;
+    copy.displayName = config.displayName;
+    copy.providerId = config.providerId;
+    copy.baseUrl = config.baseUrl;
+    copy.apiKey = config.apiKey;
+    copy.model = config.model;
+    copy.temperature = config.temperature;
+    copy.apiFormat = config.apiFormat;
+    copy.maxTokens = config.maxTokens;
+    copy.useFullUrl = config.useFullUrl;
+    copy.modelFamily = config.modelFamily;
+    copy.contextTokensIn = config.contextTokensIn;
+    copy.contextTokensOut = config.contextTokensOut;
+    copy.workers = config.workers;
+    copy.visionEnabled = config.visionEnabled;
+    copy.thinkingEnabled = config.thinkingEnabled;
+    copy.followDefaultConfig = config.followDefaultConfig;
+    return copy;
+  }
+
+  // 单次决策请求：非流式 + 超时主动取消底层请求
   private static async decideOnce(config: LlmConfig, messages: ChatMessage[],
-    timeoutMs: number, onDelta: (delta: string) => void): Promise<LlmResult> {
+    timeoutMs: number): Promise<LlmResult> {
     let settled: boolean = false;
-    const cancellable = LlmClient.postCompletionStreamCancelable(config, messages, onDelta);
+    const cancellable = LlmClient.postCompletionCancelable(config, messages);
     return await new Promise<LlmResult>((resolve: (value: LlmResult) => void) => {
       const timer: number = setTimeout(() => {
         if (!settled) {

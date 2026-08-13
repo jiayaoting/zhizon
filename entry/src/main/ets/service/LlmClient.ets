@@ -38,6 +38,34 @@ export class LlmClient {
     }
   }
 
+  // 构建 OpenAI 兼容请求 payload：thinkingEnabled 映射为 enable_thinking（硅基流动/DeepSeek 等兼容字段）
+  private static buildOpenAIPayload(body: ChatRequestBody): string {
+    const payload: Record<string, Object> = {
+      'model': body.model,
+      'messages': body.messages,
+      'temperature': body.temperature,
+      'stream': body.stream
+    };
+    if (body.thinkingEnabled) {
+      payload['enable_thinking'] = true;
+    }
+    return JSON.stringify(payload);
+  }
+
+  // 构建 Anthropic 请求 payload：thinkingEnabled 映射为 thinking 参数（Claude extended thinking）
+  private static buildAnthropicPayload(body: AnthropicRequestBody): string {
+    const payload: Record<string, Object> = {
+      'model': body.model,
+      'max_tokens': body.max_tokens,
+      'messages': body.messages,
+      'stream': body.stream
+    };
+    if (body.thinkingEnabled) {
+      payload['thinking'] = { 'type': 'enabled', 'budget_tokens': body.max_tokens };
+    }
+    return JSON.stringify(payload);
+  }
+
   // 非流式请求完整返回
   static async postCompletion(config: LlmConfig, messages: ChatMessage[]): Promise<LlmResult> {
     if (config.apiFormat === 'anthropic') {
@@ -75,39 +103,6 @@ export class LlmClient {
     return new CancelableLlmRequest(promise, cancel);
   }
 
-  // 可取消的流式请求：与聊天共用已验证的 requestInStream 路径。
-  // 游戏决策原用非流式 request，在无响应超时后底层连接会残留在全局连接池被反复复用，
-  // 导致后续请求 connect_time=0 却收不到任何数据（服务端查不到调用记录）。
-  // 流式请求使用独立的事件驱动接收，超时销毁即可彻底中断，不受连接池残留影响。
-  static postCompletionStreamCancelable(config: LlmConfig, messages: ChatMessage[],
-    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): CancelableLlmRequest {
-    const httpRequest = http.createHttp();
-    let cancelled: boolean = false;
-    const releaseRequest = (): void => {
-      try {
-        httpRequest.off('dataReceive');
-        httpRequest.destroy();
-      } catch (e) {
-      }
-    };
-    const promise: Promise<LlmResult> = LlmClient.postWithStream(config, messages, httpRequest,
-      onDelta, onReasoning).then(
-        (result: LlmResult): LlmResult => {
-          releaseRequest();
-          return result;
-        },
-        (e: Object): LlmResult => {
-          releaseRequest();
-          if (cancelled) return new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消');
-          return LlmClient.toResult(e);
-        });
-    const cancel = (): void => {
-      cancelled = true;
-      releaseRequest();
-    };
-    return new CancelableLlmRequest(promise, cancel);
-  }
-
   // 在外部传入的 httpRequest 上执行非流式请求（支持取消）
   private static async postWithRequest(config: LlmConfig, messages: ChatMessage[], httpRequest: http.HttpRequest):
     Promise<LlmResult> {
@@ -115,16 +110,6 @@ export class LlmClient {
       return LlmClient.postAnthropicWith(config, messages, httpRequest);
     }
     return LlmClient.postOpenAIWith(config, messages, httpRequest);
-  }
-
-  // 在外部传入的 httpRequest 上执行流式请求（支持取消）
-  private static async postWithStream(config: LlmConfig, messages: ChatMessage[],
-    httpRequest: http.HttpRequest, onDelta: (delta: string) => void,
-    onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
-    if (config.apiFormat === 'anthropic') {
-      return LlmClient.postAnthropic(config, messages, true, onDelta, onReasoning, httpRequest);
-    }
-    return LlmClient.postOpenAI(config, messages, true, onDelta, onReasoning, httpRequest);
   }
 
   // 流式请求：onDelta 逐片回调正文，onReasoning 逐片回调思考过程，返回完整内容
@@ -162,7 +147,8 @@ export class LlmClient {
       }
       const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
         new ChatRequestMessage(m.role, m.content));
-      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, stream);
+      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature,
+        stream, config.thinkingEnabled);
 
       const processData = (data: ArrayBuffer): void => {
         const chunk: string = LlmClient.arrayBufferToString(data);
@@ -204,7 +190,7 @@ export class LlmClient {
         const code: number = await httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,
           header: header,
-          extraData: JSON.stringify(body),
+          extraData: LlmClient.buildOpenAIPayload(body),
           connectTimeout: CONNECT_TIMEOUT,
           readTimeout: READ_TIMEOUT,
           expectDataType: http.HttpDataType.ARRAY_BUFFER,
@@ -243,7 +229,7 @@ export class LlmClient {
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: header,
-        extraData: JSON.stringify(body),
+        extraData: LlmClient.buildOpenAIPayload(body),
         connectTimeout: CONNECT_TIMEOUT,
         readTimeout: READ_TIMEOUT_NON_STREAM,
         expectDataType: http.HttpDataType.STRING,
@@ -309,7 +295,7 @@ export class LlmClient {
       const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
         new ChatRequestMessage(m.role, m.content));
       const body: AnthropicRequestBody = new AnthropicRequestBody(config.model.trim(), config.maxTokens,
-        requestMessages, stream);
+        requestMessages, stream, config.thinkingEnabled);
 
       const processData = (data: ArrayBuffer): void => {
         const chunk: string = LlmClient.arrayBufferToString(data);
@@ -351,7 +337,7 @@ export class LlmClient {
         const code: number = await httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,
           header: header,
-          extraData: JSON.stringify(body),
+          extraData: LlmClient.buildAnthropicPayload(body),
           connectTimeout: CONNECT_TIMEOUT,
           readTimeout: READ_TIMEOUT,
           expectDataType: http.HttpDataType.ARRAY_BUFFER,
@@ -391,7 +377,7 @@ export class LlmClient {
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: header,
-        extraData: JSON.stringify(body),
+        extraData: LlmClient.buildAnthropicPayload(body),
         connectTimeout: CONNECT_TIMEOUT,
         readTimeout: READ_TIMEOUT_NON_STREAM,
         expectDataType: http.HttpDataType.STRING,
