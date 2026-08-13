@@ -1,0 +1,822 @@
+// 智子 - 中国象棋（人机 / 人对AI / AI对AI）
+import { promptAction, router } from '@kit.ArkUI';
+import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { TopBar } from '../components/TopBar';
+import { DifficultyLevel, GameId, GameLaunchFacade, GameLaunchResult, GameRouteParams } from '../common/Difficulty';
+import { GameAIService, GameAction } from '../service/GameAIService';
+import { ChineseChessEngine, ChineseChessMove, CHESS_COLS, CHESS_ROWS } from '../service/ChineseChessEngine';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { DataRepository } from '../service/DataRepository';
+
+// 对弈方类型
+type PlayerMode = 'human' | 'engine' | 'llm';
+// 对局模式
+type MatchMode = 'hvE' | 'hvL' | 'LvL';
+
+// 悔棋快照
+class BoardSnapshot {
+  board: string[][];
+  redTurn: boolean;
+
+  constructor(board: string[][], redTurn: boolean) {
+    this.board = board;
+    this.redTurn = redTurn;
+  }
+}
+
+const RED_MODEL_KEY: string = 'ccRedModelId';
+const BLACK_MODEL_KEY: string = 'ccBlackModelId';
+const AI_MODEL_KEY: string = 'ccAiModelId';
+
+@Entry
+@Component
+struct ChineseChessPage {
+  @StorageLink('isSm') isSm: boolean = false;
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('navBarHeight') navBarHeight: number = 12;
+
+  // 棋盘状态
+  @State board: string[][] = [];
+  @State redTurn: boolean = true;
+  @State gameOver: boolean = false;
+  @State winner: string = ''; // 'red' | 'black' | 'draw' | ''
+  @State selR: number = -1;
+  @State selC: number = -1;
+  @State legalTargets: number[][] = [];
+
+  // 对弈配置与进行
+  @State matchMode: MatchMode = 'hvE';
+  @State humanSide: string = 'red';
+  @State redPlayer: string = 'human';
+  @State blackPlayer: string = 'engine';
+  @State undoLimit: number = 3;
+  @State undoUsed: number = 0;
+  @State running: boolean = false;
+  @State thinkingSide: string = ''; // 'red' | 'black' | ''
+  @State thinkingText: string = '';
+  @State moveHistory: string[] = [];
+  @State setupOpen: boolean = true;
+
+  // 模型
+  @State aiModelNames: string[] = [];
+  @State modelsConfigured: boolean = false;
+  private aiModels: LlmModelEntry[] = [];
+  private redModelIndex: number = 0;
+  private blackModelIndex: number = 0;
+  private redConfig: LlmConfig | null = null;
+  private blackConfig: LlmConfig | null = null;
+  private aiLoopActive: boolean = false;
+  private aiFailCount: number = 0;
+  private moveStack: BoardSnapshot[] = [];
+  private configSeq: number = 0;
+
+  // AI 落子提示
+  @State suggestionOn: boolean = false;
+  @State suggestFromR: number = -1;
+  @State suggestFromC: number = -1;
+  @State suggestToR: number = -1;
+  @State suggestToC: number = -1;
+  private suggestSeq: number = 0;
+
+  private difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  private engineDepth: number = 3;
+  // 弹窗内引擎难度选择：0简单 1中等 2困难
+  @State engineDiffIndex: number = 1;
+
+  // ---- 棋子/记谱 ----
+  private pieceName(piece: string): string {
+    if (piece === 'K') return '帅';
+    if (piece === 'A') return '仕';
+    if (piece === 'B') return '相';
+    if (piece === 'H') return '马';
+    if (piece === 'R') return '车';
+    if (piece === 'C') return '炮';
+    if (piece === 'P') return '兵';
+    if (piece === 'k') return '将';
+    if (piece === 'a') return '士';
+    if (piece === 'b') return '象';
+    if (piece === 'h') return '马';
+    if (piece === 'r') return '车';
+    if (piece === 'c') return '炮';
+    if (piece === 'p') return '卒';
+    return '?';
+  }
+
+  private sideLabel(side: string): string {
+    return side === 'red' ? '红方' : '黑方';
+  }
+
+  private modeLabel(mode: MatchMode): string {
+    if (mode === 'hvE') return '人机';
+    if (mode === 'hvL') return '人对AI';
+    return 'AI对AI';
+  }
+
+  // 某方类型
+  private playerType(side: string): PlayerMode {
+    if (this.matchMode === 'LvL') return 'llm';
+    if (this.matchMode === 'hvE') {
+      return side === this.humanSide ? 'human' : 'engine';
+    }
+    // hvL
+    return side === this.humanSide ? 'human' : 'llm';
+  }
+
+  // 当前回合方
+  private currentSide(): string {
+    return this.redTurn ? 'red' : 'black';
+  }
+
+  // ---- 启动/初始化 ----
+  aboutToAppear(): void {
+    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.CHINESE_CHESS);
+    if (!result.success || result.request === null) {
+      router.back();
+      return;
+    }
+    this.difficulty = result.request.difficulty;
+    this.engineDepth = this.difficulty === DifficultyLevel.VERY_EASY ? 1 :
+      this.difficulty === DifficultyLevel.EASY ? 2 :
+        this.difficulty === DifficultyLevel.HARD ? 4 : 3;
+    this.initAiModels();
+    this.resetBoard();
+  }
+
+  onPageHide(): void {
+    this.running = false;
+    this.aiLoopActive = false;
+  }
+
+  private resetBoard(): void {
+    this.board = ChineseChessEngine.initialBoard();
+    this.redTurn = true;
+    this.gameOver = false;
+    this.winner = '';
+    this.selR = -1;
+    this.selC = -1;
+    this.legalTargets = [];
+    this.moveHistory = [];
+    this.moveStack = [];
+    this.undoUsed = 0;
+    this.thinkingSide = '';
+    this.thinkingText = '';
+    this.aiFailCount = 0;
+    this.suggestionOn = false;
+  }
+
+  private async initAiModels(): Promise<void> {
+    this.aiModels = await GameAIService.loadModelOptions();
+    const names: string[] = [];
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      names.push(GameAIService.modelLabel(this.aiModels[i]));
+    }
+    this.aiModelNames = names;
+    this.modelsConfigured = this.aiModels.length > 0;
+    // 恢复记忆的模型
+    const redId: string = await DataRepository.getSetting(RED_MODEL_KEY, '');
+    const blackId: string = await DataRepository.getSetting(BLACK_MODEL_KEY, '');
+    const aiId: string = await DataRepository.getSetting(AI_MODEL_KEY, '');
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      if (this.aiModels[i].id === redId) this.redModelIndex = i;
+      if (this.aiModels[i].id === blackId) this.blackModelIndex = i;
+      if (this.aiModels[i].id === aiId) this.redModelIndex = i;
+    }
+  }
+
+  private async loadModelConfig(index: number): Promise<LlmConfig | null> {
+    if (!this.modelsConfigured || index < 0 || index >= this.aiModels.length) return null;
+    return await GameAIService.loadConfig(this.aiModels[index].id);
+  }
+
+  // ---- 开始对局 ----
+  private async startGame(): Promise<void> {
+    if (this.matchMode === 'hvL' || this.matchMode === 'LvL') {
+      if (!this.modelsConfigured) {
+        promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+        return;
+      }
+    }
+    this.redPlayer = this.playerType('red');
+    this.blackPlayer = this.playerType('black');
+    this.resetBoard();
+    this.redConfig = await this.loadModelConfig(this.redModelIndex);
+    this.blackConfig = await this.loadModelConfig(this.blackModelIndex);
+    this.setupOpen = false;
+    this.running = true;
+    this.aiLoopActive = false;
+    this.aiFailCount = 0;
+    this.scheduleNext();
+  }
+
+  private stopGame(): void {
+    this.running = false;
+    this.aiLoopActive = false;
+    this.thinkingSide = '';
+    this.thinkingText = '';
+    this.suggestionOn = false;
+  }
+
+  // ---- 对弈调度 ----
+  private scheduleNext(): void {
+    if (!this.running || this.gameOver) return;
+    const side: string = this.currentSide();
+    const type: PlayerMode = this.playerType(side);
+    if (type === 'human') {
+      this.thinkingSide = '';
+      this.thinkingText = '';
+      return;
+    }
+    this.thinkFor(side).catch((e: Object) => {
+      this.stopGame();
+    });
+  }
+
+  // AI 决策（本地引擎 / LLM）
+  private async thinkFor(side: string): Promise<void> {
+    if (this.aiLoopActive) return;
+    this.aiLoopActive = true;
+    const type: PlayerMode = this.playerType(side);
+    this.thinkingSide = side;
+    this.thinkingText = (this.sideLabel(side) + '思考中…') +
+      (type === 'engine' ? '（本地引擎）' : '（' + this.aiModelLabel(side) + '）');
+    let move: ChineseChessMove | null = null;
+    if (type === 'engine') {
+      // 本地引擎：深拷贝棋盘，避免在搜索中修改 @State
+      const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
+      move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth);
+    } else {
+      const config: LlmConfig | null = side === 'red' ? this.redConfig : this.blackConfig;
+      if (config === null) {
+        this.stopGame();
+        promptAction.showToast({ message: '模型配置无效' });
+        this.aiLoopActive = false;
+        return;
+      }
+      const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
+      const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
+      const result = await GameAIService.decide(config, messages);
+      this.aiLoopActive = false;
+      if (!this.running || this.gameOver) return;
+      if (!result.success) {
+        this.aiFailCount += 1;
+        if (this.aiFailCount >= 3) {
+          this.stopGame();
+          promptAction.showToast({ message: 'AI 连续失败，已停止' });
+          return;
+        }
+        this.thinkingSide = '';
+        this.thinkingText = '';
+        this.scheduleNext();
+        return;
+      }
+      this.aiFailCount = 0;
+      const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);
+      // 坐标映射：r=fromRow, c=fromCol, value=toRow, toRow=toCol
+      if (action !== null) {
+        move = new ChineseChessMove(action.r, action.c, action.value, action.toRow);
+      }
+      if (move === null || !this.isLegal(move)) {
+        // AI 走法非法：重试一次
+        this.thinkingSide = '';
+        this.thinkingText = '';
+        this.scheduleNext();
+        return;
+      }
+    }
+    this.aiLoopActive = false;
+    if (!this.running || this.gameOver) return;
+    if (move === null) {
+      // 无合法走法 = 对方胜
+      this.finishGame(this.sideLabel(side === 'red' ? 'black' : 'red') + '胜');
+      return;
+    }
+    this.thinkingSide = '';
+    this.thinkingText = '';
+    this.applyMove(move);
+  }
+
+  // 走法合法校验（基于当前棋盘）
+  private isLegal(move: ChineseChessMove): boolean {
+    const side: boolean = move.fromRow >= 0 && move.fromRow < CHESS_ROWS &&
+      this.board[move.fromRow][move.fromCol] !== '.';
+    if (!side) return false;
+    const red: boolean = this.redTurn;
+    const moves: ChineseChessMove[] = ChineseChessEngine.generateMoves(this.board, red);
+    for (let i: number = 0; i < moves.length; i++) {
+      if (moves[i].fromRow === move.fromRow && moves[i].fromCol === move.fromCol &&
+        moves[i].toRow === move.toRow && moves[i].toCol === move.toCol) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // 执行走法并推进局面
+  private applyMove(move: ChineseChessMove): void {
+    // 保存悔棋快照
+    this.moveStack.push(new BoardSnapshot(ChineseChessEngine.cloneBoard(this.board), this.redTurn));
+    const nb: string[][] = ChineseChessEngine.cloneBoard(this.board);
+    const piece: string = nb[move.fromRow][move.fromCol];
+    nb[move.toRow][move.toCol] = piece;
+    nb[move.fromRow][move.fromCol] = '.';
+    this.board = nb;
+    // 记谱
+    const side: string = this.redTurn ? '红' : '黑';
+    const step: number = this.moveHistory.length / 2 + (this.redTurn ? 1 : 0);
+    this.moveHistory = this.moveHistory.concat(
+      this.sideLabel(side) + '' + this.pieceName(piece) + ' ' +
+      move.fromRow.toString() + ',' + move.fromCol.toString() + '→' +
+      move.toRow.toString() + ',' + move.toCol.toString());
+    this.selR = -1;
+    this.selC = -1;
+    this.legalTargets = [];
+    this.suggestionOn = false;
+    // 切换回合方
+    this.redTurn = !this.redTurn;
+    // 胜负/无子判断
+    const nextSide: string = this.currentSide();
+    const nextMoves: ChineseChessMove[] = ChineseChessEngine.generateMoves(this.board, nextSide === 'red');
+    if (nextMoves.length === 0) {
+      this.finishGame(this.sideLabel(side) + '胜');
+      return;
+    }
+    this.scheduleNext();
+  }
+
+  private finishGame(msg: string): void {
+    this.gameOver = true;
+    this.running = false;
+    this.thinkingSide = '';
+    this.thinkingText = '';
+    this.suggestionOn = false;
+    this.winner = msg;
+  }
+
+  // ---- 放入下棋棋子的操作（人） ----
+  private onCellTap(r: number, c: number): void {
+    if (!this.running || this.gameOver) return;
+    if (this.thinkingSide !== '') return; // AI 思考中锁定
+    if (this.playerType(this.currentSide()) !== 'human') return;
+    const side: boolean = this.redTurn;
+    const piece: string = this.board[r][c];
+    // 若已选中且点击目标在合法走法内 → 落子
+    if (this.selR >= 0) {
+      for (let i: number = 0; i < this.legalTargets.length; i++) {
+        if (this.legalTargets[i][0] === r && this.legalTargets[i][1] === c) {
+          this.applyMove(new ChineseChessMove(this.selR, this.selC, r, c));
+          return;
+        }
+      }
+    }
+    // 否则尝试选中己方棋子
+    if (ChineseChessEngine.isPiece(piece) &&
+      (side ? ChineseChessEngine.isRed(piece) : ChineseChessEngine.isBlack(piece))) {
+      this.selR = r;
+      this.selC = c;
+      this.legalTargets = ChineseChessEngine.generateMoves(this.board, side)
+        .filter((m: ChineseChessMove): boolean => m.fromRow === r && m.fromCol === c)
+        .map((m: ChineseChessMove): number[] => [m.toRow, m.toCol]);
+    } else {
+      this.selR = -1;
+      this.selC = -1;
+      this.legalTargets = [];
+    }
+  }
+
+  // ---- 悔棋 ----
+  private undo(): void {
+    if (!this.running && !this.gameOver) return;
+    if (this.thinkingSide !== '') return;
+    if (this.undoLimit > 0 && this.undoUsed >= this.undoLimit) {
+      promptAction.showToast({ message: '已达本局悔棋次数上限' });
+      return;
+    }
+    if (this.moveStack.length === 0) {
+      promptAction.showToast({ message: '没有可悔的棋步' });
+      return;
+    }
+    const snap: BoardSnapshot = this.moveStack.pop() as BoardSnapshot;
+    // 悔棋应回退到"当前方走这一步之前"的局面（即回退一整步）
+    this.board = snap.board;
+    this.redTurn = snap.redTurn;
+    this.undoUsed += 1;
+    this.selR = -1;
+    this.selC = -1;
+    this.legalTargets = [];
+    this.suggestionOn = false;
+    this.gameOver = false;
+    this.winner = '';
+    this.thinkingSide = '';
+    this.thinkingText = '';
+    // 回退记谱
+    if (this.moveHistory.length > 0) {
+      this.moveHistory = this.moveHistory.slice(0, this.moveHistory.length - 1);
+    }
+    this.scheduleNext();
+  }
+
+  // ---- AI 落子提示（轮到人时点击按钮）----
+  private async suggestMove(): Promise<void> {
+    if (!this.running || this.gameOver) return;
+    if (this.thinkingSide !== '') return;
+    if (this.playerType(this.currentSide()) !== 'human') return;
+    if (this.matchMode === 'LvL') return;
+    const side: string = this.currentSide();
+    const type: PlayerMode = this.matchMode === 'hvE' ? 'engine' : 'llm';
+    this.thinkingSide = side;
+    this.thinkingText = 'AI 建议中…';
+    this.suggestSeq += 1;
+    const seq: number = this.suggestSeq;
+    let move: ChineseChessMove | null = null;
+    if (type === 'engine') {
+      const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
+      move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth);
+    } else {
+      const config: LlmConfig | null = side === 'red' ? this.redConfig : this.blackConfig;
+      if (config !== null) {
+        const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
+        const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
+        const result = await GameAIService.decide(config, messages);
+        if (seq !== this.suggestSeq) return;
+        if (result.success) {
+          const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);
+          if (action !== null) {
+            const m: ChineseChessMove = new ChineseChessMove(action.r, action.c, action.value, action.toRow);
+            if (this.isLegal(m)) move = m;
+          }
+        }
+      }
+    }
+    if (seq !== this.suggestSeq) return;
+    this.thinkingSide = '';
+    this.thinkingText = '';
+    if (move === null) {
+      promptAction.showToast({ message: '未能生成建议走法' });
+      return;
+    }
+    this.suggestFromR = move.fromRow;
+    this.suggestFromC = move.fromCol;
+    this.suggestToR = move.toRow;
+    this.suggestToC = move.toCol;
+    this.suggestionOn = true;
+  }
+
+  // 确认执行 AI 建议
+  private applySuggestion(): void {
+    if (!this.suggestionOn) return;
+    this.applyMove(new ChineseChessMove(this.suggestFromR, this.suggestFromC, this.suggestToR, this.suggestToC));
+  }
+
+  private aiModelLabel(side: string): string {
+    const idx: number = side === 'red' ? this.redModelIndex : this.blackModelIndex;
+    if (idx >= 0 && idx < this.aiModelNames.length) return this.aiModelNames[idx];
+    return '模型';
+  }
+
+  // ---- 尺寸 ----
+  private cellSize(): number {
+    if (this.isSm) return Math.floor((this.getBoardSide()) / CHESS_COLS);
+    return Math.floor(360 / CHESS_COLS);
+  }
+
+  private getBoardSide(): number {
+    if (this.isSm) return 360;
+    return 360;
+  }
+
+  // ---- 渲染 ----
+  @Builder
+  statusBar() {
+    Row({ space: 8 }) {
+      Text(this.gameOver ? ('🏁 ' + this.winner) :
+        (this.thinkingSide !== '' ? ('⏳ ' + this.thinkingText) :
+          ('🎯 轮到 ' + this.sideLabel(this.currentSide()) +
+            (this.playerType(this.currentSide()) === 'human' ? '（你）' : '（AI）'))))
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textPrimary)
+        .layoutWeight(1)
+        .maxLines(2)
+      Text('悔棋 ' + this.undoUsed.toString() + '/' + this.undoLimit.toString())
+        .fontSize(this.palette.fsXs)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textSecondary)
+    }
+    .width('100%')
+    .padding({ left: 4, right: 4, bottom: 6 })
+  }
+
+  @Builder
+  chessboard() {
+    Column() {
+      ForEach(this.board, (row: string[], r: number) => {
+        Row() {
+          ForEach(row, (piece: string, c: number) => {
+            this.cell(piece, r, c)
+          }, (piece: string, c: number) => r.toString() + '_' + c.toString())
+        }
+        .width('100%')
+      }, (row: string[], r: number) => r.toString())
+    }
+    .width(this.getBoardSide())
+    .height(this.getBoardSide())
+    .backgroundColor('#D9A066')
+    .borderRadius(8)
+    .border({ width: 1, color: this.palette.borderSubtle })
+    .clip(true)
+    .onClick(() => { })
+  }
+
+  @Builder
+  cell(piece: string, r: number, c: number) {
+    const isTarget: boolean = this.isTarget(r, c);
+    const isSel: boolean = this.selR === r && this.selC === c;
+    const isSuggest: boolean = this.suggestionOn &&
+      ((this.suggestFromR === r && this.suggestFromC === c) ||
+        (this.suggestToR === r && this.suggestToC === c));
+    Stack() {
+      if (isTarget) {
+        Column()
+          .width('100%').height('100%')
+          .backgroundColor('#33FFD700')
+      } else if (isSuggest) {
+        Column()
+          .width('100%').height('100%')
+          .backgroundColor('#33FF6B6B')
+      }
+      if (piece !== '.') {
+        Text(piece)
+          .fontSize(this.cellSize() * 0.62)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(ChineseChessEngine.isRed(piece) ? '#D32F2F' : '#212121')
+          .fontWeight(FontWeight.Bold)
+      }
+      if (isSel) {
+        Column()
+          .width('100%').height('100%')
+          .border({ width: 2, color: '#FFD700' })
+      }
+    }
+    .width(this.cellSize())
+    .height(this.cellSize())
+    .onClick(() => { this.onCellTap(r, c); })
+  }
+
+  private isTarget(r: number, c: number): boolean {
+    for (let i: number = 0; i < this.legalTargets.length; i++) {
+      if (this.legalTargets[i][0] === r && this.legalTargets[i][1] === c) return true;
+    }
+    return false;
+  }
+
+  @Builder
+  controlPanel() {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        this.actionBtn('↩ 悔棋', this.palette.bgSurface2, () => { this.undo(); })
+        this.actionBtn('💡 AI提示', this.palette.bgSurface2, () => { this.suggestMove(); })
+        this.actionBtn('✕ 结束', this.palette.danger, () => { this.stopGame(); this.setupOpen = true; })
+      }
+      .width('100%')
+      if (this.suggestionOn) {
+        Row({ space: 8 }) {
+          Text('建议：' + this.suggestFromR.toString() + ',' + this.suggestFromC.toString() +
+            ' → ' + this.suggestToR.toString() + ',' + this.suggestToC.toString())
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .layoutWeight(1)
+          this.actionBtn('确认', this.palette.primary, () => { this.applySuggestion(); })
+          this.actionBtn('取消', this.palette.bgSurface2, () => { this.suggestionOn = false; })
+        }
+        .width('100%')
+        .padding(8)
+        .backgroundColor(this.palette.bgSurface2)
+        .borderRadius(8)
+      }
+      // 记谱
+      if (this.moveHistory.length > 0) {
+        Scroll() {
+          Text(this.moveHistory.join('  '))
+            .fontSize(this.palette.fsXs)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textSecondary)
+            .width('100%')
+        }
+        .height(60)
+        .scrollBar(BarState.Off)
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  actionBtn(label: string, color: string, onTap: () => void) {
+    Text(label)
+      .fontSize(this.palette.fsSm)
+      .fontFamily(this.palette.fontSans)
+      .fontColor(Color.White)
+      .fontWeight(FontWeight.Medium)
+      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+      .borderRadius(10)
+      .backgroundColor(color)
+      .onClick(() => { onTap(); })
+  }
+
+  // ---- 开始前设置弹窗 ----
+  @Builder
+  setupDialog() {
+    if (this.setupOpen) {
+      Stack() {
+        Column() {
+          Blank()
+          Column({ space: 14 }) {
+            Text('开始对局')
+              .fontSize(this.palette.fsLg)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(FontWeight.Bold)
+            // 模式
+            Row({ space: 8 }) {
+              this.seg('人机', 'hvE')
+              this.seg('人对AI', 'hvL')
+              this.seg('AI对AI', 'LvL')
+            }
+            .width('100%')
+            // 选边（人机/人对AI 时）
+            if (this.matchMode !== 'LvL') {
+              Row({ space: 8 }) {
+                this.seg('执红', 'red')
+                this.seg('执黑', 'black')
+                this.seg('随机', 'random')
+              }
+              .width('100%')
+            }
+            // 悔棋次数限制
+            Row({ space: 8 }) {
+              Text('悔棋次数')
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textSecondary)
+                .layoutWeight(1)
+              this.seg('0', '0')
+              this.seg('3', '3')
+              this.seg('5', '5')
+              this.seg('不限', 'unlimited')
+            }
+            .width('100%')
+            // 引擎难度
+            Row({ space: 8 }) {
+              Text('引擎难度')
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textSecondary)
+                .layoutWeight(1)
+              this.seg('简单', 'easy')
+              this.seg('中等', 'medium')
+              this.seg('困难', 'hard')
+            }
+            .width('100%')
+            // 模型选择
+            if (this.matchMode === 'hvL') {
+              this.modelPicker('AI 方模型', this.redModelIndex, (idx: number): void => {
+                this.redModelIndex = idx;
+                DataRepository.setSetting(AI_MODEL_KEY, this.aiModels[idx].id);
+              })
+            } else if (this.matchMode === 'LvL') {
+              this.modelPicker('红方模型', this.redModelIndex, (idx: number): void => {
+                this.redModelIndex = idx;
+                DataRepository.setSetting(RED_MODEL_KEY, this.aiModels[idx].id);
+              })
+              this.modelPicker('黑方模型', this.blackModelIndex, (idx: number): void => {
+                this.blackModelIndex = idx;
+                DataRepository.setSetting(BLACK_MODEL_KEY, this.aiModels[idx].id);
+              })
+            }
+            this.actionBtn('开始对局', this.palette.primary, () => { this.onSetupConfirm(); })
+          }
+          .width(this.isSm ? '86%' : '64%')
+          .borderRadius(18)
+          .backgroundColor(this.palette.bgBase)
+          .padding(20)
+          .padding({ bottom: Math.max(16, this.navBarHeight) })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.4)')
+    }
+  }
+
+  @Builder
+  seg(label: string, value: string) {
+    const active: boolean = this.segActive(value);
+    Text(label)
+      .fontSize(this.palette.fsSm)
+      .fontFamily(this.palette.fontSans)
+      .fontColor(active ? Color.White : this.palette.textSecondary)
+      .fontWeight(active ? FontWeight.Bold : FontWeight.Normal)
+      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+      .borderRadius(9)
+      .backgroundColor(active ? this.palette.primary : this.palette.bgSurface2)
+      .onClick(() => { this.segTap(value); })
+  }
+
+  private segActive(value: string): boolean {
+    if (value === 'hvE' || value === 'hvL' || value === 'LvL') return this.matchMode === value;
+    if (value === 'red' || value === 'black' || value === 'random') return this.humanSide === value;
+    if (value === '0') return this.undoLimit === 0;
+    if (value === '3') return this.undoLimit === 3;
+    if (value === '5') return this.undoLimit === 5;
+    if (value === 'unlimited') return this.undoLimit === 0 && this.undoUnlimited;
+    if (value === 'easy') return this.engineDiffIndex === 0;
+    if (value === 'medium') return this.engineDiffIndex === 1;
+    if (value === 'hard') return this.engineDiffIndex === 2;
+    return false;
+  }
+
+  private undoUnlimited: boolean = false;
+
+  private segTap(value: string): void {
+    if (value === 'hvE') this.matchMode = 'hvE';
+    else if (value === 'hvL') this.matchMode = 'hvL';
+    else if (value === 'LvL') this.matchMode = 'LvL';
+    else if (value === 'red') this.humanSide = 'red';
+    else if (value === 'black') this.humanSide = 'black';
+    else if (value === 'random') this.humanSide = Math.random() < 0.5 ? 'red' : 'black';
+    else if (value === '0') { this.undoLimit = 0; this.undoUnlimited = false; }
+    else if (value === '3') { this.undoLimit = 3; this.undoUnlimited = false; }
+    else if (value === '5') { this.undoLimit = 5; this.undoUnlimited = false; }
+    else if (value === 'unlimited') { this.undoLimit = 0; this.undoUnlimited = true; }
+    else if (value === 'easy') { this.engineDiffIndex = 0; this.engineDepth = 2; }
+    else if (value === 'medium') { this.engineDiffIndex = 1; this.engineDepth = 3; }
+    else if (value === 'hard') { this.engineDiffIndex = 2; this.engineDepth = 4; }
+  }
+
+  @Builder
+  modelPicker(title: string, index: number, onPick: (idx: number) => void) {
+    Row({ space: 8 }) {
+      Text(title)
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textSecondary)
+        .layoutWeight(1)
+      Text(this.aiModelNames.length > index ? this.aiModelNames[index] : '未配置')
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.modelsConfigured ? this.palette.textPrimary : this.palette.textTertiary)
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .backgroundColor(this.palette.bgSurface2)
+        .borderRadius(7)
+        .onClick(() => {
+          if (!this.modelsConfigured || this.aiModels.length === 0) return;
+          const next: number = (index + 1) % this.aiModels.length;
+          onPick(next);
+        })
+    }
+    .width('100%')
+  }
+
+  private async onSetupConfirm(): Promise<void> {
+    if (this.matchMode === 'hvL' || this.matchMode === 'LvL') {
+      if (!this.modelsConfigured) {
+        promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+        return;
+      }
+    }
+    await this.startGame();
+  }
+
+  build() {
+    Stack() {
+      Column() {
+        TopBar({ title: '中国象棋', subtitle: this.modeLabel(this.matchMode) })
+        Column({ space: 10 }) {
+          this.statusBar()
+          this.chessboard()
+          this.controlPanel()
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding({
+          left: this.isSm ? 10 : 24,
+          right: this.isSm ? 10 : 24,
+          top: 8,
+          bottom: 12
+        })
+        .scrollable(ScrollDirection.Vertical)
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .backgroundColor(Color.Transparent)
+
+      this.setupDialog()
+    }
+    .width('100%')
+    .height('100%')
+  }
+}

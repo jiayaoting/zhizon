@@ -5,7 +5,7 @@ import { LlmClient } from './LlmClient';
 import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, entryToConfig } from '../common/LlmModels';
 import { DifficultyLevel, difficultyLabel } from '../common/Difficulty';
 
-export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku';
+export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku' | 'ChineseChess';
 
 // AI 模型记忆存储键：聊天/AI 使用默认键，各游戏独立记忆自己的键
 const AI_MODEL_KEY_PREFIX = 'aiModelId';
@@ -42,12 +42,17 @@ export class GameAction {
   r: number;
   c: number;
   value: number;
+  toRow: number;
+  toCol: number;
 
-  constructor(command: string, r: number = -1, c: number = -1, value: number = 0) {
+  constructor(command: string, r: number = -1, c: number = -1, value: number = 0,
+    toRow: number = -1, toCol: number = -1) {
     this.command = command;
     this.r = r;
     this.c = c;
     this.value = value;
+    this.toRow = toRow;
+    this.toCol = toCol;
   }
 }
 
@@ -133,6 +138,16 @@ export class GameAIService {
         '可用动作：REVEAL r c（翻开格子）、FLAG r c（标记/取消标记），r、c 从 0 开始。\n' +
         '策略：优先翻开确定安全的格子，用数字推理标记地雷，绝不翻开已知有雷的格子。\n' +
         '只输出一个动作，格式如 REVEAL 3 5 或 FLAG 1 2，不要输出任何其他文字。';
+    }
+    if (kind === 'ChineseChess') {
+      return '你正在下中国象棋。棋盘 9 列 × 10 行，红方先手。\n' +
+        '当前难度：' + diff + '。\n' +
+        '棋子编码：红方大写 帅K 仕A 相B 马H 车R 炮C 兵P；黑方小写 将k 士a 象b 马h 车r 炮c 卒p。\n' +
+        '走子规则：仕/士在九宫斜格，相/象走田字且不过河、塞象眼，马走日字、蹩马腿，\n' +
+        '车走直线，炮隔子吃子，兵/卒只能前进、过河后可横走且不能后退，帅/将不出九宫且不能对脸相见。\n' +
+        '不能把己方将/帅送入被将军的境地。\n' +
+        '策略：注意防守己方将/帅，优先保护重要棋子，用炮/车/马配合进攻，避免被将军。\n' +
+        '只输出一步走法，格式：MOVE 起点行 起点列 终点行 终点列（例如 MOVE 5 4 4 4），不要输出任何其他文字。';
     }
     return '你正在玩数独。棋盘 9×9，0 表示空格，1-9 为已填数字（题目给定的数字不可修改）。\n' +
       '当前难度：' + diff + '。\n' +
@@ -269,6 +284,14 @@ export class GameAIService {
       if (GameAIService.hasWord(upper, 'SET')) {
         const nums: number[] = GameAIService.extractNumbers(text);
         if (nums.length >= 3) return new GameAction('SET', nums[0], nums[1], nums[2]);
+        return null;
+      }
+      return null;
+    }
+    if (kind === 'ChineseChess') {
+      if (GameAIService.hasWord(upper, 'MOVE')) {
+        const nums: number[] = GameAIService.extractNumbers(text);
+        if (nums.length >= 4) return new GameAction('MOVE', nums[0], nums[1], nums[2], nums[3]);
         return null;
       }
       return null;
@@ -432,6 +455,19 @@ export class GameAIService {
       }
       out = out + '[' + line.join(',') + ']\n';
     }
+    return out;
+  }
+
+  // 中国象棋棋盘序列化：坐标说明 + 每行棋子（红方大写在下，黑方小写在上）
+  static serializeChineseChess(board: string[][], redTurn: boolean): string {
+    let out: string = '中国象棋棋盘，9列(col 0-8，从左到右) × 10行(row 0-9，从上到下)。\n';
+    out = out + '棋子编码：红方用大写 帅K 仕A 相B 马H 车R 炮C 兵P；黑方用小写 将k 士a 象b 马h 车r 炮c 卒p；. 表示空位。\n';
+    out = out + '当前轮到：' + (redTurn ? '红方' : '黑方') + ' 走棋。\n';
+    for (let r: number = 0; r < board.length; r++) {
+      out = out + 'row' + r.toString() + ' ' + board[r].join(' ') + '\n';
+    }
+    out = out + '请输出一步走法，格式：MOVE 起点行 起点列 终点行 终点列（例如 MOVE 5 4 4 4）。\n';
+    out = out + '只输出一步走法，不要输出任何其他文字或解释。';
     return out;
   }
 }

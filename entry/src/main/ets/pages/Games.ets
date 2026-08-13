@@ -61,6 +61,13 @@ export struct GamesPage {
       icon: '🧩',
       desc: '数字推理经典，每行每列每宫填 1-9 不重复',
       color: this.palette.info
+    },
+    {
+      gameId: GameId.CHINESE_CHESS,
+      name: '中国象棋',
+      icon: '♟️',
+      desc: '人机 / 人对AI / AI对AI，经典楚河汉界',
+      color: this.palette.danger
     }
   ];
 
@@ -131,6 +138,23 @@ export struct GamesPage {
         '• 每个 3×3 宫格 1-9 不重复\n' +
         '• 题目中给定的数字不可修改\n' +
         '• 填完所有空格即为胜利';
+    }
+    if (gameId === GameId.CHINESE_CHESS) {
+      return '🎮 中国象棋\n\n' +
+        '【模式】\n' +
+        '• 人机：你对本地 AI 引擎\n' +
+        '• 人对AI：你对大模型\n' +
+        '• AI对AI：两个大模型对弈（可各自选不同模型）\n\n' +
+        '【操作】\n' +
+        '• 点击己方棋子选中，再点击高亮目标格落子\n' +
+        '• AI 思考时棋盘锁定，状态栏会提示哪方思考中\n' +
+        '• 💡 AI提示：轮到你的回合点击，AI 给出建议走法，确认后落子\n' +
+        '• ↩ 悔棋：回退一步（受本局悔棋次数限制）\n\n' +
+        '【规则】\n' +
+        '• 红方先手，帅/将不出九宫且不能对脸\n' +
+        '• 马蹩腿、象塞象眼且不过河、炮隔子吃\n' +
+        '• 兵/卒过河后可横走，不能后退\n' +
+        '• 将死或困毙对方即获胜';
     }
     return '';
   }
