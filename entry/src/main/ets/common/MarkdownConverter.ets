@@ -418,7 +418,7 @@ export class MarkdownConverter {
     // 链接 [text](url)
     r = r.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '\u0007$1\u0008');
     // 解析标记
-    const sb: string[] = [];
+    let sb: string[] = [];
     let bold: boolean = false;
     let italic: boolean = false;
     let code: boolean = false;
@@ -442,7 +442,7 @@ export class MarkdownConverter {
         r.charAt(i + 1) === '\u0007' || r.charAt(i + 1) === '\u0008';
       if (isBoundary && sb.length > 0) {
         result.push(new InlineSpan(sb.join(''), bold, italic, code, link));
-        sb.length = 0;
+        sb = [];
       }
     }
     if (sb.length > 0) {

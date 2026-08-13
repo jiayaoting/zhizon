@@ -36,12 +36,12 @@ struct MarkdownText {
           .fontSize(this.palette.fsSm - 1)
           .fontFamily(this.palette.fontMono)
           .fontColor(this.isDark ? '#FCA5A5' : '#C0392B')
-          .textBackgroundStyle({ color: this.isDark ? '#1E293B' : '#F1F5F9', radius: '3vp' })
+          .textBackgroundStyle({ color: this.isDark ? '#1E293B' : '#F1F5F9', radius: 3 })
       } else if (sp.link.length > 0) {
         Span(sp.text)
           .fontSize(this.palette.fsSm)
           .fontColor(this.isDark ? '#60A5FA' : '#2563EB')
-          .textDecoration({ type: TextDecorationType.Underline })
+          .decoration({ type: TextDecorationType.Underline, color: this.isDark ? '#60A5FA' : '#2563EB' })
           .fontWeight(sp.bold ? FontWeight.Bold : FontWeight.Medium)
           .fontStyle(sp.italic ? FontStyle.Italic : FontStyle.Normal)
       } else {
