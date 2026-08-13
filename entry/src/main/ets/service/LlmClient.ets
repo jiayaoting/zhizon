@@ -65,26 +65,24 @@ export class LlmClient {
         new ChatRequestMessage(m.role, m.content));
       const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, stream);
 
-      if (stream && onDelta !== undefined) {
-        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
-          buffer = buffer + LlmClient.arrayBufferToString(data);
-          const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
-          const events: string[] = parseResult.events;
-          buffer = LlmClient.remainingBuffer(buffer, parseResult);
-          for (let i: number = 0; i < events.length; i++) {
-            const contentDelta: string = LlmClient.openAIContentFromSse(events[i]);
-            if (contentDelta.length > 0) {
-              fullContent = fullContent + contentDelta;
-              onDelta(contentDelta);
-            }
-            const reasoningDelta: string = LlmClient.openAIReasoningFromSse(events[i]);
-            if (reasoningDelta.length > 0) {
-              fullReasoning = fullReasoning + reasoningDelta;
-              if (onReasoning !== undefined) onReasoning(reasoningDelta);
-            }
+      const processData = (data: ArrayBuffer): void => {
+        buffer = buffer + LlmClient.arrayBufferToString(data);
+        const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+        const events: string[] = parseResult.events;
+        buffer = LlmClient.remainingBuffer(buffer, parseResult);
+        for (let i: number = 0; i < events.length; i++) {
+          const contentDelta: string = LlmClient.openAIContentFromSse(events[i]);
+          if (contentDelta.length > 0) {
+            fullContent = fullContent + contentDelta;
+            onDelta(contentDelta);
           }
-        });
-      }
+          const reasoningDelta: string = LlmClient.openAIReasoningFromSse(events[i]);
+          if (reasoningDelta.length > 0) {
+            fullReasoning = fullReasoning + reasoningDelta;
+            if (onReasoning !== undefined) onReasoning(reasoningDelta);
+          }
+        }
+      };
 
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
@@ -95,7 +93,11 @@ export class LlmClient {
         // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发；
         // 设置 STRING 时框架缓冲整个响应，dataReceive 不触发，导致无法流式解析
         expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
-        usingCache: false
+        usingCache: false,
+        // 官方推荐的流式回调：在请求 options 中直接传入，逐块接收 SSE 数据
+        onDataReceive: stream && onDelta !== undefined ? (data: ArrayBuffer) => {
+          processData(data);
+        } : undefined
       });
       const code: number = response.responseCode;
       if (code !== 200) {
@@ -186,26 +188,24 @@ export class LlmClient {
       const body: AnthropicRequestBody = new AnthropicRequestBody(config.model.trim(), config.maxTokens,
         requestMessages, stream);
 
-      if (stream && onDelta !== undefined) {
-        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
-          buffer = buffer + LlmClient.arrayBufferToString(data);
-          const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
-          const events: string[] = parseResult.events;
-          buffer = LlmClient.remainingBuffer(buffer, parseResult);
-          for (let i: number = 0; i < events.length; i++) {
-            const contentDelta: string = LlmClient.anthropicContentFromSse(events[i]);
-            if (contentDelta.length > 0) {
-              fullContent = fullContent + contentDelta;
-              onDelta(contentDelta);
-            }
-            const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(events[i]);
-            if (reasoningDelta.length > 0) {
-              fullReasoning = fullReasoning + reasoningDelta;
-              if (onReasoning !== undefined) onReasoning(reasoningDelta);
-            }
+      const processData = (data: ArrayBuffer): void => {
+        buffer = buffer + LlmClient.arrayBufferToString(data);
+        const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+        const events: string[] = parseResult.events;
+        buffer = LlmClient.remainingBuffer(buffer, parseResult);
+        for (let i: number = 0; i < events.length; i++) {
+          const contentDelta: string = LlmClient.anthropicContentFromSse(events[i]);
+          if (contentDelta.length > 0) {
+            fullContent = fullContent + contentDelta;
+            onDelta(contentDelta);
           }
-        });
-      }
+          const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(events[i]);
+          if (reasoningDelta.length > 0) {
+            fullReasoning = fullReasoning + reasoningDelta;
+            if (onReasoning !== undefined) onReasoning(reasoningDelta);
+          }
+        }
+      };
 
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
@@ -215,7 +215,11 @@ export class LlmClient {
         readTimeout: READ_TIMEOUT,
         // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发
         expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
-        usingCache: false
+        usingCache: false,
+        // 官方推荐的流式回调：在请求 options 中直接传入，逐块接收 SSE 数据
+        onDataReceive: stream && onDelta !== undefined ? (data: ArrayBuffer) => {
+          processData(data);
+        } : undefined
       });
       const code: number = response.responseCode;
       if (code !== 200) {
