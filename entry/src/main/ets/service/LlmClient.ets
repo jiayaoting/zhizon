@@ -50,6 +50,7 @@ export class LlmClient {
     let fullContent: string = '';
     let fullReasoning: string = '';
     let buffer: string = '';
+    let rawData: string = '';
     try {
       const url: string = LlmClient.openAIUrl(config);
       const header: Record<string, string> = {
@@ -66,7 +67,9 @@ export class LlmClient {
       const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature, stream);
 
       const processData = (data: ArrayBuffer): void => {
-        buffer = buffer + LlmClient.arrayBufferToString(data);
+        const chunk: string = LlmClient.arrayBufferToString(data);
+        rawData = rawData + chunk;
+        buffer = buffer + chunk;
         const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
         const events: string[] = parseResult.events;
         buffer = LlmClient.remainingBuffer(buffer, parseResult);
@@ -85,28 +88,23 @@ export class LlmClient {
       };
 
       if (stream && onDelta !== undefined) {
-        // 事件监听方式：逐块接收 SSE 数据（当前 SDK 不支持 options.onDataReceive）
+        // 流式必须用 requestInStream：dataReceive 事件才会逐块触发（request 时不回调）
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           processData(data);
         });
-      }
-
-      const response = await httpRequest.request(url, {
-        method: http.RequestMethod.POST,
-        header: header,
-        extraData: JSON.stringify(body),
-        connectTimeout: CONNECT_TIMEOUT,
-        readTimeout: READ_TIMEOUT,
-        // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发；
-        // 设置 STRING 时框架缓冲整个响应，dataReceive 不触发，导致无法流式解析
-        expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
-        usingCache: false
-      });
-      const code: number = response.responseCode;
-      if (code !== 200) {
-        return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(response.result, code));
-      }
-      if (stream && onDelta !== undefined) {
+        const code: number = await httpRequest.requestInStream(url, {
+          method: http.RequestMethod.POST,
+          header: header,
+          extraData: JSON.stringify(body),
+          connectTimeout: CONNECT_TIMEOUT,
+          readTimeout: READ_TIMEOUT,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          usingCache: false
+        });
+        if (code !== 200) {
+          return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(rawData, code));
+        }
+        // 流结束：处理尾部未完整解析的数据
         if (buffer.trim().length > 0) {
           const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
           const tailEvents: string[] = tailResult.events;
@@ -123,30 +121,24 @@ export class LlmClient {
             }
           }
         }
-        // 兜底：极端情况下 dataReceive 未触发，从 response.result 提取完整 SSE 解析
-        if (!fullContent.trim() && !fullReasoning.trim()) {
-          const raw: string = LlmClient.resultToString(response.result);
-          if (raw.length > 0) {
-            const tailResult: SseParseResult = LlmClient.extractSseEvents(raw);
-            const tailEvents: string[] = tailResult.events;
-            for (let i: number = 0; i < tailEvents.length; i++) {
-              const contentDelta: string = LlmClient.openAIContentFromSse(tailEvents[i]);
-              if (contentDelta.length > 0) {
-                fullContent = fullContent + contentDelta;
-                if (onDelta !== undefined) onDelta(contentDelta);
-              }
-              const reasoningDelta: string = LlmClient.openAIReasoningFromSse(tailEvents[i]);
-              if (reasoningDelta.length > 0) {
-                fullReasoning = fullReasoning + reasoningDelta;
-                if (onReasoning !== undefined) onReasoning(reasoningDelta);
-              }
-            }
-          }
-        }
         if (!fullContent.trim() && !fullReasoning.trim()) {
           return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
         }
         return new LlmResult(true, fullContent, '', '', fullReasoning);
+      }
+
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(body),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT,
+        expectDataType: http.HttpDataType.STRING,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(response.result, code));
       }
       const text: string = LlmClient.resultToString(response.result);
       const content: string = LlmClient.openAIContent(text);
@@ -174,6 +166,7 @@ export class LlmClient {
     let fullContent: string = '';
     let fullReasoning: string = '';
     let buffer: string = '';
+    let rawData: string = '';
     try {
       const url: string = LlmClient.anthropicUrl(config);
       const header: Record<string, string> = {
@@ -192,7 +185,9 @@ export class LlmClient {
         requestMessages, stream);
 
       const processData = (data: ArrayBuffer): void => {
-        buffer = buffer + LlmClient.arrayBufferToString(data);
+        const chunk: string = LlmClient.arrayBufferToString(data);
+        rawData = rawData + chunk;
+        buffer = buffer + chunk;
         const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
         const events: string[] = parseResult.events;
         buffer = LlmClient.remainingBuffer(buffer, parseResult);
@@ -211,28 +206,24 @@ export class LlmClient {
       };
 
       if (stream && onDelta !== undefined) {
-        // 事件监听方式：逐块接收 SSE 数据（当前 SDK 不支持 options.onDataReceive）
+        // 流式必须用 requestInStream：dataReceive 事件才会逐块触发（request 时不回调）
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           processData(data);
         });
-      }
-
-      const response = await httpRequest.request(url, {
-        method: http.RequestMethod.POST,
-        header: header,
-        extraData: JSON.stringify(body),
-        connectTimeout: CONNECT_TIMEOUT,
-        readTimeout: READ_TIMEOUT,
-        // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发
-        expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
-        usingCache: false
-      });
-      const code: number = response.responseCode;
-      if (code !== 200) {
-        return new LlmResult(false, '', 'HTTP_' + code.toString(),
-          LlmClient.anthropicErrorMessage(response.result, code));
-      }
-      if (stream && onDelta !== undefined) {
+        const code: number = await httpRequest.requestInStream(url, {
+          method: http.RequestMethod.POST,
+          header: header,
+          extraData: JSON.stringify(body),
+          connectTimeout: CONNECT_TIMEOUT,
+          readTimeout: READ_TIMEOUT,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          usingCache: false
+        });
+        if (code !== 200) {
+          return new LlmResult(false, '', 'HTTP_' + code.toString(),
+            LlmClient.anthropicErrorMessage(rawData, code));
+        }
+        // 流结束：处理尾部未完整解析的数据
         if (buffer.trim().length > 0) {
           const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
           const tailEvents: string[] = tailResult.events;
@@ -249,30 +240,25 @@ export class LlmClient {
             }
           }
         }
-        // 兜底：极端情况下 dataReceive 未触发，从 response.result 提取完整 SSE 解析
-        if (!fullContent.trim() && !fullReasoning.trim()) {
-          const raw: string = LlmClient.resultToString(response.result);
-          if (raw.length > 0) {
-            const tailResult: SseParseResult = LlmClient.extractSseEvents(raw);
-            const tailEvents: string[] = tailResult.events;
-            for (let i: number = 0; i < tailEvents.length; i++) {
-              const contentDelta: string = LlmClient.anthropicContentFromSse(tailEvents[i]);
-              if (contentDelta.length > 0) {
-                fullContent = fullContent + contentDelta;
-                if (onDelta !== undefined) onDelta(contentDelta);
-              }
-              const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(tailEvents[i]);
-              if (reasoningDelta.length > 0) {
-                fullReasoning = fullReasoning + reasoningDelta;
-                if (onReasoning !== undefined) onReasoning(reasoningDelta);
-              }
-            }
-          }
-        }
         if (!fullContent.trim() && !fullReasoning.trim()) {
           return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
         }
         return new LlmResult(true, fullContent, '', '', fullReasoning);
+      }
+
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(body),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT,
+        expectDataType: http.HttpDataType.STRING,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmResult(false, '', 'HTTP_' + code.toString(),
+          LlmClient.anthropicErrorMessage(response.result, code));
       }
       const text: string = LlmClient.resultToString(response.result);
       const content: string = LlmClient.anthropicContent(text);
