@@ -82,6 +82,7 @@ export struct Game2048Page {
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
   private aiFailCount: number = 0;
+  private aiSelectSeq: number = 0;
 
   private titleText: string = '2048';
   private gameStartTime: number = 0;
@@ -467,11 +468,14 @@ export struct Game2048Page {
   }
 
   private selectAiModel(index: number): void {
-    if (this.aiRunning) return;
     this.aiModelIndex = index;
+    this.aiSelectSeq += 1;
+    const seq: number = this.aiSelectSeq;
     if (this.aiModels.length > index) {
       GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        if (seq !== this.aiSelectSeq) return;
         this.aiConfig = config;
+        this.aiFailCount = 0;
       });
     }
   }

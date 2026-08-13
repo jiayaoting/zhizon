@@ -34,7 +34,7 @@ export struct GameAIPanel {
           .backgroundColor(this.palette.bgSurface2)
           .borderRadius(6)
           .onClick(() => {
-            if (this.running || !this.modelsConfigured || this.modelNames.length === 0) return;
+            if (!this.modelsConfigured || this.modelNames.length === 0) return;
             this.onSelectModel((this.selectedModelIndex + 1) % this.modelNames.length);
           })
         Row() {

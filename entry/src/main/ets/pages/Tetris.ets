@@ -110,6 +110,7 @@ export struct TetrisPage {
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
   private aiFailCount: number = 0;
+  private aiSelectSeq: number = 0;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
@@ -576,11 +577,14 @@ export struct TetrisPage {
   }
 
   private selectAiModel(index: number): void {
-    if (this.aiRunning) return;
     this.aiModelIndex = index;
+    this.aiSelectSeq += 1;
+    const seq: number = this.aiSelectSeq;
     if (this.aiModels.length > index) {
       GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        if (seq !== this.aiSelectSeq) return;
         this.aiConfig = config;
+        this.aiFailCount = 0;
       });
     }
   }
