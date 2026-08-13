@@ -18,10 +18,12 @@ export class MarkdownConverter {
     const out: string[] = [];
     let i: number = 0;
     const n: number = lines.length;
+    const textColor: string = isDark ? '#E2E8F0' : '#1A202C';
     const codeFg: string = isDark ? '#FCA5A5' : '#C0392B';
     const codeBg: string = isDark ? '#1E293B' : '#F1F5F9';
     const quoteColor: string = isDark ? '#94A3B8' : '#64748B';
     const hrColor: string = isDark ? '#475569' : '#CBD5E1';
+    const pStyle: string = 'style="color:' + textColor + ';line-height:1.6;"';
     while (i < n) {
       const raw: string = lines[i];
       const line: string = raw.trim();
@@ -91,7 +93,7 @@ export class MarkdownConverter {
             break;
           }
         }
-        out.push('<p>' + items.join('<br>') + '</p>');
+        out.push('<p ' + pStyle + '>' + items.join('<br>') + '</p>');
         continue;
       }
       if (/^\d+[.)]\s+/.test(line)) {
@@ -109,7 +111,7 @@ export class MarkdownConverter {
             break;
           }
         }
-        out.push('<p>' + items.join('<br>') + '</p>');
+        out.push('<p ' + pStyle + '>' + items.join('<br>') + '</p>');
         continue;
       }
       if (line.indexOf('|') >= 0 && i + 1 < n && /^[\s:|-]+$/.test(lines[i + 1].trim())) {
@@ -140,7 +142,7 @@ export class MarkdownConverter {
         paraLines.push(MarkdownConverter.inlineRich(t, isDark));
         i++;
       }
-      out.push('<p>' + paraLines.join('<br>') + '</p>');
+      out.push('<p ' + pStyle + '>' + paraLines.join('<br>') + '</p>');
     }
     return out.join('');
   }

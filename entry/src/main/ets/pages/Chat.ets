@@ -173,12 +173,10 @@ struct MessageBubble {
           // 正文：流式中用 Text 打字机效果；结束后用 RichText 渲染 markdown
           if (this.useMarkdown()) {
             // RichText 原生渲染 markdown：自适应高度、轻量、无 WebView 开销
+            // 注意：RichText 不支持 fontSize/fontFamily/fontColor/lineHeight 属性，字体样式由 HTML style 控制
             Column() {
               RichText(MarkdownConverter.toRichTextHtml(this.message.content, this.isDark))
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .lineHeight(20)
+                .width('100%')
                 .padding(12)
                 .borderRadius(12)
                 .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
@@ -610,7 +608,13 @@ struct Chat {
       });
       const controller: systemShare.ShareController = new systemShare.ShareController(data);
       const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
-      controller.show(context);
+      const options: systemShare.ShareControllerOptions = {
+        previewMode: systemShare.SharePreviewMode.DETAIL,
+        selectionMode: systemShare.SelectionMode.SINGLE
+      };
+      controller.show(context, options).catch((e: Object) => {
+        // 用户取消分享面板时忽略错误
+      });
     } catch (e) {
       promptAction.showToast({ message: '分享失败' });
     }

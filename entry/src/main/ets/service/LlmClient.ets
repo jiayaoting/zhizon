@@ -8,6 +8,17 @@ import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage,
 const CONNECT_TIMEOUT = 30000;
 const READ_TIMEOUT = 300000;
 
+// 可取消请求的返回结构：promise 为结果，cancel 用于主动中断底层请求
+export class CancelableLlmRequest {
+  promise: Promise<LlmResult>;
+  cancel: () => void;
+
+  constructor(promise: Promise<LlmResult>, cancel: () => void) {
+    this.promise = promise;
+    this.cancel = cancel;
+  }
+}
+
 export class LlmClient {
   // 非流式单次对话（用于测试连接）
   static async testConnection(config: LlmConfig): Promise<LlmResult> {
@@ -34,8 +45,7 @@ export class LlmClient {
   }
 
   // 可取消的非流式请求：返回结果 Promise + 取消函数（decide 超时时主动中断底层请求）
-  static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[]):
-    { promise: Promise<LlmResult>, cancel: () => void } {
+  static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[]): CancelableLlmRequest {
     const httpRequest = http.createHttp();
     let cancelled: boolean = false;
     const promise: Promise<LlmResult> = LlmClient.postWithRequest(config, messages, httpRequest).then(
@@ -52,7 +62,7 @@ export class LlmClient {
       } catch (e) {
       }
     };
-    return { promise: promise, cancel: cancel };
+    return new CancelableLlmRequest(promise, cancel);
   }
 
   // 在外部传入的 httpRequest 上执行非流式请求（支持取消）
