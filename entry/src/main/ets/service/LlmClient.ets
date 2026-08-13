@@ -249,7 +249,13 @@ export class LlmClient {
         if (message !== undefined) {
           const messageObj: Record<string, Object> = message as Record<string, Object>;
           const content: Object = messageObj.content;
-          if (content !== undefined) return String(content);
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+          const reasoningContent: Object = messageObj.reasoning_content;
+          if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
+            return String(reasoningContent);
+          }
+          const reasoning: Object = messageObj.reasoning;
+          if (reasoning !== undefined && reasoning !== null && String(reasoning).length > 0) return String(reasoning);
         }
       }
       return '';
@@ -271,6 +277,8 @@ export class LlmClient {
           const block: Record<string, Object> = blocks[i] as Record<string, Object>;
           if (block.type === 'text' && block.text !== undefined) {
             text = text + String(block.text);
+          } else if (block.type === 'thinking' && block.thinking !== undefined) {
+            text = text + String(block.thinking);
           }
         }
         return text;
@@ -332,14 +340,27 @@ export class LlmClient {
         const delta: Object = first.delta;
         if (delta !== undefined) {
           const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          // 优先取正文 content；思考型模型返回 reasoning_content/reasoning/thinking，一并展示
           const content: Object = deltaObj.content;
-          if (content !== undefined) return String(content);
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+          const reasoningContent: Object = deltaObj.reasoning_content;
+          if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
+            return String(reasoningContent);
+          }
+          const reasoning: Object = deltaObj.reasoning;
+          if (reasoning !== undefined && reasoning !== null && String(reasoning).length > 0) return String(reasoning);
+          const thinking: Object = deltaObj.thinking;
+          if (thinking !== undefined && thinking !== null && String(thinking).length > 0) return String(thinking);
         }
         const message: Object = first.message;
         if (message !== undefined) {
           const messageObj: Record<string, Object> = message as Record<string, Object>;
           const content: Object = messageObj.content;
-          if (content !== undefined) return String(content);
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+          const reasoningContent: Object = messageObj.reasoning_content;
+          if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
+            return String(reasoningContent);
+          }
         }
       }
       return '';
@@ -372,6 +393,10 @@ export class LlmClient {
           if (deltaObj.type === 'text_delta') {
             const text: Object = deltaObj.text;
             if (text !== undefined) return String(text);
+          } else if (deltaObj.type === 'thinking_delta') {
+            // extended thinking：思考内容增量
+            const thinking: Object = deltaObj.thinking;
+            if (thinking !== undefined) return String(thinking);
           }
         }
       }
