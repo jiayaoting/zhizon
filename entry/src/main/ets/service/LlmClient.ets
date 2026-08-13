@@ -21,6 +21,17 @@ export class CancelableLlmRequest {
   }
 }
 
+// Anthropic extended thinking 参数（thinkingEnabled 时随请求发送）
+class AnthropicThinkingParam {
+  type: string;
+  budget_tokens: number;
+
+  constructor(type: string, budgetTokens: number) {
+    this.type = type;
+    this.budget_tokens = budgetTokens;
+  }
+}
+
 export class LlmClient {
   // 非流式单次对话（用于测试连接）
   static async testConnection(config: LlmConfig): Promise<LlmResult> {
@@ -61,7 +72,7 @@ export class LlmClient {
       'stream': body.stream
     };
     if (body.thinkingEnabled) {
-      payload['thinking'] = { 'type': 'enabled', 'budget_tokens': body.max_tokens };
+      payload['thinking'] = new AnthropicThinkingParam('enabled', body.max_tokens);
     }
     return JSON.stringify(payload);
   }
