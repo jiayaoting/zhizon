@@ -54,8 +54,8 @@ export class GameAction {
 // AI 展示档位：速度索引 → 每步展示窗口（毫秒）
 export const AI_SPEED_OPTIONS: string[] = ['慢', '中', '快', '极速'];
 export const AI_SPEED_DELAYS: number[] = [800, 400, 200, 0];
-// 决策超时：思考型模型（非流式）需等完整思考+正文生成，30 秒常不够，放宽到 120 秒
-export const AI_DECISION_TIMEOUT: number = 120000;
+// 决策超时：与 LlmClient 非流式请求 readTimeout(60s) 对齐，超时主动取消底层请求，避免长时间挂起
+export const AI_DECISION_TIMEOUT: number = 60000;
 
 export class GameAIService {
   // ---- 模型管理 ----

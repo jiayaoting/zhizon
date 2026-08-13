@@ -7,6 +7,8 @@ import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage,
 // 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
 const CONNECT_TIMEOUT = 30000;
 const READ_TIMEOUT = 300000;
+// 非流式请求（游戏AI决策/连接测试）：等完整响应，60 秒足够，超时快速失败避免长时间挂起
+const READ_TIMEOUT_NON_STREAM = 60000;
 
 // 可取消请求的返回结构：promise 为结果，cancel 用于主动中断底层请求
 export class CancelableLlmRequest {
@@ -97,7 +99,10 @@ export class LlmClient {
     try {
       const url: string = LlmClient.openAIUrl(config);
       const header: Record<string, string> = {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        // 禁用连接复用：连接池中的 keep-alive 连接空闲后可能被服务端/中间设备关闭，
+        // 复用"死连接"会导致请求发出后无响应（firstRecv=0）且服务端收不到，直到超时
+        'Connection': 'close'
       };
       if (stream) {
         header['Accept'] = 'text/event-stream';
@@ -175,7 +180,7 @@ export class LlmClient {
         header: header,
         extraData: JSON.stringify(body),
         connectTimeout: CONNECT_TIMEOUT,
-        readTimeout: READ_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
         expectDataType: http.HttpDataType.STRING,
         usingCache: false
       });
@@ -224,7 +229,9 @@ export class LlmClient {
       const url: string = LlmClient.anthropicUrl(config);
       const header: Record<string, string> = {
         'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        // 禁用连接复用：避免复用已失效的 keep-alive 连接导致请求无响应（服务端收不到请求）
+        'Connection': 'close'
       };
       if (stream) {
         header['Accept'] = 'text/event-stream';
@@ -304,7 +311,7 @@ export class LlmClient {
         header: header,
         extraData: JSON.stringify(body),
         connectTimeout: CONNECT_TIMEOUT,
-        readTimeout: READ_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
         expectDataType: http.HttpDataType.STRING,
         usingCache: false
       });
