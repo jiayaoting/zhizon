@@ -3,7 +3,10 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
-const REQUEST_TIMEOUT = 60000;
+// 连接超时（网络握手）与读取超时（响应传输）分开设置：
+// 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
+const CONNECT_TIMEOUT = 30000;
+const READ_TIMEOUT = 300000;
 
 export class LlmClient {
   // 非流式单次对话（用于测试连接）
@@ -81,8 +84,8 @@ export class LlmClient {
         method: http.RequestMethod.POST,
         header: header,
         extraData: JSON.stringify(body),
-        connectTimeout: REQUEST_TIMEOUT,
-        readTimeout: REQUEST_TIMEOUT,
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT,
         expectDataType: http.HttpDataType.STRING,
         usingCache: false
       });
@@ -166,8 +169,8 @@ export class LlmClient {
         method: http.RequestMethod.POST,
         header: header,
         extraData: JSON.stringify(body),
-        connectTimeout: REQUEST_TIMEOUT,
-        readTimeout: REQUEST_TIMEOUT,
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT,
         expectDataType: http.HttpDataType.STRING,
         usingCache: false
       });
