@@ -470,13 +470,23 @@ export struct SnakePage {
         continue;
       }
       this.aiFailCount = 0;
-      const action: GameAction | null = GameAIService.parseAction('Snake', result.content);
-      if (action === null) continue;
-      this.aiStatus = 'AI 执行 ' + action.command;
-      if (action.command === 'UP') this.changeDirection(Direction.UP);
-      else if (action.command === 'DOWN') this.changeDirection(Direction.DOWN);
-      else if (action.command === 'LEFT') this.changeDirection(Direction.LEFT);
-      else if (action.command === 'RIGHT') this.changeDirection(Direction.RIGHT);
+      // 贪吃蛇：一次请求返回一串方向，连续走多步，减少 LLM 调用次数
+      const actions: GameAction[] = GameAIService.parseActionSequence('Snake', result.content);
+      if (actions.length === 0) continue;
+      this.aiStatus = 'AI 执行 ' + actions.length.toString() + ' 步';
+      for (let i: number = 0; i < actions.length; i++) {
+        if (!this.aiRunning || this.isGameOver || this.isPaused) break;
+        const foodBefore: Point = this.food;
+        const action: GameAction = actions[i];
+        if (action.command === 'UP') this.changeDirection(Direction.UP);
+        else if (action.command === 'DOWN') this.changeDirection(Direction.DOWN);
+        else if (action.command === 'LEFT') this.changeDirection(Direction.LEFT);
+        else if (action.command === 'RIGHT') this.changeDirection(Direction.RIGHT);
+        this.moveSnake();
+        if (this.isGameOver || this.isPaused) break;
+        // 吃到食物（食物位置变化）：本序列结束，重新规划
+        if (this.food.x !== foodBefore.x || this.food.y !== foodBefore.y) break;
+      }
       if (this.isGameOver || this.isPaused) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
         await new Promise<void>((resolve) => {

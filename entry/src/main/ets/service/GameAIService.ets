@@ -112,17 +112,20 @@ export class GameAIService {
     }
     if (kind === 'Tetris') {
       return '你正在玩俄罗斯方块。棋盘 10 列 20 行，0 表示空格，1 表示已填充。\n' +
-        '当前难度：' + diff + '。游戏已暂停等待你的决策，无需考虑时间因素。\n' +
-        '可用动作：LEFT、RIGHT、ROTATE、SOFT_DROP、HARD_DROP、HOLD，只输出一个动作。\n' +
-        '策略：优先消除行，尽量把方块落在低洼处，避免堆高。\n' +
-        '只回复一个动作单词，不要输出任何其他文字或解释。';
+        '当前难度：' + diff + '。\n' +
+        '可用动作（用空格分隔一次输出多个）：LEFT、RIGHT、ROTATE、SOFT_DROP、HARD_DROP、HOLD。\n' +
+        '请规划当前方块从当前位置到放置完成的完整动作序列，一次输出全部动作，最后以 HARD_DROP 收尾。\n' +
+        '示例：LEFT LEFT ROTATE LEFT HARD_DROP\n' +
+        '策略：优先消除行，尽量让方块落在低洼处并贴合已有方块，避免堆高，不要悬空。\n' +
+        '只输出动作序列（可含空格分隔的多个动作），不要输出任何其他文字或解释。';
     }
     if (kind === 'Snake') {
       return '你正在玩贪吃蛇。棋盘 16×16，S 表示蛇身，H 表示蛇头，F 表示食物，. 表示空格。\n' +
-        '当前难度：' + diff + '。游戏已暂停等待你的决策，无需考虑时间因素。\n' +
-        '可用动作：UP、DOWN、LEFT、RIGHT，只输出一个动作。\n' +
+        '当前难度：' + diff + '。\n' +
+        '可用动作（用空格分隔一次输出多个）：UP、DOWN、LEFT、RIGHT。\n' +
+        '请规划蛇头从当前位置到食物的移动路径，一次输出一串方向，直达食物或遇到危险就停。\n' +
         '注意：不能直接掉头（反向移动会无效）。策略：优先走向食物，同时避免撞墙和撞到自己。\n' +
-        '只回复一个动作单词，不要输出任何其他文字或解释。';
+        '只输出方向序列（可含空格分隔的多个方向），不要输出任何其他文字或解释。';
     }
     if (kind === 'Minesweeper') {
       return '你正在玩扫雷。网格中 0 表示未知，1-8 表示已翻开的数字（周围地雷数），* 表示地雷（仅在游戏结束后可见），F 表示已标记的旗子，空格表示已翻开且周围无雷。\n' +
@@ -132,11 +135,12 @@ export class GameAIService {
         '只输出一个动作，格式如 REVEAL 3 5 或 FLAG 1 2，不要输出任何其他文字。';
     }
     return '你正在玩数独。棋盘 9×9，0 表示空格，1-9 为已填数字（题目给定的数字不可修改）。\n' +
-      '当前难度：' + diff + '。游戏已暂停等待你的决策，无需考虑时间因素。\n' +
-      '可用动作：SET r c v（在 r 行 c 列填入数字 v），r、c、v 均为 1-9。\n' +
+      '当前难度：' + diff + '。\n' +
+      '可用动作：SET r c v（在 r 行 c 列填入数字 v，一次可输出多行），r、c、v 均为 1-9。\n' +
       '规则：每行、每列、每个 3×3 宫格内数字 1-9 不重复。\n' +
-      '策略：用排除法找唯一解，优先填确定性的格子。\n' +
-      '只输出一个动作，格式如 SET 1 1 5，不要输出任何其他文字。';
+      '请一次性推理出所有空格并输出，每个空格一行，格式：SET r c v\n' +
+      '策略：用排除法找唯一解，只填确定无冲突的格子。\n' +
+      '只按格式输出 SET 行，不要输出任何其他文字。';
   }
 
   // 构建请求消息：system 规则 + user 棋盘状态
@@ -270,6 +274,66 @@ export class GameAIService {
       return null;
     }
     return null;
+  }
+
+  // 从模型回复中按顺序提取一串动作（俄罗斯方块/贪吃蛇/数独用：一次调用包含多步）
+  static parseActionSequence(kind: GameKind, text: string): GameAction[] {
+    const actions: GameAction[] = [];
+    const upper: string = text.toUpperCase();
+    if (kind === 'Tetris' || kind === 'Snake') {
+      // 简单动作序列：按出现顺序提取动作词
+      const tokens: string[] = kind === 'Tetris'
+        ? ['HARD_DROP', 'SOFT_DROP', 'ROTATE', 'HOLD', 'LEFT', 'RIGHT']
+        : ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+      let remaining: string = upper;
+      while (remaining.length > 0) {
+        // 找到在当前剩余文本中最早出现的动作词
+        let best: string = '';
+        let bestIdx: number = -1;
+        for (let i: number = 0; i < tokens.length; i++) {
+          const idx: number = remaining.indexOf(tokens[i]);
+          if (idx >= 0 && (bestIdx === -1 || idx < bestIdx)) {
+            best = tokens[i];
+            bestIdx = idx;
+          }
+        }
+        if (bestIdx === -1) break;
+        actions.push(new GameAction(best));
+        // 跳过已匹配部分继续扫描，避免重复匹配同一 token
+        remaining = remaining.substring(bestIdx + best.length);
+      }
+      return actions;
+    }
+    if (kind === 'Sudoku') {
+      // 数独序列：一次输出多个 "SET r c v"，按顺序提取
+      let remaining: string = upper;
+      while (remaining.length > 0) {
+        const setIdx: number = remaining.indexOf('SET');
+        if (setIdx < 0) break;
+        remaining = remaining.substring(setIdx + 'SET'.length);
+        const nums: number[] = [];
+        // 从 SET 之后按序提取 3 个数字（跨空格/换行）
+        while (nums.length < 3 && remaining.length > 0) {
+          let i: number = 0;
+          while (i < remaining.length && !(remaining.charAt(i) >= '0' && remaining.charAt(i) <= '9')) i++;
+          if (i >= remaining.length) break;
+          let num: number = 0;
+          while (i < remaining.length && remaining.charAt(i) >= '0' && remaining.charAt(i) <= '9') {
+            num = num * 10 + (remaining.charCodeAt(i) - 48);
+            i++;
+          }
+          nums.push(num);
+          remaining = remaining.substring(i);
+        }
+        if (nums.length >= 3) {
+          actions.push(new GameAction('SET', nums[0], nums[1], nums[2]));
+        } else {
+          break;
+        }
+      }
+      return actions;
+    }
+    return actions;
   }
 
   private static hasWord(text: string, word: string): boolean {

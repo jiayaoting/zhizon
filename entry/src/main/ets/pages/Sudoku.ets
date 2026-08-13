@@ -431,19 +431,25 @@ export struct SudokuPage {
         continue;
       }
       this.aiFailCount = 0;
-      const action: GameAction | null = GameAIService.parseAction('Sudoku', result.content);
-      if (action === null) continue;
-      const r: number = action.r - 1;
-      const c: number = action.c - 1;
-      const v: number = action.value;
-      if (r < 0 || r >= SUDOKU_SIZE || c < 0 || c >= SUDOKU_SIZE || v < 1 || v > 9) continue;
-      const cell: SudokuCell = this.cells[r][c];
-      if (cell.fixed) continue;
-      this.aiStatus = 'AI 执行 SET (' + (r + 1).toString() + ',' + (c + 1).toString() + ')=' + v.toString();
-      this.selectedR = r;
-      this.selectedC = c;
-      this.inputNumber(v);
-      if (this.isWin) break;
+      // 数独：一次请求返回多个 SET，一次填多格，减少 LLM 调用次数
+      const actions: GameAction[] = GameAIService.parseActionSequence('Sudoku', result.content);
+      if (actions.length === 0) continue;
+      this.aiStatus = 'AI 填入 ' + actions.length.toString() + ' 格';
+      for (let i: number = 0; i < actions.length; i++) {
+        if (!this.aiRunning || this.isWin || this.isPaused) break;
+        const action: GameAction = actions[i];
+        const r: number = action.r - 1;
+        const c: number = action.c - 1;
+        const v: number = action.value;
+        if (r < 0 || r >= SUDOKU_SIZE || c < 0 || c >= SUDOKU_SIZE || v < 1 || v > 9) continue;
+        const cell: SudokuCell = this.cells[r][c];
+        if (cell.fixed) continue;
+        this.selectedR = r;
+        this.selectedC = c;
+        this.inputNumber(v);
+        if (this.isWin) break;
+      }
+      if (this.isWin || this.isPaused) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
         await new Promise<void>((resolve) => {
           setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);

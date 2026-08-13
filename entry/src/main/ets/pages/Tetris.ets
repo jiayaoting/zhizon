@@ -628,15 +628,28 @@ export struct TetrisPage {
         continue;
       }
       this.aiFailCount = 0;
-      const action: GameAction | null = GameAIService.parseAction('Tetris', result.content);
-      if (action === null) continue;
-      this.aiStatus = 'AI 执行 ' + action.command;
-      if (action.command === 'LEFT') this.moveLeft();
-      else if (action.command === 'RIGHT') this.moveRight();
-      else if (action.command === 'ROTATE') this.rotatePiece();
-      else if (action.command === 'SOFT_DROP') this.softDrop();
-      else if (action.command === 'HARD_DROP') this.hardDrop();
-      else if (action.command === 'HOLD') this.holdPiece();
+      // 俄罗斯方块：一次请求返回完整动作序列，一次放置只调用一次 LLM，大幅提速
+      const actions: GameAction[] = GameAIService.parseActionSequence('Tetris', result.content);
+      if (actions.length === 0) continue;
+      this.aiStatus = 'AI 执行 ' + actions.length.toString() + ' 步';
+      for (let i: number = 0; i < actions.length; i++) {
+        if (!this.aiRunning || this.isGameOver || this.isPaused) break;
+        const pieceBefore: Piece | null = this.currentPiece;
+        const action: GameAction = actions[i];
+        if (action.command === 'LEFT') this.moveLeft();
+        else if (action.command === 'RIGHT') this.moveRight();
+        else if (action.command === 'ROTATE') this.rotatePiece();
+        else if (action.command === 'SOFT_DROP') this.softDrop();
+        else if (action.command === 'HARD_DROP') this.hardDrop();
+        else if (action.command === 'HOLD') this.holdPiece();
+        // 方块被锁定（放置完成，生成了新方块）：新方块回到顶部 y=0，
+        // 用 y 坐标判断（移动/软降会让对象引用变化，不能用引用比较）
+        if (pieceBefore !== null &&
+          (action.command === 'SOFT_DROP' || action.command === 'HARD_DROP') &&
+          this.currentPiece !== null && this.currentPiece.y <= pieceBefore.y) {
+          break;
+        }
+      }
       if (this.isGameOver || this.isPaused || this.currentPiece === null) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
         await new Promise<void>((resolve) => {
@@ -761,7 +774,7 @@ export struct TetrisPage {
     .backgroundColor(this.palette.bgSurface2)
     .justifyContent(FlexAlign.Center)
     .border({ width: 1, color: this.palette.borderSubtle })
-    .margin({ top: 4, bottom: this.isSm ? 8 : 0 })
+    .margin({ top: 8, bottom: this.isSm ? 12 : 0 })
     .onClick(() => { this.rotatePiece(); })
   }
 
@@ -1328,8 +1341,8 @@ export struct TetrisPage {
         }
         .layoutWeight(1)
         .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+        .justifyContent(FlexAlign.Start)
+        .padding({ left: 8, right: 8, top: 4, bottom: 16 })
         }
       } else {
         if (this.gameStarted) {
