@@ -174,19 +174,17 @@ struct MessageBubble {
           if (this.useMarkdown()) {
             // RichText 原生渲染 markdown：自适应高度、轻量、无 WebView 开销
             // 注意：RichText 不支持 fontSize/fontFamily/fontColor/lineHeight 属性，字体样式由 HTML style 控制
-            Column() {
-              RichText(MarkdownConverter.toRichTextHtml(this.message.content, this.isDark))
-                .width('100%')
-                .padding(12)
-                .borderRadius(12)
-                .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-                .border({ width: 1,
-                  color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-                .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
-                .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
+            RichText(MarkdownConverter.toRichTextHtml(this.message.content, this.isDark))
+              .width('100%')
+              .padding(12)
+              .borderRadius(12)
+              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+              .border({ width: 1,
+                color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+              .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+              .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+              .align(Alignment.TopStart)
+              .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
           } else {
             Text(this.message.content.trim().length > 0 ? this.message.content.trim() : '…')
               .fontSize(this.palette.fsSm)

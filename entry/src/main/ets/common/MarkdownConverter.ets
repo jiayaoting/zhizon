@@ -23,7 +23,7 @@ export class MarkdownConverter {
     const codeBg: string = isDark ? '#1E293B' : '#F1F5F9';
     const quoteColor: string = isDark ? '#94A3B8' : '#64748B';
     const hrColor: string = isDark ? '#475569' : '#CBD5E1';
-    const pStyle: string = 'style="color:' + textColor + ';line-height:1.6;"';
+    const pStyle: string = 'style="color:' + textColor + ';font-size:14px;line-height:22px;"';
     while (i < n) {
       const raw: string = lines[i];
       const line: string = raw.trim();
@@ -45,19 +45,19 @@ export class MarkdownConverter {
         continue;
       }
       if (line.startsWith('### ')) {
-        out.push('<p style="font-size:16px;font-weight:800;">' +
+        out.push('<p style="color:' + textColor + ';font-size:16px;font-weight:700;line-height:24px;">' +
           MarkdownConverter.inlineRich(line.substring(4), isDark) + '</p>');
         i++;
         continue;
       }
       if (line.startsWith('## ')) {
-        out.push('<p style="font-size:17px;font-weight:800;">' +
+        out.push('<p style="color:' + textColor + ';font-size:17px;font-weight:700;line-height:26px;">' +
           MarkdownConverter.inlineRich(line.substring(3), isDark) + '</p>');
         i++;
         continue;
       }
       if (line.startsWith('# ')) {
-        out.push('<p style="font-size:19px;font-weight:800;">' +
+        out.push('<p style="color:' + textColor + ';font-size:19px;font-weight:700;line-height:28px;">' +
           MarkdownConverter.inlineRich(line.substring(2), isDark) + '</p>');
         i++;
         continue;
@@ -131,7 +131,7 @@ export class MarkdownConverter {
           }
           tableText = tableText + '<br>' + cells.join(' | ');
         }
-        out.push('<p style="font-size:13px;">' + tableText + '</p>');
+        out.push('<p style="color:' + textColor + ';font-size:13px;line-height:20px;">' + tableText + '</p>');
         continue;
       }
       const paraLines: string[] = [];
@@ -152,10 +152,11 @@ export class MarkdownConverter {
     const codeColor: string = isDark ? '#FCA5A5' : '#C0392B';
     let r: string = MarkdownConverter.escapeHtml(text);
     r = r.replace(/`([^`]+)`/g,
-      '<span style="color:' + codeColor + ';font-family:monospace;">$1</span>');
-    r = MarkdownConverter.wrapOdd(r, '**', '<strong>', '</strong>');
-    r = MarkdownConverter.wrapOdd(r, '*', '<em>', '</em>');
-    r = r.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
+      '<span style="color:' + codeColor + ';font-family:monospace;font-size:13px;background-color:' +
+      (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)') + ';padding:1px 4px;border-radius:3px;">$1</span>');
+    r = MarkdownConverter.wrapOdd(r, '**', '<strong style="font-weight:700;">', '</strong>');
+    r = MarkdownConverter.wrapOdd(r, '*', '<em style="font-style:italic;">', '</em>');
+    r = r.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$1" style="color:' + (isDark ? '#60A5FA' : '#2563EB') + ';text-decoration:underline;">$1</a>');
     return r;
   }
 
