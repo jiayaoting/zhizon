@@ -74,7 +74,7 @@ export class LlmClient {
           const contentDelta: string = LlmClient.openAIContentFromSse(events[i]);
           if (contentDelta.length > 0) {
             fullContent = fullContent + contentDelta;
-            onDelta(contentDelta);
+            if (onDelta !== undefined) onDelta(contentDelta);
           }
           const reasoningDelta: string = LlmClient.openAIReasoningFromSse(events[i]);
           if (reasoningDelta.length > 0) {
@@ -83,6 +83,13 @@ export class LlmClient {
           }
         }
       };
+
+      if (stream && onDelta !== undefined) {
+        // 事件监听方式：逐块接收 SSE 数据（当前 SDK 不支持 options.onDataReceive）
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          processData(data);
+        });
+      }
 
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
@@ -93,11 +100,7 @@ export class LlmClient {
         // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发；
         // 设置 STRING 时框架缓冲整个响应，dataReceive 不触发，导致无法流式解析
         expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
-        usingCache: false,
-        // 官方推荐的流式回调：在请求 options 中直接传入，逐块接收 SSE 数据
-        onDataReceive: stream && onDelta !== undefined ? (data: ArrayBuffer) => {
-          processData(data);
-        } : undefined
+        usingCache: false
       });
       const code: number = response.responseCode;
       if (code !== 200) {
@@ -111,7 +114,7 @@ export class LlmClient {
             const contentDelta: string = LlmClient.openAIContentFromSse(tailEvents[i]);
             if (contentDelta.length > 0) {
               fullContent = fullContent + contentDelta;
-              onDelta(contentDelta);
+              if (onDelta !== undefined) onDelta(contentDelta);
             }
             const reasoningDelta: string = LlmClient.openAIReasoningFromSse(tailEvents[i]);
             if (reasoningDelta.length > 0) {
@@ -130,7 +133,7 @@ export class LlmClient {
               const contentDelta: string = LlmClient.openAIContentFromSse(tailEvents[i]);
               if (contentDelta.length > 0) {
                 fullContent = fullContent + contentDelta;
-                onDelta(contentDelta);
+                if (onDelta !== undefined) onDelta(contentDelta);
               }
               const reasoningDelta: string = LlmClient.openAIReasoningFromSse(tailEvents[i]);
               if (reasoningDelta.length > 0) {
@@ -197,7 +200,7 @@ export class LlmClient {
           const contentDelta: string = LlmClient.anthropicContentFromSse(events[i]);
           if (contentDelta.length > 0) {
             fullContent = fullContent + contentDelta;
-            onDelta(contentDelta);
+            if (onDelta !== undefined) onDelta(contentDelta);
           }
           const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(events[i]);
           if (reasoningDelta.length > 0) {
@@ -207,6 +210,13 @@ export class LlmClient {
         }
       };
 
+      if (stream && onDelta !== undefined) {
+        // 事件监听方式：逐块接收 SSE 数据（当前 SDK 不支持 options.onDataReceive）
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          processData(data);
+        });
+      }
+
       const response = await httpRequest.request(url, {
         method: http.RequestMethod.POST,
         header: header,
@@ -215,11 +225,7 @@ export class LlmClient {
         readTimeout: READ_TIMEOUT,
         // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发
         expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
-        usingCache: false,
-        // 官方推荐的流式回调：在请求 options 中直接传入，逐块接收 SSE 数据
-        onDataReceive: stream && onDelta !== undefined ? (data: ArrayBuffer) => {
-          processData(data);
-        } : undefined
+        usingCache: false
       });
       const code: number = response.responseCode;
       if (code !== 200) {
@@ -234,7 +240,7 @@ export class LlmClient {
             const contentDelta: string = LlmClient.anthropicContentFromSse(tailEvents[i]);
             if (contentDelta.length > 0) {
               fullContent = fullContent + contentDelta;
-              onDelta(contentDelta);
+              if (onDelta !== undefined) onDelta(contentDelta);
             }
             const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(tailEvents[i]);
             if (reasoningDelta.length > 0) {
@@ -253,7 +259,7 @@ export class LlmClient {
               const contentDelta: string = LlmClient.anthropicContentFromSse(tailEvents[i]);
               if (contentDelta.length > 0) {
                 fullContent = fullContent + contentDelta;
-                onDelta(contentDelta);
+                if (onDelta !== undefined) onDelta(contentDelta);
               }
               const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(tailEvents[i]);
               if (reasoningDelta.length > 0) {
