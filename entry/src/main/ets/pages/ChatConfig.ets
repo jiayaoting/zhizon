@@ -387,7 +387,6 @@ struct ChatConfig {
         .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
         .backgroundColor(this.palette.bgBase)
         .borderRadius({ topLeft: 16, topRight: 16 })
-        .onClick((event: ClickEvent) => { event.stopPropagation(); })
       }
       .width('100%')
       .height('100%')
@@ -509,7 +508,6 @@ struct ChatConfig {
         .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
         .backgroundColor(this.palette.bgBase)
         .borderRadius({ topLeft: 16, topRight: 16 })
-        .onClick((event: ClickEvent) => { event.stopPropagation(); })
       }
       .width('100%')
       .height('100%')
@@ -628,7 +626,6 @@ struct ChatConfig {
         .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
         .backgroundColor(this.palette.bgBase)
         .borderRadius({ topLeft: 16, topRight: 16 })
-        .onClick((event: ClickEvent) => { event.stopPropagation(); })
       }
       .width('100%')
       .height('100%')
@@ -799,7 +796,7 @@ struct ChatConfig {
               .height(44)
               .layoutWeight(1)
               .onChange((value: string) => { this.model = value; })
-              .onClick((event: ClickEvent) => { event.stopPropagation(); })
+              .onClick(() => {})
             Text('∨')
               .fontSize(16)
               .fontFamily(this.palette.fontSans)
