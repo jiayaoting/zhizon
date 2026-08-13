@@ -190,6 +190,17 @@ export class LlmClient {
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           processData(data);
         });
+        // 等待 dataEnd 才算完整接收：requestInStream 只返回响应码，响应体经 dataReceive 异步推送，
+        // 若提前 return，后续数据会被丢弃导致响应缺失/超时
+        // 同时加超时兜底：请求被外部 cancel/destroy 时 dataEnd 可能不触发，避免 Promise 永久挂起
+        const streamDone = new Promise<boolean>((resolve: (value: boolean) => void) => {
+          httpRequest.on('dataEnd', () => {
+            resolve(true);
+          });
+          setTimeout(() => {
+            resolve(true);
+          }, READ_TIMEOUT + 1000);
+        });
         const code: number = await httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,
           header: header,
@@ -204,6 +215,8 @@ export class LlmClient {
         if (code !== 200) {
           return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(rawData, code));
         }
+        // 等待流式数据全部接收完毕（dataEnd）
+        await streamDone;
         // 流结束：处理尾部未完整解析的数据
         if (buffer.trim().length > 0) {
           const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
@@ -324,6 +337,17 @@ export class LlmClient {
         httpRequest.on('dataReceive', (data: ArrayBuffer) => {
           processData(data);
         });
+        // 等待 dataEnd 才算完整接收：requestInStream 只返回响应码，响应体经 dataReceive 异步推送，
+        // 若提前 return，后续数据会被丢弃导致响应缺失/超时
+        // 同时加超时兜底：请求被外部 cancel/destroy 时 dataEnd 可能不触发，避免 Promise 永久挂起
+        const streamDone = new Promise<boolean>((resolve: (value: boolean) => void) => {
+          httpRequest.on('dataEnd', () => {
+            resolve(true);
+          });
+          setTimeout(() => {
+            resolve(true);
+          }, READ_TIMEOUT + 1000);
+        });
         const code: number = await httpRequest.requestInStream(url, {
           method: http.RequestMethod.POST,
           header: header,
@@ -339,6 +363,8 @@ export class LlmClient {
           return new LlmResult(false, '', 'HTTP_' + code.toString(),
             LlmClient.anthropicErrorMessage(rawData, code));
         }
+        // 等待流式数据全部接收完毕（dataEnd）
+        await streamDone;
         // 流结束：处理尾部未完整解析的数据
         if (buffer.trim().length > 0) {
           const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
