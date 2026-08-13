@@ -30,8 +30,6 @@ struct MarkdownContent {
       .width('100%')
       .height(this.contentHeight)
       .backgroundColor(Color.Transparent)
-      .zoomAccess(false)
-      .scrollBarVisible(false)
       .onControllerAttached(() => {
         const html: string = MarkdownConverter.toHtml(this.content, this.isDark);
         this.controller.loadData(html, 'text/html', 'UTF-8', 'data');
@@ -40,7 +38,7 @@ struct MarkdownContent {
         setTimeout(() => {
           this.controller.runJavaScript('document.body.scrollHeight')
             .then((result: string) => {
-              const h: number = Number(result);
+              const h: number = Number.parseInt(result, 10);
               if (h > 0) {
                 this.contentHeight = h;
               }
