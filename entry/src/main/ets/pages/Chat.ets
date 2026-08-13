@@ -130,7 +130,7 @@ struct Chat {
   @State models: LlmModelEntry[] = [];
   @State activeModelId: string = '';
   @State showModelPicker: boolean = false;
-  private activeConfig: LlmConfig | null = null;
+  @State activeConfig: LlmConfig | null = null;
   // 当前流式请求的 httpRequest 引用，停止按钮调用 destroy() 中断
   private streamRequest: http.HttpRequest | null = null;
   // 上次失败时缓存的 user 消息，用于重试
