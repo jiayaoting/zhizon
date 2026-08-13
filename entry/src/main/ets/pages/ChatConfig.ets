@@ -48,7 +48,6 @@ struct ChatConfig {
   @State showProviderSheet: boolean = false;
   @State showModelSheet: boolean = false;
   @State showFormatSheet: boolean = false;
-  @State tempText: string = '0.7';
   @State maxTokensText: string = '4096';
   @State customModelInput: string = '';
   // 自定义模型高级配置
@@ -91,7 +90,6 @@ struct ChatConfig {
     this.temperature = m.temperature;
     this.apiFormat = m.apiFormat || 'openai';
     this.maxTokens = m.maxTokens || 4096;
-    this.tempText = this.temperature.toFixed(1);
     this.maxTokensText = this.maxTokens.toString();
     this.useFullUrl = m.useFullUrl || false;
     this.advancedExpanded = false;
@@ -146,7 +144,6 @@ struct ChatConfig {
     this.temperature = 0.7;
     this.apiFormat = 'openai';
     this.maxTokens = 4096;
-    this.tempText = '0.7';
     this.maxTokensText = '4096';
     this.useFullUrl = false;
     this.advancedExpanded = false;
@@ -319,14 +316,6 @@ struct ChatConfig {
       promptAction.showToast({ message: '连接成功：' + result.content.substring(0, 20) });
     } else {
       promptAction.showToast({ message: '连接失败：' + result.errorMessage });
-    }
-  }
-
-  private onTempTextChange(text: string): void {
-    this.tempText = text;
-    const value: number = Number(text);
-    if (!Number.isNaN(value) && value >= 0 && value <= 2) {
-      this.temperature = value;
     }
   }
 
@@ -776,7 +765,9 @@ struct ChatConfig {
   }
 
   private contextChipLabel(chip: number): string {
-    return chip >= 1000 ? (chip / 1000).toFixed(0) + 'k' : chip.toString();
+    if (chip >= 1000000) return (chip / 1000000).toFixed(0) + 'M';
+    if (chip >= 1000) return (chip / 1000).toFixed(0) + 'k';
+    return chip.toString();
   }
 
   private buildContextChipItems(text: string, chips: number[], field: 'in' | 'out'): ContextChipItem[] {
@@ -837,7 +828,7 @@ struct ChatConfig {
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
-          Text('模型系列、上下文窗口、特殊能力等')
+          Text('上下文窗口、特殊能力等')
             .fontSize(10)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
@@ -857,24 +848,6 @@ struct ChatConfig {
       .onClick(() => { this.advancedExpanded = !this.advancedExpanded; })
 
       if (this.advancedExpanded) {
-        // 温度
-        Column({ space: 6 }) {
-          this.rowLabel('温度（0-2，越高越随机）', '当前：' + this.tempText)
-          TextInput({ text: this.tempText, placeholder: '0.7' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .height(44)
-            .type(InputType.Number)
-            .width('100%')
-            .onChange((value: string) => { this.onTempTextChange(value); })
-        }
-        .width('100%')
-
         // max_tokens（Anthropic 格式时显示）
         if (this.apiFormat === 'anthropic') {
           Column({ space: 6 }) {
@@ -894,23 +867,6 @@ struct ChatConfig {
           }
           .width('100%')
         }
-
-        // 模型系列
-        Column({ space: 6 }) {
-          this.rowLabel('模型系列', '针对特定模型系列优化 Prompt 和超参，未选择时使用默认配置')
-          TextInput({ text: this.modelFamily, placeholder: '默认' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .height(44)
-            .width('100%')
-            .onChange((value: string) => { this.modelFamily = value; })
-        }
-        .width('100%')
 
         // 上下文窗口
         this.contextTokenField('上下文窗口（Token）· 输入', '请输入数值，留空则使用最佳默认值',
@@ -1151,7 +1107,7 @@ struct ChatConfig {
           this.advancedSection()
         }
 
-        // 温度与 max_tokens（非自定义模板直接显示）
+        // max_tokens（非自定义模板直接显示，Anthropic 格式时）
         if (!this.isCustomProvider()) {
           if (this.apiFormat === 'anthropic') {
             Column({ space: 6 }) {
@@ -1171,23 +1127,6 @@ struct ChatConfig {
             }
             .width('100%')
           }
-
-          Column({ space: 6 }) {
-            this.rowLabel('温度（0-2，越高越随机）', '当前：' + this.tempText)
-            TextInput({ text: this.tempText, placeholder: '0.7' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
-              .type(InputType.Number)
-              .width('100%')
-              .onChange((value: string) => { this.onTempTextChange(value); })
-          }
-          .width('100%')
         }
 
         // 按钮
