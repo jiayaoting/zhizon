@@ -1,10 +1,10 @@
 # 智子（Zhizon）详细设计文档
 
-> **版本**：v6.0.0
+> **版本**：v7.0.0
 > **平台**：HarmonyOS NEXT（鸿蒙 6+ / 纯血鸿蒙）
 > **Bundle Name**：`com.zhizon.manager`
 > **开发语言**：ArkTS
-> **文档状态**：v6.0 当前实现版（游戏中心 + 多主题系统 + 毛玻璃效果 + 缺陷追踪）
+> **文档状态**：v7.0 当前实现版（4 Tab 导航 + 6 款游戏 + AI 对话 + 多主题系统 + 毛玻璃效果）
 
 ---
 
@@ -14,9 +14,10 @@
 
 **智子**是一款运行于鸿蒙 6+ 系统的**轻量休闲应用**，在手机/平板上提供：
 
-- 🎮 **游戏中心**：俄罗斯方块、2048、贪吃蛇，5 级难度可选
+- 🎮 **游戏中心**：俄罗斯方块、2048、贪吃蛇、扫雷、数独、中国象棋，5 级难度可选，支持 AI 托管
+- 💬 **AI 对话**：接入多家大模型，本地保存对话，Markdown 富文本渲染
 - 📱 **全设备自适应**：手机（底部 Tab）、平板、折叠屏自动适配
-- 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果开关
+- 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果开关 + 全局字号档位
 - 📊 **游戏战绩**：分数记录与历史排行
 
 ### 1.2 用户画像
@@ -24,7 +25,8 @@
 | 角色 | 典型场景 |
 |------|---------|
 | 休闲用户 | 碎片时间玩小游戏放松，挑战高分 |
-| 工具爱好者 | 个性化主题定制，打造专属界面 |
+| AI 用户 | 用可配置的大模型对话、游戏 AI 托管对弈 |
+| 个性化用户 | 主题/背景/字号档位定制，打造专属界面 |
 
 ---
 
@@ -38,13 +40,15 @@
 │  3 档断点 (isSm/isMd/isLg) @StorageLink 响应式   │
 ├─────────────────────────────────────────────────┤
 │                  ArkUI 表现层                    │
-│   9 Pages + 5 Components + @State 状态管理      │
+│   15 Pages + 12 Components + @State 状态管理     │
 │   全异步数据加载 (aboutToAppear + await)         │
 ├─────────────────────────────────────────────────┤
 │                  业务逻辑层                      │
 │   DataRepository (CRUD 门面 + 辅助函数)          │
+│   ChatRepository (AI 会话持久化)                 │
+│   LlmClient (大模型 HTTP 通信) / GameAIService   │
 │   BackgroundImporter (沙箱背景图导入)            │
-│   DefectWorkflow (缺陷状态机)                    │
+│   ChineseChessEngine (中国象棋本地引擎)           │
 │   WindowEnvironmentProvider (窗口环境感知)       │
 ├─────────────────────────────────────────────────┤
 │                  数据访问层                      │
@@ -71,8 +75,10 @@
 | 响应式 | @StorageLink 跨组件状态 + display API | ✅ |
 | 多主题系统 | ThemePalette + 6 配色 + 亮/暗模式 | ✅ |
 | 毛玻璃效果 | GlassEffect 半透明背景 + 边框 | ✅ |
-| 游戏中心 | 3 游戏 + 5 级难度 + 历史记录 | ✅ |
-| 缺陷追踪 | DefectRecord + DefectWorkflow + DefectClassifier | ✅ |
+| 全局字号系统 | palette.fs* 8 级字号，受设置档位控制 | ✅ |
+| 游戏中心 | 6 游戏 + 5 级难度 + 历史记录 + AI 托管 | ✅ |
+| AI 对话 | LlmClient 多供应商 + ChatRepository 持久化 | ✅ |
+| 中国象棋 | 本地引擎 + 人机/人对AI/AI对AI 三模式 | ✅ |
 | 导航系统 | NavigationFacade + PageRegistry + 类型化路由参数 | ✅ |
 
 ### 2.3 凭据加密设计
@@ -119,50 +125,71 @@ zhizon/
         │   └── base/
         │       ├── element/color.json
         │       ├── element/string.json
-        │       └── profile/main_pages.json  # 5 路由（AppShell + Tetris + Game2048 + Snake + GameHistory）
+        │       └── profile/main_pages.json  # 路由注册（AppShell + 游戏 + 战绩 + 协议 + AI 配置）
         │
         └── ets/
             ├── entryability/
             │   └── EntryAbility.ets       # 应用入口（延迟初始化加密+数据库）
             │
-            ├── common/                    # 主题与常量（7 个）
+            ├── common/                    # 主题、常量与模型（11 个）
             │   ├── Theme.ets              # 多主题系统 + ThemePalette + 6 配色 + 亮/暗模式
-            │   ├── Constants.ets          # 导航项 + 断点常量 + 尺寸常量
+            │   ├── ThemeContracts.ets     # 主题契约接口（ThemePalette + PreferenceSnapshot）
+            │   ├── Constants.ets          # 底部导航项 + 全局常量
+            │   ├── Navigation.ets         # 导航系统（PageRegistry + 4 主 Tab + 类型化路由参数）
+            │   ├── Difficulty.ets         # 游戏难度 + GameId + GameLaunchFacade + 游戏注册表
+            │   ├── LlmModels.ets          # 大模型供应商模板 + 模型配置/消息模型
+            │   ├── MarkdownConverter.ets  # Markdown 解析（块/行内）
+            │   ├── AvatarOptions.ets      # 头像配色选项
             │   ├── CryptoHelper.ets       # AES-256-GCM 加密/解密
-            │   ├── Difficulty.ets         # 游戏难度定义（5 级：超简单/简单/中等/困难/地狱）
-            │   ├── FailureHandling.ets    # 统一失败处理（AppFailure + RecoverableResult）
-            │   ├── Navigation.ets         # 导航系统（NavigationFacade + 类型化路由参数）
-            │   └── ThemeContracts.ets     # 主题契约接口（ThemePalette + PreferenceSnapshot）
+            │   ├── DeviceMetrics.ets      # 设备尺寸度量
+            │   └── FailureHandling.ets    # 统一失败处理（AppFailure + RecoverableResult）
             │
-            ├── model/                     # 数据模型（1 个）
-            │   └── GovernanceModels.ets   # 治理模型（AppFailure + RecoverableResult + DefectRecord 等）
+            ├── model/                     # 数据模型（2 个）
+            │   ├── GovernanceModels.ets   # 治理模型（AppFailure + RecoverableResult + DefectRecord 等）
+            │   └── Models.ets             # 通用业务模型
             │
-            ├── service/                   # 业务服务层（7 个）
-            │   ├── DatabaseHelper.ets    # RDB Store v4 + 5 表 CRUD
-            │   ├── DataRepository.ets    # 数据门面 + 缺陷管理 + 偏好持久化
+            ├── service/                   # 业务服务层（14 个）
+            │   ├── DatabaseHelper.ets     # RDB Store v4 + 5 表 CRUD
+            │   ├── DataRepository.ets     # 数据门面 + 偏好持久化
+            │   ├── ChatRepository.ets     # AI 会话/消息持久化
+            │   ├── LlmClient.ets          # 大模型 HTTP 通信（流式/非流式 + 思考控制）
+            │   ├── GameAIService.ets      # 游戏 AI 托管（决策/提示词/动作解析）
+            │   ├── ChineseChessEngine.ets # 中国象棋本地引擎（规则 + 搜索）
+            │   ├── SecurityService.ets    # 安全服务
+            │   ├── BiometricHelper.ets    # 生物认证
             │   ├── BackgroundImporter.ets # 沙箱背景图导入 + 强度调节
-            │   ├── DefectClassifier.ets   # 缺陷分类器
-            │   ├── DefectWorkflow.ets     # 缺陷状态机工作流
+            │   ├── SudokuSolver.ets       # 数独求解器
             │   ├── PickerAdapter.ets      # 选择器适配器
             │   └── WindowEnvironmentProvider.ets # 窗口环境感知
             │
-            ├── components/                # 通用组件 (5 个)
-            │   ├── TopBar.ets             # 顶栏（响应式 padding）
+            ├── components/                # 通用组件 (12 个)
+            │   ├── TopBar.ets             # 顶栏（响应式 padding + 自定义返回回调）
             │   ├── DifficultyOption.ets   # 难度选择项（图标 + 标签 + 描述 + 选中态）
-            │   ├── FixedBottomNav.ets     # 固定底部导航
+            │   ├── FixedBottomNav.ets     # 固定底部导航（4 Tab）
             │   ├── GlassEffect.ets        # 毛玻璃效果工具（半透明背景 + 边框）
-            │   └── GlobalBackgroundLayer.ets # 全局背景层（自定义背景图 + 强度调节）
+            │   ├── GlobalBackgroundLayer.ets # 全局背景层（自定义背景图 + 强度调节）
+            │   ├── GameAIPanel.ets        # 游戏 AI 托管控制面板
+            │   ├── ParticleBackground.ets # 粒子背景
+            │   ├── LockOverlay.ets        # 锁定遮罩
+            │   ├── PrivacyDialog.ets      # 隐私协议弹窗
+            │   └── FontRegistry.ets       # 字体注册
             │
-            ├── pages/                     # 9 个页面
+            ├── pages/                     # 15 个页面
             │   ├── AppShell.ets           # 自适应主框架（底部Tab / 侧边栏切换）
-            │   ├── Index.ets              # 首页（欢迎区 + 游戏入口大卡 + 最佳战绩 + 难度速览）
-            │   ├── Settings.ets           # 设置（主题 + 背景 + 毛玻璃 + 深色模式）
-            │   ├── More.ets               # 更多功能入口（设置）
-            │   ├── Games.ets              # 游戏中心入口（3 游戏 + 难度选择器）
-            │   ├── Tetris.ets             # 俄罗斯方块（7 种方块 + 旋转/移动/消行）
-            │   ├── Game2048.ets           # 2048（4x4 棋盘 + 滑动合并）
-            │   ├── Snake.ets              # 贪吃蛇（方向控制 + 食物 + 碰撞检测）
-            │   └── GameHistory.ets        # 游戏历史记录（分数 + 难度 + 排行）
+            │   ├── Index.ets              # 首页（欢迎区 + 游戏入口大卡 + 最佳战绩）
+            │   ├── Games.ets              # 游戏中心（6 游戏 + 难度选择器 + 长按帮助）
+            │   ├── Chat.ets               # AI 对话（ChatTab，可嵌入 Tab）
+            │   ├── Profile.ets            # 我的（用户信息 + 设置入口 + 关于）
+            │   ├── Settings.ets           # 设置（外观/AI 对话/安全/数据）
+            │   ├── ChatConfig.ets         # AI 模型配置（供应商/模型/API Key）
+            │   ├── GameHistory.ets        # 游戏历史记录（分数 + 难度 + 排行）
+            │   ├── LegalDoc.ets           # 法律文档（用户协议/隐私政策/开源许可）
+            │   ├── Tetris.ets             # 俄罗斯方块
+            │   ├── Game2048.ets           # 2048
+            │   ├── Snake.ets              # 贪吃蛇
+            │   ├── Minesweeper.ets        # 扫雷
+            │   ├── Sudoku.ets             # 数独
+            │   └── ChineseChess.ets       # 中国象棋（三模式对弈）
             │
             └── test/                      # 单元测试（6 个）
                 ├── DefectClassifierTest.ets
@@ -182,26 +209,31 @@ zhizon/
 ```
 智子 (Zhizon)
 ├── 1. 游戏中心
-│   ├── 俄罗斯方块（5 级难度 + 触屏手势 + 按钮双控制）
-│   ├── 2048（5 级难度 + 滑动操作）
-│   ├── 贪吃蛇（5 级难度 + 方向控制）
+│   ├── 俄罗斯方块（5 级难度 + 触屏手势 + 按钮双控制 + AI 托管）
+│   ├── 2048（5 级难度 + 滑动操作 + AI 托管）
+│   ├── 贪吃蛇（5 级难度 + 方向控制 + AI 托管）
+│   ├── 扫雷（5 级难度 + 逻辑推理）
+│   ├── 数独（5 级难度 + 数字推理 + AI 托管）
+│   ├── 中国象棋（人机 / 人对AI / AI对AI + 悔棋 + 记谱 + AI 提示）
 │   ├── 游戏难度选择（5 级：超简单/简单/中等/困难/地狱）
+│   ├── 游戏 AI 托管（GameAIService 决策，非流式 + 关闭思考）
 │   └── 游戏历史记录（分数 + 难度 + 排行）
 │
-├── 2. 多主题系统
+├── 2. AI 对话
+│   ├── 多供应商大模型（OpenAI/Anthropic/DeepSeek/通义千问/Kimi/智谱/Ollama/自定义）
+│   ├── 模型配置（供应商/模型/API Key，ChatConfig）
+│   ├── 会话与消息本地持久化（ChatRepository）
+│   └── Markdown 富文本渲染（MarkdownConverter + 原生组件）
+│
+├── 3. 多主题系统
 │   ├── 6 套配色（终端青绿/海洋蓝/日落橙/极光紫/樱花粉/自然绿）
 │   ├── 亮/暗模式（跟随系统或手动）
 │   ├── 自定义背景图（沙箱导入 + 强度调节）
 │   ├── 毛玻璃效果（开关控制）
-│   └── 字号缩放（小/标准/大）
-│
-├── 3. 缺陷追踪
-│   ├── 缺陷记录（症状/步骤/预期/实际/设备信息）
-│   ├── 状态机（分析中→待修复→待验证→已确认）
-│   ├── 验证证据（静态/代码/设备/用户确认）
-│   └── 修复结果（影响范围/验证条件/残余风险）
+│   └── 字号缩放（小/标准/大，palette.fs* 全局生效）
 │
 └── 4. 导航系统
+    ├── 4 个主 Tab（首页/游戏/AI对话/我的）
     ├── NavigationFacade（页面注册表 + 导航验证）
     ├── 类型化路由参数
     └── 页面可用性检查
@@ -213,15 +245,19 @@ zhizon/
 
 #### 模块 1：游戏中心
 
-**实现位置**：[pages/Games.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Games.ets)、[pages/Tetris.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Tetris.ets)、[pages/Game2048.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Game2048.ets)、[pages/Snake.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Snake.ets)、[pages/GameHistory.ets](file:///workspace/zhizon/entry/src/main/ets/pages/GameHistory.ets)、[pages/Index.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Index.ets)、[common/Difficulty.ets](file:///workspace/zhizon/entry/src/main/ets/common/Difficulty.ets)
+**实现位置**：[pages/Games.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Games.ets)、[pages/Tetris.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Tetris.ets)、[pages/Game2048.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Game2048.ets)、[pages/Snake.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Snake.ets)、[pages/Minesweeper.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Minesweeper.ets)、[pages/Sudoku.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Sudoku.ets)、[pages/ChineseChess.ets](file:///workspace/zhizon/entry/src/main/ets/pages/ChineseChess.ets)、[pages/GameHistory.ets](file:///workspace/zhizon/entry/src/main/ets/pages/GameHistory.ets)、[pages/Index.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Index.ets)、[common/Difficulty.ets](file:///workspace/zhizon/entry/src/main/ets/common/Difficulty.ets)、[service/GameAIService.ets](file:///workspace/zhizon/entry/src/main/ets/service/GameAIService.ets)、[service/ChineseChessEngine.ets](file:///workspace/zhizon/entry/src/main/ets/service/ChineseChessEngine.ets)
 
 | 功能 | 实现状态 |
 |------|---------|
-| 首页游戏入口 | ✅ 3 游戏大卡 + 开始按钮 + 最佳战绩 + 难度速览 |
-| 游戏中心入口 | ✅ 3 游戏 + 难度选择器 |
-| 俄罗斯方块 | ✅ 7 种方块 + 旋转/移动/消行 + 5 级难度 |
-| 2048 | ✅ 4x4 棋盘 + 滑动合并 + 5 级难度 |
-| 贪吃蛇 | ✅ 方向控制 + 食物 + 碰撞检测 + 5 级难度 |
+| 首页游戏入口 | ✅ 6 游戏大卡 + 开始按钮 + 最佳战绩（卡片可点击进历史） |
+| 游戏中心入口 | ✅ 6 游戏 + 难度选择器 + 长按查看帮助 |
+| 俄罗斯方块 | ✅ 7 种方块 + 旋转/移动/消行 + 5 级难度 + AI 托管 |
+| 2048 | ✅ 4x4 棋盘 + 滑动合并 + 5 级难度 + AI 托管 |
+| 贪吃蛇 | ✅ 方向控制 + 食物 + 碰撞检测 + 5 级难度 + AI 托管 |
+| 扫雷 | ✅ 逻辑推理 + 翻格/标记 + 5 级难度 |
+| 数独 | ✅ 数字推理 + 求解器 + 5 级难度 + AI 托管 |
+| 中国象棋 | ✅ 人机/人对AI/AI对AI + 悔棋 + 记谱 + AI 提示 |
+| 游戏 AI 托管 | ✅ GameAIService 一次调用批量决策，非流式 + 关闭思考 |
 | 游戏难度 | ✅ 5 级（超简单/简单/中等/困难/地狱） |
 | GameLaunchFacade | ✅ 启动参数验证 + 路由跳转 |
 | 游戏历史 | ✅ 分数记录 + 难度标记 + 排行 |
@@ -237,6 +273,7 @@ zhizon/
 | 6 套配色 | ✅ CYAN/OCEAN/SUNSET/AURORA/SAKORA/FOREST |
 | 亮/暗模式 | ✅ 跟随系统或手动切换 |
 | ThemePalette 接口 | ✅ 30+ 颜色字段 + 8 级字号 |
+| 全局字号档位 | ✅ 全站统一使用 palette.fs* 系列，受设置档位控制 |
 | 自定义背景 | ✅ 沙箱导入 + 强度调节 |
 | 毛玻璃效果 | ✅ 半透明背景 + 边框 + 开关控制 |
 | 偏好持久化 | ✅ PreferenceSnapshot + RDB |
@@ -244,17 +281,18 @@ zhizon/
 
 ---
 
-#### 模块 3：缺陷追踪
+#### 模块 3：AI 对话
 
-**实现位置**：[model/GovernanceModels.ets](file:///workspace/zhizon/entry/src/main/ets/model/GovernanceModels.ets)、[service/DefectWorkflow.ets](file:///workspace/zhizon/entry/src/main/ets/service/DefectWorkflow.ets)、[service/DefectClassifier.ets](file:///workspace/zhizon/entry/src/main/ets/service/DefectClassifier.ets)
+**实现位置**：[pages/Chat.ets](file:///workspace/zhizon/entry/src/main/ets/pages/Chat.ets)、[pages/ChatConfig.ets](file:///workspace/zhizon/entry/src/main/ets/pages/ChatConfig.ets)、[common/LlmModels.ets](file:///workspace/zhizon/entry/src/main/ets/common/LlmModels.ets)、[common/MarkdownConverter.ets](file:///workspace/zhizon/entry/src/main/ets/common/MarkdownConverter.ets)、[service/ChatRepository.ets](file:///workspace/zhizon/entry/src/main/ets/service/ChatRepository.ets)、[service/LlmClient.ets](file:///workspace/zhizon/entry/src/main/ets/service/LlmClient.ets)
 
 | 功能 | 实现状态 |
 |------|---------|
-| 缺陷记录 | ✅ DefectRecord 完整字段 |
-| 状态机 | ✅ 6 状态（分析中/待信息/待修复/待验证/已确认/未复现） |
-| 验证证据 | ✅ 4 类型（静态/代码/设备/用户确认） |
-| 修复结果 | ✅ 影响范围 + 验证条件 + 残余风险 |
-| 状态历史 | ✅ DefectStateHistory 变更记录 |
+| 多供应商模型 | ✅ OpenAI/Anthropic/DeepSeek/通义千问/Kimi/智谱/Ollama/自定义 |
+| 模型配置 | ✅ ChatConfig 配置供应商/模型/API Key |
+| 流式/非流式 | ✅ 支持流式 SSE 与非流式两种请求 |
+| 思考控制 | ✅ 可关闭思考模式以提升响应速度 |
+| 会话持久化 | ✅ ChatRepository 本地保存会话与消息 |
+| Markdown 渲染 | ✅ 原生组件渲染（规避 RichText/Web 适配问题） |
 
 ---
 
@@ -265,7 +303,8 @@ zhizon/
 | 功能 | 实现状态 |
 |------|---------|
 | NavigationFacade | ✅ 页面注册表 + 导航验证 |
-| 类型化路由参数 | ✅ AppShellRouteParams + GameHistoryRouteParams |
+| 主 Tab | ✅ 首页/游戏/AI对话/我的 4 个主 Tab |
+| 类型化路由参数 | ✅ AppShellRouteParams + GameHistoryRouteParams + LegalDocRouteParams |
 | 页面可用性 | ✅ EMBEDDED（内嵌）/ ROUTE（独立路由） |
 | 导航结果 | ✅ NavigationSuccess / NavigationFailure |
 
@@ -294,13 +333,13 @@ zhizon/
 │  └────────────────────────┘  │
 │                              │
 │  ┌────────────────────────┐  │
-│  │  3 个 Tab（首页/工具箱/更多）│  │
+│  │  4 个 Tab（首页/游戏/AI对话/我的）│  │
 │  │  (高度 56vp)           │  │
 │  └────────────────────────┘  │
 └──────────────────────────────┘
 ```
 
-- 3 个主 Tab：首页 / 工具箱 / 更多
+- 4 个主 Tab：首页 / 游戏 / AI对话 / 我的
 
 ### 5.3 平板布局（isSm = false）
 
@@ -471,26 +510,32 @@ aboutToAppear() {
 
 ### 9.2 导航结构
 
-**主导航（3 项）**：
+**主导航（4 项）**：
 - 首页（Index）
-- 工具箱（Toolbox）→ 游戏中心
-- 更多（More）→ 设置
+- 游戏（Games）→ 6 款游戏入口
+- AI对话（Chat）
+- 我的（Profile）→ 设置 / 关于
 
 ### 9.3 页面跳转关系
 
 ```
 AppShell (主框架)
 ├── Index (首页)
-│   └──> Games (游戏中心) ──> Tetris / Game2048 / Snake ──> GameHistory
-├── Toolbox (工具箱)
-│   └──> Games ──> Tetris / Game2048 / Snake ──> GameHistory
-└── More (更多)
-    └──> Settings
+│   └──> GameHistory (战绩)
+├── Games (游戏中心)
+│   ├──> Tetris / Game2048 / Snake / Minesweeper / Sudoku / ChineseChess
+│   └──> GameHistory
+├── Chat (AI对话)
+│   └──> ChatConfig (模型配置)
+└── Profile (我的)
+    ├──> Settings (设置)
+    ├──> LegalDoc (用户协议/隐私政策/开源许可)
+    └──> GameHistory
 ```
 
 ### 9.4 子页面跳转
 
-- **进入游戏页面**：通过 `NavigationFacade` 统一入口，内部进行页面注册表查找 + 导航参数验证后跳转
+- **进入游戏页面**：通过 `GameLaunchFacade` 统一入口，内部进行游戏注册表查找 + 导航参数验证后跳转
 - **返回**：`router.back()` 或 `router.replaceUrl()`
 - **传参方式**：类型化 `RouteParams` 对象，接收方 `router.getParams() as XxxRouteParams`
 - **导航结果**：`NavigationSuccess` / `NavigationFailure`，支持页面可用性检查（EMBEDDED 内嵌 / ROUTE 独立路由）
@@ -519,9 +564,10 @@ AppShell (主框架)
 | **M1** | 项目骨架、设计系统、导航、UI 框架 | ✅ |
 | **M2** | 数据持久化（RDB v3）、CRUD、默认数据播种 | ✅ |
 | **M3** | 全异步改造、响应式布局（3 档断点） | ✅ |
-| **M4** | 游戏中心 + 多主题系统 + 缺陷追踪系统 | ✅ |
+| **M4** | 游戏中心 + 多主题系统 | ✅ |
 | **M5** | 毛玻璃效果 + 自定义背景 + 偏好持久化优化 | ✅ |
 | **M6** | 移除 SSH/PVE 相关代码，清理孤儿组件，重新设计首页布局，聚焦游戏中心 | ✅ |
+| **M7** | 重构导航为 4 Tab（首页/游戏/AI对话/我的），新增扫雷/数独/中国象棋，AI 对话、AI 托管，统一字号 | ✅ |
 
 ### 11.2 关键修复记录
 
@@ -542,6 +588,11 @@ AppShell (主框架)
 | 2026-08-11 | 移除全部 SSH/PVE 相关代码（服务、页面、模型、终端渲染、Go Agent） |
 | 2026-08-11 | 清理孤儿组件（StatusBadge/ProgressBar/MetricCard/EmptyState/NavSidebar/ArrayDataSource） |
 | 2026-08-11 | 首页重新设计为游戏入口大卡 + 最佳战绩 + 难度速览 |
+| 2026-08-13 | 俄罗斯方块旋转按钮位置过低被遮挡问题修复 |
+| 2026-08-13 | 游戏 AI 托管速度优化（一次调用批量决策，非流式 + 关闭思考） |
+| 2026-08-13 | 新增中国象棋（本地引擎 + 人机/人对AI/AI对AI 三模式 + 思考提示） |
+| 2026-08-13 | 导航重构为 4 Tab（首页/游戏/AI对话/我的），移除工具箱/更多，消除重复入口 |
+| 2026-08-13 | 全站字号统一为 palette.fs* 系列，设置字号档位全局生效 |
 
 ---
 
@@ -564,6 +615,7 @@ AppShell (主框架)
 | v4.0.0 | 2026-08-07 | 数据库 v4、MockData 移除、单元测试 |
 | v5.0.0 | 2026-08-11 | 毛玻璃效果、移除全部 SSH/PVE 代码、首页布局重新设计 |
 | v6.0.0 | 2026-08-11 | 清理孤儿组件、首页聚焦游戏中心，应用定位精简为游戏中心 + 多主题系统 |
+| v7.0.0 | 2026-08-13 | 导航重构为 4 Tab（首页/游戏/AI对话/我的）、新增扫雷/数独/中国象棋、AI 对话、AI 托管、全站字号统一 |
 
 ---
 
