@@ -54,9 +54,9 @@ export class GameAction {
 // AI 展示档位：速度索引 → 每步展示窗口（毫秒）
 export const AI_SPEED_OPTIONS: string[] = ['慢', '中', '快', '极速'];
 export const AI_SPEED_DELAYS: number[] = [800, 400, 200, 0];
-// 决策超时：单次 20 秒足够（正常响应远快于此）；超时后 decide 会自动重试一次，
-// 避免 netstack 连接池复用闲置连接导致的首次无响应拖到 60 秒
-export const AI_DECISION_TIMEOUT: number = 20000;
+// 决策超时：思考型模型（如 DeepSeek-R1）响应需 20-30 秒，单次 60 秒足够；
+// 超时后 decide 会自动重试一次，应对连接池复用闲置连接的偶发无响应
+export const AI_DECISION_TIMEOUT: number = 60000;
 
 export class GameAIService {
   // ---- 模型管理 ----
