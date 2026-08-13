@@ -33,6 +33,37 @@ export class LlmClient {
     return LlmClient.postOpenAI(config, messages, false);
   }
 
+  // 可取消的非流式请求：返回结果 Promise + 取消函数（decide 超时时主动中断底层请求）
+  static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[]):
+    { promise: Promise<LlmResult>, cancel: () => void } {
+    const httpRequest = http.createHttp();
+    let cancelled: boolean = false;
+    const promise: Promise<LlmResult> = LlmClient.postWithRequest(config, messages, httpRequest).then(
+      (result: LlmResult): LlmResult => result,
+      (e: Object): LlmResult => {
+        if (cancelled) return new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消');
+        return LlmClient.toResult(e);
+      });
+    const cancel = (): void => {
+      cancelled = true;
+      try {
+        httpRequest.off('dataReceive');
+        httpRequest.destroy();
+      } catch (e) {
+      }
+    };
+    return { promise: promise, cancel: cancel };
+  }
+
+  // 在外部传入的 httpRequest 上执行非流式请求（支持取消）
+  private static async postWithRequest(config: LlmConfig, messages: ChatMessage[], httpRequest: http.HttpRequest):
+    Promise<LlmResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAnthropicWith(config, messages, httpRequest);
+    }
+    return LlmClient.postOpenAIWith(config, messages, httpRequest);
+  }
+
   // 流式请求：onDelta 逐片回调正文，onReasoning 逐片回调思考过程，返回完整内容
   static async postCompletionStream(config: LlmConfig, messages: ChatMessage[],
     onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
@@ -44,9 +75,11 @@ export class LlmClient {
 
   // ---- OpenAI Chat Completions ----
 
+  // externalRequest 不为空时复用外部请求实例（可取消），由调用方负责销毁
   private static async postOpenAI(config: LlmConfig, messages: ChatMessage[], stream: boolean,
-    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
-    const httpRequest = http.createHttp();
+    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void,
+    externalRequest?: http.HttpRequest): Promise<LlmResult> {
+    const httpRequest: http.HttpRequest = externalRequest !== undefined ? externalRequest : http.createHttp();
     let fullContent: string = '';
     let fullReasoning: string = '';
     let buffer: string = '';
@@ -149,7 +182,10 @@ export class LlmClient {
       return LlmClient.toResult(e);
     } finally {
       httpRequest.off('dataReceive');
-      httpRequest.destroy();
+      // 外部传入的请求由调用方（取消函数）负责销毁
+      if (externalRequest === undefined) {
+        httpRequest.destroy();
+      }
     }
   }
 
@@ -158,11 +194,18 @@ export class LlmClient {
     return LlmClient.postOpenAI(config, messages, true, onDelta, onReasoning);
   }
 
+  private static async postOpenAIWith(config: LlmConfig, messages: ChatMessage[],
+    httpRequest: http.HttpRequest): Promise<LlmResult> {
+    return LlmClient.postOpenAI(config, messages, false, undefined, undefined, httpRequest);
+  }
+
   // ---- Anthropic Messages ----
 
+  // externalRequest 不为空时复用外部请求实例（可取消），由调用方负责销毁
   private static async postAnthropic(config: LlmConfig, messages: ChatMessage[], stream: boolean,
-    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
-    const httpRequest = http.createHttp();
+    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void,
+    externalRequest?: http.HttpRequest): Promise<LlmResult> {
+    const httpRequest: http.HttpRequest = externalRequest !== undefined ? externalRequest : http.createHttp();
     let fullContent: string = '';
     let fullReasoning: string = '';
     let buffer: string = '';
@@ -269,13 +312,21 @@ export class LlmClient {
       return LlmClient.toResult(e);
     } finally {
       httpRequest.off('dataReceive');
-      httpRequest.destroy();
+      // 外部传入的请求由调用方（取消函数）负责销毁
+      if (externalRequest === undefined) {
+        httpRequest.destroy();
+      }
     }
   }
 
   private static async postAnthropicStream(config: LlmConfig, messages: ChatMessage[],
     onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
     return LlmClient.postAnthropic(config, messages, true, onDelta, onReasoning);
+  }
+
+  private static async postAnthropicWith(config: LlmConfig, messages: ChatMessage[],
+    httpRequest: http.HttpRequest): Promise<LlmResult> {
+    return LlmClient.postAnthropic(config, messages, false, undefined, undefined, httpRequest);
   }
 
   // ---- URL 规范化 ----

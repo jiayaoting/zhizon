@@ -120,21 +120,24 @@ export class GameAIService {
     ];
   }
 
-  // ---- LLM 调用（带决策超时） ----
+  // ---- LLM 调用（带决策超时 + 主动取消） ----
 
   static async decide(config: LlmConfig, messages: ChatMessage[],
     timeoutMs: number = AI_DECISION_TIMEOUT): Promise<LlmResult> {
     let settled: boolean = false;
+    // 可取消请求：超时时主动中断底层 HTTP，避免请求挂起堆积
+    const cancellable = LlmClient.postCompletionCancelable(config, messages);
     return await new Promise<LlmResult>((resolve: (value: LlmResult) => void) => {
       const timer: number = setTimeout(() => {
         if (!settled) {
           settled = true;
+          cancellable.cancel();
           resolve(new LlmResult(false, '', 'DECISION_TIMEOUT',
             'AI 决策超时：思考型模型响应较慢，请稍候或换用非思考模型'));
         }
       }, timeoutMs);
       // 非流式请求：游戏决策只需最终动作，流式无法提前结束（思考型模型仍需等正文输出）
-      LlmClient.postCompletion(config, messages).then((result: LlmResult) => {
+      cancellable.promise.then((result: LlmResult) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
