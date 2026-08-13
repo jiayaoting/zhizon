@@ -50,19 +50,27 @@ export class LlmClient {
   static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[]): CancelableLlmRequest {
     const httpRequest = http.createHttp();
     let cancelled: boolean = false;
-    const promise: Promise<LlmResult> = LlmClient.postWithRequest(config, messages, httpRequest).then(
-      (result: LlmResult): LlmResult => result,
-      (e: Object): LlmResult => {
-        if (cancelled) return new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消');
-        return LlmClient.toResult(e);
-      });
-    const cancel = (): void => {
-      cancelled = true;
+    // 请求结束（无论成功/失败/取消）都必须销毁 HttpRequest，否则底层连接与资源会泄漏积攒
+    const releaseRequest = (): void => {
       try {
         httpRequest.off('dataReceive');
         httpRequest.destroy();
       } catch (e) {
       }
+    };
+    const promise: Promise<LlmResult> = LlmClient.postWithRequest(config, messages, httpRequest).then(
+      (result: LlmResult): LlmResult => {
+        releaseRequest();
+        return result;
+      },
+      (e: Object): LlmResult => {
+        releaseRequest();
+        if (cancelled) return new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消');
+        return LlmClient.toResult(e);
+      });
+    const cancel = (): void => {
+      cancelled = true;
+      releaseRequest();
     };
     return new CancelableLlmRequest(promise, cancel);
   }
@@ -99,11 +107,13 @@ export class LlmClient {
     try {
       const url: string = LlmClient.openAIUrl(config);
       const header: Record<string, string> = {
-        'Content-Type': 'application/json',
-        // 禁用连接复用：连接池中的 keep-alive 连接空闲后可能被服务端/中间设备关闭，
-        // 复用"死连接"会导致请求发出后无响应（firstRecv=0）且服务端收不到，直到超时
-        'Connection': 'close'
+        'Content-Type': 'application/json'
       };
+      // 非流式请求禁用连接复用：连接池中的 keep-alive 连接空闲后可能被服务端/中间设备关闭，
+      // 复用"死连接"会导致请求发出后无响应（firstRecv=0）且服务端收不到，直到超时
+      if (!stream) {
+        header['Connection'] = 'close';
+      }
       if (stream) {
         header['Accept'] = 'text/event-stream';
       }
@@ -229,10 +239,12 @@ export class LlmClient {
       const url: string = LlmClient.anthropicUrl(config);
       const header: Record<string, string> = {
         'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01',
-        // 禁用连接复用：避免复用已失效的 keep-alive 连接导致请求无响应（服务端收不到请求）
-        'Connection': 'close'
+        'anthropic-version': '2023-06-01'
       };
+      // 非流式请求禁用连接复用：避免复用已失效的 keep-alive 连接导致请求无响应（服务端收不到请求）
+      if (!stream) {
+        header['Connection'] = 'close';
+      }
       if (stream) {
         header['Accept'] = 'text/event-stream';
       }
