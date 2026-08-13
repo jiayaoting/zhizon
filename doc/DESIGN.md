@@ -4,7 +4,7 @@
 > **平台**：HarmonyOS NEXT（鸿蒙 6+ / 纯血鸿蒙）
 > **Bundle Name**：`com.zhizon.manager`
 > **开发语言**：ArkTS
-> **文档状态**：v7.0 当前实现版（4 Tab 导航 + 6 款游戏 + AI 对话 + 多主题系统 + 毛玻璃效果）
+> **文档状态**：v7.1 当前实现版（4 Tab 导航 + 6 款游戏 + AI 对话 + 多主题系统 + 毛玻璃效果 + AI 调用记录）
 
 ---
 
@@ -52,10 +52,10 @@
 │   WindowEnvironmentProvider (窗口环境感知)       │
 ├─────────────────────────────────────────────────┤
 │                  数据访问层                      │
-│   DatabaseHelper (RDB Store v4) │ 5 张持久化表  │
+│   DatabaseHelper (RDB Store v4) │ 6 张持久化表  │
 │   settings / game_scores /                      │
 │   defects / defect_evidence / defect_history /  │
-│   defect_fix_results                            │
+│   defect_fix_results / ai_call_logs             │
 ├─────────────────────────────────────────────────┤
 │            HarmonyOS 系统能力                    │
 │   CryptoArchitectureKit │ ArkData │ display API │
@@ -70,7 +70,7 @@
 | 开发语言 | ArkTS | ✅ |
 | UI 框架 | ArkUI 声明式 + Stage 模型 | ✅ |
 | 目标 SDK | HarmonyOS 6.1.1 (API 24) | ✅ |
-| 数据存储 | RelationalStore (RDB v4) + 5 表 | ✅ |
+| 数据存储 | RelationalStore (RDB v4) + 6 表 | ✅ |
 | 凭据加密 | AES-256-GCM (CryptoArchitectureKit) | ✅ |
 | 响应式 | @StorageLink 跨组件状态 + display API | ✅ |
 | 多主题系统 | ThemePalette + 6 配色 + 亮/暗模式 | ✅ |
@@ -78,6 +78,7 @@
 | 全局字号系统 | palette.fs* 8 级字号，受设置档位控制 | ✅ |
 | 游戏中心 | 6 游戏 + 5 级难度 + 历史记录 + AI 托管 | ✅ |
 | AI 对话 | LlmClient 多供应商 + ChatRepository 持久化 | ✅ |
+| AI 调用记录 | AiCallLogger 摘要日志 + ai_call_logs 表 + AiCallLog 页 | ✅ |
 | 中国象棋 | 本地引擎 + 人机/人对AI/AI对AI 三模式 | ✅ |
 | 导航系统 | NavigationFacade + PageRegistry + 类型化路由参数 | ✅ |
 
@@ -148,12 +149,13 @@ zhizon/
             │   ├── GovernanceModels.ets   # 治理模型（AppFailure + RecoverableResult + DefectRecord 等）
             │   └── Models.ets             # 通用业务模型
             │
-            ├── service/                   # 业务服务层（14 个）
-            │   ├── DatabaseHelper.ets     # RDB Store v4 + 5 表 CRUD
+            ├── service/                   # 业务服务层（15 个）
+            │   ├── DatabaseHelper.ets     # RDB Store v4 + 6 表 CRUD
             │   ├── DataRepository.ets     # 数据门面 + 偏好持久化
             │   ├── ChatRepository.ets     # AI 会话/消息持久化
             │   ├── LlmClient.ets          # 大模型 HTTP 通信（流式/非流式 + 思考控制）
             │   ├── GameAIService.ets      # 游戏 AI 托管（决策/提示词/动作解析）
+            │   ├── AiCallLogger.ets       # AI 调用日志（摘要记录 + 查询 + 清空）
             │   ├── ChineseChessEngine.ets # 中国象棋本地引擎（规则 + 搜索）
             │   ├── SecurityService.ets    # 安全服务
             │   ├── BiometricHelper.ets    # 生物认证
@@ -174,7 +176,7 @@ zhizon/
             │   ├── PrivacyDialog.ets      # 隐私协议弹窗
             │   └── FontRegistry.ets       # 字体注册
             │
-            ├── pages/                     # 15 个页面
+            ├── pages/                     # 16 个页面
             │   ├── AppShell.ets           # 自适应主框架（底部Tab / 侧边栏切换）
             │   ├── Index.ets              # 首页（欢迎区 + 游戏入口大卡 + 最佳战绩）
             │   ├── Games.ets              # 游戏中心（6 游戏 + 难度选择器 + 长按帮助）
@@ -184,6 +186,7 @@ zhizon/
             │   ├── ChatConfig.ets         # AI 模型配置（供应商/模型/API Key）
             │   ├── GameHistory.ets        # 游戏历史记录（分数 + 难度 + 排行）
             │   ├── LegalDoc.ets           # 法律文档（用户协议/隐私政策/开源许可）
+            │   ├── AiCallLog.ets          # AI 调用记录（列表 + 详情展开 + 清空）
             │   ├── Tetris.ets             # 俄罗斯方块
             │   ├── Game2048.ets           # 2048
             │   ├── Snake.ets              # 贪吃蛇
@@ -223,7 +226,8 @@ zhizon/
 │   ├── 多供应商大模型（OpenAI/Anthropic/DeepSeek/通义千问/Kimi/智谱/Ollama/自定义）
 │   ├── 模型配置（供应商/模型/API Key，ChatConfig）
 │   ├── 会话与消息本地持久化（ChatRepository）
-│   └── Markdown 富文本渲染（MarkdownConverter + 原生组件）
+│   ├── Markdown 富文本渲染（MarkdownConverter + 原生组件）
+│   └── AI 调用记录（AiCallLogger 摘要日志 + AiCallLog 查看页 + 手动清空）
 │
 ├── 3. 多主题系统
 │   ├── 6 套配色（终端青绿/海洋蓝/日落橙/极光紫/樱花粉/自然绿）
@@ -293,6 +297,22 @@ zhizon/
 | 思考控制 | ✅ 可关闭思考模式以提升响应速度 |
 | 会话持久化 | ✅ ChatRepository 本地保存会话与消息 |
 | Markdown 渲染 | ✅ 原生组件渲染（规避 RichText/Web 适配问题） |
+
+---
+
+#### 模块 5：AI 调用记录
+
+**实现位置**：[pages/AiCallLog.ets](file:///workspace/zhizon/entry/src/main/ets/pages/AiCallLog.ets)、[service/AiCallLogger.ets](file:///workspace/zhizon/entry/src/main/ets/service/AiCallLogger.ets)、[service/LlmClient.ets](file:///workspace/zhizon/entry/src/main/ets/service/LlmClient.ets)、[service/DatabaseHelper.ets](file:///workspace/zhizon/entry/src/main/ets/service/DatabaseHelper.ets)
+
+**设计要点**：仅在 LlmClient 三个公开方法（postCompletion / postCompletionCancelable / postCompletionStream）外层统一注入日志，调用方通过 `AiCallContext`（chat / game / test）声明场景，游戏托管自动带上游戏名；只记摘要（时间/场景/模型/耗时/成败/字符量/错误），**不存 prompt 与响应全文**，保护隐私。
+
+| 功能 | 实现状态 |
+|------|---------|
+| 场景区分 | ✅ 聊天 / 游戏托管（含游戏名）/ 连接测试 |
+| 调用摘要 | ✅ 开始/结束时间、耗时、模型、服务商、成败、错误、字符量 |
+| 持久化 | ✅ `ai_call_logs` 表，按开始时间倒序，不设上限 |
+| 查看页 | ✅ 列表 + 点击展开详情 + 顶栏清空（确认对话框） |
+| 入口 | ✅ 我的 → AI 调用记录 |
 
 ---
 
@@ -397,6 +417,7 @@ aboutToAppear() {
 | 缺陷证据 | RDB `defect_evidence` 表 | ✅ |
 | 缺陷状态历史 | RDB `defect_status_history` 表 | ✅ |
 | 缺陷修复结果 | RDB `defect_fix_results` 表 | ✅ |
+| AI 调用日志 | RDB `ai_call_logs` 表 | ✅ |
 | 加密主密钥 | preferences 持久化 | ✅ |
 | 主题偏好 | RDB `settings` 表（JSON） | ✅ |
 
@@ -415,6 +436,8 @@ aboutToAppear() {
 **defect_status_history 表**：history_id(PK), defect_key, from_status, to_status, operator, trigger, evidence_id, recorded_at
 
 **defect_fix_results 表**：defect_key(PK), scope, expected_behavior, failure_behavior, validation_conditions, residual_risks
+
+**ai_call_logs 表**：id(PK), type(chat/game/test), game, model, provider, start_time, end_time, duration_ms, success, error_code, error_msg, prompt_chars, response_chars
 
 ---
 
@@ -530,6 +553,7 @@ AppShell (主框架)
 └── Profile (我的)
     ├──> Settings (设置)
     ├──> LegalDoc (用户协议/隐私政策/开源许可)
+    ├──> AiCallLog (AI 调用记录)
     └──> GameHistory
 ```
 
@@ -568,6 +592,7 @@ AppShell (主框架)
 | **M5** | 毛玻璃效果 + 自定义背景 + 偏好持久化优化 | ✅ |
 | **M6** | 移除 SSH/PVE 相关代码，清理孤儿组件，重新设计首页布局，聚焦游戏中心 | ✅ |
 | **M7** | 重构导航为 4 Tab（首页/游戏/AI对话/我的），新增扫雷/数独/中国象棋，AI 对话、AI 托管，统一字号 | ✅ |
+| **M8** | AI 调用记录（摘要日志 + ai_call_logs 表 + 查看/清空页 + 我的页入口） | ✅ |
 
 ### 11.2 关键修复记录
 
@@ -593,6 +618,7 @@ AppShell (主框架)
 | 2026-08-13 | 新增中国象棋（本地引擎 + 人机/人对AI/AI对AI 三模式 + 思考提示） |
 | 2026-08-13 | 导航重构为 4 Tab（首页/游戏/AI对话/我的），移除工具箱/更多，消除重复入口 |
 | 2026-08-13 | 全站字号统一为 palette.fs* 系列，设置字号档位全局生效 |
+| 2026-08-13 | 新增 AI 调用记录（摘要日志 + ai_call_logs 表 + AiCallLog 查看页 + 我的页入口） |
 
 ---
 
@@ -616,6 +642,7 @@ AppShell (主框架)
 | v5.0.0 | 2026-08-11 | 毛玻璃效果、移除全部 SSH/PVE 代码、首页布局重新设计 |
 | v6.0.0 | 2026-08-11 | 清理孤儿组件、首页聚焦游戏中心，应用定位精简为游戏中心 + 多主题系统 |
 | v7.0.0 | 2026-08-13 | 导航重构为 4 Tab（首页/游戏/AI对话/我的）、新增扫雷/数独/中国象棋、AI 对话、AI 托管、全站字号统一 |
+| v7.1.0 | 2026-08-13 | 新增 AI 调用记录（摘要日志 + ai_call_logs 表 + 查看/清空 + 我的页入口） |
 
 ---
 

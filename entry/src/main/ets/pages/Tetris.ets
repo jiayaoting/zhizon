@@ -615,7 +615,7 @@ export struct TetrisPage {
       const stateText: string = GameAIService.serializeTetris(this.board, p.type, p.rotation, p.x, p.y,
         this.nextType, this.score, this.level);
       const messages = GameAIService.buildMessages('Tetris', this.difficulty, stateText);
-      const result = await GameAIService.decide(this.aiConfig, messages);
+      const result = await GameAIService.decide(this.aiConfig, messages, 'Tetris');
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;

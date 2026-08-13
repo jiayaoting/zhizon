@@ -418,7 +418,7 @@ export struct SudokuPage {
       this.aiStatus = 'AI 思考中…';
       const stateText: string = GameAIService.serializeSudoku(this.cells);
       const messages = GameAIService.buildMessages('Sudoku', this.difficulty, stateText);
-      const result = await GameAIService.decide(this.aiConfig, messages);
+      const result = await GameAIService.decide(this.aiConfig, messages, 'Sudoku');
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;

@@ -3,6 +3,7 @@ import { ChatRepository } from './ChatRepository';
 import { DataRepository } from './DataRepository';
 import { LlmClient } from './LlmClient';
 import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, entryToConfig } from '../common/LlmModels';
+import { AiCallContext } from './AiCallLogger';
 import { DifficultyLevel, difficultyLabel } from '../common/Difficulty';
 
 export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku' | 'ChineseChess';
@@ -169,7 +170,7 @@ export class GameAIService {
   // ---- LLM 调用（带决策超时 + 主动取消） ----
 
   static async decide(config: LlmConfig, messages: ChatMessage[],
-    timeoutMs: number = AI_DECISION_TIMEOUT): Promise<LlmResult> {
+    kind: GameKind = '2048', timeoutMs: number = AI_DECISION_TIMEOUT): Promise<LlmResult> {
     // 复制配置并强制关闭思考（游戏决策只认最终动作，不需要思考过程）：
     // 不修改原配置，不影响聊天等其他场景
     const gameConfig: LlmConfig = GameAIService.cloneConfig(config);
@@ -180,7 +181,7 @@ export class GameAIService {
     for (let attempt: number = 0; attempt < 2; attempt++) {
       // 非流式请求：游戏决策只需最终动作，非流式一次返回完整 JSON，比流式逐 token 快 30%+
       // （实测：非流式 22.8s vs 流式 38.7s）。配合 HTTP/1.1 + Connection: close 已根治连接问题
-      const result = await GameAIService.decideOnce(gameConfig, messages, timeoutMs);
+      const result = await GameAIService.decideOnce(gameConfig, messages, timeoutMs, kind);
       if (result.success) {
         return result;
       }
@@ -220,9 +221,9 @@ export class GameAIService {
 
   // 单次决策请求：非流式 + 超时主动取消底层请求
   private static async decideOnce(config: LlmConfig, messages: ChatMessage[],
-    timeoutMs: number): Promise<LlmResult> {
+    timeoutMs: number, kind: GameKind): Promise<LlmResult> {
     let settled: boolean = false;
-    const cancellable = LlmClient.postCompletionCancelable(config, messages);
+    const cancellable = LlmClient.postCompletionCancelable(config, messages, new AiCallContext('game', kind));
     return await new Promise<LlmResult>((resolve: (value: LlmResult) => void) => {
       const timer: number = setTimeout(() => {
         if (!settled) {

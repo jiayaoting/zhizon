@@ -3,6 +3,7 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
+import { AiCallLogger, AiCallContext } from './AiCallLogger';
 // 连接超时（网络握手）与读取超时（响应传输）分开设置：
 // 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
 const CONNECT_TIMEOUT = 30000;
@@ -42,7 +43,7 @@ export class LlmClient {
     }
     const messages: ChatMessage[] = [ChatMessage.create('user', '你好，请回复"连接成功"四个字。')];
     try {
-      const result = await LlmClient.postCompletion(config, messages);
+      const result = await LlmClient.postCompletion(config, messages, new AiCallContext('test'));
       return result;
     } catch (e) {
       return LlmClient.toResult(e);
@@ -77,8 +78,18 @@ export class LlmClient {
     return JSON.stringify(payload);
   }
 
-  // 非流式请求完整返回
-  static async postCompletion(config: LlmConfig, messages: ChatMessage[]): Promise<LlmResult> {
+  // 非流式请求完整返回（带调用日志，context 缺省视为聊天）
+  static async postCompletion(config: LlmConfig, messages: ChatMessage[],
+    context?: AiCallContext): Promise<LlmResult> {
+    const startTime: number = Date.now();
+    const log = AiCallLogger.start(config, context !== undefined ? context : new AiCallContext('chat'),
+      messages, startTime);
+    const result: LlmResult = await LlmClient.postCompletionInner(config, messages);
+    AiCallLogger.end(log, result, Date.now());
+    return result;
+  }
+
+  private static async postCompletionInner(config: LlmConfig, messages: ChatMessage[]): Promise<LlmResult> {
     if (config.apiFormat === 'anthropic') {
       return LlmClient.postAnthropic(config, messages, false);
     }
@@ -86,7 +97,11 @@ export class LlmClient {
   }
 
   // 可取消的非流式请求：返回结果 Promise + 取消函数（decide 超时时主动中断底层请求）
-  static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[]): CancelableLlmRequest {
+  static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[],
+    context?: AiCallContext): CancelableLlmRequest {
+    const startTime: number = Date.now();
+    const log = AiCallLogger.start(config, context !== undefined ? context : new AiCallContext('chat'),
+      messages, startTime);
     const httpRequest = http.createHttp();
     let cancelled: boolean = false;
     // 请求结束（无论成功/失败/取消）都必须销毁 HttpRequest，否则底层连接与资源会泄漏积攒
@@ -100,12 +115,16 @@ export class LlmClient {
     const promise: Promise<LlmResult> = LlmClient.postWithRequest(config, messages, httpRequest).then(
       (result: LlmResult): LlmResult => {
         releaseRequest();
+        AiCallLogger.end(log, result, Date.now());
         return result;
       },
       (e: Object): LlmResult => {
         releaseRequest();
-        if (cancelled) return new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消');
-        return LlmClient.toResult(e);
+        const errResult: LlmResult = cancelled
+          ? new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消')
+          : LlmClient.toResult(e);
+        AiCallLogger.end(log, errResult, Date.now());
+        return errResult;
       });
     const cancel = (): void => {
       cancelled = true;
@@ -123,8 +142,19 @@ export class LlmClient {
     return LlmClient.postOpenAIWith(config, messages, httpRequest);
   }
 
-  // 流式请求：onDelta 逐片回调正文，onReasoning 逐片回调思考过程，返回完整内容
+  // 流式请求：onDelta 逐片回调正文，onReasoning 逐片回调思考过程，返回完整内容（带调用日志）
   static async postCompletionStream(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void,
+    context?: AiCallContext): Promise<LlmResult> {
+    const startTime: number = Date.now();
+    const log = AiCallLogger.start(config, context !== undefined ? context : new AiCallContext('chat'),
+      messages, startTime);
+    const result: LlmResult = await LlmClient.postCompletionStreamInner(config, messages, onDelta, onReasoning);
+    AiCallLogger.end(log, result, Date.now());
+    return result;
+  }
+
+  private static async postCompletionStreamInner(config: LlmConfig, messages: ChatMessage[],
     onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
     if (config.apiFormat === 'anthropic') {
       return LlmClient.postAnthropicStream(config, messages, onDelta, onReasoning);

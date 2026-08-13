@@ -255,7 +255,7 @@ struct ChineseChessPage {
       }
       const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
       const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
-      const result = await GameAIService.decide(config, messages);
+      const result = await GameAIService.decide(config, messages, 'ChineseChess');
       this.aiLoopActive = false;
       if (!this.running || this.gameOver) return;
       if (!result.success) {
@@ -437,7 +437,7 @@ struct ChineseChessPage {
       if (config !== null) {
         const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
         const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
-        const result = await GameAIService.decide(config, messages);
+        const result = await GameAIService.decide(config, messages, 'ChineseChess');
         if (seq !== this.suggestSeq) return;
         if (result.success) {
           const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);

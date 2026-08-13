@@ -503,7 +503,7 @@ export struct Game2048Page {
       this.aiStatus = 'AI 思考中…';
       const stateText: string = GameAIService.serializeGrid2048(this.board);
       const messages = GameAIService.buildMessages('2048', this.difficulty, stateText);
-      const result = await GameAIService.decide(this.aiConfig, messages);
+      const result = await GameAIService.decide(this.aiConfig, messages, '2048');
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;

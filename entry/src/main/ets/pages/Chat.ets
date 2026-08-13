@@ -12,6 +12,7 @@ import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
+import { AiCallContext } from '../service/AiCallLogger';
 import { ChatMessage, entryToConfig, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
   modelDisplayNameFromConfig } from '../common/LlmModels';
 import { MarkdownConverter, MdBlock, InlineSpan } from '../common/MarkdownConverter';
@@ -615,7 +616,7 @@ export struct ChatTab {
         // 思考过程单独累积，气泡中以折叠区块展示，不与正文混排
         this.streamingReasoning = this.streamingReasoning + reasoningDelta;
         assistantMessage.reasoning = this.streamingReasoning;
-      });
+      }, new AiCallContext('chat'));
     this.sending = false;
     this.streaming = false;
     this.streamRequest = null;

@@ -9,6 +9,7 @@
     "pages/LegalDoc",
     "pages/Sudoku",
     "pages/ChineseChess",
-    "pages/ChatConfig"
+    "pages/ChatConfig",
+    "pages/AiCallLog"
   ]
 }

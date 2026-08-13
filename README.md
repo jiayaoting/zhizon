@@ -12,13 +12,14 @@
 - 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果 + 全局字号档位
 - 📊 **游戏战绩**：分数记录与历史排行
 - 🔒 **安全加密**：API Key 使用 AES-256-GCM 加密存储，不经过任何第三方
+- 📋 **AI 调用记录**：记录聊天 / 游戏 AI 托管 / 模型测试的每次调用摘要（场景、模型、耗时、成败），"我的"页可查看与清空
 
 ## 技术栈
 
 - **开发语言**：ArkTS
 - **UI 框架**：ArkUI 声明式 + Stage 模型
 - **目标 SDK**：HarmonyOS 6.1.1 (API 24)
-- **数据存储**：RelationalStore (RDB v4) · 5 张持久化表
+- **数据存储**：RelationalStore (RDB v4) · 6 张持久化表
 - **网络通信**：HTTP 请求 + SSE 流式响应（OpenAI 兼容 / Anthropic 协议）
 - **加密算法**：AES-256-GCM（API Key 加密存储）
 - **响应式布局**：`@StorageLink` 跨组件状态 + `display` API · 3 档断点
@@ -58,8 +59,8 @@ zhizon/
 │       │   │   ├── GovernanceModels.ets   # 治理模型
 │       │   │   └── Models.ets             # 通用业务模型
 │       │   │
-│       │   ├── service/       # 业务服务层 (14 个文件)
-│       │   │   ├── DatabaseHelper.ets     # RDB v4 + 5 表 CRUD
+│   │   │   └── service/       # 业务服务层 (15 个文件)
+│   │   │       ├── DatabaseHelper.ets     # RDB v4 + 6 表 CRUD
 │       │   │   ├── DataRepository.ets     # 数据门面 + 偏好持久化
 │       │   │   ├── ChatRepository.ets     # AI 会话/消息持久化
 │       │   │   ├── LlmClient.ets          # 大模型客户端（流式/非流式 + 思考控制）
@@ -70,7 +71,8 @@ zhizon/
 │       │   │   ├── BackgroundImporter.ets # 自定义背景图导入
 │       │   │   ├── SudokuSolver.ets       # 数独求解器
 │       │   │   ├── PickerAdapter.ets      # 文件选择器适配
-│       │   │   └── WindowEnvironmentProvider.ets # 窗口环境感知
+│   │   │       ├── WindowEnvironmentProvider.ets # 窗口环境感知
+│   │   │       └── AiCallLogger.ets          # AI 调用日志记录服务
 │       │   │
 │       │   ├── components/    # 通用组件 (12 个)
 │       │   │   ├── TopBar.ets              # 顶栏（响应式 + 自定义返回回调）
@@ -83,8 +85,7 @@ zhizon/
 │       │   │   ├── LockOverlay.ets         # 锁定遮罩
 │       │   │   ├── PrivacyDialog.ets       # 隐私协议弹窗
 │       │   │   └── FontRegistry.ets        # 字体注册
-│       │   │
-│       │   └── pages/         # 页面 (15 个)
+│       │   │   │   │       └── pages/         # 页面 (16 个)
 │       │       ├── AppShell.ets           # 自适应主框架
 │       │       ├── Index.ets              # 首页（游戏入口 + 最佳战绩）
 │       │       ├── Games.ets              # 游戏中心（6 游戏 + 难度选择器）
@@ -99,7 +100,8 @@ zhizon/
 │       │       ├── Snake.ets              # 贪吃蛇
 │       │       ├── Minesweeper.ets        # 扫雷
 │       │       ├── Sudoku.ets             # 数独
-│       │       └── ChineseChess.ets       # 中国象棋（三模式对弈）
+│       │       ├── ChineseChess.ets       # 中国象棋（三模式对弈）
+│   │   │       └── AiCallLog.ets          # AI 调用记录（列表/详情/清空）
 │       │
 │       ├── resources/         # 资源文件
 │       └── module.json5       # 模块配置
@@ -137,6 +139,7 @@ zhizon/
 | Minesweeper | 扫雷（AI 托管） |
 | Sudoku | 数独（AI 托管） |
 | ChineseChess | 中国象棋（人机 / 人对AI / AI对AI + 悔棋 + 记谱） |
+| AiCallLog | AI 调用记录（场景/模型/耗时/成败列表 + 详情展开 + 清空） |
 
 ## AI 对话功能
 
@@ -147,6 +150,7 @@ zhizon/
 - API Key 使用 AES-256-GCM 加密存储，不经过任何第三方
 - 对话历史本地持久化，无上限
 - 支持测试连接检验 API 可用性
+- 每次调用（聊天/游戏托管/测试）自动记录摘要日志，可在"我的 → AI 调用记录"查看与清空
 
 ## 游戏 AI 托管
 

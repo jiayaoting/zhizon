@@ -589,7 +589,7 @@ export struct MinesweeperPage {
       this.aiStatus = 'AI 思考中…';
       const stateText: string = GameAIService.serializeMinesweeper(this.board, this.rows, this.cols);
       const messages = GameAIService.buildMessages('Minesweeper', this.difficulty, stateText);
-      const result = await GameAIService.decide(this.aiConfig, messages);
+      const result = await GameAIService.decide(this.aiConfig, messages, 'Minesweeper');
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;

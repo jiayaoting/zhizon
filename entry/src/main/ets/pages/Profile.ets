@@ -182,6 +182,9 @@ export struct ProfilePage {
           this.groupCard('通用', () => {
             Column({ space: 8 }) {
               this.groupRow('设置', '', true, () => { this.onNavigate('Settings'); })
+              this.groupRow('AI 调用记录', '', true, () => {
+                router.pushUrl({ url: 'pages/AiCallLog' });
+              })
             }
             .width('100%')
           })

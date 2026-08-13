@@ -12,6 +12,22 @@ export interface ScoreEntry {
   createdAt: number;
 }
 
+export interface AiCallLogEntry {
+  id: string;
+  type: string;
+  game: string;
+  model: string;
+  provider: string;
+  startTime: number;
+  endTime: number;
+  durationMs: number;
+  success: boolean;
+  errorCode: string;
+  errorMsg: string;
+  promptChars: number;
+  responseChars: number;
+}
+
 const DB_NAME = 'zhizon.db';
 const DB_VERSION = 4;
 const DB_DOMAIN = 0x9201;
@@ -52,6 +68,12 @@ const SQL_CREATE_DEFECT_FIX_RESULTS = `CREATE TABLE IF NOT EXISTS defect_fix_res
   defect_key TEXT PRIMARY KEY, scope TEXT NOT NULL, expected_behavior TEXT NOT NULL,
   failure_behavior TEXT NOT NULL, validation_conditions TEXT NOT NULL, residual_risks TEXT NOT NULL
 )`;
+const SQL_CREATE_AI_CALL_LOGS = `CREATE TABLE IF NOT EXISTS ai_call_logs (
+  id TEXT PRIMARY KEY, type TEXT NOT NULL, game TEXT DEFAULT '', model TEXT DEFAULT '',
+  provider TEXT DEFAULT '', start_time INTEGER NOT NULL, end_time INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL, success INTEGER NOT NULL, error_code TEXT DEFAULT '',
+  error_msg TEXT DEFAULT '', prompt_chars INTEGER DEFAULT 0, response_chars INTEGER DEFAULT 0
+)`;
 
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
@@ -74,6 +96,7 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_EVIDENCE);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_HISTORY);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_FIX_RESULTS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_AI_CALL_LOGS);
     if (DatabaseHelper.store.version < DB_VERSION) {
       DatabaseHelper.store.version = DB_VERSION;
     }
@@ -292,5 +315,88 @@ export class DatabaseHelper {
     try { exists = resultSet.goToNextRow(); } finally { resultSet.close(); }
     const bucket: relationalStore.ValuesBucket = { key: key, value: value };
     if (exists) await store.update(bucket, predicates); else await store.insert('settings', bucket);
+  }
+
+  // ========== AI 调用日志 ==========
+
+  static async insertAiCallLog(entry: AiCallLogEntry): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const bucket: relationalStore.ValuesBucket = {
+      id: entry.id,
+      type: entry.type,
+      game: entry.game,
+      model: entry.model,
+      provider: entry.provider,
+      start_time: entry.startTime,
+      end_time: entry.endTime,
+      duration_ms: entry.durationMs,
+      success: entry.success ? 1 : 0,
+      error_code: entry.errorCode,
+      error_msg: entry.errorMsg,
+      prompt_chars: entry.promptChars,
+      response_chars: entry.responseChars
+    };
+    try {
+      await store.insert('ai_call_logs', bucket);
+    } catch (e) {
+      hilog.warn(DB_DOMAIN, 'AiCallLogger', 'AI 调用日志写入失败 %{public}s', (e as Error).message);
+    }
+  }
+
+  static async queryAiCallLogs(limit: number): Promise<AiCallLogEntry[]> {
+    const store = DatabaseHelper.getStore();
+    const results: AiCallLogEntry[] = [];
+    try {
+      const predicates = new relationalStore.RdbPredicates('ai_call_logs');
+      predicates.orderByDesc('start_time');
+      predicates.limitAs(limit);
+      const resultSet = await store.query(predicates);
+      while (resultSet.goToNextRow()) {
+        results.push({
+          id: resultSet.getString(resultSet.getColumnIndex('id')),
+          type: resultSet.getString(resultSet.getColumnIndex('type')),
+          game: resultSet.getString(resultSet.getColumnIndex('game')),
+          model: resultSet.getString(resultSet.getColumnIndex('model')),
+          provider: resultSet.getString(resultSet.getColumnIndex('provider')),
+          startTime: resultSet.getLong(resultSet.getColumnIndex('start_time')),
+          endTime: resultSet.getLong(resultSet.getColumnIndex('end_time')),
+          durationMs: resultSet.getLong(resultSet.getColumnIndex('duration_ms')),
+          success: resultSet.getLong(resultSet.getColumnIndex('success')) === 1,
+          errorCode: resultSet.getString(resultSet.getColumnIndex('error_code')),
+          errorMsg: resultSet.getString(resultSet.getColumnIndex('error_msg')),
+          promptChars: resultSet.getLong(resultSet.getColumnIndex('prompt_chars')),
+          responseChars: resultSet.getLong(resultSet.getColumnIndex('response_chars'))
+        } as AiCallLogEntry);
+      }
+      resultSet.close();
+    } catch (e) {
+      hilog.warn(DB_DOMAIN, 'AiCallLogger', 'AI 调用日志读取失败 %{public}s', (e as Error).message);
+    }
+    return results;
+  }
+
+  static async countAiCallLogs(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM ai_call_logs');
+      let count: number = 0;
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  static async clearAiCallLogs(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('ai_call_logs');
+      await store.delete(predicates);
+    } catch (e) {
+      hilog.warn(DB_DOMAIN, 'AiCallLogger', 'AI 调用日志清空失败 %{public}s', (e as Error).message);
+    }
   }
 }

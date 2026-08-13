@@ -457,7 +457,7 @@ export struct SnakePage {
       this.aiStatus = 'AI 思考中…';
       const stateText: string = GameAIService.serializeSnake(this.snake, this.food, COLS, ROWS);
       const messages = GameAIService.buildMessages('Snake', this.difficulty, stateText);
-      const result = await GameAIService.decide(this.aiConfig, messages);
+      const result = await GameAIService.decide(this.aiConfig, messages, 'Snake');
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;
