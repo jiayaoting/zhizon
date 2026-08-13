@@ -54,8 +54,9 @@ export class GameAction {
 // AI 展示档位：速度索引 → 每步展示窗口（毫秒）
 export const AI_SPEED_OPTIONS: string[] = ['慢', '中', '快', '极速'];
 export const AI_SPEED_DELAYS: number[] = [800, 400, 200, 0];
-// 决策超时：与 LlmClient 非流式请求 readTimeout(60s) 对齐，超时主动取消底层请求，避免长时间挂起
-export const AI_DECISION_TIMEOUT: number = 60000;
+// 决策超时：单次 20 秒足够（正常响应远快于此）；超时后 decide 会自动重试一次，
+// 避免 netstack 连接池复用闲置连接导致的首次无响应拖到 60 秒
+export const AI_DECISION_TIMEOUT: number = 20000;
 
 export class GameAIService {
   // ---- 模型管理 ----
@@ -150,35 +151,53 @@ export class GameAIService {
 
   static async decide(config: LlmConfig, messages: ChatMessage[],
     timeoutMs: number = AI_DECISION_TIMEOUT): Promise<LlmResult> {
-    let settled: boolean = false;
-    // 使用流式请求（与聊天共用已验证的 requestInStream 路径）：
-    // 非流式 request 在无响应超时后底层连接会残留在全局连接池被反复复用，导致请求永远收不到数据。
-    // 流式请求事件驱动接收，超时主动 destroy 彻底中断，不受连接池残留影响。
     let fullContent: string = '';
-    const cancellable = LlmClient.postCompletionStreamCancelable(config, messages,
-      (delta: string) => {
-        fullContent = fullContent + delta;
-      },
-      (reasoningDelta: string) => {
-      });
+    let lastResult: LlmResult | null = null;
+    // 最多请求 2 次：netstack 连接池在复用闲置连接时首次请求可能无响应超时（日志规律），
+    // 超时后 destroy 会销毁坏连接，紧接着的重试走全新连接必定成功。
+    for (let attempt: number = 0; attempt < 2; attempt++) {
+      fullContent = '';
+      // 流式请求（与聊天共用已验证的 requestInStream 路径），事件驱动接收，
+      // 超时主动 destroy 彻底中断，不受连接池残留影响
+      const result = await GameAIService.decideOnce(config, messages, timeoutMs,
+        (delta: string) => {
+          fullContent = fullContent + delta;
+        });
+      if (result.success) {
+        if (fullContent.trim().length > 0) {
+          return new LlmResult(true, fullContent, '', '', result.reasoning);
+        }
+        return result;
+      }
+      lastResult = result;
+      // 非超时错误（鉴权/限流/网络异常）直接返回，不盲目重试
+      if (result.errorCode !== 'TIMEOUT' && result.errorCode !== 'DECISION_TIMEOUT' &&
+        result.errorCode !== 'CANCELLED') {
+        break;
+      }
+    }
+    if (lastResult !== null) return lastResult;
+    return new LlmResult(false, '', 'REQUEST_FAILED', 'AI 请求失败');
+  }
+
+  // 单次决策请求：超时主动取消底层请求
+  private static async decideOnce(config: LlmConfig, messages: ChatMessage[],
+    timeoutMs: number, onDelta: (delta: string) => void): Promise<LlmResult> {
+    let settled: boolean = false;
+    const cancellable = LlmClient.postCompletionStreamCancelable(config, messages, onDelta);
     return await new Promise<LlmResult>((resolve: (value: LlmResult) => void) => {
       const timer: number = setTimeout(() => {
         if (!settled) {
           settled = true;
           cancellable.cancel();
           resolve(new LlmResult(false, '', 'DECISION_TIMEOUT',
-            'AI 决策超时：思考型模型响应较慢，请稍候或换用非思考模型'));
+            'AI 决策超时：请稍候重试或换用非思考模型'));
         }
       }, timeoutMs);
       cancellable.promise.then((result: LlmResult) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          // 流式响应已实时累加 fullContent，以累加结果为准（避免结果对象 content 为空）
-          if (fullContent.trim().length > 0) {
-            resolve(new LlmResult(true, fullContent, '', '', result.reasoning));
-            return;
-          }
           resolve(result);
         }
       }).catch((e: Object) => {
