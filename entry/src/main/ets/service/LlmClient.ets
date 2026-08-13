@@ -47,7 +47,7 @@ export class LlmClient {
     let fullContent: string = '';
     let buffer: string = '';
     try {
-      const url: string = LlmClient.openAIUrl(config.baseUrl);
+      const url: string = LlmClient.openAIUrl(config);
       const header: Record<string, string> = {
         'Content-Type': 'application/json'
       };
@@ -130,7 +130,7 @@ export class LlmClient {
     let fullContent: string = '';
     let buffer: string = '';
     try {
-      const url: string = LlmClient.anthropicUrl(config.baseUrl);
+      const url: string = LlmClient.anthropicUrl(config);
       const header: Record<string, string> = {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01'
@@ -210,16 +210,24 @@ export class LlmClient {
 
   // ---- URL 规范化 ----
 
-  private static openAIUrl(baseUrl: string): string {
-    let url: string = baseUrl.trim();
+  private static openAIUrl(config: LlmConfig): string {
+    let url: string = config.baseUrl.trim();
+    if (config.useFullUrl) {
+      if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+      return url;
+    }
     if (url.endsWith('/')) url = url.substring(0, url.length - 1);
     if (url.endsWith('/chat/completions')) return url;
     if (url.endsWith('/v1')) return url + '/chat/completions';
     return url + '/chat/completions';
   }
 
-  private static anthropicUrl(baseUrl: string): string {
-    let url: string = baseUrl.trim();
+  private static anthropicUrl(config: LlmConfig): string {
+    let url: string = config.baseUrl.trim();
+    if (config.useFullUrl) {
+      if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+      return url;
+    }
     if (url.endsWith('/')) url = url.substring(0, url.length - 1);
     if (url.endsWith('/v1/messages')) return url;
     if (url.endsWith('/messages')) return url;

@@ -7,6 +7,18 @@ import { LlmClient } from '../service/LlmClient';
 import { API_FORMAT_LABELS, ApiFormat, LLM_PROVIDER_TEMPLATES, LlmConfig, LlmModelEntry,
   LlmProviderTemplate, LlmResult, modelDisplayName, providerTemplateById } from '../common/LlmModels';
 
+class ContextChipItem {
+  value: number;
+  selected: boolean;
+  field: 'in' | 'out';
+
+  constructor(value: number, selected: boolean, field: 'in' | 'out') {
+    this.value = value;
+    this.selected = selected;
+    this.field = field;
+  }
+}
+
 @Entry
 @Component
 struct ChatConfig {
@@ -38,6 +50,16 @@ struct ChatConfig {
   @State tempText: string = '0.7';
   @State maxTokensText: string = '4096';
   @State customModelInput: string = '';
+  // 自定义模型高级配置
+  @State useFullUrl: boolean = false;
+  @State advancedExpanded: boolean = false;
+  @State modelFamily: string = '';
+  @State contextTokensInText: string = '128000';
+  @State contextTokensOutText: string = '4096';
+  @State workersText: string = '1';
+  @State visionEnabled: boolean = false;
+  @State thinkingEnabled: boolean = false;
+  @State followDefaultConfig: boolean = true;
 
   aboutToAppear(): void {
     this.load();
@@ -70,6 +92,15 @@ struct ChatConfig {
     this.maxTokens = m.maxTokens || 4096;
     this.tempText = this.temperature.toFixed(1);
     this.maxTokensText = this.maxTokens.toString();
+    this.useFullUrl = m.useFullUrl || false;
+    this.advancedExpanded = false;
+    this.modelFamily = m.modelFamily || '';
+    this.contextTokensInText = (m.contextTokensIn || 128000).toString();
+    this.contextTokensOutText = (m.contextTokensOut || 4096).toString();
+    this.workersText = (m.workers || 1).toString();
+    this.visionEnabled = m.visionEnabled || false;
+    this.thinkingEnabled = m.thinkingEnabled || false;
+    this.followDefaultConfig = m.followDefaultConfig !== false;
     this.editing = true;
   }
 
@@ -116,6 +147,15 @@ struct ChatConfig {
     this.maxTokens = 4096;
     this.tempText = '0.7';
     this.maxTokensText = '4096';
+    this.useFullUrl = false;
+    this.advancedExpanded = false;
+    this.modelFamily = '';
+    this.contextTokensInText = '128000';
+    this.contextTokensOutText = '4096';
+    this.workersText = '1';
+    this.visionEnabled = false;
+    this.thinkingEnabled = false;
+    this.followDefaultConfig = true;
   }
 
   // ---- 表单辅助 ----
@@ -125,6 +165,9 @@ struct ChatConfig {
     this.baseUrl = template.baseUrl;
     this.model = template.defaultModel;
     this.apiFormat = template.apiFormat;
+    this.useFullUrl = false;
+    this.modelFamily = '';
+    this.followDefaultConfig = true;
     this.showProviderSheet = false;
   }
 
@@ -182,6 +225,17 @@ struct ChatConfig {
     config.temperature = this.temperature;
     config.apiFormat = this.apiFormat;
     config.maxTokens = this.maxTokens;
+    config.useFullUrl = this.useFullUrl;
+    config.modelFamily = this.modelFamily.trim();
+    const ctxIn: number = Number(this.contextTokensInText);
+    const ctxOut: number = Number(this.contextTokensOutText);
+    const workers: number = Number(this.workersText);
+    config.contextTokensIn = !Number.isNaN(ctxIn) && ctxIn > 0 ? ctxIn : 128000;
+    config.contextTokensOut = !Number.isNaN(ctxOut) && ctxOut > 0 ? ctxOut : 4096;
+    config.workers = !Number.isNaN(workers) && workers > 0 ? workers : 1;
+    config.visionEnabled = this.visionEnabled;
+    config.thinkingEnabled = this.thinkingEnabled;
+    config.followDefaultConfig = this.followDefaultConfig;
   }
 
   private async save(): Promise<void> {
@@ -218,6 +272,14 @@ struct ChatConfig {
     entry.temperature = config.temperature;
     entry.apiFormat = config.apiFormat;
     entry.maxTokens = config.maxTokens;
+    entry.useFullUrl = config.useFullUrl;
+    entry.modelFamily = config.modelFamily;
+    entry.contextTokensIn = config.contextTokensIn;
+    entry.contextTokensOut = config.contextTokensOut;
+    entry.workers = config.workers;
+    entry.visionEnabled = config.visionEnabled;
+    entry.thinkingEnabled = config.thinkingEnabled;
+    entry.followDefaultConfig = config.followDefaultConfig;
 
     let list: LlmModelEntry[] = this.models.concat([]);
     if (this.editingIndex >= 0) {
@@ -266,6 +328,26 @@ struct ChatConfig {
     const value: number = Number(text);
     if (!Number.isNaN(value) && value > 0 && value <= 200000) {
       this.maxTokens = value;
+    }
+  }
+
+  private onContextTokensInChange(text: string): void {
+    this.contextTokensInText = text;
+  }
+
+  private onContextTokensOutChange(text: string): void {
+    this.contextTokensOutText = text;
+  }
+
+  private onWorkersChange(text: string): void {
+    this.workersText = text;
+  }
+
+  private applyContextChip(field: 'in' | 'out', value: number): void {
+    if (field === 'in') {
+      this.contextTokensInText = value.toString();
+    } else {
+      this.contextTokensOutText = value.toString();
     }
   }
 
@@ -656,16 +738,224 @@ struct ChatConfig {
     .width('100%')
   }
 
+  @Builder
+  toggleRow(label: string, desc: string, checked: boolean, onChange: (value: boolean) => void) {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text(label)
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Medium)
+        if (desc.length > 0) {
+          Text(desc)
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+        }
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+      Toggle({ type: ToggleType.Switch, isOn: checked })
+        .selectedColor(this.palette.primary)
+        .switchPointColor(Color.White)
+        .onChange(onChange)
+    }
+    .width('100%')
+    .padding(12)
+    .borderRadius(8)
+    .backgroundColor(this.palette.bgSurface)
+    .border({ width: 1, color: this.palette.borderSubtle })
+  }
+
+  private contextChipLabel(chip: number): string {
+    return chip >= 1000 ? (chip / 1000).toFixed(0) + 'k' : chip.toString();
+  }
+
+  private buildContextChipItems(text: string, chips: number[], field: 'in' | 'out'): ContextChipItem[] {
+    const items: ContextChipItem[] = [];
+    for (let i: number = 0; i < chips.length; i++) {
+      const value: number = chips[i];
+      items.push(new ContextChipItem(value, text === value.toString(), field));
+    }
+    return items;
+  }
+
+  @Builder
+  contextTokenField(label: string, placeholder: string, text: string,
+    chips: number[], onChange: (value: string) => void, field: 'in' | 'out') {
+    Column({ space: 8 }) {
+      Text(label)
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+      Row({ space: 8 }) {
+        TextInput({ text: text, placeholder: placeholder })
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .placeholderColor(this.palette.textTertiary)
+          .backgroundColor(this.palette.bgSurface2)
+          .borderRadius(8)
+          .border({ width: 1, color: this.palette.borderSubtle })
+          .height(40)
+          .type(InputType.Number)
+          .layoutWeight(1)
+          .onChange(onChange)
+        ForEach(this.buildContextChipItems(text, chips, field), (item: ContextChipItem) => {
+          Text(this.contextChipLabel(item.value))
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(item.selected ? Color.White : this.palette.textSecondary)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius(6)
+            .backgroundColor(item.selected ? this.palette.primary : this.palette.bgSurface2)
+            .onClick(() => { this.applyContextChip(item.field, item.value); })
+        }, (item: ContextChipItem) => item.value.toString())
+      }
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  @Builder
+  advancedSection() {
+    Column({ space: 12 }) {
+      // 展开/折叠头部
+      Row({ space: 10 }) {
+        Column({ space: 2 }) {
+          Text('高级配置')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
+          Text('模型系列、上下文窗口、特殊能力等')
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Text(this.advancedExpanded ? '▲' : '▼')
+          .fontSize(12)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+      }
+      .width('100%')
+      .padding(12)
+      .borderRadius(8)
+      .backgroundColor(this.palette.bgSurface)
+      .border({ width: 1, color: this.palette.borderSubtle })
+      .onClick(() => { this.advancedExpanded = !this.advancedExpanded; })
+
+      if (this.advancedExpanded) {
+        // 温度
+        Column({ space: 6 }) {
+          this.rowLabel('温度（0-2，越高越随机）', '当前：' + this.tempText)
+          TextInput({ text: this.tempText, placeholder: '0.7' })
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .placeholderColor(this.palette.textTertiary)
+            .backgroundColor(this.palette.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .height(44)
+            .type(InputType.Number)
+            .width('100%')
+            .onChange((value: string) => { this.onTempTextChange(value); })
+        }
+        .width('100%')
+
+        // max_tokens（Anthropic 格式时显示）
+        if (this.apiFormat === 'anthropic') {
+          Column({ space: 6 }) {
+            this.rowLabel('max_tokens', '最大输出 Token 数（1-200000）')
+            TextInput({ text: this.maxTokensText, placeholder: '4096' })
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .placeholderColor(this.palette.textTertiary)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(8)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .height(44)
+              .type(InputType.Number)
+              .width('100%')
+              .onChange((value: string) => { this.onMaxTokensChange(value); })
+          }
+          .width('100%')
+        }
+
+        // 模型系列
+        Column({ space: 6 }) {
+          this.rowLabel('模型系列', '针对特定模型系列优化 Prompt 和超参，未选择时使用默认配置')
+          TextInput({ text: this.modelFamily, placeholder: '默认' })
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .placeholderColor(this.palette.textTertiary)
+            .backgroundColor(this.palette.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .height(44)
+            .width('100%')
+            .onChange((value: string) => { this.modelFamily = value; })
+        }
+        .width('100%')
+
+        // 上下文窗口
+        this.contextTokenField('上下文窗口（Token）· 输入', '请输入数值，留空则使用最佳默认值',
+          this.contextTokensInText, [128000, 256000, 512000, 1000000],
+          (value: string) => { this.onContextTokensInChange(value); }, 'in')
+        this.contextTokenField('上下文窗口（Token）· 输出', '请输入数值，留空则使用最佳默认值',
+          this.contextTokensOutText, [4096, 16384, 32768, 128000],
+          (value: string) => { this.onContextTokensOutChange(value); }, 'out')
+
+        // 工作线程数
+        Column({ space: 6 }) {
+          this.rowLabel('工作线程数', '并发请求数，通常保持 1')
+          TextInput({ text: this.workersText, placeholder: '1' })
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .placeholderColor(this.palette.textTertiary)
+            .backgroundColor(this.palette.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .height(44)
+            .type(InputType.Number)
+            .width('100%')
+            .onChange((value: string) => { this.onWorkersChange(value); })
+        }
+        .width('100%')
+
+        // 能力开关
+        this.toggleRow('支持图片输入', '开启后模型可接收图片消息', this.visionEnabled,
+          (value: boolean) => { this.visionEnabled = value; })
+        this.toggleRow('思考模式', '适用于 Claude 等支持 extended thinking 的模型', this.thinkingEnabled,
+          (value: boolean) => { this.thinkingEnabled = value; })
+        this.toggleRow('跟随模型默认配置', '使用模型官方推荐的默认参数', this.followDefaultConfig,
+          (value: boolean) => { this.followDefaultConfig = value; })
+      }
+    }
+    .width('100%')
+  }
+
   // ---- 编辑表单 ----
 
   @Builder
   editForm() {
     Scroll() {
       Column({ space: 16 }) {
-        // 显示名称
+        // 显示名称 / 模型展示名称
         Column({ space: 6 }) {
-          this.rowLabel('显示名称', '对话中显示的模型名字，留空自动使用服务商 + 模型名')
-          TextInput({ text: this.displayName, placeholder: '如：我的 DeepSeek' })
+          this.rowLabel(this.isCustomProvider() ? '模型展示名称' : '显示名称',
+            this.isCustomProvider()
+              ? '在模型列表中展示的名称，未设置时默认显示模型 ID'
+              : '对话中显示的模型名字，留空自动使用服务商 + 模型名')
+          TextInput({ text: this.displayName, placeholder: this.isCustomProvider() ? '如我的自定义模型' : '如：我的 DeepSeek' })
             .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
@@ -727,26 +1017,51 @@ struct ChatConfig {
           .width('100%')
         }
 
-        // 接口地址
+        // 接口地址 / 自定义请求地址
         Column({ space: 6 }) {
-          this.rowLabel('接口地址 (Base URL)',
+          this.rowLabel(this.isCustomProvider() ? '自定义请求地址' : '接口地址 (Base URL)',
             this.apiFormat === 'anthropic' ? '如 https://api.anthropic.com' : '如 https://api.deepseek.com/v1')
-          TextInput({ text: this.baseUrl, placeholder: 'https://api.example.com' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .height(44)
-            .onChange((value: string) => { this.baseUrl = value; })
+          Row({ space: 8 }) {
+            TextInput({ text: this.baseUrl, placeholder: 'https://api.example.com' })
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .placeholderColor(this.palette.textTertiary)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(8)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .height(44)
+              .layoutWeight(1)
+              .onChange((value: string) => { this.baseUrl = value; })
+            if (this.isCustomProvider()) {
+              Row({ space: 4 }) {
+                Text('完整 URL')
+                  .fontSize(10)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textSecondary)
+                Toggle({ type: ToggleType.Switch, isOn: this.useFullUrl })
+                  .selectedColor(this.palette.primary)
+                  .switchPointColor(Color.White)
+                  .onChange((value: boolean) => { this.useFullUrl = value; })
+              }
+            }
+          }
+          .width('100%')
+          if (this.isCustomProvider()) {
+            Text(this.useFullUrl
+              ? '已开启完整 URL，将不会自动补全 /chat/completions 或 /v1/messages 路径'
+              : '关闭时系统会自动补全 /chat/completions 或 /v1/messages 路径')
+              .fontSize(10)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .width('100%')
+          }
         }
         .width('100%')
 
-        // API Key
+        // API Key / API 密钥
         Column({ space: 6 }) {
-          this.rowLabel('API Key',
+          this.rowLabel(this.isCustomProvider() ? 'API 密钥' : 'API Key',
             this.isLocalProvider() ? '本地服务无需填写' :
               (this.apiFormat === 'anthropic' ? '使用 x-api-key 请求头' : '仅加密保存在本机，不会上传'))
           Row({ space: 8 }) {
@@ -781,11 +1096,12 @@ struct ChatConfig {
         }
         .width('100%')
 
-        // 模型
+        // 模型 / 模型 ID
         Column({ space: 6 }) {
-          this.rowLabel('模型名称', '推荐使用模板默认模型')
-          Row() {
-            TextInput({ text: this.model, placeholder: 'deepseek-chat' })
+          this.rowLabel(this.isCustomProvider() ? '模型 ID' : '模型名称',
+            this.isCustomProvider() ? '输入模型 ID' : '推荐使用模板默认模型')
+          if (this.isCustomProvider()) {
+            TextInput({ text: this.model, placeholder: '如 deepseek-chat' })
               .fontSize(this.palette.fsSm)
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
@@ -794,26 +1110,64 @@ struct ChatConfig {
               .borderRadius(8)
               .border({ width: 1, color: this.palette.borderSubtle })
               .height(44)
-              .layoutWeight(1)
+              .width('100%')
               .onChange((value: string) => { this.model = value; })
-              .onClick(() => {})
-            Text('∨')
-              .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .padding(10)
+          } else {
+            Row() {
+              TextInput({ text: this.model, placeholder: 'deepseek-chat' })
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .placeholderColor(this.palette.textTertiary)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(8)
+                .border({ width: 1, color: this.palette.borderSubtle })
+                .height(44)
+                .layoutWeight(1)
+                .onChange((value: string) => { this.model = value; })
+                .onClick(() => {})
+              Text('∨')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+                .padding(10)
+            }
+            .width('100%')
+            .borderRadius(8)
+            .onClick(() => { this.showModelSheet = true; })
           }
-          .width('100%')
-          .borderRadius(8)
-          .onClick(() => { this.showModelSheet = true; })
         }
         .width('100%')
 
-        // max_tokens（Anthropic 格式时显示）
-        if (this.apiFormat === 'anthropic') {
+        // 高级配置（仅自定义，默认折叠）
+        if (this.isCustomProvider()) {
+          this.advancedSection()
+        }
+
+        // 温度与 max_tokens（非自定义模板直接显示）
+        if (!this.isCustomProvider()) {
+          if (this.apiFormat === 'anthropic') {
+            Column({ space: 6 }) {
+              this.rowLabel('max_tokens', '最大输出 Token 数（1-200000）')
+              TextInput({ text: this.maxTokensText, placeholder: '4096' })
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .placeholderColor(this.palette.textTertiary)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(8)
+                .border({ width: 1, color: this.palette.borderSubtle })
+                .height(44)
+                .type(InputType.Number)
+                .width('100%')
+                .onChange((value: string) => { this.onMaxTokensChange(value); })
+            }
+            .width('100%')
+          }
+
           Column({ space: 6 }) {
-            this.rowLabel('max_tokens', '最大输出 Token 数（1-200000）')
-            TextInput({ text: this.maxTokensText, placeholder: '4096' })
+            this.rowLabel('温度（0-2，越高越随机）', '当前：' + this.tempText)
+            TextInput({ text: this.tempText, placeholder: '0.7' })
               .fontSize(this.palette.fsSm)
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textPrimary)
@@ -824,28 +1178,10 @@ struct ChatConfig {
               .height(44)
               .type(InputType.Number)
               .width('100%')
-              .onChange((value: string) => { this.onMaxTokensChange(value); })
+              .onChange((value: string) => { this.onTempTextChange(value); })
           }
           .width('100%')
         }
-
-        // 温度
-        Column({ space: 6 }) {
-          this.rowLabel('温度（0-2，越高越随机）', '当前：' + this.tempText)
-          TextInput({ text: this.tempText, placeholder: '0.7' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .height(44)
-            .type(InputType.Number)
-            .width('100%')
-            .onChange((value: string) => { this.onTempTextChange(value); })
-        }
-        .width('100%')
 
         // 按钮
         Row({ space: 12 }) {

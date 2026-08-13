@@ -66,6 +66,15 @@ export class LlmConfig {
   temperature: number = 0.7;
   apiFormat: ApiFormat = 'openai';
   maxTokens: number = 4096;
+  // 自定义模型高级配置
+  useFullUrl: boolean = false;
+  modelFamily: string = '';
+  contextTokensIn: number = 128000;
+  contextTokensOut: number = 4096;
+  workers: number = 1;
+  visionEnabled: boolean = false;
+  thinkingEnabled: boolean = false;
+  followDefaultConfig: boolean = true;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -88,6 +97,15 @@ export class LlmModelEntry {
   temperature: number = 0.7;
   apiFormat: ApiFormat = 'openai';
   maxTokens: number = 4096;
+  // 自定义模型高级配置
+  useFullUrl: boolean = false;
+  modelFamily: string = '';
+  contextTokensIn: number = 128000;
+  contextTokensOut: number = 4096;
+  workers: number = 1;
+  visionEnabled: boolean = false;
+  thinkingEnabled: boolean = false;
+  followDefaultConfig: boolean = true;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -111,6 +129,14 @@ export function entryToConfig(entry: LlmModelEntry): LlmConfig {
   config.temperature = entry.temperature;
   config.apiFormat = entry.apiFormat;
   config.maxTokens = entry.maxTokens;
+  config.useFullUrl = entry.useFullUrl;
+  config.modelFamily = entry.modelFamily;
+  config.contextTokensIn = entry.contextTokensIn;
+  config.contextTokensOut = entry.contextTokensOut;
+  config.workers = entry.workers;
+  config.visionEnabled = entry.visionEnabled;
+  config.thinkingEnabled = entry.thinkingEnabled;
+  config.followDefaultConfig = entry.followDefaultConfig;
   return config;
 }
 
@@ -226,9 +252,20 @@ export class StoredLlmConfig {
   temperature: number;
   apiFormat: string;
   maxTokens: number;
+  useFullUrl: boolean;
+  modelFamily: string;
+  contextTokensIn: number;
+  contextTokensOut: number;
+  workers: number;
+  visionEnabled: boolean;
+  thinkingEnabled: boolean;
+  followDefaultConfig: boolean;
 
   constructor(id: string, displayName: string, providerId: string, baseUrl: string, model: string,
-    temperature: number, apiFormat: string = 'openai', maxTokens: number = 4096) {
+    temperature: number, apiFormat: string = 'openai', maxTokens: number = 4096,
+    useFullUrl: boolean = false, modelFamily: string = '', contextTokensIn: number = 128000,
+    contextTokensOut: number = 4096, workers: number = 1, visionEnabled: boolean = false,
+    thinkingEnabled: boolean = false, followDefaultConfig: boolean = true) {
     this.id = id;
     this.displayName = displayName;
     this.providerId = providerId;
@@ -237,6 +274,14 @@ export class StoredLlmConfig {
     this.temperature = temperature;
     this.apiFormat = apiFormat;
     this.maxTokens = maxTokens;
+    this.useFullUrl = useFullUrl;
+    this.modelFamily = modelFamily;
+    this.contextTokensIn = contextTokensIn;
+    this.contextTokensOut = contextTokensOut;
+    this.workers = workers;
+    this.visionEnabled = visionEnabled;
+    this.thinkingEnabled = thinkingEnabled;
+    this.followDefaultConfig = followDefaultConfig;
   }
 }
 

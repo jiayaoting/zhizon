@@ -251,7 +251,8 @@ struct Chat {
     this.streamingContent = '';
     this.scrollToBottom();
 
-    const history: ChatMessage[] = ChatRepository.requestMessages(newMessages.slice(0, newMessages.length - 1));
+    const history: ChatMessage[] = ChatRepository.requestMessages(
+      newMessages.slice(0, newMessages.length - 1), config.contextTokensIn);
     const result: LlmResult = await LlmClient.postCompletionStream(config, history, (delta: string) => {
       // 流式增量更新：仅修改 @Observed ChatMessage 的 content 属性
       // MessageBubble 子组件通过 @ObjectLink 自动感知变化，无需重建整个 messages 数组

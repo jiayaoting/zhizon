@@ -39,7 +39,8 @@ export class ChatRepository {
     for (let i: number = 0; i < models.length; i++) {
       const m: LlmModelEntry = models[i];
       stored.push(new StoredLlmConfig(m.id, m.displayName, m.providerId, m.baseUrl, m.model,
-        m.temperature, m.apiFormat, m.maxTokens));
+        m.temperature, m.apiFormat, m.maxTokens, m.useFullUrl, m.modelFamily, m.contextTokensIn,
+        m.contextTokensOut, m.workers, m.visionEnabled, m.thinkingEnabled, m.followDefaultConfig));
       if (m.apiKey.trim().length > 0) {
         keys[m.id] = await CryptoHelper.encrypt(m.apiKey.trim());
       } else {
@@ -119,6 +120,14 @@ export class ChatRepository {
       if (typeof item.temperature === 'number') entry.temperature = item.temperature as number;
       if (typeof item.apiFormat === 'string') entry.apiFormat = item.apiFormat as ApiFormat;
       if (typeof item.maxTokens === 'number') entry.maxTokens = item.maxTokens as number;
+      if (typeof item.useFullUrl === 'boolean') entry.useFullUrl = item.useFullUrl as boolean;
+      if (typeof item.modelFamily === 'string') entry.modelFamily = item.modelFamily as string;
+      if (typeof item.contextTokensIn === 'number') entry.contextTokensIn = item.contextTokensIn as number;
+      if (typeof item.contextTokensOut === 'number') entry.contextTokensOut = item.contextTokensOut as number;
+      if (typeof item.workers === 'number') entry.workers = item.workers as number;
+      if (typeof item.visionEnabled === 'boolean') entry.visionEnabled = item.visionEnabled as boolean;
+      if (typeof item.thinkingEnabled === 'boolean') entry.thinkingEnabled = item.thinkingEnabled as boolean;
+      if (typeof item.followDefaultConfig === 'boolean') entry.followDefaultConfig = item.followDefaultConfig as boolean;
       const enc: string = keys[entry.id];
       if (enc !== undefined && enc.length > 0) {
         try {
@@ -207,8 +216,8 @@ export class ChatRepository {
   // 转换为请求上下文：
   // - 跳过 system role（应通过专门的 systemPrompt 参数注入，此处仅保留 user/assistant）
   // - 按字符数估算 token（总字符数 / 4），从最新向前累加直到接近 maxTokens 的 80%
-  // - 默认 maxTokens 上下文窗口为 8000 token，可由调用方覆盖
-  static requestMessages(history: ChatMessage[], maxContextTokens: number = 8000): ChatMessage[] {
+  // - 默认使用模型配置的 contextTokensIn 作为上下文窗口，可由调用方覆盖
+  static requestMessages(history: ChatMessage[], maxContextTokens: number = 128000): ChatMessage[] {
     const conversation: ChatMessage[] = history.filter((m: ChatMessage): boolean =>
       m.role === 'user' || m.role === 'assistant');
     const tokenBudget: number = Math.floor(maxContextTokens * 0.8);
