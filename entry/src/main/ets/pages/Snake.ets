@@ -9,11 +9,14 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
+import { GameAIPanel } from '../components/GameAIPanel';
+import { GameAIService, GameAction, AI_SPEED_DELAYS, SnakePoint } from '../service/GameAIService';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 const COLS: number = 16;
 const ROWS: number = 16;
 
-interface Point {
+interface Point extends SnakePoint {
   x: number;
   y: number;
 }
@@ -49,6 +52,17 @@ export struct SnakePage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // ---- AI 托管 ----
+  @State aiRunning: boolean = false;
+  @State aiStatus: string = '';
+  @State aiModelNames: string[] = [];
+  @State aiModelIndex: number = 0;
+  @State aiSpeedIndex: number = 2;
+  @State aiModelsConfigured: boolean = true;
+  private aiModels: LlmModelEntry[] = [];
+  private aiConfig: LlmConfig | null = null;
+  private aiLoopActive: boolean = false;
+  private aiFailCount: number = 0;
 
   private timerId: number = -1;
   private titleText: string = '贪吃蛇';
@@ -276,6 +290,7 @@ export struct SnakePage {
   }
 
   restartGame(): void {
+    this.stopAi();
     this.stopTimer();
     this.initGame();
     this.isStarted = true;
@@ -295,6 +310,12 @@ export struct SnakePage {
 
   togglePause(): void {
     if (this.isGameOver || !this.isStarted) return;
+    if (this.aiRunning) {
+      this.isPaused = true;
+      this.stopAi();
+      this.autoPaused = false;
+      return;
+    }
     this.isPaused = !this.isPaused;
     this.autoPaused = false;
     if (this.isPaused) {
@@ -306,6 +327,7 @@ export struct SnakePage {
 
   // ---- 页面隐藏时自动暂停 ----
   onPageHide(): void {
+    this.stopAi();
     if (!this.isPaused && !this.isGameOver && this.isStarted) {
       this.autoPaused = true;
       this.isPaused = true;
@@ -343,6 +365,122 @@ export struct SnakePage {
   private async loadBestScore(): Promise<void> {
     const best: number = await DataRepository.getGameHighScore('Snake');
     this.bestScore = best;
+  }
+
+  // ---- AI 托管（AI 决策期间冻结移动计时器，避免蛇在 AI 思考时撞墙） ----
+  private async initAiPanel(): Promise<void> {
+    this.aiModels = await GameAIService.loadModelOptions();
+    const names: string[] = [];
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      names.push(GameAIService.modelLabel(this.aiModels[i]));
+    }
+    this.aiModelNames = names;
+    this.aiModelsConfigured = this.aiModels.length > 0;
+    if (this.aiModelsConfigured) {
+      this.aiConfig = await GameAIService.loadConfig(this.aiModels[this.aiModelIndex].id);
+    } else {
+      this.aiConfig = null;
+    }
+  }
+
+  private async toggleAi(): Promise<void> {
+    if (this.aiRunning) {
+      this.stopAi();
+      return;
+    }
+    if (!this.aiModelsConfigured) {
+      promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+      return;
+    }
+    if (this.aiConfig === null) {
+      promptAction.showToast({ message: '模型配置无效，请检查 AI 设置' });
+      return;
+    }
+    if (!this.gameStarted) return;
+    if (this.isGameOver) {
+      this.restartGame();
+    }
+    this.isPaused = false;
+    this.isStarted = true;
+    this.aiFailCount = 0;
+    this.aiRunning = true;
+    this.aiStatus = 'AI 准备中…';
+    this.stopTimer();
+    this.aiLoop().catch((e: Object) => {
+      this.stopAi();
+    });
+  }
+
+  private stopAi(): void {
+    this.aiRunning = false;
+    this.aiLoopActive = false;
+    this.aiStatus = '';
+    if (this.gameStarted && !this.isGameOver && !this.isPaused) {
+      this.startTimer();
+    }
+  }
+
+  private selectAiModel(index: number): void {
+    if (this.aiRunning) return;
+    this.aiModelIndex = index;
+    if (this.aiModels.length > index) {
+      GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        this.aiConfig = config;
+      });
+    }
+  }
+
+  private changeAiSpeed(index: number): void {
+    if (this.aiRunning) return;
+    this.aiSpeedIndex = index;
+  }
+
+  // AI 决策循环：冻结移动，每轮 决策 → 转向 → 展示窗口 → 手动走一步
+  private async aiLoop(): Promise<void> {
+    if (!this.aiRunning || this.aiLoopActive) return;
+    this.aiLoopActive = true;
+    while (this.aiRunning) {
+      if (this.isGameOver || this.isPaused) break;
+      if (this.aiConfig === null) break;
+      this.aiStatus = 'AI 思考中…';
+      const stateText: string = GameAIService.serializeSnake(this.snake, this.food, COLS, ROWS);
+      const messages = GameAIService.buildMessages('Snake', this.difficulty, stateText);
+      const result = await GameAIService.decide(this.aiConfig, messages);
+      if (!this.aiRunning) break;
+      if (!result.success) {
+        this.aiFailCount += 1;
+        if (this.aiFailCount >= 3) {
+          this.aiStatus = 'AI 模型不稳定，已退出';
+          this.stopAi();
+          promptAction.showToast({ message: 'AI 连续失败，已停止托管' });
+          break;
+        }
+        continue;
+      }
+      this.aiFailCount = 0;
+      const action: GameAction | null = GameAIService.parseAction('Snake', result.content);
+      if (action === null) continue;
+      this.aiStatus = 'AI 执行 ' + action.command;
+      if (action.command === 'UP') this.changeDirection(Direction.UP);
+      else if (action.command === 'DOWN') this.changeDirection(Direction.DOWN);
+      else if (action.command === 'LEFT') this.changeDirection(Direction.LEFT);
+      else if (action.command === 'RIGHT') this.changeDirection(Direction.RIGHT);
+      if (this.isGameOver || this.isPaused) break;
+      if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);
+        });
+      }
+      if (this.isGameOver || this.isPaused) break;
+      // 展示窗口结束后手动走一步，保持游戏节奏
+      this.moveSnake();
+      if (this.isGameOver) break;
+    }
+    this.aiLoopActive = false;
+    if (this.aiRunning) {
+      this.aiRunning = false;
+      this.aiStatus = this.isGameOver ? 'AI 结束：游戏已终局' : 'AI 已暂停';
+    }
   }
 
   // ---- 棋盘渲染 ----
@@ -812,9 +950,11 @@ export struct SnakePage {
     }
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
+    this.initAiPanel();
   }
 
   aboutToDisappear(): void {
+    this.stopAi();
     this.stopTimer();
     // 中途退出时保存当前分数
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
@@ -899,7 +1039,7 @@ export struct SnakePage {
               .gesture(
                 PanGesture({ fingers: 1, direction: PanDirection.All, distance: 10 })
                   .onActionEnd((event: GestureEvent) => {
-                    if (this.isGameOver || this.isPaused) return;
+                    if (this.aiRunning || this.isGameOver || this.isPaused) return;
                     const ox: number = event.offsetX;
                     const oy: number = event.offsetY;
                     const absX: number = Math.abs(ox);
@@ -920,6 +1060,18 @@ export struct SnakePage {
             .width(this.boardSide())
             .height(this.boardSide())
             .alignContent(Alignment.Center)
+
+            GameAIPanel({
+              modelNames: this.aiModelNames,
+              selectedModelIndex: this.aiModelIndex,
+              running: this.aiRunning,
+              status: this.aiStatus,
+              speedIndex: this.aiSpeedIndex,
+              modelsConfigured: this.aiModelsConfigured,
+              onSelectModel: (index: number): void => { this.selectAiModel(index); },
+              onToggleRun: (): void => { this.toggleAi(); },
+              onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+            })
 
             Column({ space: 8 }) {
               this.directionPad()
@@ -945,7 +1097,7 @@ export struct SnakePage {
                 .gesture(
                   PanGesture({ fingers: 1, direction: PanDirection.All, distance: 10 })
                     .onActionEnd((event: GestureEvent) => {
-                      if (this.isGameOver || this.isPaused) return;
+                      if (this.aiRunning || this.isGameOver || this.isPaused) return;
                       const ox: number = event.offsetX;
                       const oy: number = event.offsetY;
                       const absX: number = Math.abs(ox);
@@ -972,7 +1124,21 @@ export struct SnakePage {
             .alignItems(HorizontalAlign.Center)
 
             Scroll() {
-              this.infoPanel()
+              Column({ space: 12 }) {
+                GameAIPanel({
+                  modelNames: this.aiModelNames,
+                  selectedModelIndex: this.aiModelIndex,
+                  running: this.aiRunning,
+                  status: this.aiStatus,
+                  speedIndex: this.aiSpeedIndex,
+                  modelsConfigured: this.aiModelsConfigured,
+                  onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                  onToggleRun: (): void => { this.toggleAi(); },
+                  onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+                })
+                this.infoPanel()
+              }
+              .width('100%')
             }
             .layoutWeight(1)
             .scrollBar(BarState.Off)
@@ -1002,6 +1168,7 @@ export struct SnakePage {
           this.restartGame();
           return;
         }
+        if (this.aiRunning) return;
         if (this.isGameOver || this.isPaused) return;
         if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
           this.changeDirection(Direction.LEFT);

@@ -9,6 +9,9 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
+import { GameAIPanel } from '../components/GameAIPanel';
+import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAIService';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 const COLS: number = 10;
 const ROWS: number = 20;
@@ -96,6 +99,17 @@ export struct TetrisPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // ---- AI 托管 ----
+  @State aiRunning: boolean = false;
+  @State aiStatus: string = '';
+  @State aiModelNames: string[] = [];
+  @State aiModelIndex: number = 0;
+  @State aiSpeedIndex: number = 2;
+  @State aiModelsConfigured: boolean = true;
+  private aiModels: LlmModelEntry[] = [];
+  private aiConfig: LlmConfig | null = null;
+  private aiLoopActive: boolean = false;
+  private aiFailCount: number = 0;
 
   private timerId: number = -1;
   private titleText: string = '俄罗斯方块';
@@ -426,6 +440,7 @@ export struct TetrisPage {
   }
 
   restartGame(): void {
+    this.stopAi();
     this.initBoard();
     this.score = 0;
     this.level = 1;
@@ -453,6 +468,12 @@ export struct TetrisPage {
 
   togglePause(): void {
     if (this.isGameOver) return;
+    if (this.aiRunning) {
+      this.isPaused = true;
+      this.stopAi();
+      this.autoPaused = false;
+      return;
+    }
     this.isPaused = !this.isPaused;
     this.autoPaused = false;
     if (!this.isPaused) {
@@ -462,6 +483,7 @@ export struct TetrisPage {
 
   // ---- 页面隐藏时自动暂停 ----
   onPageHide(): void {
+    this.stopAi();
     if (!this.isPaused && !this.isGameOver && this.gameStarted) {
       this.autoPaused = true;
       this.isPaused = true;
@@ -499,6 +521,126 @@ export struct TetrisPage {
   private async loadBestScore(): Promise<void> {
     const best: number = await DataRepository.getGameHighScore('Tetris');
     this.bestScore = best;
+  }
+
+  // ---- AI 托管（AI 决策期间冻结重力计时器，避免方块在 AI 思考时落地） ----
+  private async initAiPanel(): Promise<void> {
+    this.aiModels = await GameAIService.loadModelOptions();
+    const names: string[] = [];
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      names.push(GameAIService.modelLabel(this.aiModels[i]));
+    }
+    this.aiModelNames = names;
+    this.aiModelsConfigured = this.aiModels.length > 0;
+    if (this.aiModelsConfigured) {
+      this.aiConfig = await GameAIService.loadConfig(this.aiModels[this.aiModelIndex].id);
+    } else {
+      this.aiConfig = null;
+    }
+  }
+
+  private async toggleAi(): Promise<void> {
+    if (this.aiRunning) {
+      this.stopAi();
+      return;
+    }
+    if (!this.aiModelsConfigured) {
+      promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+      return;
+    }
+    if (this.aiConfig === null) {
+      promptAction.showToast({ message: '模型配置无效，请检查 AI 设置' });
+      return;
+    }
+    if (!this.gameStarted) return;
+    if (this.isGameOver) {
+      this.restartGame();
+    }
+    this.isPaused = false;
+    this.aiFailCount = 0;
+    this.aiRunning = true;
+    this.aiStatus = 'AI 准备中…';
+    this.stopTimer();
+    this.aiLoop().catch((e: Object) => {
+      this.stopAi();
+    });
+  }
+
+  private stopAi(): void {
+    this.aiRunning = false;
+    this.aiLoopActive = false;
+    this.aiStatus = '';
+    if (this.gameStarted && !this.isGameOver && !this.isPaused) {
+      this.startTimer();
+    }
+  }
+
+  private selectAiModel(index: number): void {
+    if (this.aiRunning) return;
+    this.aiModelIndex = index;
+    if (this.aiModels.length > index) {
+      GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        this.aiConfig = config;
+      });
+    }
+  }
+
+  private changeAiSpeed(index: number): void {
+    if (this.aiRunning) return;
+    this.aiSpeedIndex = index;
+  }
+
+  // AI 决策循环：冻结重力，每轮 决策 → 执行动作 → 展示窗口 → 手动推进一格
+  private async aiLoop(): Promise<void> {
+    if (!this.aiRunning || this.aiLoopActive) return;
+    this.aiLoopActive = true;
+    while (this.aiRunning) {
+      if (this.isGameOver || this.isPaused) break;
+      if (this.aiConfig === null) break;
+      const p: Piece | null = this.currentPiece;
+      if (p === null) break;
+      this.aiStatus = 'AI 思考中…';
+      const stateText: string = GameAIService.serializeTetris(this.board, p.type, p.rotation, p.x, p.y,
+        this.nextType, this.score, this.level);
+      const messages = GameAIService.buildMessages('Tetris', this.difficulty, stateText);
+      const result = await GameAIService.decide(this.aiConfig, messages);
+      if (!this.aiRunning) break;
+      if (!result.success) {
+        this.aiFailCount += 1;
+        if (this.aiFailCount >= 3) {
+          this.aiStatus = 'AI 模型不稳定，已退出';
+          this.stopAi();
+          promptAction.showToast({ message: 'AI 连续失败，已停止托管' });
+          break;
+        }
+        continue;
+      }
+      this.aiFailCount = 0;
+      const action: GameAction | null = GameAIService.parseAction('Tetris', result.content);
+      if (action === null) continue;
+      this.aiStatus = 'AI 执行 ' + action.command;
+      if (action.command === 'LEFT') this.moveLeft();
+      else if (action.command === 'RIGHT') this.moveRight();
+      else if (action.command === 'ROTATE') this.rotatePiece();
+      else if (action.command === 'SOFT_DROP') this.softDrop();
+      else if (action.command === 'HARD_DROP') this.hardDrop();
+      else if (action.command === 'HOLD') this.holdPiece();
+      if (this.isGameOver || this.isPaused || this.currentPiece === null) break;
+      if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);
+        });
+      }
+      if (this.isGameOver || this.isPaused || this.currentPiece === null) break;
+      // 展示窗口结束后手动推进一格，保持游戏节奏
+      this.drop();
+      if (this.isGameOver) break;
+    }
+    this.aiLoopActive = false;
+    if (this.aiRunning) {
+      this.aiRunning = false;
+      this.aiStatus = this.isGameOver ? 'AI 结束：游戏已终局' : 'AI 已暂停';
+    }
   }
 
   // ---- 获取合并后的棋盘（含当前活动方块与落点投影） ----
@@ -970,9 +1112,11 @@ export struct TetrisPage {
     }
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
+    this.initAiPanel();
   }
 
   aboutToDisappear(): void {
+    this.stopAi();
     this.stopTimer();
     // 中途退出时保存当前分数
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
@@ -1127,6 +1271,18 @@ export struct TetrisPage {
           .borderRadius(8)
           .border({ width: 1, color: this.palette.borderSubtle })
 
+          GameAIPanel({
+            modelNames: this.aiModelNames,
+            selectedModelIndex: this.aiModelIndex,
+            running: this.aiRunning,
+            status: this.aiStatus,
+            speedIndex: this.aiSpeedIndex,
+            modelsConfigured: this.aiModelsConfigured,
+            onSelectModel: (index: number): void => { this.selectAiModel(index); },
+            onToggleRun: (): void => { this.toggleAi(); },
+            onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+          })
+
           // 棋盘
           Stack() {
             Column() {
@@ -1135,7 +1291,7 @@ export struct TetrisPage {
             .gesture(
               PanGesture({ fingers: 1, direction: PanDirection.All, distance: 5 })
                 .onActionEnd((event: GestureEvent) => {
-                  if (this.isGameOver || this.isPaused) return;
+                  if (this.aiRunning || this.isGameOver || this.isPaused) return;
                   const offsetX: number = event.offsetX;
                   const offsetY: number = event.offsetY;
                   if (Math.abs(offsetX) > Math.abs(offsetY)) {
@@ -1175,7 +1331,7 @@ export struct TetrisPage {
             .gesture(
               PanGesture({ fingers: 1, direction: PanDirection.All, distance: 5 })
                 .onActionEnd((event: GestureEvent) => {
-                  if (this.isGameOver || this.isPaused) return;
+                  if (this.aiRunning || this.isGameOver || this.isPaused) return;
                   const offsetX: number = event.offsetX;
                   const offsetY: number = event.offsetY;
                   if (Math.abs(offsetX) > Math.abs(offsetY)) {
@@ -1219,6 +1375,19 @@ export struct TetrisPage {
             // 旋转按钮
             this.rotateButton()
 
+            // AI 托管面板
+            GameAIPanel({
+              modelNames: this.aiModelNames,
+              selectedModelIndex: this.aiModelIndex,
+              running: this.aiRunning,
+              status: this.aiStatus,
+              speedIndex: this.aiSpeedIndex,
+              modelsConfigured: this.aiModelsConfigured,
+              onSelectModel: (index: number): void => { this.selectAiModel(index); },
+              onToggleRun: (): void => { this.toggleAi(); },
+              onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+            })
+
             // 信息面板
             this.infoPanel()
           }
@@ -1249,6 +1418,7 @@ export struct TetrisPage {
           this.restartGame();
           return;
         }
+        if (this.aiRunning) return;
         if (this.isGameOver || this.isPaused) return;
         if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
           this.moveLeft();

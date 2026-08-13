@@ -9,6 +9,9 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
+import { GameAIPanel } from '../components/GameAIPanel';
+import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAIService';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 const BOARD_SIZE: number = 6;
 const WIN_SCORE: number = 2048;
@@ -68,6 +71,17 @@ export struct Game2048Page {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // ---- AI 托管 ----
+  @State aiRunning: boolean = false;
+  @State aiStatus: string = '';
+  @State aiModelNames: string[] = [];
+  @State aiModelIndex: number = 0;
+  @State aiSpeedIndex: number = 2;
+  @State aiModelsConfigured: boolean = true;
+  private aiModels: LlmModelEntry[] = [];
+  private aiConfig: LlmConfig | null = null;
+  private aiLoopActive: boolean = false;
+  private aiFailCount: number = 0;
 
   private titleText: string = '2048';
   private gameStartTime: number = 0;
@@ -356,6 +370,7 @@ export struct Game2048Page {
   }
 
   restartGame(): void {
+    this.stopAi();
     this.initBoard();
     this.score = 0;
     this.isGameOver = false;
@@ -401,6 +416,112 @@ export struct Game2048Page {
   private async loadBestScore(): Promise<void> {
     const best: number = await DataRepository.getGameHighScore('2048');
     this.bestScore = best;
+  }
+
+  // ---- AI 托管 ----
+  private async initAiPanel(): Promise<void> {
+    this.aiModels = await GameAIService.loadModelOptions();
+    const names: string[] = [];
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      names.push(GameAIService.modelLabel(this.aiModels[i]));
+    }
+    this.aiModelNames = names;
+    this.aiModelsConfigured = this.aiModels.length > 0;
+    if (this.aiModelsConfigured) {
+      this.aiConfig = await GameAIService.loadConfig(this.aiModels[this.aiModelIndex].id);
+    } else {
+      this.aiConfig = null;
+    }
+  }
+
+  private async toggleAi(): Promise<void> {
+    if (this.aiRunning) {
+      this.stopAi();
+      return;
+    }
+    if (!this.aiModelsConfigured) {
+      promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+      return;
+    }
+    if (this.aiConfig === null) {
+      promptAction.showToast({ message: '模型配置无效，请检查 AI 设置' });
+      return;
+    }
+    if (!this.gameStarted) return;
+    if (this.isGameOver || this.isWin) {
+      this.restartGame();
+    }
+    this.isPaused = false;
+    this.aiFailCount = 0;
+    this.aiRunning = true;
+    this.aiStatus = 'AI 准备中…';
+    this.aiLoop().catch((e: Object) => {
+      this.stopAi();
+    });
+  }
+
+  private stopAi(): void {
+    this.aiRunning = false;
+    this.aiLoopActive = false;
+    this.aiStatus = '';
+  }
+
+  private selectAiModel(index: number): void {
+    if (this.aiRunning) return;
+    this.aiModelIndex = index;
+    if (this.aiModels.length > index) {
+      GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        this.aiConfig = config;
+      });
+    }
+  }
+
+  private changeAiSpeed(index: number): void {
+    if (this.aiRunning) return;
+    this.aiSpeedIndex = index;
+  }
+
+  // AI 决策循环：每个动作执行后经展示窗口再进入下一轮
+  private async aiLoop(): Promise<void> {
+    if (!this.aiRunning || this.aiLoopActive) return;
+    this.aiLoopActive = true;
+    while (this.aiRunning) {
+      if (this.isGameOver || this.isWin || this.isPaused) break;
+      if (this.aiConfig === null) break;
+      this.aiStatus = 'AI 思考中…';
+      const stateText: string = GameAIService.serializeGrid2048(this.board);
+      const messages = GameAIService.buildMessages('2048', this.difficulty, stateText);
+      const result = await GameAIService.decide(this.aiConfig, messages);
+      if (!this.aiRunning) break;
+      if (!result.success) {
+        this.aiFailCount += 1;
+        if (this.aiFailCount >= 3) {
+          this.aiStatus = 'AI 模型不稳定，已退出';
+          this.stopAi();
+          promptAction.showToast({ message: 'AI 连续失败，已停止托管' });
+          break;
+        }
+        continue;
+      }
+      this.aiFailCount = 0;
+      const action: GameAction | null = GameAIService.parseAction('2048', result.content);
+      if (action === null) continue;
+      this.aiStatus = 'AI 执行 ' + action.command;
+      this.move(action.command.toLowerCase());
+      if (this.isGameOver || this.isWin) break;
+      if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);
+        });
+      }
+      if (this.isGameOver || this.isWin) break;
+    }
+    this.aiLoopActive = false;
+    if (this.aiRunning) {
+      this.aiRunning = false;
+      if (this.isGameOver || this.isWin) this.aiStatus = 'AI 结束：游戏已终局';
+      else this.aiStatus = 'AI 已暂停';
+    }
   }
 
   // ---- 棋盘渲染 ----
@@ -805,10 +926,12 @@ export struct Game2048Page {
     }
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
+    this.initAiPanel();
   }
 
   // ---- 页面隐藏时自动暂停 ----
   onPageHide(): void {
+    this.stopAi();
     if (!this.isPaused && !this.isGameOver && this.gameStarted) {
       this.autoPaused = true;
       this.isPaused = true;
@@ -826,6 +949,7 @@ export struct Game2048Page {
 
   aboutToDisappear(): void {
     // 中途退出时保存当前分数
+    this.stopAi();
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
     }
@@ -902,6 +1026,17 @@ export struct Game2048Page {
           if (this.gameStarted) {
             Column({ space: 16 }) {
               this.scoreBoard()
+              GameAIPanel({
+                modelNames: this.aiModelNames,
+                selectedModelIndex: this.aiModelIndex,
+                running: this.aiRunning,
+                status: this.aiStatus,
+                speedIndex: this.aiSpeedIndex,
+                modelsConfigured: this.aiModelsConfigured,
+                onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                onToggleRun: (): void => { this.toggleAi(); },
+                onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+              })
               Stack() {
                 Column() {
                   this.gameBoard()
@@ -940,6 +1075,17 @@ export struct Game2048Page {
 
             Column({ space: 16 }) {
               this.scoreBoard()
+              GameAIPanel({
+                modelNames: this.aiModelNames,
+                selectedModelIndex: this.aiModelIndex,
+                running: this.aiRunning,
+                status: this.aiStatus,
+                speedIndex: this.aiSpeedIndex,
+                modelsConfigured: this.aiModelsConfigured,
+                onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                onToggleRun: (): void => { this.toggleAi(); },
+                onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+              })
               Column({ space: 8 }) {
                 Text('操作提示')
                   .fontSize(this.palette.fsXs)
@@ -994,6 +1140,7 @@ export struct Game2048Page {
           this.restartGame();
           return;
         }
+        if (this.aiRunning) return;
         if (this.isGameOver || this.isPaused) return;
         if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
           this.move('left');

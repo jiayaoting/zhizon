@@ -10,12 +10,15 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { SUDOKU_SIZE, copyBoard, countSolutions, generateSolution } from '../service/SudokuSolver';
 import { DeviceMetrics } from '../common/DeviceMetrics';
+import { GameAIPanel } from '../components/GameAIPanel';
+import { GameAIService, GameAction, AI_SPEED_DELAYS, SudokuCellInfo } from '../service/GameAIService';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 // ============================================================
 // 页面组件
 // ============================================================
 
-interface SudokuCell {
+interface SudokuCell extends SudokuCellInfo {
   value: number;     // 0 表示未填
   fixed: boolean;    // 题目给定
   notes: number[];   // 笔记候选数
@@ -41,6 +44,17 @@ export struct SudokuPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // ---- AI 托管 ----
+  @State aiRunning: boolean = false;
+  @State aiStatus: string = '';
+  @State aiModelNames: string[] = [];
+  @State aiModelIndex: number = 0;
+  @State aiSpeedIndex: number = 2;
+  @State aiModelsConfigured: boolean = true;
+  private aiModels: LlmModelEntry[] = [];
+  private aiConfig: LlmConfig | null = null;
+  private aiLoopActive: boolean = false;
+  private aiFailCount: number = 0;
 
   private timerId: number = -1;
   private titleText: string = '数独';
@@ -173,6 +187,11 @@ export struct SudokuPage {
 
   private togglePause(): void {
     if (!this.gameStarted || this.isWin) return;
+    if (this.aiRunning) {
+      this.stopAi();
+      this.isPaused = true;
+      return;
+    }
     this.isPaused = !this.isPaused;
     if (!this.isPaused) {
       this.gameStartTime = Date.now() - this.playSeconds * 1000;
@@ -180,6 +199,7 @@ export struct SudokuPage {
   }
 
   private restartGame(): void {
+    this.stopAi();
     this.generatePuzzle();
     this.startTimer();
     this.vibrate(20);
@@ -313,6 +333,118 @@ export struct SudokuPage {
     this.bestTime = Number(stored);
   }
 
+  // ---- AI 托管 ----
+  private async initAiPanel(): Promise<void> {
+    this.aiModels = await GameAIService.loadModelOptions();
+    const names: string[] = [];
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      names.push(GameAIService.modelLabel(this.aiModels[i]));
+    }
+    this.aiModelNames = names;
+    this.aiModelsConfigured = this.aiModels.length > 0;
+    if (this.aiModelsConfigured) {
+      this.aiConfig = await GameAIService.loadConfig(this.aiModels[this.aiModelIndex].id);
+    } else {
+      this.aiConfig = null;
+    }
+  }
+
+  private async toggleAi(): Promise<void> {
+    if (this.aiRunning) {
+      this.stopAi();
+      return;
+    }
+    if (!this.aiModelsConfigured) {
+      promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+      return;
+    }
+    if (this.aiConfig === null) {
+      promptAction.showToast({ message: '模型配置无效，请检查 AI 设置' });
+      return;
+    }
+    if (!this.gameStarted) return;
+    if (this.isWin) {
+      this.restartGame();
+    }
+    this.isPaused = false;
+    this.aiFailCount = 0;
+    this.aiRunning = true;
+    this.aiStatus = 'AI 准备中…';
+    this.aiLoop().catch((e: Object) => {
+      this.stopAi();
+    });
+  }
+
+  private stopAi(): void {
+    this.aiRunning = false;
+    this.aiLoopActive = false;
+    this.aiStatus = '';
+  }
+
+  private selectAiModel(index: number): void {
+    if (this.aiRunning) return;
+    this.aiModelIndex = index;
+    if (this.aiModels.length > index) {
+      GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        this.aiConfig = config;
+      });
+    }
+  }
+
+  private changeAiSpeed(index: number): void {
+    if (this.aiRunning) return;
+    this.aiSpeedIndex = index;
+  }
+
+  // AI 决策循环：纯回合制，每轮 决策 → 填入数字
+  private async aiLoop(): Promise<void> {
+    if (!this.aiRunning || this.aiLoopActive) return;
+    this.aiLoopActive = true;
+    while (this.aiRunning) {
+      if (this.isWin || this.isPaused) break;
+      if (this.aiConfig === null) break;
+      this.aiStatus = 'AI 思考中…';
+      const stateText: string = GameAIService.serializeSudoku(this.cells);
+      const messages = GameAIService.buildMessages('Sudoku', this.difficulty, stateText);
+      const result = await GameAIService.decide(this.aiConfig, messages);
+      if (!this.aiRunning) break;
+      if (!result.success) {
+        this.aiFailCount += 1;
+        if (this.aiFailCount >= 3) {
+          this.aiStatus = 'AI 模型不稳定，已退出';
+          this.stopAi();
+          promptAction.showToast({ message: 'AI 连续失败，已停止托管' });
+          break;
+        }
+        continue;
+      }
+      this.aiFailCount = 0;
+      const action: GameAction | null = GameAIService.parseAction('Sudoku', result.content);
+      if (action === null) continue;
+      const r: number = action.r - 1;
+      const c: number = action.c - 1;
+      const v: number = action.value;
+      if (r < 0 || r >= SUDOKU_SIZE || c < 0 || c >= SUDOKU_SIZE || v < 1 || v > 9) continue;
+      const cell: SudokuCell = this.cells[r][c];
+      if (cell.fixed) continue;
+      this.aiStatus = 'AI 执行 SET (' + (r + 1).toString() + ',' + (c + 1).toString() + ')=' + v.toString();
+      this.selectedR = r;
+      this.selectedC = c;
+      this.inputNumber(v);
+      if (this.isWin) break;
+      if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);
+        });
+      }
+    }
+    this.aiLoopActive = false;
+    if (this.aiRunning) {
+      this.aiRunning = false;
+      this.aiStatus = this.isWin ? 'AI 完成：数独已解出' : 'AI 已暂停';
+    }
+  }
+
   private openHistory(): void {
     router.pushUrl({
       url: 'pages/GameHistory',
@@ -333,11 +465,13 @@ export struct SudokuPage {
     await this.loadBest();
     this.generatePuzzle();
     this.startTimer();
+    this.initAiPanel();
     this.showHintTip = true;
     setTimeout(() => { this.showHintTip = false; }, 4000);
   }
 
   aboutToDisappear(): void {
+    this.stopAi();
     this.stopTimer();
   }
 
@@ -351,6 +485,7 @@ export struct SudokuPage {
       this.restartGame();
       return;
     }
+    if (this.aiRunning) return;
     if (code === KeyCode.KEYCODE_N) {
       this.noteMode = !this.noteMode;
       this.vibrate(10);
@@ -899,6 +1034,17 @@ export struct SudokuPage {
               if (this.showHintTip) { this.hintTip() }
               this.infoPanel()
               this.actionBar()
+              GameAIPanel({
+                modelNames: this.aiModelNames,
+                selectedModelIndex: this.aiModelIndex,
+                running: this.aiRunning,
+                status: this.aiStatus,
+                speedIndex: this.aiSpeedIndex,
+                modelsConfigured: this.aiModelsConfigured,
+                onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                onToggleRun: (): void => { this.toggleAi(); },
+                onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+              })
               Stack() {
                 Column() {
                   this.board()
@@ -935,6 +1081,17 @@ export struct SudokuPage {
               Column({ space: 12 }) {
                 this.infoPanel()
                 this.actionBar()
+                GameAIPanel({
+                  modelNames: this.aiModelNames,
+                  selectedModelIndex: this.aiModelIndex,
+                  running: this.aiRunning,
+                  status: this.aiStatus,
+                  speedIndex: this.aiSpeedIndex,
+                  modelsConfigured: this.aiModelsConfigured,
+                  onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                  onToggleRun: (): void => { this.toggleAi(); },
+                  onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+                })
                 this.numPad()
                 Column({ space: 6 }) {
                   Text('操作提示')

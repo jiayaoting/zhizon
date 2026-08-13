@@ -9,6 +9,9 @@ import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchR
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
+import { GameAIPanel } from '../components/GameAIPanel';
+import { GameAIService, GameAction, AI_SPEED_DELAYS, MinesweeperCellInfo } from '../service/GameAIService';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 // 难度配置
 class MinesweeperConfig {
@@ -32,7 +35,7 @@ function configFor(level: DifficultyLevel): MinesweeperConfig {
 
 // 格子状态：@Observed 使属性变化可被 @ObjectLink 精确观察
 @Observed
-class MineCell {
+class MineCell implements MinesweeperCellInfo {
   isMine: boolean = false;
   adjacent: number = 0;
   revealed: boolean = false;
@@ -136,6 +139,17 @@ export struct MinesweeperPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // ---- AI 托管 ----
+  @State aiRunning: boolean = false;
+  @State aiStatus: string = '';
+  @State aiModelNames: string[] = [];
+  @State aiModelIndex: number = 0;
+  @State aiSpeedIndex: number = 2;
+  @State aiModelsConfigured: boolean = true;
+  private aiModels: LlmModelEntry[] = [];
+  private aiConfig: LlmConfig | null = null;
+  private aiLoopActive: boolean = false;
+  private aiFailCount: number = 0;
 
   private timerId: number = -1;
   private titleText: string = '扫雷';
@@ -345,6 +359,7 @@ export struct MinesweeperPage {
 
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
+    this.stopAi();
     this.difficulty = level;
     this.gameStarted = true;
     this.isGameOver = false;
@@ -359,6 +374,7 @@ export struct MinesweeperPage {
   }
 
   restartGame(): void {
+    this.stopAi();
     this.stopTimer();
     this.isGameOver = false;
     this.isWin = false;
@@ -373,11 +389,18 @@ export struct MinesweeperPage {
 
   togglePause(): void {
     if (this.isGameOver || this.isWin) return;
+    if (this.aiRunning) {
+      this.stopAi();
+      this.isPaused = true;
+      this.autoPaused = false;
+      return;
+    }
     this.isPaused = !this.isPaused;
     this.autoPaused = false;
   }
 
   onPageHide(): void {
+    this.stopAi();
     if (!this.isPaused && !this.isGameOver && !this.isWin && this.gameStarted) {
       this.autoPaused = true;
       this.isPaused = true;
@@ -415,6 +438,112 @@ export struct MinesweeperPage {
     this.bestScore = best;
   }
 
+  // ---- AI 托管 ----
+  private async initAiPanel(): Promise<void> {
+    this.aiModels = await GameAIService.loadModelOptions();
+    const names: string[] = [];
+    for (let i: number = 0; i < this.aiModels.length; i++) {
+      names.push(GameAIService.modelLabel(this.aiModels[i]));
+    }
+    this.aiModelNames = names;
+    this.aiModelsConfigured = this.aiModels.length > 0;
+    if (this.aiModelsConfigured) {
+      this.aiConfig = await GameAIService.loadConfig(this.aiModels[this.aiModelIndex].id);
+    } else {
+      this.aiConfig = null;
+    }
+  }
+
+  private async toggleAi(): Promise<void> {
+    if (this.aiRunning) {
+      this.stopAi();
+      return;
+    }
+    if (!this.aiModelsConfigured) {
+      promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
+      return;
+    }
+    if (this.aiConfig === null) {
+      promptAction.showToast({ message: '模型配置无效，请检查 AI 设置' });
+      return;
+    }
+    if (!this.gameStarted) return;
+    if (this.isGameOver || this.isWin) {
+      this.restartGame();
+    }
+    this.isPaused = false;
+    this.aiFailCount = 0;
+    this.aiRunning = true;
+    this.aiStatus = 'AI 准备中…';
+    this.aiLoop().catch((e: Object) => {
+      this.stopAi();
+    });
+  }
+
+  private stopAi(): void {
+    this.aiRunning = false;
+    this.aiLoopActive = false;
+    this.aiStatus = '';
+  }
+
+  private selectAiModel(index: number): void {
+    if (this.aiRunning) return;
+    this.aiModelIndex = index;
+    if (this.aiModels.length > index) {
+      GameAIService.loadConfig(this.aiModels[index].id).then((config: LlmConfig | null) => {
+        this.aiConfig = config;
+      });
+    }
+  }
+
+  private changeAiSpeed(index: number): void {
+    if (this.aiRunning) return;
+    this.aiSpeedIndex = index;
+  }
+
+  // AI 决策循环：纯回合制，每轮 决策 → 执行动作（翻开/标旗）
+  private async aiLoop(): Promise<void> {
+    if (!this.aiRunning || this.aiLoopActive) return;
+    this.aiLoopActive = true;
+    while (this.aiRunning) {
+      if (this.isGameOver || this.isWin || this.isPaused) break;
+      if (this.aiConfig === null) break;
+      this.aiStatus = 'AI 思考中…';
+      const stateText: string = GameAIService.serializeMinesweeper(this.board, this.rows, this.cols);
+      const messages = GameAIService.buildMessages('Minesweeper', this.difficulty, stateText);
+      const result = await GameAIService.decide(this.aiConfig, messages);
+      if (!this.aiRunning) break;
+      if (!result.success) {
+        this.aiFailCount += 1;
+        if (this.aiFailCount >= 3) {
+          this.aiStatus = 'AI 模型不稳定，已退出';
+          this.stopAi();
+          promptAction.showToast({ message: 'AI 连续失败，已停止托管' });
+          break;
+        }
+        continue;
+      }
+      this.aiFailCount = 0;
+      const action: GameAction | null = GameAIService.parseAction('Minesweeper', result.content);
+      if (action === null) continue;
+      if (action.r < 0 || action.r >= this.rows || action.c < 0 || action.c >= this.cols) continue;
+      this.aiStatus = 'AI 执行 ' + action.command + ' (' + action.r.toString() + ',' + action.c.toString() + ')';
+      if (action.command === 'REVEAL') this.revealCell(action.r, action.c);
+      else if (action.command === 'FLAG') this.toggleFlag(action.r, action.c);
+      if (this.isGameOver || this.isWin) break;
+      if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(() => { resolve(); }, AI_SPEED_DELAYS[this.aiSpeedIndex]);
+        });
+      }
+    }
+    this.aiLoopActive = false;
+    if (this.aiRunning) {
+      this.aiRunning = false;
+      this.aiStatus = (this.isGameOver || this.isWin) ? 'AI 结束：游戏已终局' : 'AI 已暂停';
+    }
+  }
+
   // ---- 键盘操作 ----
   private handleKey(code: KeyCode): void {
     if (code === KeyCode.KEYCODE_P || code === KeyCode.KEYCODE_ENTER) {
@@ -425,6 +554,7 @@ export struct MinesweeperPage {
       this.restartGame();
       return;
     }
+    if (this.aiRunning) return;
     if (this.isGameOver || this.isPaused || this.isWin || !this.gameStarted) return;
     if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_A) {
       this.cursorC = Math.max(0, this.cursorC - 1);
@@ -830,9 +960,11 @@ export struct MinesweeperPage {
     }
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
+    this.initAiPanel();
   }
 
   aboutToDisappear(): void {
+    this.stopAi();
     this.stopTimer();
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
@@ -910,6 +1042,17 @@ export struct MinesweeperPage {
           if (this.gameStarted) {
             Column({ space: 8 }) {
               this.infoPanel()
+              GameAIPanel({
+                modelNames: this.aiModelNames,
+                selectedModelIndex: this.aiModelIndex,
+                running: this.aiRunning,
+                status: this.aiStatus,
+                speedIndex: this.aiSpeedIndex,
+                modelsConfigured: this.aiModelsConfigured,
+                onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                onToggleRun: (): void => { this.toggleAi(); },
+                onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+              })
               Stack() {
                 Column() {
                   this.gameBoard()
@@ -947,6 +1090,17 @@ export struct MinesweeperPage {
 
               Scroll() {
                 Column({ space: 12 }) {
+                  GameAIPanel({
+                    modelNames: this.aiModelNames,
+                    selectedModelIndex: this.aiModelIndex,
+                    running: this.aiRunning,
+                    status: this.aiStatus,
+                    speedIndex: this.aiSpeedIndex,
+                    modelsConfigured: this.aiModelsConfigured,
+                    onSelectModel: (index: number): void => { this.selectAiModel(index); },
+                    onToggleRun: (): void => { this.toggleAi(); },
+                    onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
+                  })
                   this.infoPanel()
                   Column({ space: 6 }) {
                     Text('操作提示')
