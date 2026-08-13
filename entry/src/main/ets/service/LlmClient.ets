@@ -86,7 +86,9 @@ export class LlmClient {
         extraData: JSON.stringify(body),
         connectTimeout: CONNECT_TIMEOUT,
         readTimeout: READ_TIMEOUT,
-        expectDataType: http.HttpDataType.STRING,
+        // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发；
+        // 设置 STRING 时框架缓冲整个响应，dataReceive 不触发，导致无法流式解析
+        expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
         usingCache: false
       });
       const code: number = response.responseCode;
@@ -105,10 +107,25 @@ export class LlmClient {
             }
           }
         }
+        // 兜底：极端情况下 dataReceive 未触发，从 response.result 提取完整 SSE 解析
+        if (!fullContent.trim()) {
+          const raw: string = LlmClient.resultToString(response.result);
+          if (raw.length > 0) {
+            const tailResult: SseParseResult = LlmClient.extractSseEvents(raw);
+            const tailEvents: string[] = tailResult.events;
+            for (let i: number = 0; i < tailEvents.length; i++) {
+              const delta: string = LlmClient.openAIDeltaFromSse(tailEvents[i]);
+              if (delta.length > 0) {
+                fullContent = fullContent + delta;
+                onDelta(delta);
+              }
+            }
+          }
+        }
         if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
         return new LlmResult(true, fullContent, '', '');
       }
-      const text: string = typeof response.result === 'string' ? response.result : JSON.stringify(response.result);
+      const text: string = LlmClient.resultToString(response.result);
       const content: string = LlmClient.openAIContent(text);
       if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
       return new LlmResult(true, content, '', '');
@@ -171,7 +188,8 @@ export class LlmClient {
         extraData: JSON.stringify(body),
         connectTimeout: CONNECT_TIMEOUT,
         readTimeout: READ_TIMEOUT,
-        expectDataType: http.HttpDataType.STRING,
+        // 流式必须用 ARRAY_BUFFER：dataReceive 回调才会逐块触发
+        expectDataType: stream ? http.HttpDataType.ARRAY_BUFFER : http.HttpDataType.STRING,
         usingCache: false
       });
       const code: number = response.responseCode;
@@ -191,10 +209,25 @@ export class LlmClient {
             }
           }
         }
+        // 兜底：极端情况下 dataReceive 未触发，从 response.result 提取完整 SSE 解析
+        if (!fullContent.trim()) {
+          const raw: string = LlmClient.resultToString(response.result);
+          if (raw.length > 0) {
+            const tailResult: SseParseResult = LlmClient.extractSseEvents(raw);
+            const tailEvents: string[] = tailResult.events;
+            for (let i: number = 0; i < tailEvents.length; i++) {
+              const delta: string = LlmClient.anthropicDeltaFromSse(tailEvents[i]);
+              if (delta.length > 0) {
+                fullContent = fullContent + delta;
+                onDelta(delta);
+              }
+            }
+          }
+        }
         if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
         return new LlmResult(true, fullContent, '', '');
       }
-      const text: string = typeof response.result === 'string' ? response.result : JSON.stringify(response.result);
+      const text: string = LlmClient.resultToString(response.result);
       const content: string = LlmClient.anthropicContent(text);
       if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
       return new LlmResult(true, content, '', '');
@@ -412,6 +445,19 @@ export class LlmClient {
     try {
       const decoder: util.TextDecoder = new util.TextDecoder();
       return decoder.decodeToString(new Uint8Array(buffer));
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // response.result 可能是 string、ArrayBuffer 或对象，统一转字符串
+  private static resultToString(result: Object): string {
+    if (typeof result === 'string') return result as string;
+    if (result instanceof ArrayBuffer) {
+      return LlmClient.arrayBufferToString(result as ArrayBuffer);
+    }
+    try {
+      return JSON.stringify(result);
     } catch (e) {
       return '';
     }
