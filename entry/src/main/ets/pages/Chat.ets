@@ -14,38 +14,205 @@ import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
 import { ChatMessage, entryToConfig, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
   modelDisplayNameFromConfig } from '../common/LlmModels';
-import { MarkdownConverter } from '../common/MarkdownConverter';
+import { MarkdownConverter, MdBlock, InlineSpan } from '../common/MarkdownConverter';
 
-// Markdown 渲染组件：用 Web 组件渲染完整 HTML/CSS，自适应内容高度
-// RichText 对 CSS 支持极有限（不支持 style 属性中大部分 CSS），改用 Web 确保样式正确
+// ============================================================
+// MarkdownText：纯 ArkUI 原生组件渲染 Markdown（Column + Text + Span）
+// 社区成熟方案（FluidMarkdown/RichTextVista）：解析为结构化对象后用原生组件渲染，
+// 规避 RichText 无法自适应高度/List 卡顿、Web 在 List 内高度不可靠的问题。
+// ============================================================
 @Component
-struct MarkdownContent {
+struct MarkdownText {
   @Prop content: string = '';
-  @Prop isDark: boolean = false;
-  @State contentHeight: number = 80;
-  private controller: webview.WebviewController = new webview.WebviewController();
+  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('isDarkMode') isDark: boolean = false;
+
+  // 行内富文本：Text 内嵌 Span 序列（支持粗体/斜体/行内代码/链接颜色）
+  @Builder
+  inlineSpans(text: string) {
+    ForEach(MarkdownConverter.parseInline(text), (sp: InlineSpan) => {
+      if (sp.code) {
+        Span(' ' + sp.text + ' ')
+          .fontSize(this.palette.fsSm - 1)
+          .fontFamily(this.palette.fontMono)
+          .fontColor(this.isDark ? '#FCA5A5' : '#C0392B')
+          .textBackgroundStyle({ color: this.isDark ? '#1E293B' : '#F1F5F9', radius: '3vp' })
+      } else if (sp.link.length > 0) {
+        Span(sp.text)
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.isDark ? '#60A5FA' : '#2563EB')
+          .textDecoration({ type: TextDecorationType.Underline })
+          .fontWeight(sp.bold ? FontWeight.Bold : FontWeight.Medium)
+          .fontStyle(sp.italic ? FontStyle.Italic : FontStyle.Normal)
+      } else {
+        Span(sp.text)
+          .fontSize(this.palette.fsSm)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(sp.bold ? FontWeight.Bold : FontWeight.Medium)
+          .fontStyle(sp.italic ? FontStyle.Italic : FontStyle.Normal)
+      }
+    }, (sp: InlineSpan, index: number) => sp.text + index.toString())
+  }
+
+  // 段落/列表项（带行内格式）
+  @Builder
+  para(text: string) {
+    Text() {
+      this.inlineSpans(text)
+    }
+    .fontSize(this.palette.fsSm)
+    .fontFamily(this.palette.fontSans)
+    .lineHeight(20)
+    .width('100%')
+  }
 
   build() {
-    Web({ src: 'about:blank', controller: this.controller })
-      .width('100%')
-      .height(this.contentHeight)
-      .backgroundColor(Color.Transparent)
-      .onControllerAttached(() => {
-        const html: string = MarkdownConverter.toHtml(this.content, this.isDark);
-        this.controller.loadData(html, 'text/html', 'UTF-8', 'data');
-      })
-      .onPageEnd(() => {
-        setTimeout(() => {
-          this.controller.runJavaScript('document.body.scrollHeight')
-            .then((result: string) => {
-              const h: number = Number.parseInt(result, 10);
-              if (h > 0) {
-                this.contentHeight = h;
+    Column({ space: 6 }) {
+      ForEach(MarkdownConverter.parseBlocks(this.content), (block: MdBlock, bi: number) => {
+        if (block.kind === 'h1') {
+          Text() {
+            this.inlineSpans(block.text)
+          }
+          .fontSize(this.palette.fsLg)
+          .fontFamily(this.palette.fontSans)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.palette.textPrimary)
+          .lineHeight(24)
+          .width('100%')
+        } else if (block.kind === 'h2') {
+          Text() {
+            this.inlineSpans(block.text)
+          }
+          .fontSize(this.palette.fsMd + 1)
+          .fontFamily(this.palette.fontSans)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.palette.textPrimary)
+          .lineHeight(22)
+          .width('100%')
+        } else if (block.kind === 'h3') {
+          Text() {
+            this.inlineSpans(block.text)
+          }
+          .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.palette.textPrimary)
+          .lineHeight(20)
+          .width('100%')
+        } else if (block.kind === 'code') {
+          Column({ space: 0 }) {
+            ForEach(block.lines, (ln: string) => {
+              Text(ln.length > 0 ? ln : ' ')
+                .fontSize(this.palette.fsSm - 1)
+                .fontFamily(this.palette.fontMono)
+                .fontColor(this.isDark ? '#FCA5A5' : '#C0392B')
+                .lineHeight(18)
+                .width('100%')
+            }, (ln: string, li: number) => ln + li.toString())
+          }
+          .width('100%')
+          .padding(10)
+          .borderRadius(8)
+          .backgroundColor(this.isDark ? '#1E293B' : '#F1F5F9')
+        } else if (block.kind === 'quote') {
+          Column({ space: 2 }) {
+            ForEach(block.items, (q: string) => {
+              Text() {
+                this.inlineSpans(q)
               }
-            })
-            .catch(() => {});
-        }, 50);
-      })
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+              .fontStyle(FontStyle.Italic)
+              .lineHeight(20)
+              .width('100%')
+            }, (q: string, qi: number) => q + qi.toString())
+          }
+          .width('100%')
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .borderRadius(6)
+          .border({ width: 0 })
+          .backgroundColor(this.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)')
+        } else if (block.kind === 'hr') {
+          Divider()
+            .strokeWidth(0.5)
+            .color(this.palette.borderSubtle)
+            .margin({ top: 4, bottom: 4 })
+        } else if (block.kind === 'ul') {
+          Column({ space: 3 }) {
+            ForEach(block.items, (it: string) => {
+              Row({ space: 6 }) {
+                Text('•')
+                  .fontSize(this.palette.fsSm)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                Text() {
+                  this.inlineSpans(it)
+                }
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .lineHeight(20)
+                .layoutWeight(1)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Top)
+            }, (it: string, ii: number) => it + ii.toString())
+          }
+          .width('100%')
+        } else if (block.kind === 'ol') {
+          Column({ space: 3 }) {
+            ForEach(block.items, (it: string) => {
+              Row({ space: 6 }) {
+                Text() {
+                  this.inlineSpans(it)
+                }
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .lineHeight(20)
+                .layoutWeight(1)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Top)
+            }, (it: string, ii: number) => it + ii.toString())
+          }
+          .width('100%')
+        } else if (block.kind === 'table') {
+          Column({ space: 2 }) {
+            if (block.lines.length > 0) {
+              Text() {
+                this.inlineSpans(block.lines[0])
+              }
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.palette.textPrimary)
+              .lineHeight(20)
+              .width('100%')
+            }
+            ForEach(block.items, (rw: string) => {
+              Text() {
+                this.inlineSpans(rw)
+              }
+              .fontSize(this.palette.fsSm - 1)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+              .lineHeight(18)
+              .width('100%')
+            }, (rw: string, ri: number) => rw + ri.toString())
+          }
+          .width('100%')
+          .padding(8)
+          .borderRadius(6)
+          .backgroundColor(this.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)')
+        } else {
+          this.para(block.items.length > 0 ? block.items.join('\n') : block.text)
+        }
+      }, (block: MdBlock, index: number) => block.kind + index.toString())
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 }
 
@@ -203,19 +370,22 @@ struct MessageBubble {
             .alignItems(HorizontalAlign.Start)
             .width('100%')
           }
-          // 正文：流式中用 Text 打字机效果；结束后用 Web 渲染 markdown
+          // 正文：流式中用 Text 打字机效果；结束后用原生 MarkdownText 渲染
           if (this.useMarkdown()) {
-            // Web 组件渲染 markdown：支持完整 CSS，通过 JS 桥接实现自适应高度
-            MarkdownContent({ content: this.message.content, isDark: this.isDark })
-              .width('100%')
-              .padding(12)
-              .borderRadius(12)
-              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-              .border({ width: 1,
-                color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-              .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
-              .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
-              .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
+            Column() {
+              MarkdownText({ content: this.message.content })
+                .width('100%')
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width('100%')
+            .padding(12)
+            .borderRadius(12)
+            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+            .border({ width: 1,
+              color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+            .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+            .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+            .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
           } else {
             Text(this.message.content.trim().length > 0 ? this.message.content.trim() : '…')
               .fontSize(this.palette.fsSm)

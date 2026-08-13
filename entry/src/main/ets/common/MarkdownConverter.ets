@@ -3,9 +3,19 @@
 export class MarkdownConverter {
 
   // 生成完整 HTML 文档（含内联 CSS），供 Web 组件 loadData 渲染
-  static toHtml(md: string, isDark: boolean): string {
+  // bubbleBg：聊天气泡背景色（含透明度），非空时作为 body 背景并附加内边距/圆角/边框；
+  //           为空时（全屏预览）使用透明背景，由页面背景透出
+  static toHtml(md: string, isDark: boolean, bubbleBg: string = '', bubbleBorder: string = ''): string {
     const body: string = MarkdownConverter.toBodyHtml(md);
-    const css: string = isDark ? MarkdownConverter.darkCss() : MarkdownConverter.lightCss();
+    let css: string = isDark ? MarkdownConverter.darkCss() : MarkdownConverter.lightCss();
+    if (bubbleBg.length > 0) {
+      let bubbleStyle: string = 'body{background:' + bubbleBg + ';padding:12px;border-radius:12px;';
+      if (bubbleBorder.length > 0) {
+        bubbleStyle = bubbleStyle + 'border:1px solid ' + bubbleBorder + ';';
+      }
+      bubbleStyle = bubbleStyle + '}';
+      css = css + bubbleStyle;
+    }
     return '<!DOCTYPE html><html><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">' +
       '<style>' + css + '</style></head><body>' + body + '</body></html>';
@@ -39,9 +49,14 @@ export class MarkdownConverter {
           i++;
         }
         i++;
+        // 先对每一行单独转义，再用 <br> 连接（避免转义掉 <br> 本身）
+        const escapedLines: string[] = [];
+        for (let c: number = 0; c < codeLines.length; c++) {
+          escapedLines.push(MarkdownConverter.escapeHtml(codeLines[c]));
+        }
         out.push('<p style="background-color:' + codeBg + ';color:' + codeFg +
-          ';font-family:monospace;font-size:12px;">' +
-          MarkdownConverter.escapeHtml(codeLines.join('<br>')) + '</p>');
+          ';font-size:12px;line-height:18px;">' +
+          escapedLines.join('<br>') + '</p>');
         continue;
       }
       if (line.startsWith('### ')) {
@@ -382,5 +397,217 @@ export class MarkdownConverter {
       'table{border-collapse:collapse;margin:6px 0;font-size:13px;}' +
       'th,td{padding:5px 10px;text-align:left;}' +
       'img{max-width:100%;border-radius:6px;}';
+  }
+
+  // ============================================================
+  // 结构化解析：供纯 ArkUI 原生组件渲染（Column + Text + Span）
+  // RichText 无法自适应高度且 List 内卡顿，Web 在 List 内高度不可靠，
+  // 社区成熟方案（FluidMarkdown/RichTextVista）均为原生组件渲染。
+  // ============================================================
+
+  // 行内富文本片段（原生组件渲染，无需 HTML 转义）
+  static parseInline(text: string): InlineSpan[] {
+    const result: InlineSpan[] = [];
+    let r: string = text;
+    // 临时标记：把 `code` 换成特殊占位，避免与 * 混淆
+    r = r.replace(/`([^`]+)`/g, '\u0001$1\u0002');
+    // 粗体 **text**
+    r = MarkdownConverter.wrapOdd(r, '**', '\u0003', '\u0004');
+    // 斜体 *text*
+    r = MarkdownConverter.wrapOdd(r, '*', '\u0005', '\u0006');
+    // 链接 [text](url)
+    r = r.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '\u0007$1\u0008');
+    // 解析标记
+    const sb: string[] = [];
+    let bold: boolean = false;
+    let italic: boolean = false;
+    let code: boolean = false;
+    let link: string = '';
+    for (let i: number = 0; i < r.length; i++) {
+      const ch: string = r.charAt(i);
+      if (ch === '\u0001') { code = true; continue; }
+      if (ch === '\u0002') { code = false; continue; }
+      if (ch === '\u0003') { bold = true; continue; }
+      if (ch === '\u0004') { bold = false; continue; }
+      if (ch === '\u0005') { italic = true; continue; }
+      if (ch === '\u0006') { italic = false; continue; }
+      if (ch === '\u0007') { link = '\u0008'; continue; }
+      if (ch === '\u0008') { link = ''; continue; }
+      sb.push(ch);
+      // 遇到下一个标记或结尾时 flush
+      const isBoundary: boolean = i + 1 >= r.length ||
+        r.charAt(i + 1) === '\u0001' || r.charAt(i + 1) === '\u0002' ||
+        r.charAt(i + 1) === '\u0003' || r.charAt(i + 1) === '\u0004' ||
+        r.charAt(i + 1) === '\u0005' || r.charAt(i + 1) === '\u0006' ||
+        r.charAt(i + 1) === '\u0007' || r.charAt(i + 1) === '\u0008';
+      if (isBoundary && sb.length > 0) {
+        result.push(new InlineSpan(sb.join(''), bold, italic, code, link));
+        sb.length = 0;
+      }
+    }
+    if (sb.length > 0) {
+      result.push(new InlineSpan(sb.join(''), bold, italic, code, link));
+    }
+    return result;
+  }
+
+  // 解析 Markdown 为块级结构
+  static parseBlocks(md: string): MdBlock[] {
+    const lines: string[] = md.split('\n');
+    const out: MdBlock[] = [];
+    let i: number = 0;
+    const n: number = lines.length;
+    while (i < n) {
+      const raw: string = lines[i];
+      const line: string = raw.trim();
+      if (line.length === 0) {
+        i++;
+        continue;
+      }
+      // 代码块
+      if (line.startsWith('```')) {
+        const codeLines: string[] = [];
+        i++;
+        while (i < n && !lines[i].trim().startsWith('```')) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        i++;
+        out.push(new MdBlock('code', '', codeLines, []));
+        continue;
+      }
+      // 标题
+      if (line.startsWith('### ')) {
+        out.push(new MdBlock('h3', line.substring(4), [], []));
+        i++;
+        continue;
+      }
+      if (line.startsWith('## ')) {
+        out.push(new MdBlock('h2', line.substring(3), [], []));
+        i++;
+        continue;
+      }
+      if (line.startsWith('# ')) {
+        out.push(new MdBlock('h1', line.substring(2), [], []));
+        i++;
+        continue;
+      }
+      // 引用
+      if (line.startsWith('>')) {
+        const quoteLines: string[] = [];
+        while (i < n && lines[i].trim().startsWith('>')) {
+          let q: string = lines[i].trim();
+          if (q.startsWith('> ')) q = q.substring(2);
+          else q = q.substring(1);
+          quoteLines.push(q);
+          i++;
+        }
+        out.push(new MdBlock('quote', '', [], quoteLines));
+        continue;
+      }
+      // 水平线
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
+        out.push(new MdBlock('hr', '', [], []));
+        i++;
+        continue;
+      }
+      // 无序列表
+      if (/^[-*+]\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < n) {
+          const t: string = lines[i].trim();
+          if (/^[-*+]\s+/.test(t)) {
+            items.push(t.replace(/^[-*+]\s+/, ''));
+            i++;
+          } else if (t.length === 0) {
+            break;
+          } else {
+            break;
+          }
+        }
+        out.push(new MdBlock('ul', '', [], items));
+        continue;
+      }
+      // 有序列表
+      if (/^\d+[.)]\s+/.test(line)) {
+        const items: string[] = [];
+        let num: number = 1;
+        while (i < n) {
+          const t: string = lines[i].trim();
+          if (/^\d+[.)]\s+/.test(t)) {
+            items.push(num.toString() + '. ' + t.replace(/^\d+[.)]\s+/, ''));
+            num++;
+            i++;
+          } else if (t.length === 0) {
+            break;
+          } else {
+            break;
+          }
+        }
+        out.push(new MdBlock('ol', '', [], items));
+        continue;
+      }
+      // 表格
+      if (line.indexOf('|') >= 0 && i + 1 < n && /^[\s:|-]+$/.test(lines[i + 1].trim())) {
+        const header: string[] = MarkdownConverter.splitTableRow(line);
+        const rows: string[] = [];
+        i += 2;
+        while (i < n && lines[i].trim().indexOf('|') >= 0) {
+          const cells: string[] = MarkdownConverter.splitTableRow(lines[i]);
+          const rowCells: string[] = [];
+          for (let c: number = 0; c < header.length; c++) {
+            rowCells.push(c < cells.length ? cells[c].trim() : '');
+          }
+          rows.push(rowCells.join(' │ '));
+          i++;
+        }
+        out.push(new MdBlock('table', '', [header.map((h: string): string => h.trim()).join(' │ ')],
+          rows));
+        continue;
+      }
+      // 普通段落：连续非空行合并
+      const paraLines: string[] = [];
+      while (i < n) {
+        const t: string = lines[i].trim();
+        if (t.length === 0) break;
+        if (t.startsWith('```') || t.startsWith('#') || /^(-{3,}|\*{3,}|_{3,})$/.test(t)) break;
+        paraLines.push(t);
+        i++;
+      }
+      out.push(new MdBlock('p', '', [], paraLines));
+    }
+    return out;
+  }
+}
+
+// 行内富文本片段（供原生 Text + Span 渲染）
+export class InlineSpan {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  code: boolean;
+  link: string;
+
+  constructor(text: string, bold: boolean, italic: boolean, code: boolean, link: string) {
+    this.text = text;
+    this.bold = bold;
+    this.italic = italic;
+    this.code = code;
+    this.link = link;
+  }
+}
+
+// Markdown 块级元素（kind: p/h1/h2/h3/code/quote/hr/ul/ol/table）
+export class MdBlock {
+  kind: string;
+  text: string;
+  lines: string[];
+  items: string[];
+
+  constructor(kind: string, text: string, lines: string[], items: string[]) {
+    this.kind = kind;
+    this.text = text;
+    this.lines = lines;
+    this.items = items;
   }
 }
