@@ -16,6 +16,41 @@ import { ChatMessage, entryToConfig, LlmConfig, LlmModelEntry, LlmResult, modelD
   modelDisplayNameFromConfig } from '../common/LlmModels';
 import { MarkdownConverter } from '../common/MarkdownConverter';
 
+// Markdown 渲染组件：用 Web 组件渲染完整 HTML/CSS，自适应内容高度
+// RichText 对 CSS 支持极有限（不支持 style 属性中大部分 CSS），改用 Web 确保样式正确
+@Component
+struct MarkdownContent {
+  @Prop content: string = '';
+  @Prop isDark: boolean = false;
+  @State contentHeight: number = 80;
+  private controller: webview.WebviewController = new webview.WebviewController();
+
+  build() {
+    Web({ src: 'about:blank', controller: this.controller })
+      .width('100%')
+      .height(this.contentHeight)
+      .backgroundColor(Color.Transparent)
+      .zoomAccess(false)
+      .scrollBarVisible(false)
+      .onControllerAttached(() => {
+        const html: string = MarkdownConverter.toHtml(this.content, this.isDark);
+        this.controller.loadData(html, 'text/html', 'UTF-8', 'data');
+      })
+      .onPageEnd(() => {
+        setTimeout(() => {
+          this.controller.runJavaScript('document.body.scrollHeight')
+            .then((result: string) => {
+              const h: number = Number(result);
+              if (h > 0) {
+                this.contentHeight = h;
+              }
+            })
+            .catch(() => {});
+        }, 50);
+      })
+  }
+}
+
 // 单条消息气泡子组件：用 @ObjectLink 监听 @Observed ChatMessage 的 content 变化
 // 流式 delta 仅修改 message.content 即可触发本组件刷新，无需重建整个消息列表
 @Component
@@ -170,11 +205,10 @@ struct MessageBubble {
             .alignItems(HorizontalAlign.Start)
             .width('100%')
           }
-          // 正文：流式中用 Text 打字机效果；结束后用 RichText 渲染 markdown
+          // 正文：流式中用 Text 打字机效果；结束后用 Web 渲染 markdown
           if (this.useMarkdown()) {
-            // RichText 原生渲染 markdown：自适应高度、轻量、无 WebView 开销
-            // 注意：RichText 不支持 fontSize/fontFamily/fontColor/lineHeight 属性，字体样式由 HTML style 控制
-            RichText(MarkdownConverter.toRichTextHtml(this.message.content, this.isDark))
+            // Web 组件渲染 markdown：支持完整 CSS，通过 JS 桥接实现自适应高度
+            MarkdownContent({ content: this.message.content, isDark: this.isDark })
               .width('100%')
               .padding(12)
               .borderRadius(12)
@@ -183,7 +217,6 @@ struct MessageBubble {
                 color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
               .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
               .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
-              .align(Alignment.TopStart)
               .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
           } else {
             Text(this.message.content.trim().length > 0 ? this.message.content.trim() : '…')
