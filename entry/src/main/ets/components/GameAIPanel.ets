@@ -28,7 +28,7 @@ export struct GameAIPanel {
           .fontSize(this.palette.fsSm)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.modelsConfigured ? this.palette.textPrimary : this.palette.textTertiary)
-          .maxLines(1)
+          .maxLines(this.modelsConfigured ? 2 : 1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
           .padding({ left: 8, right: 8, top: 5, bottom: 5 })

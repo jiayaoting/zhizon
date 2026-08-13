@@ -371,6 +371,13 @@ export struct SnakePage {
   // ---- AI 托管（AI 决策期间冻结移动计时器，避免蛇在 AI 思考时撞墙） ----
   private async initAiPanel(): Promise<void> {
     this.aiModels = await GameAIService.loadModelOptions();
+    // 恢复本游戏记忆的模型；无记忆时保持默认（激活模型）
+    const savedId: string = await GameAIService.loadSavedModelId('Snake');
+    if (savedId.length > 0) {
+      for (let i: number = 0; i < this.aiModels.length; i++) {
+        if (this.aiModels[i].id === savedId) { this.aiModelIndex = i; break; }
+      }
+    }
     const names: string[] = [];
     for (let i: number = 0; i < this.aiModels.length; i++) {
       names.push(GameAIService.modelLabel(this.aiModels[i]));
@@ -431,6 +438,7 @@ export struct SnakePage {
         this.aiConfig = config;
         this.aiFailCount = 0;
       });
+      GameAIService.saveModelId('Snake', this.aiModels[index].id);
     }
   }
 

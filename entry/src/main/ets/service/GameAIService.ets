@@ -1,10 +1,20 @@
 // 智子 - 游戏 AI 服务（状态序列化 / 动作解析 / LLM 调用 / 模型管理）
 import { ChatRepository } from './ChatRepository';
+import { DataRepository } from './DataRepository';
 import { LlmClient } from './LlmClient';
 import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, entryToConfig } from '../common/LlmModels';
 import { DifficultyLevel, difficultyLabel } from '../common/Difficulty';
 
 export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku';
+
+// AI 模型记忆存储键：聊天/AI 使用默认键，各游戏独立记忆自己的键
+const AI_MODEL_KEY_PREFIX = 'aiModelId';
+
+// 组装当前游戏的模型记忆键；非游戏场景（聊天/AI 默认）使用默认键
+function aiModelKeyFor(kind: GameKind | ''): string {
+  if (kind.length === 0) return AI_MODEL_KEY_PREFIX;
+  return AI_MODEL_KEY_PREFIX + '_' + kind;
+}
 
 // 贪吃蛇坐标点
 export interface SnakePoint {
@@ -70,6 +80,22 @@ export class GameAIService {
   static modelLabel(entry: LlmModelEntry): string {
     const base: string = entry.model.trim().length > 0 ? entry.model.trim() : entry.providerId;
     return entry.displayName.trim().length > 0 ? entry.displayName.trim() : base;
+  }
+
+  // 记忆当前应用/游戏选中的模型 id（kind 为空表示聊天/AI 默认）
+  static async saveModelId(kind: GameKind | '', modelId: string): Promise<void> {
+    await DataRepository.setSetting(aiModelKeyFor(kind), modelId);
+  }
+
+  // 读取当前应用/游戏记忆的模型 id；无记忆或模型已删除返回 ''
+  static async loadSavedModelId(kind: GameKind | ''): Promise<string> {
+    const saved: string = await DataRepository.getSetting(aiModelKeyFor(kind), '');
+    if (saved.length === 0) return '';
+    const models: LlmModelEntry[] = await ChatRepository.loadModels();
+    for (let i: number = 0; i < models.length; i++) {
+      if (models[i].id === saved) return saved;
+    }
+    return '';
   }
 
   // ---- Prompt 构建 ----

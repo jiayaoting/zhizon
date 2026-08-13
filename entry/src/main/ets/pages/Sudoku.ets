@@ -337,6 +337,13 @@ export struct SudokuPage {
   // ---- AI 托管 ----
   private async initAiPanel(): Promise<void> {
     this.aiModels = await GameAIService.loadModelOptions();
+    // 恢复本游戏记忆的模型；无记忆时保持默认（激活模型）
+    const savedId: string = await GameAIService.loadSavedModelId('Sudoku');
+    if (savedId.length > 0) {
+      for (let i: number = 0; i < this.aiModels.length; i++) {
+        if (this.aiModels[i].id === savedId) { this.aiModelIndex = i; break; }
+      }
+    }
     const names: string[] = [];
     for (let i: number = 0; i < this.aiModels.length; i++) {
       names.push(GameAIService.modelLabel(this.aiModels[i]));
@@ -392,6 +399,7 @@ export struct SudokuPage {
         this.aiConfig = config;
         this.aiFailCount = 0;
       });
+      GameAIService.saveModelId('Sudoku', this.aiModels[index].id);
     }
   }
 
