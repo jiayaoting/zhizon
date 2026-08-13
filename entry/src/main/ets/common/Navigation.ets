@@ -2,17 +2,17 @@ import { router } from '@kit.ArkUI';
 
 export enum MainNavKey {
   Index = 'Index',
-  Toolbox = 'Toolbox',
-  More = 'More'
+  Games = 'Games',
+  Chat = 'Chat',
+  Profile = 'Profile'
 }
 
 export enum PageKey {
   Index = 'Index',
-  Toolbox = 'Toolbox',
-  More = 'More',
   Games = 'Games',
+  Chat = 'Chat',
   Settings = 'Settings',
-  Chat = 'Chat'
+  Profile = 'Profile'
 }
 
 export enum NavigationSource {
@@ -135,10 +135,10 @@ export class PageParameterResult {
 
 const PAGE_REGISTRY: PageRegistration[] = [
   new PageRegistration(PageKey.Index, MainNavKey.Index, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.Toolbox, MainNavKey.Toolbox, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.More, MainNavKey.More, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.Games, MainNavKey.Toolbox, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.Settings, MainNavKey.More, PageAvailability.EMBEDDED, 'pages/AppShell')
+  new PageRegistration(PageKey.Games, MainNavKey.Games, PageAvailability.EMBEDDED, 'pages/AppShell'),
+  new PageRegistration(PageKey.Chat, MainNavKey.Chat, PageAvailability.EMBEDDED, 'pages/AppShell'),
+  new PageRegistration(PageKey.Profile, MainNavKey.Profile, PageAvailability.EMBEDDED, 'pages/AppShell'),
+  new PageRegistration(PageKey.Settings, MainNavKey.Profile, PageAvailability.EMBEDDED, 'pages/AppShell')
 ];
 
 function copyState(state: NavigationState): NavigationState {
@@ -150,27 +150,29 @@ function validIdentifier(value: string): boolean {
 }
 
 export function isMainNavKey(key: string): boolean {
-  return key === MainNavKey.Index || key === MainNavKey.Toolbox || key === MainNavKey.More;
+  return key === MainNavKey.Index || key === MainNavKey.Games || key === MainNavKey.Chat ||
+    key === MainNavKey.Profile;
 }
 
 export function pageOwner(page: PageKey): MainNavKey {
   const registration: PageRegistration | null = NavigationFacade.registration(page);
-  return registration === null ? MainNavKey.More : registration.owner;
+  return registration === null ? MainNavKey.Profile : registration.owner;
 }
 
 export function pageFromString(key: string): PageKey | null {
   if (key === PageKey.Index) return PageKey.Index;
-  if (key === PageKey.Toolbox) return PageKey.Toolbox;
-  if (key === PageKey.More) return PageKey.More;
   if (key === PageKey.Games) return PageKey.Games;
+  if (key === PageKey.Chat) return PageKey.Chat;
   if (key === PageKey.Settings) return PageKey.Settings;
+  if (key === PageKey.Profile) return PageKey.Profile;
   return null;
 }
 
 export function mainPage(key: MainNavKey): PageKey {
   if (key === MainNavKey.Index) return PageKey.Index;
-  if (key === MainNavKey.Toolbox) return PageKey.Toolbox;
-  return PageKey.More;
+  if (key === MainNavKey.Chat) return PageKey.Chat;
+  if (key === MainNavKey.Profile) return PageKey.Profile;
+  return PageKey.Games;
 }
 
 export class NavigationFacade {

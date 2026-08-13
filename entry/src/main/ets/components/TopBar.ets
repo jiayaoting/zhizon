@@ -8,6 +8,8 @@ export struct TopBar {
   @Prop title: string;
   @Prop subtitle: string = '';
   @Prop showBack: boolean = false;
+  // 自定义返回回调：嵌入子页（非路由压栈）时，由宿主提供返回逻辑；缺省时回退到 router.back()
+  onBackTap: (() => void) | undefined = undefined;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('statusBarHeight') statusBarHeight: number = 20;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
@@ -32,7 +34,13 @@ export struct TopBar {
         .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .onClick(() => router.back())
+        .onClick(() => {
+          if (this.onBackTap !== undefined) {
+            this.onBackTap();
+          } else {
+            router.back();
+          }
+        })
       }
 
       Column() {

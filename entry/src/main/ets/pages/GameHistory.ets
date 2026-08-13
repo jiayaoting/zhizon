@@ -98,7 +98,7 @@ export struct GameHistoryPage {
           ForEach(this.gameKeys, (key: string) => {
             Row({ space: 4 }) {
               Text(gameIcon(key))
-                .fontSize(14)
+                .fontSize(this.palette.fsMd)
                 .fontFamily(this.palette.fontSans)
               Text(gameName(key))
                 .fontSize(this.palette.fsSm)
@@ -149,7 +149,7 @@ export struct GameHistoryPage {
               Row({ space: 10 }) {
                 // 排名
                 Text(medalIcon(idx))
-                  .fontSize(20)
+                  .fontSize(this.palette.fsXl)
                   .fontFamily(this.palette.fontSans)
                   .width(32)
                   .textAlign(TextAlign.Center)

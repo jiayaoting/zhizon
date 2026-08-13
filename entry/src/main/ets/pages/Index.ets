@@ -6,7 +6,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
-import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
+import { DifficultyLevel, GameId, GameLaunchFacade,
   GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
 import { PageKey, GameHistoryRouteParams } from '../common/Navigation';
 import { ParticleBackground } from '../components/ParticleBackground';
@@ -168,12 +168,12 @@ export struct IndexPage {
     Row() {
       Column() {
         Text(this.greeting)
-          .fontSize(24)
+          .fontSize(this.palette.fsXl + 4)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text(this.currentTime)
-          .fontSize(12)
+          .fontSize(this.palette.fsSm)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .margin({ top: 4 })
@@ -230,13 +230,13 @@ export struct IndexPage {
     Column({ space: 0 }) {
       Row() {
         Text('游戏中心')
-          .fontSize(16)
+          .fontSize(this.palette.fsLg)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('查看全部 ›')
-          .fontSize(12)
+          .fontSize(this.palette.fsSm)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .onClick(() => {
@@ -264,12 +264,12 @@ export struct IndexPage {
             // 标题 + 描述
             Column({ space: 4 }) {
               Text(game.name)
-                .fontSize(15)
+                .fontSize(this.palette.fsBase + 2)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
               Text(game.desc)
-                .fontSize(11)
+                .fontSize(this.palette.fsSm - 1)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textTertiary)
                 .maxLines(1)
@@ -280,7 +280,7 @@ export struct IndexPage {
 
             // 开始按钮
             Button('开始')
-              .fontSize(12)
+              .fontSize(this.palette.fsSm)
               .fontFamily(this.palette.fontSans)
               .fontColor(Color.White)
               .backgroundColor(game.color)
@@ -312,17 +312,17 @@ export struct IndexPage {
     Column({ space: 0 }) {
       Row() {
         Text('最佳战绩')
-          .fontSize(16)
+          .fontSize(this.palette.fsMd)
           .fontColor(this.palette.textPrimary)
           .fontFamily(this.palette.fontSans)
           .fontWeight(FontWeight.Bold)
         Blank()
-        Text('历史记录 ›')
-          .fontSize(12)
+        Text('进入游戏 ›')
+          .fontSize(this.palette.fsXs)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('2048') });
+            this.onNavigate('Games');
           })
       }
       .width('100%')
@@ -334,10 +334,10 @@ export struct IndexPage {
           ForEach(this.scoreRows, (row: ScoreRow) => {
             Column({ space: 6 }) {
               Text(row.icon)
-                .fontSize(20)
+                .fontSize(this.palette.fsLg)
                 .fontFamily(this.palette.fontSans)
               Text(row.name)
-                .fontSize(11)
+                .fontSize(this.palette.fsXs)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textSecondary)
                 .fontWeight(FontWeight.Medium)
@@ -350,10 +350,10 @@ export struct IndexPage {
                 .fontFamily(this.palette.fontMono)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text('最高分')
-                .fontSize(9)
+              Text('查看记录 ›')
+                .fontSize(this.palette.fsXs - 2)
                 .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontColor(this.palette.primary)
             }
             .width(110)
             .padding({ top: 16, bottom: 16 })
@@ -361,6 +361,7 @@ export struct IndexPage {
             .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
             .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
             .alignItems(HorizontalAlign.Center)
+            .onClick(() => { this.openHistory(row.gameId); })
           }, (row: ScoreRow) => row.gameId)
         }
         .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
@@ -372,55 +373,20 @@ export struct IndexPage {
     .width('100%')
   }
 
-  // ==================== 难度速览 ====================
-  @Builder
-  difficultyQuickView() {
-    Column({ space: 0 }) {
-      Row() {
-        Text('难度速览')
-          .fontSize(16)
-          .fontColor(this.palette.textPrimary)
-          .fontFamily(this.palette.fontSans)
-          .fontWeight(FontWeight.Bold)
-      }
-      .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-      .margin({ bottom: 12 })
+  // 点击战绩卡进入对应游戏的历史记录（不再固定跳 2048）
+  private openHistory(gameId: GameId): void {
+    const key: string = this.gameHistoryKey(gameId);
+    if (key.length === 0) return;
+    router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams(key) });
+  }
 
-      Scroll() {
-        Row({ space: 10 }) {
-          ForEach(DIFFICULTY_DEFINITIONS, (def: DifficultyDefinition) => {
-            Column({ space: 4 }) {
-              Text(def.icon)
-                .fontSize(20)
-                .fontFamily(this.palette.fontSans)
-              Text(def.label)
-                .fontSize(11)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .fontWeight(FontWeight.Medium)
-              Text(def.description)
-                .fontSize(9)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-            .width(110)
-            .padding({ top: 14, bottom: 14 })
-            .borderRadius(12)
-            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-            .alignItems(HorizontalAlign.Center)
-          }, (def: DifficultyDefinition) => def.level)
-        }
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .width('100%')
-    }
-    .width('100%')
+  private gameHistoryKey(gameId: GameId): string {
+    if (gameId === GameId.TETRIS) return 'Tetris';
+    if (gameId === GameId.GAME_2048) return '2048';
+    if (gameId === GameId.SNAKE) return 'Snake';
+    if (gameId === GameId.MINESWEEPER) return 'Minesweeper';
+    if (gameId === GameId.SUDOKU) return 'SUDOKU';
+    return '';
   }
 
   build() {
@@ -436,7 +402,7 @@ export struct IndexPage {
               .height(36)
               .color(this.palette.primary)
             Text('加载中...')
-              .fontSize(14)
+              .fontSize(this.palette.fsMd)
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textSecondary)
               .margin({ top: 12 })
@@ -458,9 +424,6 @@ export struct IndexPage {
 
                 // 最佳战绩
                 this.recentScores()
-
-                // 难度速览
-                this.difficultyQuickView()
 
                 // 底部留白
                 Column().height(20)

@@ -431,14 +431,15 @@ struct MessageBubble {
   }
 }
 
-@Entry
 @Component
-struct Chat {
+export struct ChatTab {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @StorageLink('isDarkMode') isDark: boolean = false;
+  // 宿主（AppShell）在 Chat 子页返回/切换 Tab 时递增该 token，驱动本组件刷新模型配置
+  @StorageLink('chatRefreshToken') @Watch('onRefreshToken') chatRefreshToken: number = 0;
 
   @State messages: ChatMessage[] = [];
   @State inputText: string = '';
@@ -481,11 +482,12 @@ struct Chat {
     this.load();
   }
 
-  // onPageShow 仅在页面被路由栈顶显示时触发，router.pushUrl 子页返回也会触发
-  onPageShow(): void {
-    this.refreshModels();
-    // 回到页面时滚动到最新消息
-    setTimeout(() => { this.scrollToBottom(); }, 100);
+  // 作为 Tab 嵌入后无 onPageShow，改为监听宿主递增的刷新 token（ChatConfig 返回/切回本 Tab 时触发）
+  onRefreshToken(): void {
+    if (this.chatRefreshToken > 0) {
+      this.refreshModels();
+      setTimeout(() => { this.scrollToBottom(); }, 100);
+    }
   }
 
   private async load(): Promise<void> {
@@ -1194,8 +1196,7 @@ struct Chat {
       Column() {
         TopBar({
           title: this.selectionMode ? '已选 ' + this.selectedIds.length.toString() + ' 条' : 'AI 对话',
-          subtitle: this.selectionMode ? '长按消息进入多选' : (this.showSearch ? '搜索模式' : this.configHint),
-          showBack: true
+          subtitle: this.selectionMode ? '长按消息进入多选' : (this.showSearch ? '搜索模式' : this.configHint)
         }) {
           if (this.selectionMode) {
             Row({ space: 16 }) {

@@ -1,6 +1,6 @@
 // 智子 - 全局常量
 import { ColorThemeId } from './Theme';
-import { MainNavKey, PageKey } from './Navigation';
+import { MainNavKey } from './Navigation';
 
 export class NavItem {
   key: MainNavKey;
@@ -11,34 +11,6 @@ export class NavItem {
     this.key = key;
     this.label = label;
     this.icon = icon;
-  }
-}
-
-export class ToolboxItem {
-  key: PageKey;
-  label: string;
-  icon: string;
-  desc: string;
-
-  constructor(key: PageKey, label: string, icon: string, desc: string) {
-    this.key = key;
-    this.label = label;
-    this.icon = icon;
-    this.desc = desc;
-  }
-}
-
-export class MoreItem {
-  key: PageKey;
-  label: string;
-  icon: string;
-  desc: string;
-
-  constructor(key: PageKey, label: string, icon: string, desc: string) {
-    this.key = key;
-    this.label = label;
-    this.icon = icon;
-    this.desc = desc;
   }
 }
 
@@ -54,18 +26,9 @@ export class AppConstants {
 
   static readonly navItems: NavItem[] = [
     new NavItem(MainNavKey.Index, '首页', '🏠'),
-    new NavItem(MainNavKey.Toolbox, '工具箱', '🧰'),
-    new NavItem(MainNavKey.More, '更多', '⋯')
-  ];
-
-  // 工具箱子页面
-  static readonly toolboxItems: ToolboxItem[] = [
-    new ToolboxItem(PageKey.Games, '游戏中心', '🎮', '休闲小游戏'),
-    new ToolboxItem(PageKey.Chat, 'AI 对话', '🗨️', '配置大模型 API 进行对话')
-  ];
-
-  static readonly moreItems: MoreItem[] = [
-    new MoreItem(PageKey.Settings, '设置', '⚙️', '主题、背景与应用设置')
+    new NavItem(MainNavKey.Games, '游戏', '🎮'),
+    new NavItem(MainNavKey.Chat, 'AI对话', '🗨️'),
+    new NavItem(MainNavKey.Profile, '我的', '👤')
   ];
 }
 

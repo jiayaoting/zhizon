@@ -223,7 +223,7 @@ export struct GamesPage {
         // 使用说明按钮
         Row() {
           Text('📖')
-            .fontSize(16)
+            .fontSize(this.palette.fsLg)
             .fontFamily(this.palette.fontSans)
         }
         .width(36)
@@ -255,7 +255,7 @@ export struct GamesPage {
             Row() {
               Blank()
               Text('✕')
-                .fontSize(16)
+                .fontSize(this.palette.fsLg)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textTertiary)
                 .padding(8)

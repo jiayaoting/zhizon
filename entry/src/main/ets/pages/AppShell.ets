@@ -2,13 +2,13 @@ import { promptAction, router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { FixedBottomNav } from '../components/FixedBottomNav';
-import { AppConstants, ToolboxItem } from '../common/Constants';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
   NavigationFailure, NavigationSource, NavigationFacade, mainPage, AppShellRouteParams } from '../common/Navigation';
 import { IndexPage } from './Index';
 import { SettingsPage } from './Settings';
 import { GamesPage } from './Games';
-import { MorePage } from './More';
+import { ProfilePage } from './Profile';
+import { ChatTab } from './Chat';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { FontRegistry } from '../components/FontRegistry';
 import { PrivacyDialog } from '../components/PrivacyDialog';
@@ -49,13 +49,29 @@ struct AppShell {
     // 导航容器为路由托管，无独立资源需要释放
   }
 
-  // 返回键拦截：子页面返回首页，首页才退出到桌面
+  // 从 ChatConfig 等路由子页返回时，AppShell 重新可见，通知 Chat 刷新模型配置
+  onPageShow(): void {
+    if (this.navigation.currentPage === PageKey.Chat) {
+      this.bumpChatRefresh();
+    }
+  }
+
+  // 返回键拦截：子页返回所属 Tab，Tab 首页才退出到桌面
   onBackPress(): boolean {
+    if (this.navigation.currentPage === PageKey.Settings) {
+      this.selectMain(MainNavKey.Profile);
+      return true;
+    }
     if (this.navigation.currentPage === PageKey.Index) {
       return false;
     }
     this.selectMain(MainNavKey.Index);
     return true;
+  }
+
+  private bumpChatRefresh(): void {
+    const current: number = AppStorage.get<number>('chatRefreshToken') ?? 0;
+    AppStorage.setOrCreate('chatRefreshToken', current + 1);
   }
 
   private handleNavigationResult(key: string, result: NavigationResult, animated: boolean = true): void {
@@ -84,28 +100,14 @@ struct AppShell {
     const target = mainPage(key);
     const result = NavigationFacade.navigate(this.navigation, target, NavigationSource.MAIN_NAV);
     this.handleNavigationResult(key, result);
-  }
-
-  private selectMoreEntry(key: PageKey): void {
-    if (key === PageKey.Chat) {
-      router.pushUrl({ url: 'pages/Chat' });
-      return;
+    if (key === MainNavKey.Chat) {
+      this.bumpChatRefresh();
     }
-    const result = NavigationFacade.navigate(this.navigation, key, NavigationSource.ENTRY);
-    this.handleNavigationResult(key, result);
   }
 
   private selectPage(key: string): void {
     const result = NavigationFacade.navigateLegacy(this.navigation, key, NavigationSource.LEGACY);
     this.handleNavigationResult(key, result);
-  }
-
-  private openToolboxEntry(item: ToolboxItem): void {
-    if (item.key === PageKey.Chat) {
-      router.pushUrl({ url: 'pages/Chat' });
-      return;
-    }
-    this.selectPage(item.key);
   }
 
   @Builder
@@ -119,30 +121,6 @@ struct AppShell {
         .height('100%')
         .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
       }
-      if (this.navigation.currentPage === PageKey.Toolbox) {
-        Column() {
-          this.toolboxPage()
-        }
-        .width('100%')
-        .height('100%')
-        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
-      }
-      if (this.navigation.currentPage === PageKey.More) {
-        Column() {
-          MorePage({ onSelectEntry: (key: PageKey): void => { this.selectMoreEntry(key); } })
-        }
-        .width('100%')
-        .height('100%')
-        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
-      }
-      if (this.navigation.currentPage === PageKey.Settings) {
-        Column() {
-          SettingsPage()
-        }
-        .width('100%')
-        .height('100%')
-        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
-      }
       if (this.navigation.currentPage === PageKey.Games) {
         Column() {
           GamesPage()
@@ -151,56 +129,33 @@ struct AppShell {
         .height('100%')
         .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
       }
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  toolboxPage() {
-    Column() {
-      Text('工具箱')
-        .fontSize(20)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-        .padding({ left: this.environment.width < 600 ? 16 : 24,
-          right: this.environment.width < 600 ? 16 : 24,
-          top: this.environment.safeTop + 16, bottom: 16 })
-      Scroll() {
-        Column({ space: 12 }) {
-          ForEach(AppConstants.toolboxItems, (item: ToolboxItem) => {
-            Row({ space: 12 }) {
-              Text(item.icon).fontSize(24)
-              Column({ space: 3 }) {
-                Text(item.label).fontSize(14)
-                .fontFamily(this.palette.fontSans).fontColor(this.palette.textPrimary).fontWeight(FontWeight.Medium)
-                Text(item.desc).fontSize(11)
-                .fontFamily(this.palette.fontSans).fontColor(this.palette.textTertiary)
-              }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
-              Text('›').fontSize(18)
-              .fontFamily(this.palette.fontSans).fontColor(this.palette.textTertiary)
-            }
-            .width('100%')
-            .padding(14)
-            .borderRadius(8)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .onClick(() => { this.openToolboxEntry(item); })
-          }, (item: ToolboxItem) => item.key)
+      if (this.navigation.currentPage === PageKey.Chat) {
+        Column() {
+          ChatTab()
         }
-        .padding(this.environment.width < 600 ? 16 : 24)
         .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
       }
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
+      if (this.navigation.currentPage === PageKey.Profile) {
+        Column() {
+          ProfilePage({ onNavigate: (key: string): void => { this.selectPage(key); } })
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
+      if (this.navigation.currentPage === PageKey.Settings) {
+        Column() {
+          SettingsPage({ onBack: (): void => { this.selectMain(MainNavKey.Profile); } })
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
   }
 
   @Builder
@@ -211,13 +166,13 @@ struct AppShell {
         .height(32)
         .visibility(this.startupState === StartupState.INITIALIZING ? Visibility.Visible : Visibility.None)
       Text(this.startupState === StartupState.FAILED ? '应用初始化失败' : '正在初始化应用')
-        .fontSize(18)
+        .fontSize(this.palette.fsLg)
         .fontFamily(this.palette.fontSans)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.palette.textPrimary)
       if (this.startupState === StartupState.FAILED) {
         Text('核心数据未加载，请重新打开应用后重试')
-          .fontSize(13)
+          .fontSize(this.palette.fsBase)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
       }

@@ -8,7 +8,6 @@ import { DataRepository } from '../service/DataRepository';
 import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
 import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
 import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
-import { LegalDocRouteParams } from '../common/Navigation';
 import { AvatarOption, AVATAR_OPTIONS, CUSTOM_AVATAR_ID, avatarLabel } from '../common/AvatarOptions';
 import { SecurityService, autoLockLabel, AUTO_LOCK_OPTIONS } from '../service/SecurityService';
 import { BiometricHelper } from '../service/BiometricHelper';
@@ -76,6 +75,7 @@ export struct SettingsPage {
   @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
   @StorageLink('backgroundDisplayState') backgroundDisplayState: BackgroundDisplayState = BackgroundDisplayState.INVALID;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
+  onBack: () => void = () => {};
 
   // 外观
   @State fontSizeScale: string = 'standard';
@@ -510,13 +510,6 @@ export struct SettingsPage {
     });
   }
 
-  private openLegalDoc(type: string): void {
-    router.pushUrl({
-      url: 'pages/LegalDoc',
-      params: new LegalDocRouteParams(type)
-    });
-  }
-
   private openChatConfig(): void {
     router.pushUrl({ url: 'pages/ChatConfig' });
   }
@@ -589,19 +582,19 @@ export struct SettingsPage {
   @Builder valueRow(label: string, value: string, onClick?: () => void) {
     Row() {
       Text(label)
-        .fontSize(13)
+        .fontSize(this.palette.fsBase)
         .fontColor(this.palette.textPrimary)
         .fontFamily(this.palette.fontSans)
         .layoutWeight(1)
       if (value) {
         Text(value)
-          .fontSize(12)
+          .fontSize(this.palette.fsSm)
           .fontColor(this.palette.textTertiary)
           .fontFamily(this.palette.fontSans)
           .margin({ right: 6 })
       }
       Text('›')
-        .fontSize(14)
+        .fontSize(this.palette.fsMd)
         .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textTertiary)
     }
@@ -621,7 +614,7 @@ export struct SettingsPage {
   @Builder toggleRow(label: string, isOn: boolean, onChange: (v: boolean) => void) {
     Row() {
       Text(label)
-        .fontSize(13)
+        .fontSize(this.palette.fsBase)
         .fontColor(this.palette.textPrimary)
         .fontFamily(this.palette.fontSans)
         .layoutWeight(1)
@@ -645,14 +638,14 @@ export struct SettingsPage {
               .fill(colorThemeColor(themeId))
             if (this.colorThemeId === themeId) {
               Text('✓')
-                .fontSize(14)
+                .fontSize(this.palette.fsMd)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(Color.White)
                 .fontWeight(FontWeight.Bold)
             }
           }
           Text(colorThemeName(themeId))
-            .fontSize(9)
+            .fontSize(this.palette.fsXs - 1)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
             .margin({ top: 4 })
@@ -673,7 +666,7 @@ export struct SettingsPage {
     Column({ space: 8 }) {
       Row() {
         Text('跟随系统深色模式')
-          .fontSize(13)
+          .fontSize(this.palette.fsBase)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
@@ -691,7 +684,7 @@ export struct SettingsPage {
       if (!this.followSystemDark) {
         Row() {
           Text('深色模式')
-            .fontSize(13)
+            .fontSize(this.palette.fsBase)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textPrimary)
             .layoutWeight(1)
@@ -715,28 +708,28 @@ export struct SettingsPage {
     Column({ space: 8 }) {
       Row() {
         Text('全局背景图')
-          .fontSize(13)
+          .fontSize(this.palette.fsBase)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
         if (this.backgroundDisplayState === BackgroundDisplayState.LOADING) {
           Text('正在应用')
-            .fontSize(12)
+            .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.primary)
         } else if (this.backgroundDisplayState === BackgroundDisplayState.INVALID && this.globalBgUri) {
           Text('背景失效，请重新选择')
-            .fontSize(12)
+            .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.warning)
         } else if (this.globalBgUri) {
           Text('已设置')
-            .fontSize(12)
+            .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.success)
         } else {
           Text('未设置')
-            .fontSize(12)
+            .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
         }
@@ -752,7 +745,7 @@ export struct SettingsPage {
       if (this.globalBgUri) {
         Row() {
           Text('清除背景图')
-            .fontSize(13)
+            .fontSize(this.palette.fsBase)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.danger)
         }
@@ -767,12 +760,12 @@ export struct SettingsPage {
 
       Row() {
         Text('可见强度')
-          .fontSize(13)
+          .fontSize(this.palette.fsBase)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
           .layoutWeight(1)
         Text(`${this.backgroundStrength}%`)
-          .fontSize(12)
+          .fontSize(this.palette.fsSm)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
       }
@@ -829,7 +822,7 @@ export struct SettingsPage {
               .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textSecondary)
             if (this.fontSizeScale === option.value) {
               Text('✓')
-                .fontSize(14)
+                .fontSize(this.palette.fsMd)
                 .fontFamily(this.palette.fontSans)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.palette.primary)
@@ -902,7 +895,7 @@ export struct SettingsPage {
                     .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text('Aa 智子 123 — ' + option.category)
-                    .fontSize(11)
+                    .fontSize(this.palette.fsSm - 1)
                     .fontFamily(option.family)
                     .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textTertiary)
                 }
@@ -910,7 +903,7 @@ export struct SettingsPage {
                 .layoutWeight(1)
                 if (this.fontFamily === option.family) {
                   Text('✓')
-                    .fontSize(14)
+                    .fontSize(this.palette.fsMd)
                     .fontFamily(this.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
                     .fontColor(this.palette.primary)
@@ -999,7 +992,7 @@ export struct SettingsPage {
                     .fontColor(this.appIconId === option.id ? this.palette.primary : this.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text(option.style)
-                    .fontSize(11)
+                    .fontSize(this.palette.fsSm - 1)
                     .fontFamily(this.palette.fontSans)
                     .fontColor(this.appIconId === option.id ? this.palette.primary : this.palette.textTertiary)
                 }
@@ -1007,7 +1000,7 @@ export struct SettingsPage {
                 .layoutWeight(1)
                 if (this.appIconId === option.id) {
                   Text('✓')
-                    .fontSize(14)
+                    .fontSize(this.palette.fsMd)
                     .fontFamily(this.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
                     .fontColor(this.palette.primary)
@@ -1113,7 +1106,7 @@ export struct SettingsPage {
                   .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                 Text('从相册选择一张图片作为头像')
-                  .fontSize(11)
+                  .fontSize(this.palette.fsSm - 1)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.textTertiary)
               }
@@ -1121,7 +1114,7 @@ export struct SettingsPage {
               .layoutWeight(1)
               if (this.avatarId === CUSTOM_AVATAR_ID) {
                 Text('✓')
-                  .fontSize(14)
+                  .fontSize(this.palette.fsMd)
                   .fontFamily(this.palette.fontSans)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(this.palette.primary)
@@ -1163,7 +1156,7 @@ export struct SettingsPage {
                     .fontColor(this.avatarId === option.id ? this.palette.primary : this.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text(option.style)
-                    .fontSize(11)
+                    .fontSize(this.palette.fsSm - 1)
                     .fontFamily(this.palette.fontSans)
                     .fontColor(this.avatarId === option.id ? this.palette.primary : this.palette.textTertiary)
                 }
@@ -1171,7 +1164,7 @@ export struct SettingsPage {
                 .layoutWeight(1)
                 if (this.avatarId === option.id) {
                   Text('✓')
-                    .fontSize(14)
+                    .fontSize(this.palette.fsMd)
                     .fontFamily(this.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
                     .fontColor(this.palette.primary)
@@ -1246,7 +1239,7 @@ export struct SettingsPage {
         Row() {
           Blank()
           Text('✕')
-            .fontSize(16)
+            .fontSize(this.palette.fsLg)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
             .padding(8)
@@ -1330,7 +1323,7 @@ export struct SettingsPage {
         .width('100%')
 
         Text('主密码仅以加盐哈希保存在本机，无法找回，请妥善保管。')
-          .fontSize(10)
+          .fontSize(this.palette.fsXs)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .lineHeight(15)
@@ -1364,7 +1357,7 @@ export struct SettingsPage {
         Row() {
           Blank()
           Text('✕')
-            .fontSize(16)
+            .fontSize(this.palette.fsLg)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textTertiary)
             .padding(8)
@@ -1390,7 +1383,7 @@ export struct SettingsPage {
               .layoutWeight(1)
             if (this.autoLock === autoLockLabel(value)) {
               Text('✓')
-                .fontSize(16)
+                .fontSize(this.palette.fsLg)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.primary)
                 .fontWeight(FontWeight.Bold)
@@ -1406,7 +1399,7 @@ export struct SettingsPage {
         }, (value: number) => value.toString())
 
         Text('开启后，应用切到后台超过设定时间将锁定，需主密码或生物识别解锁。')
-          .fontSize(10)
+          .fontSize(this.palette.fsXs)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textTertiary)
           .lineHeight(15)
@@ -1427,7 +1420,7 @@ export struct SettingsPage {
   build() {
     Stack() {
       Column() {
-        TopBar({ title: '设置', subtitle: '智子 v1.0.0' }) {
+        TopBar({ title: '设置', subtitle: '智子 v1.0.0', showBack: true, onBackTap: this.onBack }) {
           this.actionsBuilder()
         }
         Scroll() {
@@ -1437,7 +1430,7 @@ export struct SettingsPage {
               Column({ space: 12 }) {
                 // 颜色主题选择器
                 Text('颜色主题')
-                  .fontSize(13)
+                  .fontSize(this.palette.fsBase)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
@@ -1445,7 +1438,7 @@ export struct SettingsPage {
 
                 // 深色模式
                 Text('深色模式')
-                  .fontSize(13)
+                  .fontSize(this.palette.fsBase)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
@@ -1453,7 +1446,7 @@ export struct SettingsPage {
 
                 // 背景图
                 Text('背景图')
-                  .fontSize(13)
+                  .fontSize(this.palette.fsBase)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
@@ -1461,14 +1454,14 @@ export struct SettingsPage {
 
                 // 毛玻璃效果
                 Text('毛玻璃效果')
-                  .fontSize(13)
+                  .fontSize(this.palette.fsBase)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                   .margin({ top: 4 })
                 Row() {
                   Text('启用毛玻璃效果')
-                    .fontSize(13)
+                    .fontSize(this.palette.fsBase)
                     .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textPrimary)
                     .layoutWeight(1)
@@ -1483,7 +1476,7 @@ export struct SettingsPage {
                 .borderRadius(6)
                 .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
                 Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
-                  .fontSize(10)
+                  .fontSize(this.palette.fsXs)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
                   .width('100%')
@@ -1540,19 +1533,6 @@ export struct SettingsPage {
                   DataRepository.setSetting('autoBackup', v ? 'true' : 'false');
                   this.toast(`自动备份：${v ? '已开启' : '已关闭'}`);
                 })
-              }
-              .width('100%')
-            }
-
-            // 关于
-            GroupCard({ title: '关于' }) {
-              Column({ space: 8 }) {
-                this.valueRow('版本', '1.0.0')
-                this.valueRow('检查更新', '')
-                this.valueRow('用户协议', '', () => { this.openLegalDoc('agreement'); })
-                this.valueRow('隐私政策', '', () => { this.openLegalDoc('privacy'); })
-                this.valueRow('开源许可', '', () => { this.openLegalDoc('license'); })
-                this.valueRow('反馈', '')
               }
               .width('100%')
             }
