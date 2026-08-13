@@ -8,7 +8,7 @@ import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
-import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
+import { ChatMessage, entryToConfig, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
   modelDisplayNameFromConfig } from '../common/LlmModels';
 
 // 单条消息气泡子组件：用 @ObjectLink 监听 @Observed ChatMessage 的 content 变化
@@ -166,6 +166,10 @@ struct Chat {
     this.models = await ChatRepository.loadModels();
     this.activeModelId = await ChatRepository.loadActiveModelId();
     this.activeConfig = await ChatRepository.loadActiveConfig();
+    // 激活 id 与现有模型不匹配时（如已删除），同步为当前生效模型，保证列表高亮与状态一致
+    if (this.activeConfig !== null && this.activeModelId !== this.activeConfig.id) {
+      this.activeModelId = this.activeConfig.id;
+    }
     this.configReady = this.activeConfig !== null && this.activeConfig.configured;
     if (this.configReady && this.activeConfig !== null) {
       this.configHint = modelDisplayNameFromConfig(this.activeConfig);
@@ -186,10 +190,15 @@ struct Chat {
 
   private async selectModel(index: number): Promise<void> {
     const m: LlmModelEntry = this.models[index];
-    await ChatRepository.setActiveModelId(m.id);
+    try {
+      await ChatRepository.setActiveModelId(m.id);
+    } catch (e) {
+      promptAction.showToast({ message: '切换失败，请重试' });
+      return;
+    }
     this.activeModelId = m.id;
-    this.activeConfig = await ChatRepository.loadActiveConfig();
-    this.configReady = this.activeConfig !== null && this.activeConfig.configured;
+    this.activeConfig = entryToConfig(m);
+    this.configReady = this.activeConfig.configured;
     this.configHint = modelDisplayName(m);
     this.showModelPicker = false;
   }
@@ -527,82 +536,94 @@ struct Chat {
 
   @Builder
   modelPicker() {
-    Column() {
-      Row() {
-        Row()
-          .width(36)
-          .height(4)
-          .borderRadius(2)
-          .backgroundColor(this.palette.borderSubtle)
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 10, bottom: 4 })
-
-      Row() {
-        Text('选择模型')
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
+    Stack() {
+      Column() {
         Blank()
-        Text('✕')
-          .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
-          .padding(8)
-          .onClick(() => { this.showModelPicker = false; })
-      }
-      .width('100%')
-      .padding({ left: 4, right: 4, bottom: 8 })
+        Column() {
+          Row() {
+            Row()
+              .width(36)
+              .height(4)
+              .borderRadius(2)
+              .backgroundColor(this.palette.borderSubtle)
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .padding({ top: 10, bottom: 4 })
 
-      Scroll() {
-        Column({ space: 4 }) {
-          ForEach(this.models, (m: LlmModelEntry, index: number) => {
-            Row({ space: 10 }) {
-              Column({ space: 2 }) {
-                Text(modelDisplayName(m))
-                  .fontSize(this.palette.fsSm)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(m.id === this.activeModelId ? FontWeight.Bold : FontWeight.Medium)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(m.model)
-                  .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-              }
-              .alignItems(HorizontalAlign.Start)
-              .layoutWeight(1)
-              if (m.id === this.activeModelId) {
-                Text('✓')
-                  .fontSize(16)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.primary)
-                  .fontWeight(FontWeight.Bold)
-              }
+          Row() {
+            Text('选择模型')
+              .fontSize(this.palette.fsMd)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(FontWeight.Bold)
+            Blank()
+            Text('✕')
+              .fontSize(16)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.showModelPicker = false; })
+          }
+          .width('100%')
+          .padding({ left: 4, right: 4, bottom: 8 })
+
+          Scroll() {
+            Column({ space: 4 }) {
+              ForEach(this.models, (m: LlmModelEntry, index: number) => {
+                Row({ space: 10 }) {
+                  Column({ space: 2 }) {
+                    Text(modelDisplayName(m))
+                      .fontSize(this.palette.fsSm)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.textPrimary)
+                      .fontWeight(m.id === this.activeModelId ? FontWeight.Bold : FontWeight.Medium)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(m.model)
+                      .fontSize(10)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.textTertiary)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+                  if (m.id === this.activeModelId) {
+                    Text('✓')
+                      .fontSize(16)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.primary)
+                      .fontWeight(FontWeight.Bold)
+                  }
+                }
+                .width('100%')
+                .padding(12)
+                .borderRadius(8)
+                .backgroundColor(m.id === this.activeModelId ? this.palette.primaryDim : this.palette.bgSurface)
+                .border({ width: m.id === this.activeModelId ? 1 : 0,
+                  color: m.id === this.activeModelId ? this.palette.primary : Color.Transparent })
+                .onClick(() => { this.selectModel(index); })
+              }, (m: LlmModelEntry) => m.id)
             }
             .width('100%')
-            .padding(12)
-            .borderRadius(8)
-            .backgroundColor(m.id === this.activeModelId ? this.palette.primaryDim : this.palette.bgSurface)
-            .border({ width: m.id === this.activeModelId ? 1 : 0,
-              color: m.id === this.activeModelId ? this.palette.primary : Color.Transparent })
-            .onClick(() => { this.selectModel(index); })
-          }, (m: LlmModelEntry) => m.id)
+          }
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxHeight: 360 })
         }
         .width('100%')
+        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
+        .backgroundColor(this.palette.bgBase)
+        .borderRadius({ topLeft: 16, topRight: 16 })
       }
-      .scrollBar(BarState.Off)
-      .constraintSize({ maxHeight: 360 })
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
-    .backgroundColor(this.palette.bgBase)
-    .borderRadius({ topLeft: 16, topRight: 16 })
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.35)')
+    .onClick(() => { this.showModelPicker = false; })
   }
 
   build() {
@@ -735,11 +756,6 @@ struct Chat {
             .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
             .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
             .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
-            .bindSheet($$this.showModelPicker, () => { this.modelPicker() }, {
-              height: SheetSize.FIT_CONTENT,
-              dragBar: false,
-              backgroundColor: this.palette.bgBase
-            })
             .onClick(() => {
               if (this.models.length > 0) {
                 this.showModelPicker = true;
@@ -756,6 +772,8 @@ struct Chat {
       .width('100%')
       .height('100%')
       .backgroundColor(this.palette.bgBase)
+
+      if (this.showModelPicker) { this.modelPicker() }
     }
     .width('100%')
     .height('100%')

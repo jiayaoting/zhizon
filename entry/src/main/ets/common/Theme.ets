@@ -262,7 +262,7 @@ function fontSizeRatio(scale: string): number {
   if (scale === 'small') return 0.9;
   if (scale === 'large') return 1.3;
   if (scale === 'xlarge') return 1.45;
-  return 1.15; // standard
+  return 1.0; // standard
 }
 
 // 按字号档位缩放 fs 系列，并注入全局字体（原地修改 palette）
@@ -554,7 +554,7 @@ export class ThemeManager {
     if (scale === 'small') return Math.max(8, Math.round(base * 0.9));
     if (scale === 'large') return Math.round(base * 1.3);
     if (scale === 'xlarge') return Math.round(base * 1.45);
-    return Math.round(base * 1.15); // standard
+    return base; // standard
   }
 
   // 应用主题到 AppStorage
