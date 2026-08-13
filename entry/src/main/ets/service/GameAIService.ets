@@ -151,8 +151,16 @@ export class GameAIService {
   static async decide(config: LlmConfig, messages: ChatMessage[],
     timeoutMs: number = AI_DECISION_TIMEOUT): Promise<LlmResult> {
     let settled: boolean = false;
-    // 可取消请求：超时时主动中断底层 HTTP，避免请求挂起堆积
-    const cancellable = LlmClient.postCompletionCancelable(config, messages);
+    // 使用流式请求（与聊天共用已验证的 requestInStream 路径）：
+    // 非流式 request 在无响应超时后底层连接会残留在全局连接池被反复复用，导致请求永远收不到数据。
+    // 流式请求事件驱动接收，超时主动 destroy 彻底中断，不受连接池残留影响。
+    let fullContent: string = '';
+    const cancellable = LlmClient.postCompletionStreamCancelable(config, messages,
+      (delta: string) => {
+        fullContent = fullContent + delta;
+      },
+      (reasoningDelta: string) => {
+      });
     return await new Promise<LlmResult>((resolve: (value: LlmResult) => void) => {
       const timer: number = setTimeout(() => {
         if (!settled) {
@@ -162,11 +170,15 @@ export class GameAIService {
             'AI 决策超时：思考型模型响应较慢，请稍候或换用非思考模型'));
         }
       }, timeoutMs);
-      // 非流式请求：游戏决策只需最终动作，流式无法提前结束（思考型模型仍需等正文输出）
       cancellable.promise.then((result: LlmResult) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
+          // 流式响应已实时累加 fullContent，以累加结果为准（避免结果对象 content 为空）
+          if (fullContent.trim().length > 0) {
+            resolve(new LlmResult(true, fullContent, '', '', result.reasoning));
+            return;
+          }
           resolve(result);
         }
       }).catch((e: Object) => {
