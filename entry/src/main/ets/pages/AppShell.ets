@@ -2,6 +2,7 @@ import { promptAction, router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { FixedBottomNav } from '../components/FixedBottomNav';
+import { SideNav } from '../components/SideNav';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
   NavigationFailure, NavigationSource, NavigationFacade, mainPage, AppShellRouteParams } from '../common/Navigation';
 import { IndexPage } from './Index';
@@ -29,6 +30,7 @@ struct AppShell {
     new WindowEnvironmentSnapshot(WindowDeviceType.PHONE, 0, 0, WindowOrientation.PORTRAIT, 1, 44, 24,
       WindowEnvironmentConfidence.FALLBACK);
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @StorageLink('isWideNav') isWideNav: boolean = false;
   @State privacyConsented: boolean = false;
   @StorageLink('appLocked') appLocked: boolean = false;
 
@@ -188,29 +190,53 @@ struct AppShell {
       this.startupPage()
     } else {
       Stack() {
-        // 主内容层
-        Column() {
-          Stack() {
-            GlobalBackgroundLayer()
-            // 注册打包的开源字体（无可见 UI）
-            FontRegistry()
-            Column() {
-              this.renderPage()
+        if (this.isWideNav) {
+          // 大屏（2in1 / 平板横屏）：左侧导航 + 右侧内容
+          Row() {
+            SideNav({
+              selectedKey: this.navigation.selectedMain,
+              onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+            })
+            Stack() {
+              GlobalBackgroundLayer()
+              FontRegistry()
+              Column() {
+                this.renderPage()
+              }
+              .width('100%')
+              .height('100%')
             }
+            .layoutWeight(1)
             .width('100%')
             .height('100%')
           }
-          .layoutWeight(1)
           .width('100%')
+          .height('100%')
+          .backgroundColor(this.palette.bgBase)
+        } else {
+          // 手机 / 平板竖屏：底部导航 + 上方内容
+          Column() {
+            Stack() {
+              GlobalBackgroundLayer()
+              FontRegistry()
+              Column() {
+                this.renderPage()
+              }
+              .width('100%')
+              .height('100%')
+            }
+            .layoutWeight(1)
+            .width('100%')
 
-          FixedBottomNav({
-            selectedKey: this.navigation.selectedMain,
-            onSelect: (key: MainNavKey): void => { this.selectMain(key); }
-          })
+            FixedBottomNav({
+              selectedKey: this.navigation.selectedMain,
+              onSelect: (key: MainNavKey): void => { this.selectMain(key); }
+            })
+          }
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.palette.bgBase)
         }
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.palette.bgBase)
 
         // 隐私政策同意弹窗（未同意时覆盖）
         if (!this.privacyConsented) {

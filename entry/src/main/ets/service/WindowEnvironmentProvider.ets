@@ -1,4 +1,5 @@
 import { display, window } from '@kit.ArkUI';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const DOMAIN: number = 0x9201;
@@ -24,7 +25,10 @@ export enum WindowDeviceType {
 }
 
 export enum WindowFoldState {
-  UNKNOWN = 'UNKNOWN'
+  UNKNOWN = 'UNKNOWN',
+  EXPANDED = 'EXPANDED',
+  FOLDED = 'FOLDED',
+  HALF_FOLDED = 'HALF_FOLDED'
 }
 
 export class WindowEnvironmentSnapshot {
@@ -58,6 +62,7 @@ export class WindowEnvironmentProvider {
   private publishing: boolean = false;
   private currentSnapshot: WindowEnvironmentSnapshot = new WindowEnvironmentSnapshot(WindowDeviceType.PHONE,
     0, 0, WindowOrientation.PORTRAIT, 1, SAFE_TOP_MIN, SAFE_BOTTOM_MIN, WindowEnvironmentConfidence.FALLBACK);
+  private currentFoldState: WindowFoldState = WindowFoldState.UNKNOWN;
 
   snapshot(): WindowEnvironmentSnapshot {
     return this.currentSnapshot;
@@ -83,6 +88,29 @@ export class WindowEnvironmentProvider {
         'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
         'attach', 'SAFE_AREA', 'SAFE_AREA_LISTENER_FAILED', 'snapshot-fallback');
     }
+    // 窗口尺寸变化（2in1 自由缩放 / 分屏 / 旋转）实时刷新断点，保证跨设备自适应
+    try {
+      mainWindow.on('windowSizeChange', WindowEnvironmentProvider.handleWindowSizeChange);
+    } catch (error) {
+      hilog.error(DOMAIN, 'WindowEnvironment',
+        'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
+        'attach', 'SIZE_AREA', 'WINDOW_SIZE_LISTENER_FAILED', 'breakpoint-static');
+    }
+    // 折叠屏状态：读取当前状态并监听开合变化
+    try {
+      window.getDisplayFoldStatus().then((status: window.FoldStatus) => {
+        if (WindowEnvironmentProvider.activeProvider !== null) {
+          WindowEnvironmentProvider.activeProvider.updateFoldState(status);
+        }
+      }).catch(() => {
+        // 非折叠屏或不支持时保持 UNKNOWN
+      });
+      window.on('foldStatusChange', WindowEnvironmentProvider.handleFoldStatusChange);
+    } catch (error) {
+      hilog.error(DOMAIN, 'WindowEnvironment',
+        'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
+        'attach', 'FOLD', 'FOLD_LISTENER_FAILED', 'fold-unknown');
+    }
     this.refresh();
   }
 
@@ -103,6 +131,16 @@ export class WindowEnvironmentProvider {
         'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
         'detach', 'SAFE_AREA', 'SAFE_AREA_LISTENER_REMOVE_FAILED', 'publishing-disabled');
     }
+    try {
+      currentWindow.off('windowSizeChange', WindowEnvironmentProvider.handleWindowSizeChange);
+    } catch (error) {
+      // 尺寸监听移除失败不影响主流程
+    }
+    try {
+      window.off('foldStatusChange', WindowEnvironmentProvider.handleFoldStatusChange);
+    } catch (error) {
+      // 折叠监听移除失败不影响主流程
+    }
   }
 
   refresh(): void {
@@ -114,6 +152,7 @@ export class WindowEnvironmentProvider {
     if (!this.publishing || this.attachedWindow !== currentWindow) {
       return;
     }
+    snapshot.foldState = this.currentFoldState;
     this.currentSnapshot = snapshot;
     AppStorage.setOrCreate('windowEnvironmentSnapshot', snapshot);
     AppStorage.setOrCreate('statusBarHeight', snapshot.safeTop);
@@ -122,6 +161,41 @@ export class WindowEnvironmentProvider {
     AppStorage.setOrCreate('isMd', snapshot.width >= BP_SM && snapshot.width < BP_LG);
     AppStorage.setOrCreate('isLg', snapshot.width >= BP_LG);
     AppStorage.setOrCreate('isLandscape', snapshot.orientation === WindowOrientation.LANDSCAPE);
+    // 侧边导航开关：按物理设备类型判定（避免手机横屏被误判为大屏）
+    AppStorage.setOrCreate('isWideNav', this.resolveSideNavNeeded(snapshot.orientation));
+  }
+
+  // 是否使用侧边导航（大屏布局）：2in1 恒用；平板横屏用；手机无论横竖屏都不用
+  private resolveSideNavNeeded(orientation: WindowOrientation): boolean {
+    const dt: string = deviceInfo.deviceType;
+    if (dt === '2in1' || dt === 'desktop' || dt === 'pc') return true;
+    if (dt === 'tablet' || dt === 'pad') return orientation === WindowOrientation.LANDSCAPE;
+    return false;
+  }
+
+  // 单独更新折叠状态（开合变化时），其余环境量不变
+  private updateFoldState(status: window.FoldStatus): void {
+    let state: WindowFoldState = WindowFoldState.UNKNOWN;
+    if (status === window.FoldStatus.EXPANDED) state = WindowFoldState.EXPANDED;
+    else if (status === window.FoldStatus.FOLDED) state = WindowFoldState.FOLDED;
+    else if (status === window.FoldStatus.HALF_FOLDED) state = WindowFoldState.HALF_FOLDED;
+    this.currentFoldState = state;
+    this.currentSnapshot.foldState = state;
+    AppStorage.setOrCreate('windowEnvironmentSnapshot', this.currentSnapshot);
+  }
+
+  // 窗口尺寸变化（2in1 缩放 / 分屏 / 旋转）
+  private static handleWindowSizeChange(size: window.Size): void {
+    if (WindowEnvironmentProvider.activeProvider !== null) {
+      WindowEnvironmentProvider.activeProvider.refresh();
+    }
+  }
+
+  // 折叠屏开合状态变化
+  private static handleFoldStatusChange(status: window.FoldStatus): void {
+    if (WindowEnvironmentProvider.activeProvider !== null) {
+      WindowEnvironmentProvider.activeProvider.updateFoldState(status);
+    }
   }
 
   private static handleAvoidAreaChange(options: window.AvoidAreaOptions): void {
