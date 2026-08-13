@@ -214,6 +214,15 @@ export class ChatRepository {
     await DataRepository.setSetting(KEY_HISTORY, '');
   }
 
+  // 按 id 删除指定消息，并持久化剩余记录
+  static async deleteMessages(ids: string[]): Promise<ChatMessage[]> {
+    const history: ChatMessage[] = await ChatRepository.loadHistory();
+    const remaining: ChatMessage[] = history.filter((m: ChatMessage): boolean =>
+      ids.indexOf(m.id) < 0);
+    await ChatRepository.saveHistory(remaining);
+    return remaining;
+  }
+
   // 转换为请求上下文：
   // - 跳过 system role（应通过专门的 systemPrompt 参数注入，此处仅保留 user/assistant）
   // - 按字符数估算 token（总字符数 / 4），从最新向前累加直到接近 maxTokens 的 80%

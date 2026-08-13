@@ -2,6 +2,7 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { http } from '@kit.NetworkKit';
+import { webview } from '@kit.ArkWeb';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
@@ -10,6 +11,7 @@ import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
 import { ChatMessage, entryToConfig, LlmConfig, LlmModelEntry, LlmResult, modelDisplayName,
   modelDisplayNameFromConfig } from '../common/LlmModels';
+import { MarkdownConverter } from '../common/MarkdownConverter';
 
 // 单条消息气泡子组件：用 @ObjectLink 监听 @Observed ChatMessage 的 content 变化
 // 流式 delta 仅修改 message.content 即可触发本组件刷新，无需重建整个消息列表
@@ -19,9 +21,20 @@ struct MessageBubble {
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
+  @StorageLink('isDarkMode') isDark: boolean = false;
   @Prop index: number = 0;
+  @Prop selectionMode: boolean = false;
+  @Prop selected: boolean = false;
+  @Prop isStreaming: boolean = false;
   onRetry: (index: number) => void = () => {};
+  onLongPressMessage: (index: number) => void = () => {};
+  onToggleSelect: (index: number) => void = () => {};
+  onExpandReasoning: (index: number) => void = () => {};
+  onFullscreen: (index: number) => void = () => {};
   @State reasoningExpanded: boolean = false;
+  @State webHeight: number = 120;
+  private webController: webview.WebviewController = new webview.WebviewController();
+
   private formatTime(time: number): string {
     if (time <= 0) return '';
     const d: Date = new Date(time);
@@ -41,12 +54,65 @@ struct MessageBubble {
     }
   }
 
+  private isFailure(): boolean {
+    return this.message.content.indexOf('⚠️ 请求失败') === 0;
+  }
+
+  // 是否应使用 Web 渲染 markdown（助手消息、非失败、有内容、非流式中）
+  private useMarkdown(): boolean {
+    return this.message.role === 'assistant' && !this.isStreaming && !this.isFailure() &&
+      this.message.content.trim().length > 0;
+  }
+
+  private markdownHtml(): string {
+    return MarkdownConverter.toHtml(this.message.content, this.isDark);
+  }
+
+  // 展开/收起思考：展开时通知父组件滚动定位到本条
+  private toggleReasoning(): void {
+    this.reasoningExpanded = !this.reasoningExpanded;
+    if (this.reasoningExpanded) {
+      this.onExpandReasoning(this.index);
+    }
+  }
+
+  // 长按：进入多选或弹出操作菜单
+  private handleLongPress(): void {
+    if (this.selectionMode) {
+      this.onToggleSelect(this.index);
+    } else {
+      this.onLongPressMessage(this.index);
+    }
+  }
+
   build() {
     Row() {
+      // 多选模式：左侧选择框
+      if (this.selectionMode) {
+        Column() {
+          Row()
+            .width(20)
+            .height(20)
+            .borderRadius(10)
+            .border({ width: 2, color: this.selected ? this.palette.primary : this.palette.borderSubtle })
+            .backgroundColor(this.selected ? this.palette.primary : Color.Transparent)
+            .justifyContent(FlexAlign.Center)
+            .margin({ right: 8, top: 20 })
+          if (this.selected) {
+            Text('✓')
+              .fontSize(11)
+              .fontFamily(this.palette.fontSans)
+              .fontColor('#FFFFFF')
+              .margin({ right: 8 })
+          }
+        }
+        .onClick(() => { this.onToggleSelect(this.index); })
+      }
+
       if (this.message.role === 'user') {
         Blank()
         Column({ space: 4 }) {
-          Text(this.message.content)
+          Text(this.message.content.trim())
             .fontSize(this.palette.fsSm)
             .fontFamily(this.palette.fontSans)
             .fontColor('#FFFFFF')
@@ -57,7 +123,7 @@ struct MessageBubble {
             .constraintSize({ maxWidth: this.isSm ? 260 : 420 })
         }
         .alignItems(HorizontalAlign.End)
-        .gesture(LongPressGesture().onAction(() => { this.copyContent(); }))
+        .gesture(LongPressGesture().onAction(() => { this.handleLongPress(); }))
       } else {
         Column({ space: 4 }) {
           Row({ space: 6 }) {
@@ -74,7 +140,7 @@ struct MessageBubble {
               .fontColor(this.palette.textTertiary)
           }
           // 思考过程折叠区块：默认收起，点击展开查看思考内容
-          if (this.message.reasoning.length > 0) {
+          if (this.message.reasoning.trim().length > 0) {
             Column({ space: 4 }) {
               Row({ space: 6 }) {
                 Text('💭')
@@ -89,40 +155,64 @@ struct MessageBubble {
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
               }
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .padding({ left: 8, right: 8, top: 5, bottom: 5 })
               .borderRadius(6)
               .backgroundColor(this.palette.bgSurface2)
-              .onClick(() => { this.reasoningExpanded = !this.reasoningExpanded; })
+              .onClick(() => { this.toggleReasoning(); })
               if (this.reasoningExpanded) {
-                Text(this.message.reasoning)
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .lineHeight(16)
-                  .padding(8)
-                  .borderRadius(6)
-                  .backgroundColor(this.palette.bgSurface2)
-                  .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+                // 思考内容限高可滚动：长思考不会撑爆列表，且用户无需滑回顶部即可收起
+                Scroll() {
+                  Text(this.message.reasoning.trim())
+                    .fontSize(this.palette.fsXs)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textTertiary)
+                    .lineHeight(16)
+                    .width('100%')
+                    .padding(8)
+                }
+                .scrollBar(BarState.Off)
+                .constraintSize({ maxHeight: 200 })
+                .borderRadius(6)
+                .backgroundColor(this.palette.bgSurface2)
               }
             }
             .alignItems(HorizontalAlign.Start)
             .width('100%')
           }
-          Text(this.message.content.length > 0 ? this.message.content : '…')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .lineHeight(20)
-            .padding(12)
-            .borderRadius(12)
-            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-            .border({ width: 1,
-              color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-            .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+          // 正文：流式中用 Text 打字机效果；结束后用 Web 渲染 markdown
+          if (this.useMarkdown()) {
+            // 用 Web 渲染 markdown，无边框无内边距包裹，避免顶部空白
+            Column() {
+              Web({ src: 'about:blank', controller: this.webController })
+                .width('100%')
+                .height(this.webHeight)
+                .backgroundColor(Color.Transparent)
+                .onControllerAttached(() => {
+                  // Controller 绑定后即可加载 markdown HTML（推荐时机）
+                  this.webController.loadData(this.markdownHtml(), 'text/html', 'UTF-8', 'data');
+                })
+            }
+            .justifyContent(FlexAlign.Start)
             .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+            .borderRadius(12)
+            .padding(0)
+            .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
+          } else {
+            Text(this.message.content.trim().length > 0 ? this.message.content.trim() : '…')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .lineHeight(20)
+              .padding(12)
+              .borderRadius(12)
+              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+              .border({ width: 1,
+                color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+              .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+              .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+          }
           // 失败时显示重试按钮
-          if (this.message.content.length > 0 &&
-            this.message.content.indexOf('⚠️ 请求失败') === 0) {
+          if (this.isFailure()) {
             Row() {
               Text('↻ 重试')
                 .fontSize(this.palette.fsXs)
@@ -138,7 +228,13 @@ struct MessageBubble {
           }
         }
         .alignItems(HorizontalAlign.Start)
-        .gesture(LongPressGesture().onAction(() => { this.copyContent(); }))
+        .gesture(LongPressGesture().onAction(() => { this.handleLongPress(); }))
+        .gesture(TapGesture({ count: 2 }).onAction(() => {
+          if (this.message.role === 'assistant' && !this.isFailure() &&
+            this.message.content.trim().length > 0) {
+            this.onFullscreen(this.index);
+          }
+        }))
       }
     }
     .width('100%')
@@ -153,6 +249,7 @@ struct Chat {
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
+  @StorageLink('isDarkMode') isDark: boolean = false;
 
   @State messages: ChatMessage[] = [];
   @State inputText: string = '';
@@ -178,6 +275,14 @@ struct Chat {
   @State searchQuery: string = '';
   @State searchRole: string = 'all';
 
+  // 多选删除
+  @State selectionMode: boolean = false;
+  @State selectedIds: string[] = [];
+
+  // 全屏 markdown 查看
+  @State fullscreenIndex: number = -1;
+  private fullscreenController: webview.WebviewController = new webview.WebviewController();
+
   private readonly scrollController: Scroller = new Scroller();
 
   aboutToAppear(): void {
@@ -187,6 +292,8 @@ struct Chat {
   // onPageShow 仅在页面被路由栈顶显示时触发，router.pushUrl 子页返回也会触发
   onPageShow(): void {
     this.refreshModels();
+    // 回到页面时滚动到最新消息
+    setTimeout(() => { this.scrollToBottom(); }, 100);
   }
 
   private async load(): Promise<void> {
@@ -197,6 +304,8 @@ struct Chat {
       this.messages = [welcome];
     }
     await this.refreshModels();
+    // 等列表渲染完成后滚动到底部
+    setTimeout(() => { this.scrollToBottom(); }, 150);
   }
 
   private async refreshModels(): Promise<void> {
@@ -394,6 +503,87 @@ struct Chat {
     const hh: string = d.getHours().toString().padStart(2, '0');
     const mm: string = d.getMinutes().toString().padStart(2, '0');
     return hh + ':' + mm;
+  }
+
+  // ---- 多选删除 ----
+
+  // 长按消息进入多选模式
+  private enterSelectionMode(index: number): void {
+    this.selectionMode = true;
+    this.selectedIds = [];
+    const displayed: ChatMessage[] = this.displayMessages();
+    if (index >= 0 && index < displayed.length) {
+      this.selectedIds = [displayed[index].id];
+    }
+  }
+
+  private isSelected(id: string): boolean {
+    return this.selectedIds.indexOf(id) >= 0;
+  }
+
+  private toggleSelect(index: number): void {
+    const displayed: ChatMessage[] = this.displayMessages();
+    if (index < 0 || index >= displayed.length) return;
+    const id: string = displayed[index].id;
+    if (this.isSelected(id)) {
+      this.selectedIds = this.selectedIds.filter((i: string): boolean => i !== id);
+    } else {
+      this.selectedIds = this.selectedIds.concat([id]);
+    }
+  }
+
+  private exitSelectionMode(): void {
+    this.selectionMode = false;
+    this.selectedIds = [];
+  }
+
+  // 删除选中的消息
+  private async deleteSelected(): Promise<void> {
+    if (this.selectedIds.length === 0) {
+      this.exitSelectionMode();
+      return;
+    }
+    const count: number = this.selectedIds.length;
+    AlertDialog.show({
+      title: '删除消息',
+      message: '确定删除选中的 ' + count.toString() + ' 条消息吗？此操作不可恢复。',
+      primaryButton: {
+        value: '取消',
+        action: () => {}
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: Color.Red,
+        action: async () => {
+          const remaining: ChatMessage[] = await ChatRepository.deleteMessages(this.selectedIds);
+          this.messages = remaining.length > 0 ? remaining : [];
+          this.exitSelectionMode();
+          if (this.messages.length === 0) {
+            const welcome: ChatMessage = ChatMessage.create('assistant',
+              '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
+            this.messages = [welcome];
+          }
+          promptAction.showToast({ message: '已删除 ' + count.toString() + ' 条消息' });
+        }
+      }
+    });
+  }
+
+  // ---- 全屏 markdown 查看 ----
+
+  private openFullscreen(index: number): void {
+    this.fullscreenIndex = index;
+  }
+
+  private closeFullscreen(): void {
+    this.fullscreenIndex = -1;
+  }
+
+  // 展开思考后滚动定位到对应消息
+  private expandReasoning(index: number): void {
+    if (index >= 0) {
+      this.scrollController.scrollToIndex(index, true);
+    }
   }
 
   // ---- 搜索 ----
@@ -681,55 +871,78 @@ struct Chat {
       GlobalBackgroundLayer()
       Column() {
         TopBar({
-          title: 'AI 对话',
-          subtitle: this.showSearch ? '搜索模式' : this.configHint,
+          title: this.selectionMode ? '已选 ' + this.selectedIds.length.toString() + ' 条' : 'AI 对话',
+          subtitle: this.selectionMode ? '长按消息进入多选' : (this.showSearch ? '搜索模式' : this.configHint),
           showBack: true
         }) {
-          Row({ space: 12 }) {
-            Text('🔍')
-              .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .opacity(this.showSearch ? 0.5 : 1)
-              .onClick(() => {
-                if (this.messages.length > 0) {
-                  this.showSearch = !this.showSearch;
-                  if (!this.showSearch) {
-                    this.searchQuery = '';
-                    this.searchRole = 'all';
+          if (this.selectionMode) {
+            Row({ space: 16 }) {
+              Text('删除')
+                .fontSize(14)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.danger)
+                .fontWeight(FontWeight.Medium)
+                .onClick(() => { this.deleteSelected(); })
+              Text('取消')
+                .fontSize(14)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textSecondary)
+                .onClick(() => { this.exitSelectionMode(); })
+            }
+          } else {
+            Row({ space: 12 }) {
+              Text('🔍')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+                .opacity(this.showSearch ? 0.5 : 1)
+                .onClick(() => {
+                  if (this.messages.length > 0) {
+                    this.showSearch = !this.showSearch;
+                    if (!this.showSearch) {
+                      this.searchQuery = '';
+                      this.searchRole = 'all';
+                    }
+                  } else {
+                    promptAction.showToast({ message: '暂无对话记录可搜索' });
                   }
-                } else {
-                  promptAction.showToast({ message: '暂无对话记录可搜索' });
-                }
-              })
-            Text('🧹')
-              .fontSize(18)
-              .fontFamily(this.palette.fontSans)
-              .onClick(() => { this.clearChat(); })
-            Text('⚙️')
-              .fontSize(18)
-              .fontFamily(this.palette.fontSans)
-              .onClick(() => { this.openConfig(); })
+                })
+              Text('🧹')
+                .fontSize(18)
+                .fontFamily(this.palette.fontSans)
+                .onClick(() => { this.clearChat(); })
+              Text('⚙️')
+                .fontSize(18)
+                .fontFamily(this.palette.fontSans)
+                .onClick(() => { this.openConfig(); })
+            }
           }
         }
 
         // 搜索栏
-        if (this.showSearch) {
+        if (this.showSearch && !this.selectionMode) {
           this.searchBar()
         }
 
         // 消息列表
         if (this.messages.length === 0) {
           this.emptyWelcome()
-        } else if (this.showSearch && this.searchResultCount() === 0) {
+        } else if (this.showSearch && !this.selectionMode && this.searchResultCount() === 0) {
           this.searchEmpty()
         } else {
           List({ space: 12, scroller: this.scrollController }) {
-            ForEach(this.showSearch ? this.displayMessages() : this.messages,
+            ForEach(this.selectionMode ? this.messages : (this.showSearch ? this.displayMessages() : this.messages),
               (message: ChatMessage, index: number) => {
               ListItem() {
                 // 使用子组件，通过 @ObjectLink 监听 @Observed ChatMessage 的变化
                 MessageBubble({ message: message, index: index,
-                  onRetry: (i: number): void => { this.retryLast(); } })
+                  selectionMode: this.selectionMode,
+                  selected: this.isSelected(message.id),
+                  isStreaming: this.streaming,
+                  onRetry: (i: number): void => { this.retryLast(); },
+                  onLongPressMessage: (i: number): void => { this.enterSelectionMode(i); },
+                  onToggleSelect: (i: number): void => { this.toggleSelect(i); },
+                  onExpandReasoning: (i: number): void => { this.expandReasoning(i); },
+                  onFullscreen: (i: number): void => { this.openFullscreen(i); } })
               }
             }, (message: ChatMessage) => message.id)
           }
@@ -741,7 +954,37 @@ struct Chat {
         }
 
         // 底部区域
-        if (this.showSearch) {
+        if (this.selectionMode) {
+          Row({ space: 12 }) {
+            Button(this.selectedIds.length === 0 ? '全选' : '取消全选')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .height(40)
+              .layoutWeight(1)
+              .backgroundColor(this.palette.bgSurface)
+              .fontColor(this.palette.textPrimary)
+              .borderRadius(8)
+              .onClick(() => {
+                if (this.selectedIds.length === this.messages.length) {
+                  this.selectedIds = [];
+                } else {
+                  this.selectedIds = this.messages.map((m: ChatMessage): string => m.id);
+                }
+              })
+            Button('删除 (' + this.selectedIds.length.toString() + ')')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .height(40)
+              .layoutWeight(1)
+              .backgroundColor(this.palette.danger)
+              .fontColor('#FFFFFF')
+              .borderRadius(8)
+              .onClick(() => { this.deleteSelected(); })
+          }
+          .width('100%')
+          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8,
+            bottom: Math.max(8, this.navBarHeight) })
+        } else if (this.showSearch) {
           // 搜索模式下显示退出按钮
           Row() {
             Text('退出搜索，返回对话')
@@ -823,6 +1066,60 @@ struct Chat {
       .backgroundColor(this.palette.bgBase)
 
       if (this.showModelPicker) { this.modelPicker() }
+
+      // 全屏 markdown 查看（双击助手消息打开）
+      if (this.fullscreenIndex >= 0) {
+        Stack() {
+          Column() {
+            Row() {
+              Text('Markdown 预览')
+                .fontSize(this.palette.fsMd)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+              Blank()
+              Text('✕')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+                .padding(8)
+                .onClick(() => { this.closeFullscreen(); })
+            }
+            .width('100%')
+            .padding({ left: 16, right: 8, top: 12, bottom: 8 })
+
+            // 全屏 markdown 渲染（Web 组件，带滚动）
+            Scroll() {
+              Column() {
+                if (this.fullscreenIndex >= 0 && this.fullscreenIndex < this.messages.length) {
+                  Web({ src: 'about:blank',
+                    controller: this.fullscreenController })
+                    .width('100%')
+                    .height(2000)
+                    .backgroundColor(Color.Transparent)
+                    .onControllerAttached(() => {
+                      const m: ChatMessage = this.messages[this.fullscreenIndex];
+                      const content: string = m.reasoning.trim().length > 0 ?
+                        '💭 思考过程\n\n' + m.reasoning.trim() + '\n\n---\n\n' + m.content : m.content;
+                      this.fullscreenController.loadData(
+                        MarkdownConverter.toHtml(content, this.isDark), 'text/html', 'UTF-8', 'data');
+                    })
+                }
+              }
+              .width('100%')
+            }
+            .scrollBar(BarState.Off)
+            .layoutWeight(1)
+            .width('100%')
+          }
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.palette.bgBase)
+          .padding({ bottom: Math.max(0, this.navBarHeight) })
+        }
+        .width('100%')
+        .height('100%')
+      }
     }
     .width('100%')
     .height('100%')
