@@ -150,13 +150,10 @@ export class LlmClient {
     try {
       const url: string = LlmClient.openAIUrl(config);
       const header: Record<string, string> = {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        // 强制 HTTP/1.1 + 禁用连接复用：彻底避开 netstack 连接池/HTTP2 复用的死连接问题
+        'Connection': 'close'
       };
-      // 非流式请求禁用连接复用：连接池中的 keep-alive 连接空闲后可能被服务端/中间设备关闭，
-      // 复用"死连接"会导致请求发出后无响应（firstRecv=0）且服务端收不到，直到超时
-      if (!stream) {
-        header['Connection'] = 'close';
-      }
       if (stream) {
         header['Accept'] = 'text/event-stream';
       }
@@ -200,6 +197,8 @@ export class LlmClient {
           connectTimeout: CONNECT_TIMEOUT,
           readTimeout: READ_TIMEOUT,
           expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+          usingProtocol: http.HttpProtocol.HTTP1_1,
           usingCache: false
         });
         if (code !== 200) {
@@ -235,6 +234,8 @@ export class LlmClient {
         connectTimeout: CONNECT_TIMEOUT,
         readTimeout: READ_TIMEOUT_NON_STREAM,
         expectDataType: http.HttpDataType.STRING,
+        // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+        usingProtocol: http.HttpProtocol.HTTP1_1,
         usingCache: false
       });
       const code: number = response.responseCode;
@@ -282,12 +283,10 @@ export class LlmClient {
       const url: string = LlmClient.anthropicUrl(config);
       const header: Record<string, string> = {
         'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        // 强制 HTTP/1.1 + 禁用连接复用：彻底避开 netstack 连接池/HTTP2 复用的死连接问题
+        'Connection': 'close'
       };
-      // 非流式请求禁用连接复用：避免复用已失效的 keep-alive 连接导致请求无响应（服务端收不到请求）
-      if (!stream) {
-        header['Connection'] = 'close';
-      }
       if (stream) {
         header['Accept'] = 'text/event-stream';
       }
@@ -332,6 +331,8 @@ export class LlmClient {
           connectTimeout: CONNECT_TIMEOUT,
           readTimeout: READ_TIMEOUT,
           expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+          usingProtocol: http.HttpProtocol.HTTP1_1,
           usingCache: false
         });
         if (code !== 200) {
@@ -368,6 +369,8 @@ export class LlmClient {
         connectTimeout: CONNECT_TIMEOUT,
         readTimeout: READ_TIMEOUT_NON_STREAM,
         expectDataType: http.HttpDataType.STRING,
+        // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+        usingProtocol: http.HttpProtocol.HTTP1_1,
         usingCache: false
       });
       const code: number = response.responseCode;
