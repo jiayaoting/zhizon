@@ -11,6 +11,152 @@ export class MarkdownConverter {
       '<style>' + css + '</style></head><body>' + body + '</body></html>';
   }
 
+  // 生成 RichText 组件可渲染的 HTML 片段（仅用 RichText 支持的标签：p/strong/em/span/a/br）
+  // 用于聊天气泡正文，自适应高度、无 WebView 开销
+  static toRichTextHtml(md: string, isDark: boolean): string {
+    const lines: string[] = md.split('\n');
+    const out: string[] = [];
+    let i: number = 0;
+    const n: number = lines.length;
+    const codeFg: string = isDark ? '#FCA5A5' : '#C0392B';
+    const codeBg: string = isDark ? '#1E293B' : '#F1F5F9';
+    const quoteColor: string = isDark ? '#94A3B8' : '#64748B';
+    const hrColor: string = isDark ? '#475569' : '#CBD5E1';
+    while (i < n) {
+      const raw: string = lines[i];
+      const line: string = raw.trim();
+      if (line.length === 0) {
+        i++;
+        continue;
+      }
+      if (line.startsWith('```')) {
+        const codeLines: string[] = [];
+        i++;
+        while (i < n && !lines[i].trim().startsWith('```')) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        i++;
+        out.push('<p style="background-color:' + codeBg + ';color:' + codeFg +
+          ';font-family:monospace;font-size:12px;">' +
+          MarkdownConverter.escapeHtml(codeLines.join('<br>')) + '</p>');
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        out.push('<p style="font-size:16px;font-weight:800;">' +
+          MarkdownConverter.inlineRich(line.substring(4), isDark) + '</p>');
+        i++;
+        continue;
+      }
+      if (line.startsWith('## ')) {
+        out.push('<p style="font-size:17px;font-weight:800;">' +
+          MarkdownConverter.inlineRich(line.substring(3), isDark) + '</p>');
+        i++;
+        continue;
+      }
+      if (line.startsWith('# ')) {
+        out.push('<p style="font-size:19px;font-weight:800;">' +
+          MarkdownConverter.inlineRich(line.substring(2), isDark) + '</p>');
+        i++;
+        continue;
+      }
+      if (line.startsWith('>')) {
+        const quoteLines: string[] = [];
+        while (i < n && lines[i].trim().startsWith('>')) {
+          let q: string = lines[i].trim();
+          if (q.startsWith('> ')) q = q.substring(2);
+          else q = q.substring(1);
+          quoteLines.push(MarkdownConverter.inlineRich(q, isDark));
+          i++;
+        }
+        out.push('<p style="color:' + quoteColor + ';font-style:italic;">▍ ' +
+          quoteLines.join('<br>▍ ') + '</p>');
+        continue;
+      }
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
+        out.push('<p style="color:' + hrColor + ';">────────────</p>');
+        i++;
+        continue;
+      }
+      if (/^[-*+]\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < n) {
+          const t: string = lines[i].trim();
+          if (/^[-*+]\s+/.test(t)) {
+            items.push('• ' + MarkdownConverter.inlineRich(t.replace(/^[-*+]\s+/, ''), isDark));
+            i++;
+          } else if (t.length === 0) {
+            break;
+          } else {
+            break;
+          }
+        }
+        out.push('<p>' + items.join('<br>') + '</p>');
+        continue;
+      }
+      if (/^\d+[.)]\s+/.test(line)) {
+        const items: string[] = [];
+        let num: number = 1;
+        while (i < n) {
+          const t: string = lines[i].trim();
+          if (/^\d+[.)]\s+/.test(t)) {
+            items.push(num.toString() + '. ' + MarkdownConverter.inlineRich(t.replace(/^\d+[.)]\s+/, ''), isDark));
+            num++;
+            i++;
+          } else if (t.length === 0) {
+            break;
+          } else {
+            break;
+          }
+        }
+        out.push('<p>' + items.join('<br>') + '</p>');
+        continue;
+      }
+      if (line.indexOf('|') >= 0 && i + 1 < n && /^[\s:|-]+$/.test(lines[i + 1].trim())) {
+        const header: string[] = MarkdownConverter.splitTableRow(line);
+        const rows: string[][] = [];
+        i += 2;
+        while (i < n && lines[i].trim().indexOf('|') >= 0) {
+          rows.push(MarkdownConverter.splitTableRow(lines[i]));
+          i++;
+        }
+        let tableText: string = header.map((h: string): string => MarkdownConverter.inlineRich(h.trim(), isDark)).join(' | ');
+        for (let r: number = 0; r < rows.length; r++) {
+          const row: string[] = rows[r];
+          const cells: string[] = [];
+          for (let c: number = 0; c < header.length; c++) {
+            cells.push(c < row.length ? MarkdownConverter.inlineRich(row[c].trim(), isDark) : '');
+          }
+          tableText = tableText + '<br>' + cells.join(' | ');
+        }
+        out.push('<p style="font-size:13px;">' + tableText + '</p>');
+        continue;
+      }
+      const paraLines: string[] = [];
+      while (i < n) {
+        const t: string = lines[i].trim();
+        if (t.length === 0) break;
+        if (t.startsWith('```') || t.startsWith('#') || /^(-{3,}|\*{3,}|_{3,})$/.test(t)) break;
+        paraLines.push(MarkdownConverter.inlineRich(t, isDark));
+        i++;
+      }
+      out.push('<p>' + paraLines.join('<br>') + '</p>');
+    }
+    return out.join('');
+  }
+
+  // RichText 行内格式化：code 用 span 样式（RichText 不支持 code 标签）
+  private static inlineRich(text: string, isDark: boolean): string {
+    const codeColor: string = isDark ? '#FCA5A5' : '#C0392B';
+    let r: string = MarkdownConverter.escapeHtml(text);
+    r = r.replace(/`([^`]+)`/g,
+      '<span style="color:' + codeColor + ';font-family:monospace;">$1</span>');
+    r = MarkdownConverter.wrapOdd(r, '**', '<strong>', '</strong>');
+    r = MarkdownConverter.wrapOdd(r, '*', '<em>', '</em>');
+    r = r.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
+    return r;
+  }
+
   // 转 HTML 正文片段（不含 <html> 包裹）
   private static toBodyHtml(md: string): string {
     const lines: string[] = md.split('\n');

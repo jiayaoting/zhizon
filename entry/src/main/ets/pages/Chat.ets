@@ -32,8 +32,8 @@ struct MessageBubble {
   onExpandReasoning: (index: number) => void = () => {};
   onFullscreen: (index: number) => void = () => {};
   @State reasoningExpanded: boolean = false;
-  @State webHeight: number = 120;
-  private webController: webview.WebviewController = new webview.WebviewController();
+  // 思考内容滚动控制器：展开后自动滚到底部
+  private reasoningScroller: Scroller = new Scroller();
 
   private formatTime(time: number): string {
     if (time <= 0) return '';
@@ -58,21 +58,20 @@ struct MessageBubble {
     return this.message.content.indexOf('⚠️ 请求失败') === 0;
   }
 
-  // 是否应使用 Web 渲染 markdown（助手消息、非失败、有内容、非流式中）
+  // 是否应使用 markdown 渲染（助手消息、非失败、有内容、非流式中）
   private useMarkdown(): boolean {
     return this.message.role === 'assistant' && !this.isStreaming && !this.isFailure() &&
       this.message.content.trim().length > 0;
   }
 
-  private markdownHtml(): string {
-    return MarkdownConverter.toHtml(this.message.content, this.isDark);
-  }
-
-  // 展开/收起思考：展开时通知父组件滚动定位到本条
+  // 展开/收起思考：展开时通知父组件滚动定位到本条，并自动滚到思考内容底部
   private toggleReasoning(): void {
     this.reasoningExpanded = !this.reasoningExpanded;
     if (this.reasoningExpanded) {
       this.onExpandReasoning(this.index);
+      setTimeout(() => {
+        this.reasoningScroller.scrollEdge(Edge.Bottom);
+      }, 50);
     }
   }
 
@@ -161,7 +160,7 @@ struct MessageBubble {
               .onClick(() => { this.toggleReasoning(); })
               if (this.reasoningExpanded) {
                 // 思考内容限高可滚动：长思考不会撑爆列表，且用户无需滑回顶部即可收起
-                Scroll() {
+                Scroll(this.reasoningScroller) {
                   Text(this.message.reasoning.trim())
                     .fontSize(this.palette.fsXs)
                     .fontFamily(this.palette.fontSans)
@@ -179,23 +178,24 @@ struct MessageBubble {
             .alignItems(HorizontalAlign.Start)
             .width('100%')
           }
-          // 正文：流式中用 Text 打字机效果；结束后用 Web 渲染 markdown
+          // 正文：流式中用 Text 打字机效果；结束后用 RichText 渲染 markdown
           if (this.useMarkdown()) {
-            // 用 Web 渲染 markdown，无边框无内边距包裹，避免顶部空白
+            // RichText 原生渲染 markdown：自适应高度、轻量、无 WebView 开销
             Column() {
-              Web({ src: 'about:blank', controller: this.webController })
-                .width('100%')
-                .height(this.webHeight)
-                .backgroundColor(Color.Transparent)
-                .onControllerAttached(() => {
-                  // Controller 绑定后即可加载 markdown HTML（推荐时机）
-                  this.webController.loadData(this.markdownHtml(), 'text/html', 'UTF-8', 'data');
-                })
+              RichText(MarkdownConverter.toRichTextHtml(this.message.content, this.isDark))
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .lineHeight(20)
+                .padding(12)
+                .borderRadius(12)
+                .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+                .border({ width: 1,
+                  color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+                .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+                .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
             }
-            .justifyContent(FlexAlign.Start)
-            .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
-            .borderRadius(12)
-            .padding(0)
+            .alignItems(HorizontalAlign.Start)
             .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
           } else {
             Text(this.message.content.trim().length > 0 ? this.message.content.trim() : '…')
