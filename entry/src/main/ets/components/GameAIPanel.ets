@@ -14,6 +14,7 @@ export struct GameAIPanel {
   onSelectModel: (index: number) => void = () => {};
   onToggleRun: () => void = () => {};
   onSpeedChange: (index: number) => void = () => {};
+  @State showModelSheet: boolean = false;
 
   build() {
     Column({ space: 6 }) {
@@ -22,7 +23,7 @@ export struct GameAIPanel {
         Text('🤖')
           .fontSize(15)
           .fontFamily(this.palette.fontSans)
-        // 模型名称（点击循环切换）
+        // 模型名称（点击弹出完整模型列表）
         Text(this.currentModelLabel())
           .fontSize(this.palette.fsSm)
           .fontFamily(this.palette.fontSans)
@@ -35,7 +36,13 @@ export struct GameAIPanel {
           .borderRadius(6)
           .onClick(() => {
             if (!this.modelsConfigured || this.modelNames.length === 0) return;
-            this.onSelectModel((this.selectedModelIndex + 1) % this.modelNames.length);
+            this.showModelSheet = true;
+          })
+          .bindSheet($$this.showModelSheet, this.modelSheetBuilder(), {
+            height: '70%',
+            dragBar: true,
+            showClose: true,
+            backgroundColor: this.palette.bgBase
           })
         Row() {
           Text(this.running ? '⏹ 停止' : '▶ AI 托管')
@@ -86,6 +93,55 @@ export struct GameAIPanel {
     .borderRadius(12)
     .backgroundColor(this.palette.bgSurface)
     .border({ width: 1, color: this.palette.borderSubtle })
+  }
+
+  // 模型选择底部弹窗：完整展示所有模型名称，当前模型高亮标记
+  @Builder
+  modelSheetBuilder() {
+    Column({ space: 8 }) {
+      Text('选择 AI 模型')
+        .fontSize(this.palette.fsBase)
+        .fontWeight(FontWeight.Bold)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textPrimary)
+        .alignSelf(ItemAlign.Start)
+        .padding({ left: 4, top: 4 })
+      Scroll() {
+        Column({ space: 6 }) {
+          ForEach(this.modelNames, (name: string, index: number) => {
+            Row({ space: 8 }) {
+              Text(name)
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .layoutWeight(1)
+              if (index === this.selectedModelIndex) {
+                Text('使用中')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.primary)
+                  .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                  .borderRadius(8)
+                  .backgroundColor(this.palette.primaryDim)
+              }
+            }
+            .width('100%')
+            .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+            .borderRadius(8)
+            .backgroundColor(index === this.selectedModelIndex ? this.palette.primaryDim : this.palette.bgSurface2)
+            .onClick(() => {
+              this.onSelectModel(index);
+              this.showModelSheet = false;
+            })
+          }, (name: string, index: number) => index.toString())
+        }
+        .width('100%')
+      }
+      .scrollBar(BarState.Off)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, bottom: 16 })
   }
 
   private currentModelLabel(): string {
