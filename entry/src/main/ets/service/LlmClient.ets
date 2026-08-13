@@ -33,21 +33,22 @@ export class LlmClient {
     return LlmClient.postOpenAI(config, messages, false);
   }
 
-  // 流式请求：onDelta 逐片回调，返回完整内容
+  // 流式请求：onDelta 逐片回调正文，onReasoning 逐片回调思考过程，返回完整内容
   static async postCompletionStream(config: LlmConfig, messages: ChatMessage[],
-    onDelta: (delta: string) => void): Promise<LlmResult> {
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
     if (config.apiFormat === 'anthropic') {
-      return LlmClient.postAnthropicStream(config, messages, onDelta);
+      return LlmClient.postAnthropicStream(config, messages, onDelta, onReasoning);
     }
-    return LlmClient.postOpenAIStream(config, messages, onDelta);
+    return LlmClient.postOpenAIStream(config, messages, onDelta, onReasoning);
   }
 
   // ---- OpenAI Chat Completions ----
 
   private static async postOpenAI(config: LlmConfig, messages: ChatMessage[], stream: boolean,
-    onDelta?: (delta: string) => void): Promise<LlmResult> {
+    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
     const httpRequest = http.createHttp();
     let fullContent: string = '';
+    let fullReasoning: string = '';
     let buffer: string = '';
     try {
       const url: string = LlmClient.openAIUrl(config);
@@ -71,10 +72,15 @@ export class LlmClient {
           const events: string[] = parseResult.events;
           buffer = LlmClient.remainingBuffer(buffer, parseResult);
           for (let i: number = 0; i < events.length; i++) {
-            const delta: string = LlmClient.openAIDeltaFromSse(events[i]);
-            if (delta.length > 0) {
-              fullContent = fullContent + delta;
-              onDelta(delta);
+            const contentDelta: string = LlmClient.openAIContentFromSse(events[i]);
+            if (contentDelta.length > 0) {
+              fullContent = fullContent + contentDelta;
+              onDelta(contentDelta);
+            }
+            const reasoningDelta: string = LlmClient.openAIReasoningFromSse(events[i]);
+            if (reasoningDelta.length > 0) {
+              fullReasoning = fullReasoning + reasoningDelta;
+              if (onReasoning !== undefined) onReasoning(reasoningDelta);
             }
           }
         });
@@ -100,35 +106,48 @@ export class LlmClient {
           const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
           const tailEvents: string[] = tailResult.events;
           for (let i: number = 0; i < tailEvents.length; i++) {
-            const delta: string = LlmClient.openAIDeltaFromSse(tailEvents[i]);
-            if (delta.length > 0) {
-              fullContent = fullContent + delta;
-              onDelta(delta);
+            const contentDelta: string = LlmClient.openAIContentFromSse(tailEvents[i]);
+            if (contentDelta.length > 0) {
+              fullContent = fullContent + contentDelta;
+              onDelta(contentDelta);
+            }
+            const reasoningDelta: string = LlmClient.openAIReasoningFromSse(tailEvents[i]);
+            if (reasoningDelta.length > 0) {
+              fullReasoning = fullReasoning + reasoningDelta;
+              if (onReasoning !== undefined) onReasoning(reasoningDelta);
             }
           }
         }
         // 兜底：极端情况下 dataReceive 未触发，从 response.result 提取完整 SSE 解析
-        if (!fullContent.trim()) {
+        if (!fullContent.trim() && !fullReasoning.trim()) {
           const raw: string = LlmClient.resultToString(response.result);
           if (raw.length > 0) {
             const tailResult: SseParseResult = LlmClient.extractSseEvents(raw);
             const tailEvents: string[] = tailResult.events;
             for (let i: number = 0; i < tailEvents.length; i++) {
-              const delta: string = LlmClient.openAIDeltaFromSse(tailEvents[i]);
-              if (delta.length > 0) {
-                fullContent = fullContent + delta;
-                onDelta(delta);
+              const contentDelta: string = LlmClient.openAIContentFromSse(tailEvents[i]);
+              if (contentDelta.length > 0) {
+                fullContent = fullContent + contentDelta;
+                onDelta(contentDelta);
+              }
+              const reasoningDelta: string = LlmClient.openAIReasoningFromSse(tailEvents[i]);
+              if (reasoningDelta.length > 0) {
+                fullReasoning = fullReasoning + reasoningDelta;
+                if (onReasoning !== undefined) onReasoning(reasoningDelta);
               }
             }
           }
         }
-        if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
-        return new LlmResult(true, fullContent, '', '');
+        if (!fullContent.trim() && !fullReasoning.trim()) {
+          return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+        }
+        return new LlmResult(true, fullContent, '', '', fullReasoning);
       }
       const text: string = LlmClient.resultToString(response.result);
       const content: string = LlmClient.openAIContent(text);
       if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
-      return new LlmResult(true, content, '', '');
+      const reasoning: string = LlmClient.openAIReasoning(text);
+      return new LlmResult(true, content, '', '', reasoning);
     } catch (e) {
       return LlmClient.toResult(e);
     } finally {
@@ -138,16 +157,17 @@ export class LlmClient {
   }
 
   private static async postOpenAIStream(config: LlmConfig, messages: ChatMessage[],
-    onDelta: (delta: string) => void): Promise<LlmResult> {
-    return LlmClient.postOpenAI(config, messages, true, onDelta);
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
+    return LlmClient.postOpenAI(config, messages, true, onDelta, onReasoning);
   }
 
   // ---- Anthropic Messages ----
 
   private static async postAnthropic(config: LlmConfig, messages: ChatMessage[], stream: boolean,
-    onDelta?: (delta: string) => void): Promise<LlmResult> {
+    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
     const httpRequest = http.createHttp();
     let fullContent: string = '';
+    let fullReasoning: string = '';
     let buffer: string = '';
     try {
       const url: string = LlmClient.anthropicUrl(config);
@@ -173,10 +193,15 @@ export class LlmClient {
           const events: string[] = parseResult.events;
           buffer = LlmClient.remainingBuffer(buffer, parseResult);
           for (let i: number = 0; i < events.length; i++) {
-            const delta: string = LlmClient.anthropicDeltaFromSse(events[i]);
-            if (delta.length > 0) {
-              fullContent = fullContent + delta;
-              onDelta(delta);
+            const contentDelta: string = LlmClient.anthropicContentFromSse(events[i]);
+            if (contentDelta.length > 0) {
+              fullContent = fullContent + contentDelta;
+              onDelta(contentDelta);
+            }
+            const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(events[i]);
+            if (reasoningDelta.length > 0) {
+              fullReasoning = fullReasoning + reasoningDelta;
+              if (onReasoning !== undefined) onReasoning(reasoningDelta);
             }
           }
         });
@@ -202,35 +227,48 @@ export class LlmClient {
           const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
           const tailEvents: string[] = tailResult.events;
           for (let i: number = 0; i < tailEvents.length; i++) {
-            const delta: string = LlmClient.anthropicDeltaFromSse(tailEvents[i]);
-            if (delta.length > 0) {
-              fullContent = fullContent + delta;
-              onDelta(delta);
+            const contentDelta: string = LlmClient.anthropicContentFromSse(tailEvents[i]);
+            if (contentDelta.length > 0) {
+              fullContent = fullContent + contentDelta;
+              onDelta(contentDelta);
+            }
+            const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(tailEvents[i]);
+            if (reasoningDelta.length > 0) {
+              fullReasoning = fullReasoning + reasoningDelta;
+              if (onReasoning !== undefined) onReasoning(reasoningDelta);
             }
           }
         }
         // 兜底：极端情况下 dataReceive 未触发，从 response.result 提取完整 SSE 解析
-        if (!fullContent.trim()) {
+        if (!fullContent.trim() && !fullReasoning.trim()) {
           const raw: string = LlmClient.resultToString(response.result);
           if (raw.length > 0) {
             const tailResult: SseParseResult = LlmClient.extractSseEvents(raw);
             const tailEvents: string[] = tailResult.events;
             for (let i: number = 0; i < tailEvents.length; i++) {
-              const delta: string = LlmClient.anthropicDeltaFromSse(tailEvents[i]);
-              if (delta.length > 0) {
-                fullContent = fullContent + delta;
-                onDelta(delta);
+              const contentDelta: string = LlmClient.anthropicContentFromSse(tailEvents[i]);
+              if (contentDelta.length > 0) {
+                fullContent = fullContent + contentDelta;
+                onDelta(contentDelta);
+              }
+              const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(tailEvents[i]);
+              if (reasoningDelta.length > 0) {
+                fullReasoning = fullReasoning + reasoningDelta;
+                if (onReasoning !== undefined) onReasoning(reasoningDelta);
               }
             }
           }
         }
-        if (!fullContent.trim()) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
-        return new LlmResult(true, fullContent, '', '');
+        if (!fullContent.trim() && !fullReasoning.trim()) {
+          return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+        }
+        return new LlmResult(true, fullContent, '', '', fullReasoning);
       }
       const text: string = LlmClient.resultToString(response.result);
       const content: string = LlmClient.anthropicContent(text);
       if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
-      return new LlmResult(true, content, '', '');
+      const reasoning: string = LlmClient.anthropicReasoning(text);
+      return new LlmResult(true, content, '', '', reasoning);
     } catch (e) {
       return LlmClient.toResult(e);
     } finally {
@@ -240,8 +278,8 @@ export class LlmClient {
   }
 
   private static async postAnthropicStream(config: LlmConfig, messages: ChatMessage[],
-    onDelta: (delta: string) => void): Promise<LlmResult> {
-    return LlmClient.postAnthropic(config, messages, true, onDelta);
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
+    return LlmClient.postAnthropic(config, messages, true, onDelta, onReasoning);
   }
 
   // ---- URL 规范化 ----
@@ -272,6 +310,7 @@ export class LlmClient {
 
   // ---- OpenAI 响应解析 ----
 
+  // 非流式正文提取
   private static openAIContent(jsonText: string): string {
     try {
       const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
@@ -283,6 +322,24 @@ export class LlmClient {
           const messageObj: Record<string, Object> = message as Record<string, Object>;
           const content: Object = messageObj.content;
           if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 非流式思考提取（reasoning_content / reasoning）
+  private static openAIReasoning(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const choices: Object = parsed.choices;
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const message: Object = first.message;
+        if (message !== undefined) {
+          const messageObj: Record<string, Object> = message as Record<string, Object>;
           const reasoningContent: Object = messageObj.reasoning_content;
           if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
             return String(reasoningContent);
@@ -299,6 +356,7 @@ export class LlmClient {
 
   // ---- Anthropic 响应解析 ----
 
+  // 非流式正文提取（text block）
   private static anthropicContent(jsonText: string): string {
     try {
       const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
@@ -310,7 +368,27 @@ export class LlmClient {
           const block: Record<string, Object> = blocks[i] as Record<string, Object>;
           if (block.type === 'text' && block.text !== undefined) {
             text = text + String(block.text);
-          } else if (block.type === 'thinking' && block.thinking !== undefined) {
+          }
+        }
+        return text;
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 非流式思考提取（thinking block）
+  private static anthropicReasoning(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const content: Object = parsed.content;
+      if (content !== undefined && Array.isArray(content)) {
+        const blocks: Object[] = content as Object[];
+        let text: string = '';
+        for (let i: number = 0; i < blocks.length; i++) {
+          const block: Record<string, Object> = blocks[i] as Record<string, Object>;
+          if (block.type === 'thinking' && block.thinking !== undefined) {
             text = text + String(block.thinking);
           }
         }
@@ -351,9 +429,8 @@ export class LlmClient {
     return buffer.substring(parseResult.consumed);
   }
 
-  // ---- OpenAI SSE 增量提取 ----
-
-  private static openAIDeltaFromSse(event: string): string {
+  // 提取 SSE 事件的 data 字段内容
+  private static sseDataFromEvent(event: string): string {
     const lines: string[] = event.split(/\r?\n/);
     let data: string = '';
     for (let i: number = 0; i < lines.length; i++) {
@@ -364,6 +441,14 @@ export class LlmClient {
         else data = value;
       }
     }
+    return data;
+  }
+
+  // ---- OpenAI SSE 增量提取 ----
+
+  // 流式正文增量：仅取 delta.content / message.content
+  private static openAIContentFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
     if (data.length === 0 || data === '[DONE]') return '';
     try {
       const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
@@ -373,9 +458,34 @@ export class LlmClient {
         const delta: Object = first.delta;
         if (delta !== undefined) {
           const deltaObj: Record<string, Object> = delta as Record<string, Object>;
-          // 优先取正文 content；思考型模型返回 reasoning_content/reasoning/thinking，一并展示
           const content: Object = deltaObj.content;
           if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+        }
+        const message: Object = first.message;
+        if (message !== undefined) {
+          const messageObj: Record<string, Object> = message as Record<string, Object>;
+          const content: Object = messageObj.content;
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 流式思考增量：仅取 delta.reasoning_content / delta.reasoning / delta.thinking
+  private static openAIReasoningFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0 || data === '[DONE]') return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const choices: Object = parsed.choices;
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const delta: Object = first.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
           const reasoningContent: Object = deltaObj.reasoning_content;
           if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
             return String(reasoningContent);
@@ -384,16 +494,6 @@ export class LlmClient {
           if (reasoning !== undefined && reasoning !== null && String(reasoning).length > 0) return String(reasoning);
           const thinking: Object = deltaObj.thinking;
           if (thinking !== undefined && thinking !== null && String(thinking).length > 0) return String(thinking);
-        }
-        const message: Object = first.message;
-        if (message !== undefined) {
-          const messageObj: Record<string, Object> = message as Record<string, Object>;
-          const content: Object = messageObj.content;
-          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
-          const reasoningContent: Object = messageObj.reasoning_content;
-          if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
-            return String(reasoningContent);
-          }
         }
       }
       return '';
@@ -404,17 +504,9 @@ export class LlmClient {
 
   // ---- Anthropic SSE 增量提取 ----
 
-  private static anthropicDeltaFromSse(event: string): string {
-    const lines: string[] = event.split(/\r?\n/);
-    let data: string = '';
-    for (let i: number = 0; i < lines.length; i++) {
-      const line: string = lines[i];
-      if (line.startsWith('data:')) {
-        const value: string = line.substring(5).trim();
-        if (data.length > 0) data = data + value;
-        else data = value;
-      }
-    }
+  // 流式正文增量：text_delta
+  private static anthropicContentFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
     if (data.length === 0) return '';
     try {
       const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
@@ -426,7 +518,27 @@ export class LlmClient {
           if (deltaObj.type === 'text_delta') {
             const text: Object = deltaObj.text;
             if (text !== undefined) return String(text);
-          } else if (deltaObj.type === 'thinking_delta') {
+          }
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 流式思考增量：thinking_delta
+  private static anthropicReasoningFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0) return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const eventType: string = typeof parsed.type === 'string' ? parsed.type : '';
+      if (eventType === 'content_block_delta') {
+        const delta: Object = parsed.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          if (deltaObj.type === 'thinking_delta') {
             // extended thinking：思考内容增量
             const thinking: Object = deltaObj.thinking;
             if (thinking !== undefined) return String(thinking);

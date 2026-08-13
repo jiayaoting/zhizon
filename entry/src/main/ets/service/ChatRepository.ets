@@ -182,11 +182,12 @@ export class ChatRepository {
         const role: string = typeof item.role === 'string' ? item.role : '';
         const content: string = typeof item.content === 'string' ? item.content : '';
         const time: number = typeof item.time === 'number' ? item.time as number : 0;
+        const reasoning: string = typeof item.reasoning === 'string' ? item.reasoning as string : '';
         if (role.length > 0 && content.length > 0) {
           // 兼容旧数据：无 id 时自动补全
           const id: string = typeof item.id === 'string' && (item.id as string).length > 0
             ? item.id as string : ChatMessage.newId();
-          messages.push(new ChatMessage(id, role, content, time));
+          messages.push(new ChatMessage(id, role, content, time, reasoning));
         }
       }
       return messages;
@@ -202,7 +203,7 @@ export class ChatRepository {
       const trimmed: ChatMessage[] = messages.length > MAX_HISTORY
         ? messages.slice(messages.length - MAX_HISTORY) : messages;
       const storedMessages: StoredChatMessage[] = trimmed.map((m: ChatMessage) =>
-        new StoredChatMessage(m.id, m.role, m.content, m.time));
+        new StoredChatMessage(m.id, m.role, m.content, m.time, m.reasoning));
       const payload: string = JSON.stringify(storedMessages);
       await DataRepository.setSetting(KEY_HISTORY, payload);
     } catch (e) {

@@ -164,18 +164,22 @@ export class ChatMessage {
   id: string;
   role: string; // user / assistant / system
   content: string;
+  reasoning: string; // 思考过程（thinking/reasoning），与正文分离展示
   time: number;
 
-  constructor(id: string, role: string, content: string, time: number = Date.now()) {
+  constructor(id: string, role: string, content: string, time: number = Date.now(),
+    reasoning: string = '') {
     this.id = id;
     this.role = role;
     this.content = content;
     this.time = time;
+    this.reasoning = reasoning;
   }
 
   // 便捷工厂方法：自动生成 id
-  static create(role: string, content: string, time: number = Date.now()): ChatMessage {
-    return new ChatMessage(ChatMessage.newId(), role, content, time);
+  static create(role: string, content: string, time: number = Date.now(),
+    reasoning: string = ''): ChatMessage {
+    return new ChatMessage(ChatMessage.newId(), role, content, time, reasoning);
   }
 
   // 生成唯一消息 id：时间戳 + 随机串
@@ -192,12 +196,15 @@ export class LlmResult {
   content: string;
   errorCode: string;
   errorMessage: string;
+  reasoning: string; // 思考过程，成功时可能非空
 
-  constructor(success: boolean, content: string, errorCode: string = '', errorMessage: string = '') {
+  constructor(success: boolean, content: string, errorCode: string = '', errorMessage: string = '',
+    reasoning: string = '') {
     this.success = success;
     this.content = content;
     this.errorCode = errorCode;
     this.errorMessage = errorMessage;
+    this.reasoning = reasoning;
   }
 }
 
@@ -291,11 +298,13 @@ export class StoredChatMessage {
   role: string;
   content: string;
   time: number;
+  reasoning: string;
 
-  constructor(id: string, role: string, content: string, time: number) {
+  constructor(id: string, role: string, content: string, time: number, reasoning: string = '') {
     this.id = id;
     this.role = role;
     this.content = content;
     this.time = time;
+    this.reasoning = reasoning;
   }
 }

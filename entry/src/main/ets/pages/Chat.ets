@@ -21,6 +21,7 @@ struct MessageBubble {
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @Prop index: number = 0;
   onRetry: (index: number) => void = () => {};
+  @State reasoningExpanded: boolean = false;
   private formatTime(time: number): string {
     if (time <= 0) return '';
     const d: Date = new Date(time);
@@ -71,6 +72,41 @@ struct MessageBubble {
               .fontSize(9)
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textTertiary)
+          }
+          // 思考过程折叠区块：默认收起，点击展开查看思考内容
+          if (this.message.reasoning.length > 0) {
+            Column({ space: 4 }) {
+              Row({ space: 6 }) {
+                Text('💭')
+                  .fontSize(10)
+                  .fontFamily(this.palette.fontSans)
+                Text('已深度思考')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                Text(this.reasoningExpanded ? '▲' : '▼')
+                  .fontSize(9)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+              }
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .borderRadius(6)
+              .backgroundColor(this.palette.bgSurface2)
+              .onClick(() => { this.reasoningExpanded = !this.reasoningExpanded; })
+              if (this.reasoningExpanded) {
+                Text(this.message.reasoning)
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .lineHeight(16)
+                  .padding(8)
+                  .borderRadius(6)
+                  .backgroundColor(this.palette.bgSurface2)
+                  .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .width('100%')
           }
           Text(this.message.content.length > 0 ? this.message.content : '…')
             .fontSize(this.palette.fsSm)
@@ -124,6 +160,7 @@ struct Chat {
   @State configReady: boolean = false;
   @State configHint: string = '未配置';
   @State streamingContent: string = '';
+  @State streamingReasoning: string = '';
   @State streaming: boolean = false;
 
   // 模型切换
@@ -258,26 +295,36 @@ struct Chat {
     this.sending = true;
     this.streaming = true;
     this.streamingContent = '';
+    this.streamingReasoning = '';
     this.scrollToBottom();
 
     const history: ChatMessage[] = ChatRepository.requestMessages(
       newMessages.slice(0, newMessages.length - 1), config.contextTokensIn);
-    const result: LlmResult = await LlmClient.postCompletionStream(config, history, (delta: string) => {
-      // 流式增量更新：仅修改 @Observed ChatMessage 的 content 属性
-      // MessageBubble 子组件通过 @ObjectLink 自动感知变化，无需重建整个 messages 数组
-      this.streamingContent = this.streamingContent + delta;
-      assistantMessage.content = this.streamingContent;
-      this.scrollToBottom();
-    });
+    const result: LlmResult = await LlmClient.postCompletionStream(config, history,
+      (delta: string) => {
+        // 流式增量更新：仅修改 @Observed ChatMessage 的 content 属性
+        // MessageBubble 子组件通过 @ObjectLink 自动感知变化，无需重建整个 messages 数组
+        this.streamingContent = this.streamingContent + delta;
+        assistantMessage.content = this.streamingContent;
+        this.scrollToBottom();
+      },
+      (reasoningDelta: string) => {
+        // 思考过程单独累积，气泡中以折叠区块展示，不与正文混排
+        this.streamingReasoning = this.streamingReasoning + reasoningDelta;
+        assistantMessage.reasoning = this.streamingReasoning;
+      });
     this.sending = false;
     this.streaming = false;
     this.streamRequest = null;
     if (result.success) {
       assistantMessage.content = result.content;
+      assistantMessage.reasoning = result.reasoning;
       this.streamingContent = '';
+      this.streamingReasoning = '';
     } else {
       assistantMessage.content = '⚠️ 请求失败：' + result.errorMessage;
       this.streamingContent = '';
+      this.streamingReasoning = '';
     }
     await ChatRepository.saveHistory(this.messages);
     this.scrollToBottom();
@@ -294,11 +341,11 @@ struct Chat {
     }
     this.streaming = false;
     this.sending = false;
-    if (this.streamingContent.length === 0) {
+    if (this.streamingContent.length === 0 && this.streamingReasoning.length === 0) {
       // 若停止时无内容，移除最后一条空的 assistant 消息
       if (this.messages.length > 0) {
         const last: ChatMessage = this.messages[this.messages.length - 1];
-        if (last.role === 'assistant' && last.content.length === 0) {
+        if (last.role === 'assistant' && last.content.length === 0 && last.reasoning.length === 0) {
           this.messages = this.messages.slice(0, this.messages.length - 1);
         }
       }
@@ -308,10 +355,12 @@ struct Chat {
         const last: ChatMessage = this.messages[this.messages.length - 1];
         if (last.role === 'assistant') {
           last.content = this.streamingContent;
+          last.reasoning = this.streamingReasoning;
         }
       }
     }
     this.streamingContent = '';
+    this.streamingReasoning = '';
     ChatRepository.saveHistory(this.messages);
   }
 
