@@ -37,6 +37,7 @@ struct ChatConfig {
   @State showFormatSheet: boolean = false;
   @State tempText: string = '0.7';
   @State maxTokensText: string = '4096';
+  @State customModelInput: string = '';
 
   aboutToAppear(): void {
     this.load();
@@ -148,8 +149,29 @@ struct ChatConfig {
 
   private modelOptions(): string[] {
     const template: LlmProviderTemplate | null = providerTemplateById(this.providerId);
-    if (template !== null && template.models.length > 0) return template.models;
-    return [this.model.trim() || '自定义模型'];
+    const options: string[] = [];
+    if (template !== null) {
+      for (let i: number = 0; i < template.models.length; i++) {
+        options.push(template.models[i]);
+      }
+    }
+    // 已手动填入的模型不在模板列表时，追加展示，保证可回选
+    const cur: string = this.model.trim();
+    if (cur.length > 0 && options.indexOf(cur) === -1) {
+      options.push(cur);
+    }
+    if (options.length === 0) {
+      options.push('自定义模型');
+    }
+    return options;
+  }
+
+  private applyCustomModel(): void {
+    const value: string = this.customModelInput.trim();
+    if (value.length === 0) return;
+    this.model = value;
+    this.customModelInput = '';
+    this.showModelSheet = false;
   }
 
   private fillConfig(config: LlmConfig): void {
@@ -436,6 +458,7 @@ struct ChatConfig {
                   color: modelName === this.model ? this.palette.primary : Color.Transparent })
                 .onClick(() => {
                   this.model = modelName;
+                  this.customModelInput = '';
                   this.showModelSheet = false;
                 })
               }, (modelName: string) => modelName)
@@ -443,7 +466,44 @@ struct ChatConfig {
             .width('100%')
           }
           .scrollBar(BarState.Off)
-          .constraintSize({ maxHeight: 300 })
+          .constraintSize({ maxHeight: 220 })
+
+          // 手动输入模型名
+          Column({ space: 6 }) {
+            Text('没有你需要的模型？手动输入模型名')
+              .fontSize(10)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+            Row({ space: 8 }) {
+              TextInput({ text: this.customModelInput, placeholder: '如 deepseek-r1-0528' })
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .placeholderColor(this.palette.textTertiary)
+                .backgroundColor(this.palette.bgSurface2)
+                .borderRadius(8)
+                .border({ width: 1, color: this.palette.borderSubtle })
+                .height(40)
+                .layoutWeight(1)
+                .onChange((value: string) => { this.customModelInput = value; })
+              Text('确定')
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(Color.White)
+                .fontWeight(FontWeight.Medium)
+                .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+                .borderRadius(8)
+                .backgroundColor(this.palette.primary)
+                .onClick(() => { this.applyCustomModel(); })
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .padding(10)
+          .borderRadius(8)
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: 1, color: this.palette.borderSubtle })
+          .margin({ top: 8 })
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
@@ -739,6 +799,7 @@ struct ChatConfig {
               .height(44)
               .layoutWeight(1)
               .onChange((value: string) => { this.model = value; })
+              .onClick((event: ClickEvent) => { event.stopPropagation(); })
             Text('∨')
               .fontSize(16)
               .fontFamily(this.palette.fontSans)
