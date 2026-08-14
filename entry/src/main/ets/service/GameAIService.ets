@@ -216,6 +216,7 @@ export class GameAIService {
     copy.visionEnabled = config.visionEnabled;
     copy.thinkingEnabled = config.thinkingEnabled;
     copy.followDefaultConfig = config.followDefaultConfig;
+    copy.vllmCompat = config.vllmCompat;
     return copy;
   }
 

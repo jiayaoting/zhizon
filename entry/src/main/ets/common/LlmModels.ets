@@ -75,6 +75,9 @@ export class LlmConfig {
   visionEnabled: boolean = false;
   thinkingEnabled: boolean = false;
   followDefaultConfig: boolean = true;
+  // vLLM 兼容模式：服务端为 vLLM 部署时（如 api.do.top 的 Qwen3 系列），
+  // 通过 chat_template_kwargs.enable_thinking 控制思考开关；普通网关（tokenrhythm/硅基流动）必须关闭
+  vllmCompat: boolean = false;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -106,6 +109,8 @@ export class LlmModelEntry {
   visionEnabled: boolean = false;
   thinkingEnabled: boolean = false;
   followDefaultConfig: boolean = true;
+  // vLLM 兼容模式（与 LlmConfig.vllmCompat 对应）
+  vllmCompat: boolean = false;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -137,6 +142,7 @@ export function entryToConfig(entry: LlmModelEntry): LlmConfig {
   config.visionEnabled = entry.visionEnabled;
   config.thinkingEnabled = entry.thinkingEnabled;
   config.followDefaultConfig = entry.followDefaultConfig;
+  config.vllmCompat = entry.vllmCompat;
   return config;
 }
 

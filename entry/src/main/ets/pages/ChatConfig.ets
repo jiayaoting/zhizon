@@ -60,6 +60,7 @@ struct ChatConfig {
   @State visionEnabled: boolean = false;
   @State thinkingEnabled: boolean = false;
   @State followDefaultConfig: boolean = true;
+  @State vllmCompat: boolean = false;
 
   aboutToAppear(): void {
     this.load();
@@ -100,6 +101,7 @@ struct ChatConfig {
     this.visionEnabled = m.visionEnabled || false;
     this.thinkingEnabled = m.thinkingEnabled || false;
     this.followDefaultConfig = m.followDefaultConfig !== false;
+    this.vllmCompat = m.vllmCompat || false;
     this.editing = true;
   }
 
@@ -154,6 +156,7 @@ struct ChatConfig {
     this.visionEnabled = false;
     this.thinkingEnabled = false;
     this.followDefaultConfig = true;
+    this.vllmCompat = false;
   }
 
   // ---- 表单辅助 ----
@@ -234,6 +237,7 @@ struct ChatConfig {
     config.visionEnabled = this.visionEnabled;
     config.thinkingEnabled = this.thinkingEnabled;
     config.followDefaultConfig = this.followDefaultConfig;
+    config.vllmCompat = this.vllmCompat;
   }
 
   private async save(): Promise<void> {
@@ -278,6 +282,7 @@ struct ChatConfig {
     entry.visionEnabled = config.visionEnabled;
     entry.thinkingEnabled = config.thinkingEnabled;
     entry.followDefaultConfig = config.followDefaultConfig;
+    entry.vllmCompat = config.vllmCompat;
 
     let list: LlmModelEntry[] = this.models.concat([]);
     if (this.editingIndex >= 0) {
@@ -901,6 +906,9 @@ struct ChatConfig {
           (value: boolean) => { this.thinkingEnabled = value; })
         this.toggleRow('跟随模型默认配置', '使用模型官方推荐的默认参数', this.followDefaultConfig,
           (value: boolean) => { this.followDefaultConfig = value; })
+        this.toggleRow('vLLM 兼容模式',
+          '服务端为 vLLM 部署时开启（如 api.do.top 的 Qwen3 系列）；普通网关（tokenrhythm/硅基流动等）请保持关闭',
+          this.vllmCompat, (value: boolean) => { this.vllmCompat = value; })
       }
     }
     .width('100%')

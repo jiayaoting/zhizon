@@ -1,5 +1,4 @@
 // 智子 - 设置页面（沉浸光感重构版）
-import { router } from '@kit.ArkUI';
 import { promptAction } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorThemeColor,
   ThemeManager, ThemeMode, PreferenceMutationResult, PreferenceFailureReason } from '../common/Theme';
@@ -508,10 +507,6 @@ export struct SettingsPage {
         action: () => { this.clearBackground(); }
       }
     });
-  }
-
-  private openChatConfig(): void {
-    router.pushUrl({ url: 'pages/ChatConfig' });
   }
 
   // ---- 头像 ----
@@ -1494,14 +1489,6 @@ export struct SettingsPage {
                 this.valueRow('头像', this.avatarLabelText(), () => {
                   this.openAvatarPicker();
                 })
-              }
-              .width('100%')
-            }
-
-            // AI 对话
-            GroupCard({ title: 'AI 对话' }) {
-              Column({ space: 8 }) {
-                this.valueRow('大模型 API 配置', '接口 / Key / 模型', () => { this.openChatConfig(); })
               }
               .width('100%')
             }

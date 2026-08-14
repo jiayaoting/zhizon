@@ -224,6 +224,56 @@ export struct IndexPage {
     .alignItems(VerticalAlign.Center)
   }
 
+  // ==================== AI 模型入口 ====================
+  @Builder
+  aiModelEntry() {
+    Row({ space: 14 }) {
+      // 图标
+      Stack() {
+        Circle({ width: 44, height: 44 })
+          .fill(this.palette.primary)
+        Text('🤖')
+          .fontSize(22)
+          .fontFamily(this.palette.fontSans)
+      }
+      .width(44)
+      .height(44)
+
+      Column({ space: 4 }) {
+        Text('AI 模型')
+          .fontSize(this.palette.fsBase + 2)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+        Text('配置服务商 / 接口 / Key / 模型')
+          .fontSize(this.palette.fsSm - 1)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Text('管理 ›')
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.primary)
+        .fontWeight(FontWeight.Medium)
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+    .margin({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+    .borderRadius(12)
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+    .shadow({ radius: 12, color: this.palette.primary + '22', offsetX: 0, offsetY: 4 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      router.pushUrl({ url: 'pages/ChatConfig' });
+    })
+  }
+
   // ==================== 游戏入口大卡 ====================
   @Builder
   gameEntryCards() {
@@ -418,6 +468,9 @@ export struct IndexPage {
               Column({ space: 20 }) {
                 // 欢迎区
                 this.welcomeSection()
+
+                // AI 模型管理入口
+                this.aiModelEntry()
 
                 // 游戏入口大卡
                 this.gameEntryCards()
