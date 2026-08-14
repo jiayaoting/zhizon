@@ -11,6 +11,7 @@ import { ChineseChessEngine, ChineseChessMove, CHESS_COLS, CHESS_ROWS } from '..
 import { ChineseChessBook } from '../service/ChineseChessBook';
 import { ChineseChessNotation } from '../service/ChineseChessNotation';
 import { DataRepository } from '../service/DataRepository';
+import { GameHistoryRouteParams } from '../common/Navigation';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 // 对弈方类型
@@ -589,6 +590,21 @@ struct ChineseChessPage {
     this.winner = msg;
     this.stopThinkTimer();
     this.stopStepDelay();
+    // 记录战绩：仅人类参与的模式（AI 对 AI 不记）
+    if (this.matchMode !== 'LvL') {
+      this.recordScore(msg);
+    }
+  }
+
+  // 记录对局结果到战绩库（score: 1=玩家胜 0=玩家负；level: 难度索引；difficulty: 难度标签）
+  private recordScore(msg: string): void {
+    const redWins: boolean = msg.indexOf('红方') >= 0;
+    const blackWins: boolean = msg.indexOf('黑方') >= 0;
+    const playerWins: boolean =
+      (this.humanSide === 'red' && redWins) || (this.humanSide === 'black' && blackWins);
+    const diffLabel: string = this.engineDiffIndex === 0 ? '简单' :
+      this.engineDiffIndex === 2 ? '困难' : '中等';
+    DataRepository.addGameScore('ChineseChess', playerWins ? 1 : 0, this.engineDiffIndex, diffLabel);
   }
 
   // ---- 放入下棋棋子的操作（人） ----
@@ -1089,6 +1105,10 @@ struct ChineseChessPage {
           () => { this.undo(); })
         this.actionBtn('💡', 'AI 提示', this.palette.primary, Color.White,
           () => { this.suggestMove(); })
+        this.actionBtn('🏆', '战绩', this.palette.bgSurface2, this.palette.textPrimary,
+          () => {
+            router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('ChineseChess') });
+          })
         this.actionBtn('✕', '结束', this.palette.danger, Color.White,
           () => { this.stopGame(); this.setupOpen = true; })
       }
@@ -1142,19 +1162,46 @@ struct ChineseChessPage {
         .border({ width: 1, color: this.palette.borderSubtle })
       }
       if (this.moveHistory.length > 0) {
-        Scroll() {
-          Text('📜 ' + this.moveHistory.join('  '))
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
+        Column({ space: 6 }) {
+          Row() {
+            Text('📜 对局记录')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+            Blank()
+            Text(this.moveHistory.length.toString() + ' 步')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+          }
+          .width('100%')
+          // 多行自动换行展示，充分利用屏幕宽度与下方空白，避免横向滑动
+          Scroll() {
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(this.moveHistory, (item: string, i: number) => {
+                Text((i + 1).toString() + '. ' + item)
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textSecondary)
+                  .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                  .margin({ right: 6, bottom: 6 })
+                  .borderRadius(6)
+                  .backgroundColor(this.palette.bgSurface2)
+              }, (item: string, i: number) => i.toString())
+            }
             .width('100%')
+          }
+          .width('100%')
+          // 高度自适应内容；小屏上限 104，平板/大屏上限 150，避免超出屏幕
+          .constraintSize({ maxHeight: this.isSm ? 104 : 150 })
+          .scrollBar(BarState.Auto)
+          .align(Alignment.Top)
         }
         .width('100%')
-        .height(46)
-        .scrollBar(BarState.Off)
         .padding(10)
         .backgroundColor(this.palette.bgSurface2)
         .borderRadius(this.palette.radiusLg)
+        .border({ width: 1, color: this.palette.borderSubtle })
       }
     }
     .width('100%')

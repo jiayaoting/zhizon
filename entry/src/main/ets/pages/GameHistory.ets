@@ -8,7 +8,7 @@ import { GameHistoryRouteParams } from '../common/Navigation';
 
 function isGameHistoryKey(key: string): boolean {
   return key === '2048' || key === 'Snake' || key === 'Tetris' || key === 'Minesweeper' ||
-    key === 'Breakout' || key === 'SUDOKU';
+    key === 'Breakout' || key === 'SUDOKU' || key === 'ChineseChess';
 }
 
 function gameIcon(key: string): string {
@@ -17,6 +17,7 @@ function gameIcon(key: string): string {
   if (key === 'Minesweeper') return '💣';
   if (key === 'Breakout') return '🎱';
   if (key === 'SUDOKU') return '🧩';
+  if (key === 'ChineseChess') return '♟️';
   return '🔢';
 }
 
@@ -26,6 +27,7 @@ function gameName(key: string): string {
   if (key === 'Minesweeper') return '扫雷';
   if (key === 'Breakout') return '打砖块';
   if (key === 'SUDOKU') return '数独';
+  if (key === 'ChineseChess') return '中国象棋';
   return '2048';
 }
 
@@ -63,7 +65,7 @@ export struct GameHistoryPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
 
-  private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU'];
+  private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU', 'ChineseChess'];
 
   aboutToAppear(): void {
     const params: GameHistoryRouteParams | null = router.getParams() as GameHistoryRouteParams | null;
@@ -154,14 +156,16 @@ export struct GameHistoryPage {
                   .width(32)
                   .textAlign(TextAlign.Center)
 
-                // 分数
+                // 分数/胜负（中国象棋：1=胜 0=负）
                 Column({ space: 2 }) {
-                  Text(entry.score.toString())
+                  Text(this.gameKey === 'ChineseChess' ? (entry.score > 0 ? '胜' : '负') :
+                    entry.score.toString())
                     .fontSize(this.palette.fsXl)
                     .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
+                    .fontColor(this.gameKey === 'ChineseChess' ?
+                      (entry.score > 0 ? '#10B981' : this.palette.danger) : this.palette.textPrimary)
                     .fontWeight(FontWeight.Bold)
-                  Text('分数')
+                  Text(this.gameKey === 'ChineseChess' ? '结果' : '分数')
                     .fontSize(this.palette.fsXs)
                     .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textTertiary)
