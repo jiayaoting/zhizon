@@ -530,17 +530,14 @@ struct ChineseChessPage {
 
   @Builder
   cell(piece: string, r: number, c: number) {
-    const isTarget: boolean = this.isTarget(r, c);
-    const isSel: boolean = this.selR === r && this.selC === c;
-    const isSuggest: boolean = this.suggestionOn &&
-      ((this.suggestFromR === r && this.suggestFromC === c) ||
-        (this.suggestToR === r && this.suggestToC === c));
     Stack() {
-      if (isTarget) {
+      if (this.isTarget(r, c)) {
         Column()
           .width('100%').height('100%')
           .backgroundColor('#33FFD700')
-      } else if (isSuggest) {
+      } else if (this.suggestionOn &&
+        ((this.suggestFromR === r && this.suggestFromC === c) ||
+          (this.suggestToR === r && this.suggestToC === c))) {
         Column()
           .width('100%').height('100%')
           .backgroundColor('#33FF6B6B')
@@ -552,7 +549,7 @@ struct ChineseChessPage {
           .fontColor(ChineseChessEngine.isRed(piece) ? '#D32F2F' : '#212121')
           .fontWeight(FontWeight.Bold)
       }
-      if (isSel) {
+      if (this.selR === r && this.selC === c) {
         Column()
           .width('100%').height('100%')
           .border({ width: 2, color: '#FFD700' })
@@ -714,15 +711,14 @@ struct ChineseChessPage {
 
   @Builder
   seg(label: string, value: string) {
-    const active: boolean = this.segActive(value);
     Text(label)
       .fontSize(this.palette.fsSm)
       .fontFamily(this.palette.fontSans)
-      .fontColor(active ? Color.White : this.palette.textSecondary)
-      .fontWeight(active ? FontWeight.Bold : FontWeight.Normal)
+      .fontColor(this.segActive(value) ? Color.White : this.palette.textSecondary)
+      .fontWeight(this.segActive(value) ? FontWeight.Bold : FontWeight.Normal)
       .padding({ left: 12, right: 12, top: 7, bottom: 7 })
       .borderRadius(9)
-      .backgroundColor(active ? this.palette.primary : this.palette.bgSurface2)
+      .backgroundColor(this.segActive(value) ? this.palette.primary : this.palette.bgSurface2)
       .onClick(() => { this.segTap(value); })
   }
 
@@ -795,20 +791,24 @@ struct ChineseChessPage {
     Stack() {
       Column() {
         TopBar({ title: '中国象棋', subtitle: this.modeLabel(this.matchMode) })
-        Column({ space: 10 }) {
-          this.statusBar()
-          this.chessboard()
-          this.controlPanel()
+        Scroll() {
+          Column({ space: 10 }) {
+            this.statusBar()
+            this.chessboard()
+            this.controlPanel()
+          }
+          .width('100%')
+          .padding({
+            left: this.isSm ? 10 : 24,
+            right: this.isSm ? 10 : 24,
+            top: 8,
+            bottom: 12
+          })
         }
         .width('100%')
         .layoutWeight(1)
-        .padding({
-          left: this.isSm ? 10 : 24,
-          right: this.isSm ? 10 : 24,
-          top: 8,
-          bottom: 12
-        })
-        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .align(Alignment.Top)
       }
       .layoutWeight(1)
       .height('100%')

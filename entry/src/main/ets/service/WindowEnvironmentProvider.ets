@@ -96,16 +96,13 @@ export class WindowEnvironmentProvider {
         'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
         'attach', 'SIZE_AREA', 'WINDOW_SIZE_LISTENER_FAILED', 'breakpoint-static');
     }
-    // 折叠屏状态：读取当前状态并监听开合变化
+    // 折叠屏状态：读取当前状态并监听开合变化（display 模块提供，非折叠设备抛错走兜底）
     try {
-      window.getDisplayFoldStatus().then((status: window.FoldStatus) => {
-        if (WindowEnvironmentProvider.activeProvider !== null) {
-          WindowEnvironmentProvider.activeProvider.updateFoldState(status);
-        }
-      }).catch(() => {
-        // 非折叠屏或不支持时保持 UNKNOWN
-      });
-      window.on('foldStatusChange', WindowEnvironmentProvider.handleFoldStatusChange);
+      const status: display.FoldStatus = display.getFoldStatus();
+      if (WindowEnvironmentProvider.activeProvider !== null) {
+        WindowEnvironmentProvider.activeProvider.updateFoldState(status);
+      }
+      display.on('foldStatusChange', WindowEnvironmentProvider.handleFoldStatusChange);
     } catch (error) {
       hilog.error(DOMAIN, 'WindowEnvironment',
         'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
@@ -137,7 +134,7 @@ export class WindowEnvironmentProvider {
       // 尺寸监听移除失败不影响主流程
     }
     try {
-      window.off('foldStatusChange', WindowEnvironmentProvider.handleFoldStatusChange);
+      display.off('foldStatusChange', WindowEnvironmentProvider.handleFoldStatusChange);
     } catch (error) {
       // 折叠监听移除失败不影响主流程
     }
@@ -174,11 +171,11 @@ export class WindowEnvironmentProvider {
   }
 
   // 单独更新折叠状态（开合变化时），其余环境量不变
-  private updateFoldState(status: window.FoldStatus): void {
+  private updateFoldState(status: display.FoldStatus): void {
     let state: WindowFoldState = WindowFoldState.UNKNOWN;
-    if (status === window.FoldStatus.EXPANDED) state = WindowFoldState.EXPANDED;
-    else if (status === window.FoldStatus.FOLDED) state = WindowFoldState.FOLDED;
-    else if (status === window.FoldStatus.HALF_FOLDED) state = WindowFoldState.HALF_FOLDED;
+    if (status === display.FoldStatus.FOLD_STATUS_EXPANDED) state = WindowFoldState.EXPANDED;
+    else if (status === display.FoldStatus.FOLD_STATUS_FOLDED) state = WindowFoldState.FOLDED;
+    else if (status === display.FoldStatus.FOLD_STATUS_HALF_FOLDED) state = WindowFoldState.HALF_FOLDED;
     this.currentFoldState = state;
     this.currentSnapshot.foldState = state;
     AppStorage.setOrCreate('windowEnvironmentSnapshot', this.currentSnapshot);
@@ -192,7 +189,7 @@ export class WindowEnvironmentProvider {
   }
 
   // 折叠屏开合状态变化
-  private static handleFoldStatusChange(status: window.FoldStatus): void {
+  private static handleFoldStatusChange(status: display.FoldStatus): void {
     if (WindowEnvironmentProvider.activeProvider !== null) {
       WindowEnvironmentProvider.activeProvider.updateFoldState(status);
     }

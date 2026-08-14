@@ -146,15 +146,45 @@ export struct ProfilePage {
   }
 
   @Builder
-  groupCard(title: string, content: () => void) {
+  commonGroup() {
     Column({ space: 10 }) {
-      Text(title)
+      Text('通用')
         .fontSize(this.palette.fsMd)
         .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
-      content()
+      Column({ space: 8 }) {
+        this.groupRow('设置', '', true, () => { this.onNavigate('Settings'); })
+        this.groupRow('AI 调用记录', '', true, () => {
+          router.pushUrl({ url: 'pages/AiCallLog' });
+        })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(12)
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  aboutGroup() {
+    Column({ space: 10 }) {
+      Text('关于')
+        .fontSize(this.palette.fsMd)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+      Column({ space: 8 }) {
+        ForEach(this.aboutRows, (row: AboutRow) => {
+          this.groupRow(row.label, row.value, row.action !== 0, () => { this.handleAboutRow(row); })
+        }, (row: AboutRow) => row.label)
+      }
+      .width('100%')
     }
     .width('100%')
     .padding(16)
@@ -179,24 +209,9 @@ export struct ProfilePage {
         Column({ space: 16 }) {
           this.headerCard()
 
-          this.groupCard('通用', () => {
-            Column({ space: 8 }) {
-              this.groupRow('设置', '', true, () => { this.onNavigate('Settings'); })
-              this.groupRow('AI 调用记录', '', true, () => {
-                router.pushUrl({ url: 'pages/AiCallLog' });
-              })
-            }
-            .width('100%')
-          })
+          this.commonGroup()
 
-          this.groupCard('关于', () => {
-            Column({ space: 8 }) {
-              ForEach(this.aboutRows, (row: AboutRow) => {
-                this.groupRow(row.label, row.value, row.action !== 0, () => { this.handleAboutRow(row); })
-              }, (row: AboutRow) => row.label)
-            }
-            .width('100%')
-          })
+          this.aboutGroup()
 
           Column().height(20)
         }

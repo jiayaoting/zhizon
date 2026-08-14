@@ -1,6 +1,5 @@
 // 智子 - AI 调用记录查看页（列表 + 详情 + 清空）
 import { promptAction } from '@kit.ArkUI';
-import { AlertDialog } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
@@ -108,20 +107,17 @@ export struct AiCallLogPage {
 
   @Builder
   logCard(entry: AiCallLogEntry) {
-    const info: [string, string] = typeInfo(entry.type);
-    const scene: string = entry.type === 'game' ? gameLabel(entry.game) : info[0];
-    const expanded: boolean = this.expandedId === entry.id;
     Column({ space: 8 }) {
       // 首行：类型徽标 + 场景 + 结果 + 耗时
       Row({ space: 8 }) {
-        Text(info[0])
+        Text(typeInfo(entry.type)[0])
           .fontSize(this.palette.fsXs)
           .fontFamily(this.palette.fontSans)
           .fontColor(Color.White)
           .padding({ left: 6, right: 6, top: 2, bottom: 2 })
           .borderRadius(4)
-          .backgroundColor(info[1])
-        Text(scene)
+          .backgroundColor(typeInfo(entry.type)[1])
+        Text(entry.type === 'game' ? gameLabel(entry.game) : typeInfo(entry.type)[0])
           .fontSize(this.palette.fsMd)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textPrimary)
@@ -158,7 +154,7 @@ export struct AiCallLogPage {
       .width('100%')
 
       // 详情（展开）
-      if (expanded) {
+      if (this.expandedId === entry.id) {
         Column({ space: 6 }) {
           this.detailRow('开始时间', formatTime(entry.startTime))
           this.detailRow('结束时间', formatTime(entry.endTime))
@@ -180,7 +176,7 @@ export struct AiCallLogPage {
     .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
     .onClick(() => {
-      this.expandedId = expanded ? '' : entry.id;
+      this.expandedId = this.expandedId === entry.id ? '' : entry.id;
     })
   }
 
