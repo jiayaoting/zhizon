@@ -5,14 +5,21 @@ import { LlmClient } from './LlmClient';
 import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, entryToConfig } from '../common/LlmModels';
 import { AiCallContext } from './AiCallLogger';
 import { DifficultyLevel, difficultyLabel } from '../common/Difficulty';
+import { ChineseChessMove } from './ChineseChessEngine';
+import { ChineseChessNotation } from './ChineseChessNotation';
 
 export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku' | 'ChineseChess';
 
 // AI 模型记忆存储键：聊天/AI 使用默认键，各游戏独立记忆自己的键
 const AI_MODEL_KEY_PREFIX = 'aiModelId';
 
+// 中国象棋各侧别的模型记忆子键（红方 / 黑方 / AI 方需分别独立记忆）
+export const CHESS_KIND_RED: string = 'ChineseChess_red';
+export const CHESS_KIND_BLACK: string = 'ChineseChess_black';
+export const CHESS_KIND_AI: string = 'ChineseChess_ai';
+
 // 组装当前游戏的模型记忆键；非游戏场景（聊天/AI 默认）使用默认键
-function aiModelKeyFor(kind: GameKind | ''): string {
+export function aiModelKeyFor(kind: string): string {
   if (kind.length === 0) return AI_MODEL_KEY_PREFIX;
   return AI_MODEL_KEY_PREFIX + '_' + kind;
 }
@@ -57,6 +64,28 @@ export class GameAction {
   }
 }
 
+// 中国象棋走法描述（用于给 LLM 列出合法走法选项）
+export class ChineseChessMoveOption {
+  index: number;
+  fr: number;
+  fc: number;
+  tr: number;
+  tc: number;
+  pieceName: string;
+  capture: string;
+
+  constructor(index: number, fr: number, fc: number, tr: number, tc: number,
+    pieceName: string, capture: string) {
+    this.index = index;
+    this.fr = fr;
+    this.fc = fc;
+    this.tr = tr;
+    this.tc = tc;
+    this.pieceName = pieceName;
+    this.capture = capture;
+  }
+}
+
 // AI 展示档位：速度索引 → 每步展示窗口（毫秒）
 export const AI_SPEED_OPTIONS: string[] = ['慢', '中', '快', '极速'];
 export const AI_SPEED_DELAYS: number[] = [800, 400, 200, 0];
@@ -89,13 +118,13 @@ export class GameAIService {
     return entry.displayName.trim().length > 0 ? entry.displayName.trim() : base;
   }
 
-  // 记忆当前应用/游戏选中的模型 id（kind 为空表示聊天/AI 默认）
-  static async saveModelId(kind: GameKind | '', modelId: string): Promise<void> {
+  // 记忆当前应用/游戏选中的模型 id（kind 为空表示聊天/AI 默认；游戏侧别可传 CHESS_KIND_* 子键）
+  static async saveModelId(kind: string, modelId: string): Promise<void> {
     await DataRepository.setSetting(aiModelKeyFor(kind), modelId);
   }
 
   // 读取当前应用/游戏记忆的模型 id；无记忆或模型已删除返回 ''
-  static async loadSavedModelId(kind: GameKind | ''): Promise<string> {
+  static async loadSavedModelId(kind: string): Promise<string> {
     const saved: string = await DataRepository.getSetting(aiModelKeyFor(kind), '');
     if (saved.length === 0) return '';
     const models: LlmModelEntry[] = await ChatRepository.loadModels();
@@ -148,7 +177,9 @@ export class GameAIService {
         '车走直线，炮隔子吃子，兵/卒只能前进、过河后可横走且不能后退，帅/将不出九宫且不能对脸相见。\n' +
         '不能把己方将/帅送入被将军的境地。\n' +
         '策略：注意防守己方将/帅，优先保护重要棋子，用炮/车/马配合进攻，避免被将军。\n' +
-        '只输出一步走法，格式：MOVE 起点行 起点列 终点行 终点列（例如 MOVE 5 4 4 4），不要输出任何其他文字。';
+        '用户消息中会列出你当前所有【合法走法】（每条带【序号】和【中文记谱】）。\n' +
+        '你【必须】且【只能】从合法走法列表中选择一个【序号】。\n' +
+        '输出格式（严格）：MOVE 序号（例如 MOVE 1），不要输出任何其他文字、解释或坐标。';
     }
     return '你正在玩数独。棋盘 9×9，0 表示空格，1-9 为已填数字（题目给定的数字不可修改）。\n' +
       '当前难度：' + diff + '。\n' +
@@ -291,11 +322,26 @@ export class GameAIService {
       return null;
     }
     if (kind === 'ChineseChess') {
-      if (GameAIService.hasWord(upper, 'MOVE')) {
-        const nums: number[] = GameAIService.extractNumbers(text);
-        if (nums.length >= 4) return new GameAction('MOVE', nums[0], nums[1], nums[2], nums[3]);
-        return null;
+      // 严格只从 MOVE 关键字之后的子串提取，避免模型回复前面的解释文字
+      // （如"我观察 row 5 col 4 局势..."）混入坐标导致解析错误
+      const moveIdx: number = upper.indexOf('MOVE');
+      if (moveIdx >= 0) {
+        const after: string = text.substring(moveIdx + 'MOVE'.length);
+        const nums: number[] = GameAIService.extractNumbers(after);
+        // 新格式：MOVE 序号（1-based）
+        // 旧格式：MOVE fr fc tr tc（兜底兼容）
+        if (nums.length >= 1) {
+          // 序号模式：1 个数字
+          if (nums.length === 1) {
+            return new GameAction('MOVE_IDX', 0, nums[0] - 1); // r=0, c=index
+          }
+          // 兜底：4 个数字 = 坐标
+          if (nums.length >= 4) {
+            return new GameAction('MOVE', nums[0], nums[1], nums[2], nums[3]);
+          }
+        }
       }
+      // 兜底：模型回复中没有 MOVE 关键字（说明它没听懂指令），返回 null 让上层重试
       return null;
     }
     return null;
@@ -460,16 +506,32 @@ export class GameAIService {
     return out;
   }
 
-  // 中国象棋棋盘序列化：坐标说明 + 每行棋子（红方大写在下，黑方小写在上）
-  static serializeChineseChess(board: string[][], redTurn: boolean): string {
-    let out: string = '中国象棋棋盘，9列(col 0-8，从左到右) × 10行(row 0-9，从上到下)。\n';
+  // 中国象棋棋盘序列化：当前局面 + 合法走法索引列表（让 LLM 只从列表里选，彻底避免坐标错误）
+  static serializeChineseChess(board: string[][], redTurn: boolean,
+    legalMoves: ChineseChessMoveOption[]): string {
+    let out: string = '中国象棋棋盘，9列 × 10行。行号row和列号col都从0开始。\n';
+    out = out + '重要坐标方位：row0 是【黑方】底线（上方），row9 是【红方】底线（下方），黑方在上、红方在下。\n';
     out = out + '棋子编码：红方用大写 帅K 仕A 相B 马H 车R 炮C 兵P；黑方用小写 将k 士a 象b 马h 车r 炮c 卒p；. 表示空位。\n';
-    out = out + '当前轮到：' + (redTurn ? '红方' : '黑方') + ' 走棋。\n';
+    out = out + '当前轮到：' + (redTurn ? '红方' : '黑方') + ' 走棋，你只能移动己方棋子（大写=红方、小写=黑方）。\n';
+    out = out + '     col:  0  1  2  3  4  5  6  7  8\n';
     for (let r: number = 0; r < board.length; r++) {
-      out = out + 'row' + r.toString() + ' ' + board[r].join(' ') + '\n';
+      out = out + 'row' + r.toString() + '  ' + board[r].join('  ') + '\n';
     }
-    out = out + '请输出一步走法，格式：MOVE 起点行 起点列 终点行 终点列（例如 MOVE 5 4 4 4）。\n';
-    out = out + '只输出一步走法，不要输出任何其他文字或解释。';
+    out = out + '\n【当前' + (redTurn ? '红方' : '黑方') + '的全部合法走法（按索引）】\n';
+    out = out + '你必须从下面' + legalMoves.length.toString() + '个合法走法里选一个，禁止输出表中不存在的坐标。\n';
+    out = out + '每条格式：序号 | 中文记谱 | 从(行,列) → 到(行,列) | 棋子 | 吃子\n';
+    for (let i: number = 0; i < legalMoves.length; i++) {
+      const m = legalMoves[i];
+      // 为每个合法走法附带标准中文记谱（如「炮二平五」），帮助模型理解棋路
+      const mv: ChineseChessMove = new ChineseChessMove(m.fr, m.fc, m.tr, m.tc);
+      const notation: string = ChineseChessNotation.fromMove(board, mv, redTurn);
+      out = out + '  ' + (i + 1).toString() + '  ' + notation + '  (row' + m.fr.toString() + ',col' + m.fc.toString() +
+        ') → (row' + m.tr.toString() + ',col' + m.tc.toString() + ')  ' + m.pieceName +
+        (m.capture.length > 0 ? '  吃' + m.capture : '') + '\n';
+    }
+    out = out + '\n只需要输出：MOVE 序号\n';
+    out = out + '例如想走第1步则输出：MOVE 1\n';
+    out = out + '不要输出任何其他文字或解释。';
     return out;
   }
 }

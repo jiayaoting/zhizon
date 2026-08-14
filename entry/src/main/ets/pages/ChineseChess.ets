@@ -3,15 +3,22 @@ import { promptAction, router } from '@kit.ArkUI';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DifficultyLevel, GameId, GameLaunchFacade, GameLaunchResult, GameRouteParams } from '../common/Difficulty';
-import { GameAIService, GameAction } from '../service/GameAIService';
+import {
+  AI_SPEED_DELAYS, AI_SPEED_OPTIONS, CHESS_KIND_AI, CHESS_KIND_BLACK, CHESS_KIND_RED,
+  GameAIService, GameAction, ChineseChessMoveOption
+} from '../service/GameAIService';
 import { ChineseChessEngine, ChineseChessMove, CHESS_COLS, CHESS_ROWS } from '../service/ChineseChessEngine';
-import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { ChineseChessBook } from '../service/ChineseChessBook';
+import { ChineseChessNotation } from '../service/ChineseChessNotation';
 import { DataRepository } from '../service/DataRepository';
+import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 
 // 对弈方类型
 type PlayerMode = 'human' | 'engine' | 'llm';
 // 对局模式
 type MatchMode = 'hvE' | 'hvL' | 'LvL';
+// 模型弹窗目标侧别
+type ModelSide = 'red' | 'black' | 'ai';
 
 // 悔棋快照
 class BoardSnapshot {
@@ -23,10 +30,6 @@ class BoardSnapshot {
     this.redTurn = redTurn;
   }
 }
-
-const RED_MODEL_KEY: string = 'ccRedModelId';
-const BLACK_MODEL_KEY: string = 'ccBlackModelId';
-const AI_MODEL_KEY: string = 'ccAiModelId';
 
 @Entry
 @Component
@@ -60,15 +63,43 @@ struct ChineseChessPage {
   // 模型
   @State aiModelNames: string[] = [];
   @State modelsConfigured: boolean = false;
+  @State showModelPicker: boolean = false;
+  private pickSide: ModelSide = 'ai';
   private aiModels: LlmModelEntry[] = [];
   private redModelIndex: number = 0;
   private blackModelIndex: number = 0;
+  private aiModelIndex: number = 0;
   private redConfig: LlmConfig | null = null;
   private blackConfig: LlmConfig | null = null;
+  private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
   private aiFailCount: number = 0;
   private moveStack: BoardSnapshot[] = [];
   private configSeq: number = 0;
+
+  // AI vs AI 对弈节奏：0慢 1中 2快 3极速
+  @State aiSpeedIndex: number = 1;
+  // 落子停顿 timer（AI vs AI 每步展示停顿），统一清理避免泄漏
+  private stepDelayTimer: number = -1;
+
+  // 开局库开关（持久化；开启时引擎走子前先查经典开局）
+  @State bookEnabled: boolean = true;
+  private static readonly BOOK_KEY: string = 'chineseChess_bookEnabled';
+
+  // 最近一步走法（用于走子动画高亮来源/目标格）
+  @State lastFromR: number = -1;
+  @State lastFromC: number = -1;
+  @State lastToR: number = -1;
+  @State lastToC: number = -1;
+  // 是否处于将军状态（红/黑）
+  @State redInCheck: boolean = false;
+  @State blackInCheck: boolean = false;
+  // 对局是否已正式启动（用户点了「开始对局」）；用于防止 onPageShow 提前启动 AI 对局
+  private gameStarted: boolean = false;
+
+  // 棋盘版本号：每次 board 更新自增，ForEach 的 key 含版本号强制重建，
+  // 规避 ArkUI @State 二维数组整体赋值不触发 UI 刷新的限制
+  @State boardVersion: number = 0;
 
   // AI 落子提示
   @State suggestionOn: boolean = false;
@@ -109,6 +140,50 @@ struct ChineseChessPage {
     return side === 'red' ? '红方' : '黑方';
   }
 
+  // 把 generateMoves 结果转换成 serializeChineseChess 期望的描述字典数组
+  private static toMoveOptions(board: string[][], moves: ChineseChessMove[]):
+    ChineseChessMoveOption[] {
+    const out: ChineseChessMoveOption[] = [];
+    for (let i: number = 0; i < moves.length; i++) {
+      const m: ChineseChessMove = moves[i];
+      const piece: string = board[m.fromRow][m.fromCol];
+      const target: string = board[m.toRow][m.toCol];
+      let name: string = '?';
+      if (piece === 'K') name = '红帅';
+      else if (piece === 'A') name = '红仕';
+      else if (piece === 'B') name = '红相';
+      else if (piece === 'H') name = '红马';
+      else if (piece === 'R') name = '红车';
+      else if (piece === 'C') name = '红炮';
+      else if (piece === 'P') name = '红兵';
+      else if (piece === 'k') name = '黑将';
+      else if (piece === 'a') name = '黑士';
+      else if (piece === 'b') name = '黑象';
+      else if (piece === 'h') name = '黑马';
+      else if (piece === 'r') name = '黑车';
+      else if (piece === 'c') name = '黑炮';
+      else if (piece === 'p') name = '黑卒';
+      let capture: string = '';
+      if (target === 'K') capture = '红帅';
+      else if (target === 'A') capture = '红仕';
+      else if (target === 'B') capture = '红相';
+      else if (target === 'H') capture = '红马';
+      else if (target === 'R') capture = '红车';
+      else if (target === 'C') capture = '红炮';
+      else if (target === 'P') capture = '红兵';
+      else if (target === 'k') capture = '黑将';
+      else if (target === 'a') capture = '黑士';
+      else if (target === 'b') capture = '黑象';
+      else if (target === 'h') capture = '黑马';
+      else if (target === 'r') capture = '黑车';
+      else if (target === 'c') capture = '黑炮';
+      else if (target === 'p') capture = '黑卒';
+      out.push(new ChineseChessMoveOption(i + 1, m.fromRow, m.fromCol, m.toRow, m.toCol,
+        name, capture));
+    }
+    return out;
+  }
+
   private modeLabel(mode: MatchMode): string {
     if (mode === 'hvE') return '人机';
     if (mode === 'hvL') return '人对AI';
@@ -142,6 +217,15 @@ struct ChineseChessPage {
     this.engineDepth = this.difficulty === DifficultyLevel.VERY_EASY ? 1 :
       this.difficulty === DifficultyLevel.EASY ? 2 :
         this.difficulty === DifficultyLevel.HARD ? 4 : 3;
+    // 接线开局库：引擎走子前优先查经典开局
+    ChineseChessEngine.bookLookup = (board: string[][], red: boolean, ply: number): ChineseChessMove | null => {
+      return ChineseChessBook.lookup(board, red, ply);
+    };
+    // 恢复开局库开关（异步）
+    DataRepository.getSetting(ChineseChessPage.BOOK_KEY, '1').then((v: string) => {
+      this.bookEnabled = v !== '0';
+      ChineseChessBook.enabled = this.bookEnabled;
+    });
     this.initAiModels();
     this.resetBoard();
   }
@@ -150,10 +234,26 @@ struct ChineseChessPage {
     this.running = false;
     this.aiLoopActive = false;
     this.stopThinkTimer();
+    this.stopStepDelay();
+  }
+
+  // 回到前台：若用户没有主动结束（gameOver=false 且无 winner），且当前没有任何活动AI思考，
+  // 把 running 重置为 true 并调度下一步。这样后台返回后 AI vs AI 不会卡住。
+  onPageShow(): void {
+    if (this.gameOver || this.winner.length > 0) return;
+    if (this.setupOpen) return;          // 设置弹窗打开时不算 paused
+    if (this.aiLoopActive) return;       // 让 thinkFor 走完即可
+    if (this.thinkingSide !== '') return; // 还有思考方未走完，let it finish
+    // 仅当对局已由用户「开始对局」启动后才恢复暂停的调度；防止页面首次显示就提前启动 AI
+    if (this.gameStarted && !this.running) {
+      this.running = true;
+      this.scheduleNext();
+    }
   }
 
   private resetBoard(): void {
     this.board = ChineseChessEngine.initialBoard();
+    this.boardVersion += 1;
     this.redTurn = true;
     this.gameOver = false;
     this.winner = '';
@@ -167,7 +267,14 @@ struct ChineseChessPage {
     this.thinkingText = '';
     this.aiFailCount = 0;
     this.suggestionOn = false;
+    this.lastFromR = -1;
+    this.lastFromC = -1;
+    this.lastToR = -1;
+    this.lastToC = -1;
+    this.redInCheck = false;
+    this.blackInCheck = false;
     this.stopThinkTimer();
+    this.stopStepDelay();
   }
 
   private async initAiModels(): Promise<void> {
@@ -178,14 +285,14 @@ struct ChineseChessPage {
     }
     this.aiModelNames = names;
     this.modelsConfigured = this.aiModels.length > 0;
-    // 恢复记忆的模型
-    const redId: string = await DataRepository.getSetting(RED_MODEL_KEY, '');
-    const blackId: string = await DataRepository.getSetting(BLACK_MODEL_KEY, '');
-    const aiId: string = await DataRepository.getSetting(AI_MODEL_KEY, '');
+    // 恢复记忆的模型（红/黑/AI 三侧分别独立记忆）
+    const redId: string = await GameAIService.loadSavedModelId(CHESS_KIND_RED);
+    const blackId: string = await GameAIService.loadSavedModelId(CHESS_KIND_BLACK);
+    const aiId: string = await GameAIService.loadSavedModelId(CHESS_KIND_AI);
     for (let i: number = 0; i < this.aiModels.length; i++) {
       if (this.aiModels[i].id === redId) this.redModelIndex = i;
       if (this.aiModels[i].id === blackId) this.blackModelIndex = i;
-      if (this.aiModels[i].id === aiId) this.redModelIndex = i;
+      if (this.aiModels[i].id === aiId) this.aiModelIndex = i;
     }
   }
 
@@ -205,12 +312,17 @@ struct ChineseChessPage {
     this.redPlayer = this.playerType('red');
     this.blackPlayer = this.playerType('black');
     this.resetBoard();
-    this.redConfig = await this.loadModelConfig(this.redModelIndex);
-    this.blackConfig = await this.loadModelConfig(this.blackModelIndex);
+    if (this.matchMode === 'hvL') {
+      this.aiConfig = await this.loadModelConfig(this.aiModelIndex);
+    } else if (this.matchMode === 'LvL') {
+      this.redConfig = await this.loadModelConfig(this.redModelIndex);
+      this.blackConfig = await this.loadModelConfig(this.blackModelIndex);
+    }
     this.setupOpen = false;
     this.running = true;
     this.aiLoopActive = false;
     this.aiFailCount = 0;
+    this.gameStarted = true;
     this.scheduleNext();
   }
 
@@ -221,6 +333,7 @@ struct ChineseChessPage {
     this.thinkingText = '';
     this.suggestionOn = false;
     this.stopThinkTimer();
+    this.stopStepDelay();
   }
 
   // ---- AI 思考等待计时 ----
@@ -240,6 +353,14 @@ struct ChineseChessPage {
     }
   }
 
+  // 清理 AI vs AI 落子停顿 timer
+  private stopStepDelay(): void {
+    if (this.stepDelayTimer >= 0) {
+      clearTimeout(this.stepDelayTimer);
+      this.stepDelayTimer = -1;
+    }
+  }
+
   // ---- 对弈调度 ----
   private scheduleNext(): void {
     if (!this.running || this.gameOver) return;
@@ -251,8 +372,29 @@ struct ChineseChessPage {
       return;
     }
     this.thinkFor(side).catch((e: Object) => {
+      console.error('[ChineseChess] thinkFor 异常: ' + e);
       this.stopGame();
     });
+  }
+
+  // AI vs AI 落子后的节奏控制：若下一方仍为 LLM 且设定速度>0，则按档位停顿后再调度
+  private scheduleNextWithStepDelay(): void {
+    if (!this.running || this.gameOver) return;
+    const nextSide: string = this.currentSide();
+    const nextType: PlayerMode = this.playerType(nextSide);
+    if (nextType !== 'llm' || this.aiSpeedIndex >= AI_SPEED_DELAYS.length ||
+      AI_SPEED_DELAYS[this.aiSpeedIndex] <= 0) {
+      this.scheduleNext();
+      return;
+    }
+    const delay: number = AI_SPEED_DELAYS[this.aiSpeedIndex];
+    this.thinkingSide = '';
+    this.thinkingText = '下一回合 ' + this.sideLabel(nextSide) + '…';
+    this.stopStepDelay();
+    this.stepDelayTimer = setTimeout(() => {
+      this.stepDelayTimer = -1;
+      this.scheduleNext();
+    }, delay);
   }
 
   // AI 决策（本地引擎 / LLM）
@@ -261,54 +403,100 @@ struct ChineseChessPage {
     this.aiLoopActive = true;
     const type: PlayerMode = this.playerType(side);
     this.thinkingSide = side;
+    console.info('[ChineseChess][thinkFor] 调度 side=' + side + ' redTurn=' + this.redTurn +
+      ' type=' + type + ' running=' + this.running + ' gameOver=' + this.gameOver);
     this.thinkingText = (this.sideLabel(side) + '思考中…') +
       (type === 'engine' ? '（本地引擎）' : '（' + this.aiModelLabel(side) + '）');
     let move: ChineseChessMove | null = null;
     if (type === 'engine') {
       // 本地引擎：深拷贝棋盘，避免在搜索中修改 @State
-      const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
-      move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth);
+      try {
+        const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
+        move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth, this.moveHistory.length);
+      } catch (e) {
+        console.error('[ChineseChess] 本地引擎异常: ' + e);
+        this.aiLoopActive = false;
+        this.thinkingSide = '';
+        this.thinkingText = '';
+        return;
+      }
     } else {
-      const config: LlmConfig | null = side === 'red' ? this.redConfig : this.blackConfig;
+      const config: LlmConfig | null = this.llmConfigFor(side);
       if (config === null) {
         this.stopGame();
         promptAction.showToast({ message: '模型配置无效' });
         this.aiLoopActive = false;
         return;
       }
-      const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
-      const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
-      this.startThinkTimer(this.sideLabel(side) + '思考中', '（' + this.aiModelLabel(side) + '）');
-      const result = await GameAIService.decide(config, messages, 'ChineseChess');
-      this.stopThinkTimer();
-      this.aiLoopActive = false;
-      if (!this.running || this.gameOver) return;
-      if (!result.success) {
-        this.aiFailCount += 1;
-        // 每次失败都明确提示原因，避免界面长时间无反馈
-        promptAction.showToast({ message: this.sideLabel(side) + '模型请求失败：' + result.errorMessage });
-        if (this.aiFailCount >= 2) {
-          this.stopGame();
-          promptAction.showToast({ message: 'AI 连续失败，已停止' });
+      this.aiFailCount = 0;
+      const MAX_LLM_RETRY: number = 1;
+      let requestFailures: number = 0;
+      let llmMove: ChineseChessMove | null = null;
+      // 事先生成当前方所有合法走法，供 prompt 给 LLM 选，模型只能选索引
+      const legalMoves: ChineseChessMove[] = ChineseChessEngine.generateMoves(this.board, side === 'red');
+      for (let attempt: number = 0; attempt < MAX_LLM_RETRY; attempt++) {
+        const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red',
+          ChineseChessPage.toMoveOptions(this.board, legalMoves));
+        const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
+        if (attempt === 0) {
+          this.startThinkTimer(this.sideLabel(side) + '思考中', '（' + this.aiModelLabel(side) + '）');
+        } else {
+          this.startThinkTimer(this.sideLabel(side) + '重新计算', '（第' + (attempt + 1).toString() + '次）');
+        }
+        const result = await GameAIService.decide(config, messages, 'ChineseChess', 12000);
+        this.stopThinkTimer();
+        if (!this.running || this.gameOver) {
+          this.aiLoopActive = false;
+          this.thinkingSide = '';
+          this.thinkingText = '';
           return;
+        }
+        if (!result.success) {
+          requestFailures += 1;
+          promptAction.showToast({ message: this.sideLabel(side) + '模型请求失败：' + result.errorMessage });
+          // 请求连续失败达上限，用本地引擎兜底，保证对局能推进
+          if (requestFailures >= MAX_LLM_RETRY) break;
+          continue;
+        }
+        requestFailures = 0;
+        const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);
+        // 序号模式：MOVE_IDX，走 legalMoves[idx]
+        if (action !== null && action.command === 'MOVE_IDX' && action.c >= 0 && action.c < legalMoves.length) {
+          llmMove = legalMoves[action.c];
+        } else if (action !== null && action.command === 'MOVE') {
+          // 兜底：旧坐标模式
+          llmMove = new ChineseChessMove(action.r, action.c, action.value, action.toRow);
+        }
+        if (llmMove !== null && this.isLegal(llmMove)) {
+          move = llmMove;
+          break;
+        }
+        // 走法非法：记录并展示模型实际回复的简短预览，便于排查
+        llmMove = null;
+        const rawPreview: string = result.content.length > 40 ?
+          result.content.substring(0, 40) + '…' : result.content;
+        console.info('[ChineseChess] ' + side + ' LLM 返回非法走法，重试中。原始回复=' + rawPreview);
+        if (attempt === MAX_LLM_RETRY - 1) {
+          promptAction.showToast({
+            message: this.sideLabel(side) + 'AI 输出无法解析："' + rawPreview + '"'
+          });
+        }
+      }
+      // LLM 反复非法或请求失败：用本地引擎兜底，保证一定落子
+      if (move === null) {
+        if (llmMove !== null) {
+          promptAction.showToast({ message: this.sideLabel(side) + '模型多次返回非法走法，改用本地引擎' });
+        }
+        this.thinkingText = this.sideLabel(side) + '思考中…（本地引擎兜底）';
+        try {
+          const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
+          move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth, this.moveHistory.length);
+        } catch (e) {
+          console.error('[ChineseChess] 本地引擎兜底异常: ' + e);
+          move = null;
         }
         this.thinkingSide = '';
         this.thinkingText = '';
-        this.scheduleNext();
-        return;
-      }
-      this.aiFailCount = 0;
-      const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);
-      // 坐标映射：r=fromRow, c=fromCol, value=toRow, toRow=toCol
-      if (action !== null) {
-        move = new ChineseChessMove(action.r, action.c, action.value, action.toRow);
-      }
-      if (move === null || !this.isLegal(move)) {
-        // AI 走法非法：重试一次
-        this.thinkingSide = '';
-        this.thinkingText = '';
-        this.scheduleNext();
-        return;
       }
     }
     this.aiLoopActive = false;
@@ -341,34 +529,55 @@ struct ChineseChessPage {
 
   // 执行走法并推进局面
   private applyMove(move: ChineseChessMove): void {
+    // 合法性安全网：任何非法走法（含非法坐标、吃己方、送将）一律拒绝，
+    // 防止 LLM 解析出错或本地引擎异常导致棋盘出现非法局面。
+    if (!this.isLegal(move)) {
+      console.error('[ChineseChess] 拒绝非法走法: ' + move.fromRow + ',' + move.fromCol +
+        ' → ' + move.toRow + ',' + move.toCol);
+      return;
+    }
+    console.info('[ChineseChess][applyMove] redTurn=' + this.redTurn + ' 走 ' +
+      move.fromRow + ',' + move.fromCol + '→' + move.toRow + ',' + move.toCol +
+      ' 记谱=' + this.sideLabel(this.redTurn ? 'red' : 'black') +
+      ' 当前棋盘步数=' + this.moveHistory.length.toString());
     // 保存悔棋快照
     this.moveStack.push(new BoardSnapshot(ChineseChessEngine.cloneBoard(this.board), this.redTurn));
-    const nb: string[][] = ChineseChessEngine.cloneBoard(this.board);
+    // 记录走子动画状态
+    this.lastFromR = move.fromRow;
+    this.lastFromC = move.fromCol;
+    this.lastToR = move.toRow;
+    this.lastToC = move.toCol;
+    // 记谱需用走子前的棋盘（识别来源棋子）。注意 sideLabel 期望 'red'/'black'，勿传中文 '红'/'黑'
+    const preBoard: string[][] = this.board;
+    const notation: string = ChineseChessNotation.fromMove(preBoard, move, this.redTurn);
+    const sideLabel: string = this.redTurn ? '红方' : '黑方';
+    this.moveHistory = this.moveHistory.concat(
+      sideLabel + ' ' + (notation.length > 0 ? notation : '未知'));
+    const nb: string[][] = ChineseChessEngine.cloneBoard(preBoard);
     const piece: string = nb[move.fromRow][move.fromCol];
     nb[move.toRow][move.toCol] = piece;
     nb[move.fromRow][move.fromCol] = '.';
     this.board = nb;
-    // 记谱
-    const side: string = this.redTurn ? '红' : '黑';
-    const step: number = this.moveHistory.length / 2 + (this.redTurn ? 1 : 0);
-    this.moveHistory = this.moveHistory.concat(
-      this.sideLabel(side) + '' + this.pieceName(piece) + ' ' +
-      move.fromRow.toString() + ',' + move.fromCol.toString() + '→' +
-      move.toRow.toString() + ',' + move.toCol.toString());
+    // 自增版本号强制 UI 重建棋盘（规避 @State 二维数组整体赋值不刷新的限制）
+    this.boardVersion += 1;
     this.selR = -1;
     this.selC = -1;
     this.legalTargets = [];
     this.suggestionOn = false;
     // 切换回合方
     this.redTurn = !this.redTurn;
-    // 胜负/无子判断
+    // 更新将军状态（走子后检测轮到方是否被将军）
     const nextSide: string = this.currentSide();
+    this.redInCheck = ChineseChessEngine.isInCheck(this.board, true);
+    this.blackInCheck = ChineseChessEngine.isInCheck(this.board, false);
+    // 胜负/无子判断
     const nextMoves: ChineseChessMove[] = ChineseChessEngine.generateMoves(this.board, nextSide === 'red');
     if (nextMoves.length === 0) {
-      this.finishGame(this.sideLabel(side) + '胜');
+      // nextMoves.length===0 表示轮到方(nextSide)无走法，走子方(sideLabel，即刚走子的一方)胜
+      this.finishGame(sideLabel + '胜');
       return;
     }
-    this.scheduleNext();
+    this.scheduleNextWithStepDelay();
   }
 
   private finishGame(msg: string): void {
@@ -379,6 +588,7 @@ struct ChineseChessPage {
     this.suggestionOn = false;
     this.winner = msg;
     this.stopThinkTimer();
+    this.stopStepDelay();
   }
 
   // ---- 放入下棋棋子的操作（人） ----
@@ -433,6 +643,12 @@ struct ChineseChessPage {
     this.selC = -1;
     this.legalTargets = [];
     this.suggestionOn = false;
+    this.lastFromR = -1;
+    this.lastFromC = -1;
+    this.lastToR = -1;
+    this.lastToC = -1;
+    this.redInCheck = ChineseChessEngine.isInCheck(this.board, true);
+    this.blackInCheck = ChineseChessEngine.isInCheck(this.board, false);
     this.gameOver = false;
     this.winner = '';
     this.thinkingSide = '';
@@ -441,7 +657,7 @@ struct ChineseChessPage {
     if (this.moveHistory.length > 0) {
       this.moveHistory = this.moveHistory.slice(0, this.moveHistory.length - 1);
     }
-    this.scheduleNext();
+    this.scheduleNextWithStepDelay();
   }
 
   // ---- AI 落子提示（轮到人时点击按钮）----
@@ -459,19 +675,23 @@ struct ChineseChessPage {
     let move: ChineseChessMove | null = null;
     if (type === 'engine') {
       const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
-      move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth);
+      move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth, this.moveHistory.length);
     } else {
-      const config: LlmConfig | null = side === 'red' ? this.redConfig : this.blackConfig;
+      const config: LlmConfig | null = this.llmConfigFor(side);
       if (config !== null) {
-        const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
+        const legalMoves: ChineseChessMove[] = ChineseChessEngine.generateMoves(this.board, side === 'red');
+        const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red',
+          ChineseChessPage.toMoveOptions(this.board, legalMoves));
         const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
         this.startThinkTimer('AI 建议', '');
-        const result = await GameAIService.decide(config, messages, 'ChineseChess');
+        const result = await GameAIService.decide(config, messages, 'ChineseChess', 12000);
         this.stopThinkTimer();
         if (seq !== this.suggestSeq) return;
         if (result.success) {
           const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);
-          if (action !== null) {
+          if (action !== null && action.command === 'MOVE_IDX' && action.c >= 0 && action.c < legalMoves.length) {
+            move = legalMoves[action.c];
+          } else if (action !== null && action.command === 'MOVE') {
             const m: ChineseChessMove = new ChineseChessMove(action.r, action.c, action.value, action.toRow);
             if (this.isLegal(m)) move = m;
           }
@@ -500,10 +720,23 @@ struct ChineseChessPage {
     this.applyMove(new ChineseChessMove(this.suggestFromR, this.suggestFromC, this.suggestToR, this.suggestToC));
   }
 
+  // 当前模式、当前侧别实际使用的模型索引
+  private modelIndexFor(side: string): number {
+    if (this.matchMode === 'LvL') return side === 'red' ? this.redModelIndex : this.blackModelIndex;
+    // hvL：LLM 方统一使用 ai 方模型
+    return this.aiModelIndex;
+  }
+
   private aiModelLabel(side: string): string {
-    const idx: number = side === 'red' ? this.redModelIndex : this.blackModelIndex;
+    const idx: number = this.modelIndexFor(side);
     if (idx >= 0 && idx < this.aiModelNames.length) return this.aiModelNames[idx];
     return '模型';
+  }
+
+  // 当前模式、当前侧别 LLM 使用的配置
+  private llmConfigFor(side: string): LlmConfig | null {
+    if (this.matchMode === 'LvL') return side === 'red' ? this.redConfig : this.blackConfig;
+    return this.aiConfig;
   }
 
   // ---- 尺寸 ----
@@ -618,16 +851,16 @@ struct ChineseChessPage {
       .borderRadius(10)
       .clip(true)
 
-      // 棋子层
+      // 棋子层。key 含 boardVersion：每次落子强制重建全部棋子，规避 @State 二维数组不刷新
       Column() {
         ForEach(this.board, (row: string[], r: number) => {
           Row() {
             ForEach(row, (piece: string, c: number) => {
-              this.cell(piece, r, c)
+              this.cell(this.board[r][c], r, c)
             }, (piece: string, c: number) => r.toString() + '_' + c.toString())
           }
           .width('100%')
-        }, (row: string[], r: number) => r.toString())
+        }, (row: string[], r: number) => r.toString() + '_v' + this.boardVersion.toString())
       }
       .width(this.boardWidth)
       .height(this.boardHeight())
@@ -661,8 +894,26 @@ struct ChineseChessPage {
           .height(this.cellSize() * 0.94)
           .fill((this.suggestToR === r && this.suggestToC === c) ? '#FF6B6B45' : '#FFD70040')
       }
+      if (this.lastToR === r && this.lastToC === c && this.lastFromR >= 0) {
+        // 最近落子的目标格：金色描边高亮（走子轨迹）
+        Circle()
+          .width(this.cellSize() * 0.98)
+          .height(this.cellSize() * 0.98)
+          .fill(Color.Transparent)
+          .stroke('#2E7D32')
+          .strokeWidth(2)
+      }
+      if (this.lastFromR === r && this.lastFromC === c && this.lastToR >= 0) {
+        // 最近落子的来源格：灰蓝描边
+        Circle()
+          .width(this.cellSize() * 0.98)
+          .height(this.cellSize() * 0.98)
+          .fill(Color.Transparent)
+          .stroke('#7A4A2140')
+          .strokeWidth(1.6)
+      }
       if (piece !== '.') {
-        this.piece(piece)
+        this.piece(piece, r, c)
       }
       if (this.selR === r && this.selC === c) {
         Circle()
@@ -678,8 +929,15 @@ struct ChineseChessPage {
     .onClick(() => { this.onCellTap(r, c); })
   }
 
+  // 棋子是否处于被将军状态（红方被将军时高亮红帅，黑方被将军时高亮黑将）
+  private kingInCheck(p: string, r: number, c: number): boolean {
+    if (p === 'K' && this.redInCheck) return true;
+    if (p === 'k' && this.blackInCheck) return true;
+    return false;
+  }
+
   @Builder
-  piece(p: string) {
+  piece(p: string, r: number, c: number) {
     Stack() {
       Circle()
         .width('100%')
@@ -687,6 +945,15 @@ struct ChineseChessPage {
         .fill('#F9EFD7')
         .stroke(ChineseChessEngine.isRed(p) ? '#B71C1C' : '#263238')
         .strokeWidth(1.6)
+      if (this.kingInCheck(p, r, c)) {
+        // 被将军：红色脉冲高亮圈
+        Circle()
+          .width('118%')
+          .height('118%')
+          .fill(Color.Transparent)
+          .stroke('#E53935')
+          .strokeWidth(2.5)
+      }
       Circle()
         .width('72%')
         .height('72%')
@@ -702,6 +969,11 @@ struct ChineseChessPage {
     .width(this.cellSize() * 0.92)
     .height(this.cellSize() * 0.92)
     .shadow({ radius: 5, color: '#4D000000', offsetX: 1, offsetY: 2 })
+    // 落子位置变化通过 boardVersion 重建触发；此格为最近落子目标时轻微放大提示
+    .scale({
+      x: (this.lastToR === r && this.lastToC === c) ? 1.06 : 1,
+      y: (this.lastToR === r && this.lastToC === c) ? 1.06 : 1
+    })
   }
 
   private isTarget(r: number, c: number): boolean {
@@ -821,6 +1093,27 @@ struct ChineseChessPage {
           () => { this.stopGame(); this.setupOpen = true; })
       }
       .width('100%')
+      if (this.matchMode === 'LvL') {
+        Row({ space: 6 }) {
+          Text('⚡ 节奏')
+            .fontSize(this.palette.fsXs)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+          ForEach(AI_SPEED_OPTIONS, (label: string, i: number) => {
+            Text(label)
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.aiSpeedIndex === i ? Color.White : this.palette.textSecondary)
+              .fontWeight(this.aiSpeedIndex === i ? FontWeight.Bold : FontWeight.Normal)
+              .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+              .borderRadius(8)
+              .backgroundColor(this.aiSpeedIndex === i ? this.palette.primary : this.palette.bgSurface2)
+              .onClick(() => { this.aiSpeedIndex = i; })
+          }, (label: string) => label)
+          Blank()
+        }
+        .width('100%')
+      }
       if (this.suggestionOn) {
         Row({ space: 10 }) {
           Column() {
@@ -995,6 +1288,39 @@ struct ChineseChessPage {
               .borderRadius(this.palette.radiusLg)
               .border({ width: 1, color: this.palette.borderSubtle })
 
+              // 开局库（可开关，持久化）
+              Column({ space: 8 }) {
+                this.settingLabel('开局库')
+                Row() {
+                  Column({ space: 2 }) {
+                    Text('启用经典开局库')
+                      .fontSize(this.palette.fsSm)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.textPrimary)
+                      .fontWeight(FontWeight.Medium)
+                    Text('开局阶段走经典谱着，开局更专业')
+                      .fontSize(this.palette.fsXs)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.textTertiary)
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+                  Toggle({ type: ToggleType.Switch, isOn: this.bookEnabled })
+                    .selectedColor(this.palette.primary)
+                    .onChange((isOn: boolean) => {
+                      this.bookEnabled = isOn;
+                      ChineseChessBook.enabled = isOn;
+                      DataRepository.setSetting(ChineseChessPage.BOOK_KEY, isOn ? '1' : '0');
+                    })
+                }
+                .width('100%')
+              }
+              .width('100%')
+              .padding(12)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(this.palette.radiusLg)
+              .border({ width: 1, color: this.palette.borderSubtle })
+
               // 引擎难度
               if (this.matchMode === 'hvE') {
                 Column({ space: 8 }) {
@@ -1017,10 +1343,7 @@ struct ChineseChessPage {
               if (this.matchMode === 'hvL') {
                 Column({ space: 8 }) {
                   this.settingLabel('AI 方模型')
-                  this.modelPicker('AI 方', this.redModelIndex, (idx: number): void => {
-                    this.redModelIndex = idx;
-                    DataRepository.setSetting(AI_MODEL_KEY, this.aiModels[idx].id);
-                  })
+                  this.modelPicker('AI 方', this.aiModelIndex, () => { this.openModelPicker('ai'); })
                 }
                 .width('100%')
                 .padding(12)
@@ -1030,14 +1353,34 @@ struct ChineseChessPage {
               } else if (this.matchMode === 'LvL') {
                 Column({ space: 8 }) {
                   this.settingLabel('AI 模型')
-                  this.modelPicker('红方模型', this.redModelIndex, (idx: number): void => {
-                    this.redModelIndex = idx;
-                    DataRepository.setSetting(RED_MODEL_KEY, this.aiModels[idx].id);
-                  })
-                  this.modelPicker('黑方模型', this.blackModelIndex, (idx: number): void => {
-                    this.blackModelIndex = idx;
-                    DataRepository.setSetting(BLACK_MODEL_KEY, this.aiModels[idx].id);
-                  })
+                  this.modelPicker('红方模型', this.redModelIndex, () => { this.openModelPicker('red'); })
+                  this.modelPicker('黑方模型', this.blackModelIndex, () => { this.openModelPicker('black'); })
+                }
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(this.palette.radiusLg)
+                .border({ width: 1, color: this.palette.borderSubtle })
+              }
+
+              // AI vs AI 对弈节奏
+              if (this.matchMode === 'LvL') {
+                Column({ space: 8 }) {
+                  this.settingLabel('对弈节奏')
+                  Row({ space: 8 }) {
+                    ForEach(AI_SPEED_OPTIONS, (label: string, i: number) => {
+                      Text(label)
+                        .fontSize(this.palette.fsSm)
+                        .fontFamily(this.palette.fontSans)
+                        .fontColor(this.aiSpeedIndex === i ? Color.White : this.palette.textSecondary)
+                        .fontWeight(this.aiSpeedIndex === i ? FontWeight.Bold : FontWeight.Normal)
+                        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+                        .borderRadius(10)
+                        .backgroundColor(this.aiSpeedIndex === i ? this.palette.primary : this.palette.bgSurface2)
+                        .onClick(() => { this.aiSpeedIndex = i; })
+                    }, (label: string) => label)
+                  }
+                  .width('100%')
                 }
                 .width('100%')
                 .padding(12)
@@ -1187,7 +1530,7 @@ struct ChineseChessPage {
   }
 
   @Builder
-  modelPicker(title: string, index: number, onPick: (idx: number) => void) {
+  modelPicker(title: string, index: number, onOpen: () => void) {
     Row({ space: 10 }) {
       Text(title)
         .fontSize(this.palette.fsSm)
@@ -1213,11 +1556,139 @@ struct ChineseChessPage {
       .border({ width: 1, color: this.palette.borderSubtle })
       .onClick(() => {
         if (!this.modelsConfigured || this.aiModels.length === 0) return;
-        const next: number = (index + 1) % this.aiModels.length;
-        onPick(next);
+        onOpen();
       })
     }
     .width('100%')
+  }
+
+  // 打开模型选择列表（指定侧别）
+  private openModelPicker(side: ModelSide): void {
+    this.pickSide = side;
+    this.showModelPicker = true;
+  }
+
+  // 当前弹窗侧别选中的模型索引
+  private currentSideModelIndex(): number {
+    if (this.pickSide === 'red') return this.redModelIndex;
+    if (this.pickSide === 'black') return this.blackModelIndex;
+    return this.aiModelIndex;
+  }
+
+  // 点选模型后：设置侧别索引并持久化记忆
+  private selectModelForSide(index: number): void {
+    if (index < 0 || index >= this.aiModels.length) return;
+    const kind: string = this.pickSide === 'red' ? CHESS_KIND_RED :
+      this.pickSide === 'black' ? CHESS_KIND_BLACK : CHESS_KIND_AI;
+    if (this.pickSide === 'red') this.redModelIndex = index;
+    else if (this.pickSide === 'black') this.blackModelIndex = index;
+    else this.aiModelIndex = index;
+    GameAIService.saveModelId(kind, this.aiModels[index].id);
+    this.showModelPicker = false;
+  }
+
+  // 模型选择底部弹层
+  @Builder
+  modelPickerDialog() {
+    if (this.showModelPicker) {
+      Stack() {
+        Column() {
+          Blank()
+          Column() {
+            Row() {
+              Row()
+                .width(36)
+                .height(4)
+                .borderRadius(2)
+                .backgroundColor(this.palette.borderSubtle)
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding({ top: 10, bottom: 4 })
+
+            Row() {
+              Text(this.pickSide === 'red' ? '选择红方模型' :
+                this.pickSide === 'black' ? '选择黑方模型' : '选择 AI 方模型')
+                .fontSize(this.palette.fsMd)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+              Blank()
+              Text('✕')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+                .padding(8)
+                .onClick(() => { this.showModelPicker = false; })
+            }
+            .width('100%')
+            .padding({ left: 4, right: 4, bottom: 8 })
+
+            if (this.aiModels.length > 0) {
+              Scroll() {
+                Column({ space: 4 }) {
+                  ForEach(this.aiModels, (m: LlmModelEntry, index: number) => {
+                    Row({ space: 10 }) {
+                      Column({ space: 2 }) {
+                        Text(GameAIService.modelLabel(m))
+                          .fontSize(this.palette.fsSm)
+                          .fontFamily(this.palette.fontSans)
+                          .fontColor(this.palette.textPrimary)
+                          .fontWeight(index === this.currentSideModelIndex() ? FontWeight.Bold : FontWeight.Medium)
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        Text(m.model)
+                          .fontSize(10)
+                          .fontFamily(this.palette.fontSans)
+                          .fontColor(this.palette.textTertiary)
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      }
+                      .alignItems(HorizontalAlign.Start)
+                      .layoutWeight(1)
+                      if (index === this.currentSideModelIndex()) {
+                        Text('✓')
+                          .fontSize(16)
+                          .fontFamily(this.palette.fontSans)
+                          .fontColor(this.palette.primary)
+                          .fontWeight(FontWeight.Bold)
+                      }
+                    }
+                    .width('100%')
+                    .padding(12)
+                    .borderRadius(8)
+                    .backgroundColor(index === this.currentSideModelIndex() ? this.palette.primaryDim : this.palette.bgSurface)
+                    .border({ width: index === this.currentSideModelIndex() ? 1 : 0,
+                      color: index === this.currentSideModelIndex() ? this.palette.primary : Color.Transparent })
+                    .onClick(() => { this.selectModelForSide(index); })
+                  }, (m: LlmModelEntry) => m.id)
+                }
+                .width('100%')
+              }
+              .scrollBar(BarState.Off)
+              .constraintSize({ maxHeight: 360 })
+            } else {
+              Text('没有已配置的模型，请到 AI 对话中配置')
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+                .padding({ top: 16, bottom: 16 })
+            }
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
+          .backgroundColor(this.palette.bgBase)
+          .borderRadius({ topLeft: 16, topRight: 16 })
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.showModelPicker = false; })
+    }
   }
 
   private async onSetupConfirm(): Promise<void> {
@@ -1268,6 +1739,7 @@ struct ChineseChessPage {
       .backgroundColor(Color.Transparent)
 
       this.setupDialog()
+      this.modelPickerDialog()
     }
     .width('100%')
     .height('100%')
