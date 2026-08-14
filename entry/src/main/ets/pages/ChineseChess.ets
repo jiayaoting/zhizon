@@ -825,7 +825,7 @@ struct ChineseChessPage {
   }
 
   @Builder
-  actionBtn(icon: string, label: string, bg: string, fg: string, onTap: () => void) {
+  actionBtn(icon: string, label: string, bg: ResourceColor, fg: ResourceColor, onTap: () => void) {
     Row({ space: 6 }) {
       Text(icon)
         .fontSize(this.palette.fsBase)
@@ -845,7 +845,7 @@ struct ChineseChessPage {
   }
 
   @Builder
-  miniBtn(label: string, bg: string, fg: string, onTap: () => void) {
+  miniBtn(label: string, bg: ResourceColor, fg: ResourceColor, onTap: () => void) {
     Text(label)
       .fontSize(this.palette.fsSm)
       .fontFamily(this.palette.fontSans)
@@ -1072,7 +1072,7 @@ struct ChineseChessPage {
           })
           .onAreaChange((oldValue: Area, newValue: Area) => {
             const pad: number = this.isSm ? 20 : 48;
-            const w: number = Math.floor(newValue.width - pad);
+            const w: number = Math.floor(Number(newValue.width) - pad);
             const target: number = Math.min(Math.max(w, 270), 430);
             if (target > 0 && Math.abs(target - this.boardWidth) > 1) {
               this.boardWidth = target;
