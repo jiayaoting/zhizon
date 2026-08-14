@@ -80,6 +80,9 @@ struct ChineseChessPage {
   private moveStack: BoardSnapshot[] = [];
   private configSeq: number = 0;
 
+  // 本局开始时间（用于战绩时长统计）
+  private gameStartTime: number = 0;
+
   // AI vs AI 对弈节奏：0慢 1中 2快 3极速
   @State aiSpeedIndex: number = 1;
   // 落子停顿 timer（AI vs AI 每步展示停顿），统一清理避免泄漏
@@ -321,6 +324,7 @@ struct ChineseChessPage {
     this.redPlayer = this.playerType('red');
     this.blackPlayer = this.playerType('black');
     this.resetBoard();
+    this.gameStartTime = Date.now();
     if (this.matchMode === 'hvL') {
       this.aiConfig = await this.loadModelConfig(this.aiModelIndex);
     } else if (this.matchMode === 'LvL') {
@@ -613,8 +617,10 @@ struct ChineseChessPage {
       (this.humanSide === 'red' && redWins) || (this.humanSide === 'black' && blackWins);
     const diffLabel: string = this.engineDiffIndex === 0 ? '简单' :
       this.engineDiffIndex === 2 ? '困难' : '中等';
+    const duration: number = this.gameStartTime > 0 ?
+      Math.max(0, Math.floor((Date.now() - this.gameStartTime) / 1000)) : 0;
     DataRepository.addGameScore('ChineseChess', playerWins ? 1 : 0, this.engineDiffIndex, diffLabel,
-      this.currentAiModelName());
+      this.currentAiModelName(), duration);
   }
 
   // AI 托管时使用的模型显示名（取配置中的显示名称）；纯手动/仅本地引擎返回空串

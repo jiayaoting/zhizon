@@ -104,8 +104,8 @@ export class DataRepository {
   // ========== 游戏战绩 ==========
 
   static async addGameScore(game: string, score: number, level: number, difficulty: string,
-    model: string = ''): Promise<void> {
-    await DatabaseHelper.addGameScore(game, score, level, difficulty, model);
+    model: string = '', duration: number = 0): Promise<void> {
+    await DatabaseHelper.addGameScore(game, score, level, difficulty, model, duration);
   }
 
   static async getGameScores(game: string, limit?: number): Promise<ScoreEntry[]> {

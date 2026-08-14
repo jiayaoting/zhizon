@@ -331,7 +331,7 @@ export struct SudokuPage {
     }
     try {
       await DataRepository.addGameScore(GameId.SUDOKU, this.playSeconds, 0, difficultyLabel(this.difficulty),
-        this.currentAiModelName());
+        this.currentAiModelName(), this.playSeconds);
     } catch (e) {
       // 战绩写入失败不影响游戏流程
     }

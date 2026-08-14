@@ -472,7 +472,7 @@ export struct TetrisPage {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('Tetris', this.score, this.level, difficultyLabel(this.difficulty),
-      this.currentAiModelName());
+      this.currentAiModelName(), this.playSeconds);
   }
 
   togglePause(): void {

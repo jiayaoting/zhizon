@@ -353,7 +353,7 @@ export struct Game2048Page {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('2048', this.score, 1, difficultyLabel(this.difficulty),
-      this.currentAiModelName());
+      this.currentAiModelName(), this.playSeconds);
   }
 
   // ---- 游戏控制 ----

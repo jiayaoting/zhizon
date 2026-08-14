@@ -49,6 +49,18 @@ function formatTime(ts: number): string {
   return `${m}-${day} ${h}:${min}`;
 }
 
+// 战绩用时格式化：000:00
+function formatDuration(totalSeconds: number): string {
+  const s: number = Math.max(0, Math.floor(totalSeconds));
+  const h: number = Math.floor(s / 3600);
+  const m: number = Math.floor((s % 3600) / 60);
+  const sec: number = s % 60;
+  if (h > 0) {
+    return `${h.toString()}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  }
+  return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+}
+
 function medalIcon(rank: number): string {
   if (rank === 0) return '🥇';
   if (rank === 1) return '🥈';
@@ -219,6 +231,20 @@ export struct GameHistoryPage {
                   }
                   .alignItems(HorizontalAlign.Center)
                 }
+
+                // 用时（本局总耗时）
+                Column({ space: 2 }) {
+                  Text(formatDuration(entry.duration))
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textSecondary)
+                    .fontWeight(FontWeight.Medium)
+                  Text('用时')
+                    .fontSize(this.palette.fsXs)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textTertiary)
+                }
+                .alignItems(HorizontalAlign.Center)
 
                 // 时间
                 Text(formatTime(entry.createdAt))

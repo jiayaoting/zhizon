@@ -362,7 +362,7 @@ export struct MinesweeperPage {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('Minesweeper', this.score, 1, difficultyLabel(this.difficulty),
-      this.currentAiModelName());
+      this.currentAiModelName(), this.playSeconds);
   }
 
   // ---- 游戏控制 ----
@@ -376,6 +376,7 @@ export struct MinesweeperPage {
     this.autoPaused = false;
     this.newRecord = false;
     this.playSeconds = 0;
+    this.score = 0;
     this.scoreSaved = false;
     this.gameStartTime = Date.now();
     this.initBoard();
@@ -391,6 +392,7 @@ export struct MinesweeperPage {
     this.autoPaused = false;
     this.newRecord = false;
     this.playSeconds = 0;
+    this.score = 0;
     this.scoreSaved = false;
     this.gameStartTime = Date.now();
     this.initBoard();

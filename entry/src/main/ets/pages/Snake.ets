@@ -314,7 +314,7 @@ export struct SnakePage {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('Snake', this.score, this.level, difficultyLabel(this.difficulty),
-      this.currentAiModelName());
+      this.currentAiModelName(), this.playSeconds);
   }
 
   togglePause(): void {
