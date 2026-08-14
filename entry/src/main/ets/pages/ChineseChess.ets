@@ -286,7 +286,7 @@ struct ChineseChessPage {
       if (!result.success) {
         this.aiFailCount += 1;
         // 每次失败都明确提示原因，避免界面长时间无反馈
-        promptAction.showToast({ message: this.sideLabel(side) + '模型请求失败：' + result.message });
+        promptAction.showToast({ message: this.sideLabel(side) + '模型请求失败：' + result.errorMessage });
         if (this.aiFailCount >= 2) {
           this.stopGame();
           promptAction.showToast({ message: 'AI 连续失败，已停止' });
@@ -476,7 +476,7 @@ struct ChineseChessPage {
             if (this.isLegal(m)) move = m;
           }
         } else {
-          promptAction.showToast({ message: 'AI 建议失败：' + result.message });
+          promptAction.showToast({ message: 'AI 建议失败：' + result.errorMessage });
         }
       }
     }
