@@ -8,8 +8,8 @@ import { AiCallLogger, AiCallContext } from './AiCallLogger';
 // 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
 const CONNECT_TIMEOUT = 30000;
 const READ_TIMEOUT = 300000;
-// 非流式请求（游戏AI决策/连接测试）：等完整响应，60 秒足够，超时快速失败避免长时间挂起
-const READ_TIMEOUT_NON_STREAM = 60000;
+// 非流式请求（游戏AI决策/连接测试）：等完整响应，30 秒足够（游戏决策已禁用思考），超时快速失败避免长时间挂起
+const READ_TIMEOUT_NON_STREAM = 30000;
 
 // 可取消请求的返回结构：promise 为结果，cancel 用于主动中断底层请求
 export class CancelableLlmRequest {

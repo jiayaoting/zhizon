@@ -82,6 +82,9 @@ struct ChineseChessPage {
   private engineDepth: number = 3;
   // 弹窗内引擎难度选择：0简单 1中等 2困难
   @State engineDiffIndex: number = 1;
+  // AI 思考等待计时（每秒刷新 thinkingText，避免界面长时间无变化）
+  private thinkTimer: number = -1;
+  private thinkStart: number = 0;
 
   // ---- 棋子/记谱 ----
   private pieceName(piece: string): string {
@@ -146,6 +149,7 @@ struct ChineseChessPage {
   onPageHide(): void {
     this.running = false;
     this.aiLoopActive = false;
+    this.stopThinkTimer();
   }
 
   private resetBoard(): void {
@@ -163,6 +167,7 @@ struct ChineseChessPage {
     this.thinkingText = '';
     this.aiFailCount = 0;
     this.suggestionOn = false;
+    this.stopThinkTimer();
   }
 
   private async initAiModels(): Promise<void> {
@@ -215,6 +220,24 @@ struct ChineseChessPage {
     this.thinkingSide = '';
     this.thinkingText = '';
     this.suggestionOn = false;
+    this.stopThinkTimer();
+  }
+
+  // ---- AI 思考等待计时 ----
+  private startThinkTimer(prefix: string, extra: string): void {
+    this.stopThinkTimer();
+    this.thinkStart = Date.now();
+    this.thinkTimer = setInterval(() => {
+      const elapsed: number = Math.floor((Date.now() - this.thinkStart) / 1000);
+      this.thinkingText = prefix + '… 已等待 ' + elapsed.toString() + 's' + extra;
+    }, 1000);
+  }
+
+  private stopThinkTimer(): void {
+    if (this.thinkTimer >= 0) {
+      clearInterval(this.thinkTimer);
+      this.thinkTimer = -1;
+    }
   }
 
   // ---- 对弈调度 ----
@@ -255,12 +278,16 @@ struct ChineseChessPage {
       }
       const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
       const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
+      this.startThinkTimer(this.sideLabel(side) + '思考中', '（' + this.aiModelLabel(side) + '）');
       const result = await GameAIService.decide(config, messages, 'ChineseChess');
+      this.stopThinkTimer();
       this.aiLoopActive = false;
       if (!this.running || this.gameOver) return;
       if (!result.success) {
         this.aiFailCount += 1;
-        if (this.aiFailCount >= 3) {
+        // 每次失败都明确提示原因，避免界面长时间无反馈
+        promptAction.showToast({ message: this.sideLabel(side) + '模型请求失败：' + result.message });
+        if (this.aiFailCount >= 2) {
           this.stopGame();
           promptAction.showToast({ message: 'AI 连续失败，已停止' });
           return;
@@ -351,6 +378,7 @@ struct ChineseChessPage {
     this.thinkingText = '';
     this.suggestionOn = false;
     this.winner = msg;
+    this.stopThinkTimer();
   }
 
   // ---- 放入下棋棋子的操作（人） ----
@@ -437,7 +465,9 @@ struct ChineseChessPage {
       if (config !== null) {
         const stateText: string = GameAIService.serializeChineseChess(this.board, side === 'red');
         const messages = GameAIService.buildMessages('ChineseChess', this.difficulty, stateText);
+        this.startThinkTimer('AI 建议', '');
         const result = await GameAIService.decide(config, messages, 'ChineseChess');
+        this.stopThinkTimer();
         if (seq !== this.suggestSeq) return;
         if (result.success) {
           const action: GameAction | null = GameAIService.parseAction('ChineseChess', result.content);
@@ -445,6 +475,8 @@ struct ChineseChessPage {
             const m: ChineseChessMove = new ChineseChessMove(action.r, action.c, action.value, action.toRow);
             if (this.isLegal(m)) move = m;
           }
+        } else {
+          promptAction.showToast({ message: 'AI 建议失败：' + result.message });
         }
       }
     }
@@ -491,13 +523,24 @@ struct ChineseChessPage {
   statusBar() {
     Row({ space: 12 }) {
       Column() {
-        Text(this.statusTitle())
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row({ space: 8 }) {
+          if (this.thinkingSide !== '') {
+            LoadingProgress()
+              .width(16)
+              .height(16)
+              .color(this.palette.primary)
+          }
+          Text(this.statusTitle())
+            .fontSize(this.palette.fsMd)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .fontWeight(FontWeight.Bold)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
         Text(this.statusSubtitle())
           .fontSize(this.palette.fsXs)
           .fontFamily(this.palette.fontSans)
@@ -760,7 +803,7 @@ struct ChineseChessPage {
 
   private statusSubtitle(): string {
     if (this.gameOver) return '点击「结束」可重新开始对局';
-    if (this.thinkingSide !== '') return 'AI 正在分析最佳走法…';
+    if (this.thinkingSide !== '') return '正在请求模型，超时将自动重试或停止';
     if (this.matchMode === 'LvL') return 'AI 对 AI 自动对弈中';
     if (this.playerType(this.currentSide()) === 'human') return '点击己方棋子选择，再点目标格落子';
     return 'AI 思考中，请稍候';
