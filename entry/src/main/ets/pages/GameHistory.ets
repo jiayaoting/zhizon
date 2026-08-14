@@ -202,6 +202,24 @@ export struct GameHistoryPage {
                 }
                 .alignItems(HorizontalAlign.Center)
 
+                // 模型（AI 托管时显示使用的模型显示名）
+                if (entry.model.length > 0) {
+                  Column({ space: 2 }) {
+                    Text(entry.model)
+                      .fontSize(this.palette.fsXs)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.info)
+                      .maxLines(1)
+                      .constraintSize({ maxWidth: 96 })
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text('模型')
+                      .fontSize(this.palette.fsXs)
+                      .fontFamily(this.palette.fontSans)
+                      .fontColor(this.palette.textTertiary)
+                  }
+                  .alignItems(HorizontalAlign.Center)
+                }
+
                 // 时间
                 Text(formatTime(entry.createdAt))
                   .fontSize(this.palette.fsXs)

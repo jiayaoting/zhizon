@@ -82,7 +82,12 @@ export struct Game2048Page {
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  private aiFailCount: number = 0;
+  @State aiFailCount: number = 0;
+  @State aiThinkCount: number = 0;
+  @State aiThinkTimeMs: number = 0;
+  private aiThinkTimer: number = -1;
+  private aiThinkStart: number = 0;
+  private aiHosted: boolean = false;
   private aiSelectSeq: number = 0;
 
   private titleText: string = '2048';
@@ -347,7 +352,8 @@ export struct Game2048Page {
   private saveScore(): void {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
-    DataRepository.addGameScore('2048', this.score, 1, difficultyLabel(this.difficulty));
+    DataRepository.addGameScore('2048', this.score, 1, difficultyLabel(this.difficulty),
+      this.currentAiModelName());
   }
 
   // ---- 游戏控制 ----
@@ -373,6 +379,7 @@ export struct Game2048Page {
 
   restartGame(): void {
     this.stopAi();
+    this.aiHosted = false;
     this.initBoard();
     this.score = 0;
     this.isGameOver = false;
@@ -461,6 +468,7 @@ export struct Game2048Page {
       this.restartGame();
     }
     this.isPaused = false;
+    this.aiHosted = true;
     this.aiFailCount = 0;
     this.aiRunning = true;
     this.aiStatus = 'AI 准备中…';
@@ -472,7 +480,31 @@ export struct Game2048Page {
   private stopAi(): void {
     this.aiRunning = false;
     this.aiLoopActive = false;
+    this.stopThinkTimer();
     this.aiStatus = '';
+  }
+
+  // 本轮思考计时：每次思考开始刷新起始点并启动 100ms 定时器实时更新耗时
+  private startThinkTimer(): void {
+    this.aiThinkStart = Date.now();
+    this.aiThinkTimeMs = 0;
+    this.stopThinkTimer();
+    this.aiThinkTimer = setInterval(() => {
+      this.aiThinkTimeMs = Date.now() - this.aiThinkStart;
+    }, 100);
+  }
+
+  private stopThinkTimer(): void {
+    if (this.aiThinkTimer >= 0) {
+      clearInterval(this.aiThinkTimer);
+      this.aiThinkTimer = -1;
+    }
+  }
+
+  // AI 托管时使用的模型显示名（取配置中的显示名称）；手动游玩返回空串
+  private currentAiModelName(): string {
+    if (!this.aiHosted || this.aiModelIndex < 0 || this.aiModelIndex >= this.aiModels.length) return '';
+    return GameAIService.modelLabel(this.aiModels[this.aiModelIndex]);
   }
 
   private selectAiModel(index: number): void {
@@ -501,10 +533,13 @@ export struct Game2048Page {
     while (this.aiRunning) {
       if (this.isGameOver || this.isWin || this.isPaused) break;
       if (this.aiConfig === null) break;
+      this.aiThinkCount += 1;
       this.aiStatus = 'AI 思考中…';
+      this.startThinkTimer();
       const stateText: string = GameAIService.serializeGrid2048(this.board);
       const messages = GameAIService.buildMessages('2048', this.difficulty, stateText);
       const result = await GameAIService.decide(this.aiConfig, messages, '2048');
+      this.stopThinkTimer();
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;
@@ -530,6 +565,7 @@ export struct Game2048Page {
       if (this.isGameOver || this.isWin) break;
     }
     this.aiLoopActive = false;
+    this.stopThinkTimer();
     if (this.aiRunning) {
       this.aiRunning = false;
       if (this.isGameOver || this.isWin) this.aiStatus = 'AI 结束：游戏已终局';
@@ -1048,6 +1084,9 @@ export struct Game2048Page {
                 status: this.aiStatus,
                 speedIndex: this.aiSpeedIndex,
                 modelsConfigured: this.aiModelsConfigured,
+                thinkingCount: this.aiThinkCount,
+                thinkingFailCount: this.aiFailCount,
+                thinkingTimeMs: this.aiThinkTimeMs,
                 onSelectModel: (index: number): void => { this.selectAiModel(index); },
                 onToggleRun: (): void => { this.toggleAi(); },
                 onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
@@ -1097,6 +1136,9 @@ export struct Game2048Page {
                 status: this.aiStatus,
                 speedIndex: this.aiSpeedIndex,
                 modelsConfigured: this.aiModelsConfigured,
+                thinkingCount: this.aiThinkCount,
+                thinkingFailCount: this.aiFailCount,
+                thinkingTimeMs: this.aiThinkTimeMs,
                 onSelectModel: (index: number): void => { this.selectAiModel(index); },
                 onToggleRun: (): void => { this.toggleAi(); },
                 onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }

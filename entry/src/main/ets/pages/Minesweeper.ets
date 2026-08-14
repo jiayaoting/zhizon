@@ -150,7 +150,12 @@ export struct MinesweeperPage {
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  private aiFailCount: number = 0;
+  @State aiFailCount: number = 0;
+  @State aiThinkCount: number = 0;
+  @State aiThinkTimeMs: number = 0;
+  private aiThinkTimer: number = -1;
+  private aiThinkStart: number = 0;
+  private aiHosted: boolean = false;
   private aiSelectSeq: number = 0;
 
   private timerId: number = -1;
@@ -356,7 +361,8 @@ export struct MinesweeperPage {
   private saveScore(): void {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
-    DataRepository.addGameScore('Minesweeper', this.score, 1, difficultyLabel(this.difficulty));
+    DataRepository.addGameScore('Minesweeper', this.score, 1, difficultyLabel(this.difficulty),
+      this.currentAiModelName());
   }
 
   // ---- 游戏控制 ----
@@ -377,6 +383,7 @@ export struct MinesweeperPage {
 
   restartGame(): void {
     this.stopAi();
+    this.aiHosted = false;
     this.stopTimer();
     this.isGameOver = false;
     this.isWin = false;
@@ -481,6 +488,7 @@ export struct MinesweeperPage {
       this.restartGame();
     }
     this.isPaused = false;
+    this.aiHosted = true;
     this.aiFailCount = 0;
     this.aiRunning = true;
     this.aiStatus = 'AI 准备中…';
@@ -492,7 +500,31 @@ export struct MinesweeperPage {
   private stopAi(): void {
     this.aiRunning = false;
     this.aiLoopActive = false;
+    this.stopThinkTimer();
     this.aiStatus = '';
+  }
+
+  // 本轮思考计时：每次思考开始刷新起始点并启动 100ms 定时器实时更新耗时
+  private startThinkTimer(): void {
+    this.aiThinkStart = Date.now();
+    this.aiThinkTimeMs = 0;
+    this.stopThinkTimer();
+    this.aiThinkTimer = setInterval(() => {
+      this.aiThinkTimeMs = Date.now() - this.aiThinkStart;
+    }, 100);
+  }
+
+  private stopThinkTimer(): void {
+    if (this.aiThinkTimer >= 0) {
+      clearInterval(this.aiThinkTimer);
+      this.aiThinkTimer = -1;
+    }
+  }
+
+  // AI 托管时使用的模型显示名（取配置中的显示名称）；手动游玩返回空串
+  private currentAiModelName(): string {
+    if (!this.aiHosted || this.aiModelIndex < 0 || this.aiModelIndex >= this.aiModels.length) return '';
+    return GameAIService.modelLabel(this.aiModels[this.aiModelIndex]);
   }
 
   private selectAiModel(index: number): void {
@@ -573,6 +605,8 @@ export struct MinesweeperPage {
       if (this.aiConfig === null) break;
 
       // 阶段一：本地确定性推理，直到推理不出新动作（明显提速，减少大模型调用）
+      this.aiThinkCount += 1;
+      this.startThinkTimer();
       this.aiStatus = 'AI 推理中…';
       let progressed: boolean = true;
       while (progressed && this.aiRunning) {
@@ -591,6 +625,7 @@ export struct MinesweeperPage {
       const stateText: string = GameAIService.serializeMinesweeper(this.board, this.rows, this.cols);
       const messages = GameAIService.buildMessages('Minesweeper', this.difficulty, stateText);
       const result = await GameAIService.decide(this.aiConfig, messages, 'Minesweeper');
+      this.stopThinkTimer();
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;
@@ -617,6 +652,7 @@ export struct MinesweeperPage {
       }
     }
     this.aiLoopActive = false;
+    this.stopThinkTimer();
     if (this.aiRunning) {
       this.aiRunning = false;
       this.aiStatus = (this.isGameOver || this.isWin) ? 'AI 结束：游戏已终局' : 'AI 已暂停';
@@ -1130,6 +1166,9 @@ export struct MinesweeperPage {
                 status: this.aiStatus,
                 speedIndex: this.aiSpeedIndex,
                 modelsConfigured: this.aiModelsConfigured,
+                thinkingCount: this.aiThinkCount,
+                thinkingFailCount: this.aiFailCount,
+                thinkingTimeMs: this.aiThinkTimeMs,
                 onSelectModel: (index: number): void => { this.selectAiModel(index); },
                 onToggleRun: (): void => { this.toggleAi(); },
                 onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
@@ -1178,6 +1217,9 @@ export struct MinesweeperPage {
                     status: this.aiStatus,
                     speedIndex: this.aiSpeedIndex,
                     modelsConfigured: this.aiModelsConfigured,
+                    thinkingCount: this.aiThinkCount,
+                    thinkingFailCount: this.aiFailCount,
+                    thinkingTimeMs: this.aiThinkTimeMs,
                     onSelectModel: (index: number): void => { this.selectAiModel(index); },
                     onToggleRun: (): void => { this.toggleAi(); },
                     onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }

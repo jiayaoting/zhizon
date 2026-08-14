@@ -12,6 +12,11 @@ export struct GameAIPanel {
   @Prop status: string = '';
   @Prop speedIndex: number = 2;
   @Prop modelsConfigured: boolean = true;
+  // 思考统计（仅 2048 / 扫雷 传入；其余游戏保持 0 不显示）
+  @Prop thinkingCount: number = 0;
+  @Prop thinkingFailCount: number = 0;
+  // 本轮思考已用时间（毫秒，由托管方实时刷新）
+  @Prop thinkingTimeMs: number = 0;
   onSelectModel: (index: number) => void = () => {};
   onToggleRun: () => void = () => {};
   onSpeedChange: (index: number) => void = () => {};
@@ -64,15 +69,23 @@ export struct GameAIPanel {
       }
       .width('100%')
 
-      // 第二行：状态 + 速度档位
-      Row({ space: 8 }) {
+      // 第二行：状态（推理/思考中实时显示本轮思考时间）+ 速度档位 —— 右对齐
+      Row({ space: 6 }) {
         Text(this.running ? this.status : '点击「AI 托管」让模型替你游玩')
           .fontSize(this.palette.fsXs)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.running ? this.palette.primary : this.palette.textTertiary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.End)
           .layoutWeight(1)
+        if (this.running && this.isThinking()) {
+          Text(this.formatThinkTime(this.thinkingTimeMs))
+            .fontSize(this.palette.fsXs)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.primary)
+            .fontWeight(FontWeight.Medium)
+        }
         ForEach(AI_SPEED_OPTIONS, (label: string, index: number) => {
           Text(label)
             .fontSize(this.palette.fsXs)
@@ -90,6 +103,26 @@ export struct GameAIPanel {
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
+
+      // 第三行：思考统计（总次数 / 失败次数）—— 右对齐，有数据时才显示
+      if (this.thinkingCount > 0 || this.thinkingFailCount > 0) {
+        Row({ space: 8 }) {
+          if (this.thinkingCount > 0) {
+            Text('思考 ' + this.thinkingCount.toString() + ' 次')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+          }
+          if (this.thinkingFailCount > 0) {
+            Text('失败 ' + this.thinkingFailCount.toString() + ' 次')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.danger)
+          }
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.End)
+      }
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 8, bottom: 8 })
@@ -153,5 +186,15 @@ export struct GameAIPanel {
     const idx: number = this.selectedModelIndex >= 0 && this.selectedModelIndex < this.modelNames.length
       ? this.selectedModelIndex : 0;
     return '模型：' + this.modelNames[idx] + ' ›';
+  }
+
+  // 是否处于思考/推理状态（此时在状态后展示本轮实时耗时）
+  private isThinking(): boolean {
+    return this.status.indexOf('思考') >= 0 || this.status.indexOf('推理') >= 0;
+  }
+
+  // 毫秒 → 秒（一位小数）
+  private formatThinkTime(ms: number): string {
+    return (ms / 1000).toFixed(1) + 's';
   }
 }

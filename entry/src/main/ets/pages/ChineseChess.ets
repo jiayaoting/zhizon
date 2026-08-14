@@ -76,6 +76,7 @@ struct ChineseChessPage {
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
   private aiFailCount: number = 0;
+  @State aiThinkCount: number = 0;
   private moveStack: BoardSnapshot[] = [];
   private configSeq: number = 0;
 
@@ -273,6 +274,7 @@ struct ChineseChessPage {
     this.thinkingSide = '';
     this.thinkingText = '';
     this.aiFailCount = 0;
+    this.aiThinkCount = 0;
     this.suggestionOn = false;
     this.lastFromR = -1;
     this.lastFromC = -1;
@@ -436,6 +438,7 @@ struct ChineseChessPage {
         return;
       }
       this.aiFailCount = 0;
+      this.aiThinkCount += 1;
       const MAX_LLM_RETRY: number = 1;
       let requestFailures: number = 0;
       let llmMove: ChineseChessMove | null = null;
@@ -610,7 +613,17 @@ struct ChineseChessPage {
       (this.humanSide === 'red' && redWins) || (this.humanSide === 'black' && blackWins);
     const diffLabel: string = this.engineDiffIndex === 0 ? '简单' :
       this.engineDiffIndex === 2 ? '困难' : '中等';
-    DataRepository.addGameScore('ChineseChess', playerWins ? 1 : 0, this.engineDiffIndex, diffLabel);
+    DataRepository.addGameScore('ChineseChess', playerWins ? 1 : 0, this.engineDiffIndex, diffLabel,
+      this.currentAiModelName());
+  }
+
+  // AI 托管时使用的模型显示名（取配置中的显示名称）；纯手动/仅本地引擎返回空串
+  private currentAiModelName(): string {
+    if (this.matchMode === 'LvL') return this.aiModelLabel('red');
+    if (this.matchMode === 'hvL') {
+      return this.aiModelLabel(this.humanSide === 'red' ? 'black' : 'red');
+    }
+    return '';
   }
 
   // ---- 放入下棋棋子的操作（人） ----
@@ -1090,7 +1103,9 @@ struct ChineseChessPage {
 
   private statusTitle(): string {
     if (this.gameOver) return '🏁 ' + this.winner;
-    if (this.thinkingSide !== '') return '⏳ ' + this.thinkingText;
+    if (this.thinkingSide !== '') {
+      return '⏳ 思考 ' + this.aiThinkCount.toString() + ' 次 · ' + this.thinkingText;
+    }
     return '🎯 轮到 ' + this.sideLabel(this.currentSide()) +
       (this.playerType(this.currentSide()) === 'human' ? '（你）' : '（AI）');
   }

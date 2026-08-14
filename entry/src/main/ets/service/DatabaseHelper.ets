@@ -9,6 +9,8 @@ export interface ScoreEntry {
   score: number;
   level: number;
   difficulty: string;
+  // AI 托管时使用的模型显示名；非 AI 托管为空串
+  model: string;
   createdAt: number;
 }
 
@@ -43,7 +45,7 @@ export interface AiTokenStats {
 }
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -60,6 +62,7 @@ const SQL_CREATE_GAME_SCORES = `
     score INTEGER NOT NULL,
     level INTEGER DEFAULT 1,
     difficulty TEXT DEFAULT '中等',
+    model TEXT DEFAULT '',
     created_at INTEGER
   )
 `;
@@ -134,6 +137,13 @@ export class DatabaseHelper {
         }
       }
     }
+    if (DatabaseHelper.store.version < 7) {
+      // 旧库升级：为 game_scores 补齐 model 列（新库建表已含，会命中重复列错误并忽略）
+      try {
+        await DatabaseHelper.store.executeSql("ALTER TABLE game_scores ADD COLUMN model TEXT DEFAULT ''");
+      } catch (e) {
+      }
+    }
     // 累计统计表：独立于 ai_call_logs，清空调用记录不影响
     await DatabaseHelper.store.executeSql(SQL_CREATE_AI_TOKEN_STATS);
     await DatabaseHelper.initTokenStats();
@@ -149,7 +159,8 @@ export class DatabaseHelper {
 
   // ========== 游戏战绩 ==========
 
-  static async addGameScore(game: string, score: number, level: number, difficulty: string): Promise<void> {
+  static async addGameScore(game: string, score: number, level: number, difficulty: string,
+    model: string = ''): Promise<void> {
     const store = DatabaseHelper.getStore();
     const id: string = 'gs-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
     const valueBucket: relationalStore.ValuesBucket = {
@@ -158,6 +169,7 @@ export class DatabaseHelper {
       score: score,
       level: level,
       difficulty: difficulty,
+      model: model,
       created_at: Date.now()
     };
     await store.insert('game_scores', valueBucket);
@@ -178,6 +190,7 @@ export class DatabaseHelper {
           score: resultSet.getLong(resultSet.getColumnIndex('score')),
           level: resultSet.getLong(resultSet.getColumnIndex('level')),
           difficulty: resultSet.getString(resultSet.getColumnIndex('difficulty')),
+          model: resultSet.getString(resultSet.getColumnIndex('model')),
           createdAt: resultSet.getLong(resultSet.getColumnIndex('created_at'))
         } as ScoreEntry);
       }

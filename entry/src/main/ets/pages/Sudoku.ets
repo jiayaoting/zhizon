@@ -55,7 +55,12 @@ export struct SudokuPage {
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  private aiFailCount: number = 0;
+  @State aiFailCount: number = 0;
+  @State aiThinkCount: number = 0;
+  @State aiThinkTimeMs: number = 0;
+  private aiThinkTimer: number = -1;
+  private aiThinkStart: number = 0;
+  private aiHosted: boolean = false;
   private aiSelectSeq: number = 0;
 
   private timerId: number = -1;
@@ -202,6 +207,7 @@ export struct SudokuPage {
 
   private restartGame(): void {
     this.stopAi();
+    this.aiHosted = false;
     this.generatePuzzle();
     this.startTimer();
     this.vibrate(20);
@@ -324,7 +330,8 @@ export struct SudokuPage {
       this.bestTime = prevBest;
     }
     try {
-      await DataRepository.addGameScore(GameId.SUDOKU, this.playSeconds, 0, difficultyLabel(this.difficulty));
+      await DataRepository.addGameScore(GameId.SUDOKU, this.playSeconds, 0, difficultyLabel(this.difficulty),
+        this.currentAiModelName());
     } catch (e) {
       // 战绩写入失败不影响游戏流程
     }
@@ -376,6 +383,7 @@ export struct SudokuPage {
       this.restartGame();
     }
     this.isPaused = false;
+    this.aiHosted = true;
     this.aiFailCount = 0;
     this.aiRunning = true;
     this.aiStatus = 'AI 准备中…';
@@ -387,7 +395,31 @@ export struct SudokuPage {
   private stopAi(): void {
     this.aiRunning = false;
     this.aiLoopActive = false;
+    this.stopThinkTimer();
     this.aiStatus = '';
+  }
+
+  // 本轮思考计时：每次思考开始刷新起始点并启动 100ms 定时器实时更新耗时
+  private startThinkTimer(): void {
+    this.aiThinkStart = Date.now();
+    this.aiThinkTimeMs = 0;
+    this.stopThinkTimer();
+    this.aiThinkTimer = setInterval(() => {
+      this.aiThinkTimeMs = Date.now() - this.aiThinkStart;
+    }, 100);
+  }
+
+  private stopThinkTimer(): void {
+    if (this.aiThinkTimer >= 0) {
+      clearInterval(this.aiThinkTimer);
+      this.aiThinkTimer = -1;
+    }
+  }
+
+  // AI 托管时使用的模型显示名（取配置中的显示名称）；手动游玩返回空串
+  private currentAiModelName(): string {
+    if (!this.aiHosted || this.aiModelIndex < 0 || this.aiModelIndex >= this.aiModels.length) return '';
+    return GameAIService.modelLabel(this.aiModels[this.aiModelIndex]);
   }
 
   private selectAiModel(index: number): void {
@@ -416,10 +448,13 @@ export struct SudokuPage {
     while (this.aiRunning) {
       if (this.isWin || this.isPaused) break;
       if (this.aiConfig === null) break;
+      this.aiThinkCount += 1;
       this.aiStatus = 'AI 思考中…';
+      this.startThinkTimer();
       const stateText: string = GameAIService.serializeSudoku(this.cells);
       const messages = GameAIService.buildMessages('Sudoku', this.difficulty, stateText);
       const result = await GameAIService.decide(this.aiConfig, messages, 'Sudoku');
+      this.stopThinkTimer();
       if (!this.aiRunning) break;
       if (!result.success) {
         this.aiFailCount += 1;
@@ -458,6 +493,7 @@ export struct SudokuPage {
       }
     }
     this.aiLoopActive = false;
+    this.stopThinkTimer();
     if (this.aiRunning) {
       this.aiRunning = false;
       this.aiStatus = this.isWin ? 'AI 完成：数独已解出' : 'AI 已暂停';
@@ -1062,6 +1098,9 @@ export struct SudokuPage {
                 status: this.aiStatus,
                 speedIndex: this.aiSpeedIndex,
                 modelsConfigured: this.aiModelsConfigured,
+                thinkingCount: this.aiThinkCount,
+                thinkingFailCount: this.aiFailCount,
+                thinkingTimeMs: this.aiThinkTimeMs,
                 onSelectModel: (index: number): void => { this.selectAiModel(index); },
                 onToggleRun: (): void => { this.toggleAi(); },
                 onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
@@ -1109,6 +1148,9 @@ export struct SudokuPage {
                   status: this.aiStatus,
                   speedIndex: this.aiSpeedIndex,
                   modelsConfigured: this.aiModelsConfigured,
+                  thinkingCount: this.aiThinkCount,
+                  thinkingFailCount: this.aiFailCount,
+                  thinkingTimeMs: this.aiThinkTimeMs,
                   onSelectModel: (index: number): void => { this.selectAiModel(index); },
                   onToggleRun: (): void => { this.toggleAi(); },
                   onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
