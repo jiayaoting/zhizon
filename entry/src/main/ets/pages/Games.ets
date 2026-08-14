@@ -24,7 +24,9 @@ export struct GamesPage {
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
   @State showHelpFor: GameId | null = null;
-  @State selectedDifficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  // 待选难度的游戏（点击游戏卡片后弹出该游戏专属难度选择）
+  @State pendingGame: GameEntry | null = null;
+  @State pendingDifficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
 
   private games: GameEntry[] = [
     {
@@ -160,30 +162,93 @@ export struct GamesPage {
   }
 
   private async openGame(game: GameEntry): Promise<void> {
-    const request: GameLaunchRequest = new GameLaunchRequest(game.gameId, this.selectedDifficulty,
+    const request: GameLaunchRequest = new GameLaunchRequest(game.gameId, this.pendingDifficulty,
       PageKey.Games, GameLaunchFacade.nextVersion());
     const result: GameLaunchResult = await GameLaunchFacade.open(request);
     if (!result.success) promptAction.showToast({ message: result.message });
   }
 
   @Builder
-  difficultyPicker() {
-    Column({ space: 8 }) {
-      Text('游戏难度')
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
-        .fontWeight(FontWeight.Medium)
+  difficultyDialog() {
+    if (this.pendingGame !== null) {
+      const game: GameEntry = this.pendingGame as GameEntry;
+      Stack() {
+        Column() {
+          Blank()
+          Column() {
+            Row() {
+              Text(game.icon)
+                .fontSize(this.palette.fs2xl)
+                .fontFamily(this.palette.fontSans)
+              Text(game.name)
+                .fontSize(this.palette.fsLg)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+                .margin({ left: 8 })
+              Blank()
+              Text('✕')
+                .fontSize(this.palette.fsLg)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textTertiary)
+                .padding(8)
+                .onClick(() => { this.pendingGame = null; })
+            }
+            .width('100%')
+            .padding({ left: 4, top: 4 })
+
+            Text('选择难度')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .fontWeight(FontWeight.Medium)
+              .width('100%')
+              .margin({ top: 8, bottom: 4 })
+
+            Scroll() {
+              Column({ space: 8 }) {
+                ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
+                  DifficultyOption({
+                    definition: definition,
+                    selected: this.pendingDifficulty === definition.level,
+                    onSelect: (level: DifficultyLevel): void => { this.pendingDifficulty = level; }
+                  })
+                }, (definition: DifficultyDefinition) => definition.level)
+              }
+              .width('100%')
+            }
+            .scrollBar(BarState.Off)
+            .constraintSize({ maxHeight: 360 })
+
+            Button('开始游戏')
+              .fontSize(this.palette.fsMd)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(Color.White)
+              .width('100%')
+              .height(44)
+              .borderRadius(12)
+              .backgroundColor(game.color)
+              .margin({ top: 12 })
+              .onClick(() => {
+                this.pendingGame = null;
+                this.openGame(game);
+              })
+          }
+          .width('100%')
+          .borderRadius(16)
+          .backgroundColor(this.palette.bgBase)
+          .padding({ left: 20, right: 20, bottom: Math.max(16, this.navBarHeight) })
+          .onClick(() => {})
+        }
         .width('100%')
-      ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
-        DifficultyOption({
-          definition: definition,
-          selected: this.selectedDifficulty === definition.level,
-          onSelect: (level: DifficultyLevel): void => { this.selectedDifficulty = level; }
-        })
-      }, (definition: DifficultyDefinition) => definition.level)
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.pendingGame = null; })
     }
-    .width('100%')
   }
 
   @Builder
@@ -240,7 +305,7 @@ export struct GamesPage {
     .backgroundColor(this.palette.bgSurface)
     .borderRadius(CARD_RADIUS)
     .border({ width: 1, color: this.palette.borderSubtle })
-    .onClick(() => { this.openGame(game); })
+    .onClick(() => { this.pendingGame = game; })
     .focusable(true)
     .tabIndex(index)
   }
@@ -299,8 +364,6 @@ export struct GamesPage {
 
         Scroll() {
           Column({ space: 12 }) {
-            this.difficultyPicker()
-
             // 标题区
             Text('可用游戏')
               .fontSize(this.palette.fsSm)
@@ -335,6 +398,7 @@ export struct GamesPage {
       .backgroundColor(Color.Transparent)
 
       this.helpDialog()
+      this.difficultyDialog()
     }
     .width('100%')
     .height('100%')
