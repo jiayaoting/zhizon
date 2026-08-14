@@ -26,10 +26,24 @@ export interface AiCallLogEntry {
   errorMsg: string;
   promptChars: number;
   responseChars: number;
+  // Token 消耗（服务端 usage，未返回时为 0）
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+// 累计统计（独立于 ai_call_logs，删除模型/清空调用记录均不影响，只增不减）
+export interface AiTokenStats {
+  callCount: number;
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  totalTokens: number;
 }
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 4;
+const DB_VERSION = 6;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -72,7 +86,21 @@ const SQL_CREATE_AI_CALL_LOGS = `CREATE TABLE IF NOT EXISTS ai_call_logs (
   id TEXT PRIMARY KEY, type TEXT NOT NULL, game TEXT DEFAULT '', model TEXT DEFAULT '',
   provider TEXT DEFAULT '', start_time INTEGER NOT NULL, end_time INTEGER NOT NULL,
   duration_ms INTEGER NOT NULL, success INTEGER NOT NULL, error_code TEXT DEFAULT '',
-  error_msg TEXT DEFAULT '', prompt_chars INTEGER DEFAULT 0, response_chars INTEGER DEFAULT 0
+  error_msg TEXT DEFAULT '', prompt_chars INTEGER DEFAULT 0, response_chars INTEGER DEFAULT 0,
+  input_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0,
+  output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0
+)`;
+// 旧版本升级：为 ai_call_logs 补充 token 消耗列（列已存在时忽略错误）
+const SQL_ALTER_AI_CALL_LOGS = [
+  'ALTER TABLE ai_call_logs ADD COLUMN input_tokens INTEGER DEFAULT 0',
+  'ALTER TABLE ai_call_logs ADD COLUMN cached_tokens INTEGER DEFAULT 0',
+  'ALTER TABLE ai_call_logs ADD COLUMN output_tokens INTEGER DEFAULT 0',
+  'ALTER TABLE ai_call_logs ADD COLUMN total_tokens INTEGER DEFAULT 0'
+];
+// 累计统计表：仅一行（id='all'），删除模型/清空调用记录时不清理，只增不减
+const SQL_CREATE_AI_TOKEN_STATS = `CREATE TABLE IF NOT EXISTS ai_token_stats (
+  id TEXT PRIMARY KEY, call_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0,
+  cached_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0
 )`;
 
 export class DatabaseHelper {
@@ -97,6 +125,18 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_HISTORY);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_FIX_RESULTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_AI_CALL_LOGS);
+    if (DatabaseHelper.store.version < 5) {
+      // 旧库升级：为 ai_call_logs 补齐 token 消耗列（新库建表已含，会命中重复列错误并忽略）
+      for (let i: number = 0; i < SQL_ALTER_AI_CALL_LOGS.length; i++) {
+        try {
+          await DatabaseHelper.store.executeSql(SQL_ALTER_AI_CALL_LOGS[i]);
+        } catch (e) {
+        }
+      }
+    }
+    // 累计统计表：独立于 ai_call_logs，清空调用记录不影响
+    await DatabaseHelper.store.executeSql(SQL_CREATE_AI_TOKEN_STATS);
+    await DatabaseHelper.initTokenStats();
     if (DatabaseHelper.store.version < DB_VERSION) {
       DatabaseHelper.store.version = DB_VERSION;
     }
@@ -334,13 +374,173 @@ export class DatabaseHelper {
       error_code: entry.errorCode,
       error_msg: entry.errorMsg,
       prompt_chars: entry.promptChars,
-      response_chars: entry.responseChars
+      response_chars: entry.responseChars,
+      input_tokens: entry.inputTokens,
+      cached_tokens: entry.cachedTokens,
+      output_tokens: entry.outputTokens,
+      total_tokens: entry.totalTokens
     };
+    // 日志与累计统计分开写入（不使用事务内嵌套读-改-写，RDB 事务内 query 不可靠）：
+    // 各自独立容错，任一步失败不影响另一步；统计只增不减，独立于调用记录（清空日志不影响）
     try {
       await store.insert('ai_call_logs', bucket);
     } catch (e) {
       hilog.warn(DB_DOMAIN, 'AiCallLogger', 'AI 调用日志写入失败 %{public}s', (e as Error).message);
+      return;
     }
+    try {
+      await DatabaseHelper.accumulateTokenStats(store, entry.inputTokens, entry.cachedTokens,
+        entry.outputTokens, entry.totalTokens);
+    } catch (e) {
+      hilog.warn(DB_DOMAIN, 'AiCallLogger', 'AI 调用统计累加失败 %{public}s', (e as Error).message);
+    }
+  }
+
+  // 初始化累计统计：统计行不存在时从历史 ai_call_logs 汇总一次（升级/新装均安全，幂等）
+  private static async initTokenStats(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const predicates = new relationalStore.RdbPredicates('ai_token_stats');
+    predicates.equalTo('id', 'all');
+    const existing = await store.query(predicates);
+    let found: boolean = false;
+    try {
+      found = existing.goToNextRow();
+    } finally {
+      existing.close();
+    }
+    if (found) return;
+    let count: number = 0;
+    let input: number = 0;
+    let cached: number = 0;
+    let output: number = 0;
+    let total: number = 0;
+    try {
+      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt, ' +
+        'COALESCE(SUM(input_tokens),0) AS inp, COALESCE(SUM(cached_tokens),0) AS cached, ' +
+        'COALESCE(SUM(output_tokens),0) AS out, COALESCE(SUM(total_tokens),0) AS tot FROM ai_call_logs');
+      try {
+        if (resultSet.goToNextRow()) {
+          count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+          input = resultSet.getLong(resultSet.getColumnIndex('inp'));
+          cached = resultSet.getLong(resultSet.getColumnIndex('cached'));
+          output = resultSet.getLong(resultSet.getColumnIndex('out'));
+          total = resultSet.getLong(resultSet.getColumnIndex('tot'));
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    const bucket: relationalStore.ValuesBucket = {
+      id: 'all',
+      call_count: count,
+      input_tokens: input,
+      cached_tokens: cached,
+      output_tokens: output,
+      total_tokens: total
+    };
+    try {
+      await store.insert('ai_token_stats', bucket);
+    } catch (e) {
+    }
+  }
+
+  // 累加累计统计：调用次数 +1，各 token 字段累加（行不存在时先创建）
+  // 非事务读-改-写，与项目其他数据库读写路径一致
+  private static async accumulateTokenStats(store: relationalStore.RdbStore, input: number,
+    cached: number, output: number, total: number): Promise<void> {
+    const predicates = new relationalStore.RdbPredicates('ai_token_stats');
+    predicates.equalTo('id', 'all');
+    const resultSet = await store.query(predicates);
+    let count: number = 0;
+    let inputTokens: number = 0;
+    let cachedTokens: number = 0;
+    let outputTokens: number = 0;
+    let totalTokens: number = 0;
+    let found: boolean = false;
+    try {
+      found = resultSet.goToNextRow();
+      if (found) {
+        count = resultSet.getLong(resultSet.getColumnIndex('call_count'));
+        inputTokens = resultSet.getLong(resultSet.getColumnIndex('input_tokens'));
+        cachedTokens = resultSet.getLong(resultSet.getColumnIndex('cached_tokens'));
+        outputTokens = resultSet.getLong(resultSet.getColumnIndex('output_tokens'));
+        totalTokens = resultSet.getLong(resultSet.getColumnIndex('total_tokens'));
+      }
+    } finally {
+      resultSet.close();
+    }
+    const bucket: relationalStore.ValuesBucket = {
+      id: 'all',
+      call_count: count + 1,
+      input_tokens: inputTokens + input,
+      cached_tokens: cachedTokens + cached,
+      output_tokens: outputTokens + output,
+      total_tokens: totalTokens + total
+    };
+    if (found) {
+      await store.update(bucket, predicates);
+    } else {
+      await store.insert('ai_token_stats', bucket);
+    }
+  }
+
+  // 读取累计统计（调用次数 / 输入总 Token / 输入缓存 Token / 输出 Token / 总 Token）
+  // 自愈：统计表缺失或统计行为空时，自动建表并从历史日志汇总，保证统计不会丢失
+  static async getAiTokenStats(): Promise<AiTokenStats> {
+    const store = DatabaseHelper.getStore();
+    let exists: boolean = false;
+    try {
+      const predicates = new relationalStore.RdbPredicates('ai_token_stats');
+      predicates.equalTo('id', 'all');
+      const resultSet = await store.query(predicates);
+      try {
+        exists = resultSet.goToNextRow();
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+      // 统计表缺失（异常兜底）：重建表
+      try {
+        await store.executeSql(SQL_CREATE_AI_TOKEN_STATS);
+      } catch (e2) {
+      }
+    }
+    if (!exists) {
+      // 统计行为空：从历史日志汇总一次
+      await DatabaseHelper.initTokenStats();
+    }
+    // 重新读取统计（自愈后返回最新值）
+    return await DatabaseHelper.readTokenStats(store);
+  }
+
+  // 纯读取累计统计行（不存在时返回全 0）
+  private static async readTokenStats(store: relationalStore.RdbStore): Promise<AiTokenStats> {
+    const stats: AiTokenStats = {
+      callCount: 0,
+      inputTokens: 0,
+      cachedTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0
+    };
+    try {
+      const predicates = new relationalStore.RdbPredicates('ai_token_stats');
+      predicates.equalTo('id', 'all');
+      const resultSet = await store.query(predicates);
+      try {
+        if (resultSet.goToNextRow()) {
+          stats.callCount = resultSet.getLong(resultSet.getColumnIndex('call_count'));
+          stats.inputTokens = resultSet.getLong(resultSet.getColumnIndex('input_tokens'));
+          stats.cachedTokens = resultSet.getLong(resultSet.getColumnIndex('cached_tokens'));
+          stats.outputTokens = resultSet.getLong(resultSet.getColumnIndex('output_tokens'));
+          stats.totalTokens = resultSet.getLong(resultSet.getColumnIndex('total_tokens'));
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    return stats;
   }
 
   static async queryAiCallLogs(limit: number): Promise<AiCallLogEntry[]> {
@@ -365,7 +565,11 @@ export class DatabaseHelper {
           errorCode: resultSet.getString(resultSet.getColumnIndex('error_code')),
           errorMsg: resultSet.getString(resultSet.getColumnIndex('error_msg')),
           promptChars: resultSet.getLong(resultSet.getColumnIndex('prompt_chars')),
-          responseChars: resultSet.getLong(resultSet.getColumnIndex('response_chars'))
+          responseChars: resultSet.getLong(resultSet.getColumnIndex('response_chars')),
+          inputTokens: resultSet.getLong(resultSet.getColumnIndex('input_tokens')),
+          cachedTokens: resultSet.getLong(resultSet.getColumnIndex('cached_tokens')),
+          outputTokens: resultSet.getLong(resultSet.getColumnIndex('output_tokens')),
+          totalTokens: resultSet.getLong(resultSet.getColumnIndex('total_tokens'))
         } as AiCallLogEntry);
       }
       resultSet.close();

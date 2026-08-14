@@ -4,7 +4,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { AiCallLogger } from '../service/AiCallLogger';
-import { AiCallLogEntry } from '../service/DatabaseHelper';
+import { AiCallLogEntry, AiTokenStats } from '../service/DatabaseHelper';
 
 // 场景标签与配色
 function typeInfo(type: string): [string, string] {
@@ -38,10 +38,25 @@ function formatTime(ts: number): string {
     ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
 }
 
+// 数字千分位显示
+function formatNum(n: number): string {
+  const s: string = n.toString();
+  if (n < 1000) return s;
+  let result: string = '';
+  let count: number = 0;
+  for (let i: number = s.length - 1; i >= 0; i--) {
+    result = s[i] + result;
+    count = count + 1;
+    if (count % 3 === 0 && i > 0) result = ',' + result;
+  }
+  return result;
+}
+
 @Entry
 @Component
 export struct AiCallLogPage {
   @State logs: AiCallLogEntry[] = [];
+  @State stats: AiTokenStats = { callCount: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, totalTokens: 0 };
   @State loading: boolean = true;
   @State expandedId: string = '';
   @State clearing: boolean = false;
@@ -57,6 +72,7 @@ export struct AiCallLogPage {
   private async refresh(): Promise<void> {
     this.loading = true;
     this.logs = await AiCallLogger.loadLogs(500);
+    this.stats = await AiCallLogger.getTokenStats();
     this.loading = false;
   }
 
@@ -153,6 +169,17 @@ export struct AiCallLogPage {
       }
       .width('100%')
 
+      // Token 消耗（服务端返回用量时才展示）
+      if (entry.totalTokens > 0) {
+        Row({ space: 6 }) {
+          this.tokenTag('总 ' + entry.totalTokens.toString())
+          this.tokenTag('输入 ' + entry.inputTokens.toString())
+          this.tokenTag('缓存 ' + entry.cachedTokens.toString())
+          this.tokenTag('输出 ' + entry.outputTokens.toString())
+        }
+        .width('100%')
+      }
+
       // 详情（展开）
       if (this.expandedId === entry.id) {
         Column({ space: 6 }) {
@@ -181,6 +208,70 @@ export struct AiCallLogPage {
   }
 
   @Builder
+  statsItem(value: number, label: string) {
+    Column({ space: 2 }) {
+      Text(formatNum(value))
+        .fontSize(this.palette.fsLg)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(label)
+        .fontSize(this.palette.fsXs)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textTertiary)
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // 累计统计卡片：所有模型调用记录总和，删除模型/清空调用记录不重置、不减少
+  @Builder
+  statsCard() {
+    Column({ space: 10 }) {
+      Row() {
+        Text('累计统计')
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textSecondary)
+          .fontWeight(FontWeight.Medium)
+        Blank()
+        Text('清空记录不重置')
+          .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row() {
+        this.statsItem(this.stats.callCount, '调用次数')
+        this.statsItem(this.stats.inputTokens, '输入 Token')
+        this.statsItem(this.stats.cachedTokens, '缓存 Token')
+        this.statsItem(this.stats.outputTokens, '输出 Token')
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(14)
+    .borderRadius(10)
+    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+  }
+
+  @Builder
+  tokenTag(text: string) {
+    Text(text)
+      .fontSize(this.palette.fsXs)
+      .fontFamily(this.palette.fontSans)
+      .fontColor(this.palette.textSecondary)
+      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      .borderRadius(4)
+      .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+  }
+
+  @Builder
   detailRow(label: string, value: string) {
     Row({ space: 8 }) {
       Text(label)
@@ -206,6 +297,13 @@ export struct AiCallLogPage {
         showBack: true,
         actions: this.clearAction
       })
+
+      // 累计统计（独立于调用记录，清空不重置）
+      Row() {
+        this.statsCard()
+      }
+      .width('100%')
+      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12 })
 
       if (this.loading) {
         Column() {

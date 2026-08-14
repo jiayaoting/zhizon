@@ -2,7 +2,7 @@
 import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult } from '../common/LlmModels';
+import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult, LlmTokenUsage } from '../common/LlmModels';
 import { AiCallLogger, AiCallContext } from './AiCallLogger';
 // 连接超时（网络握手）与读取超时（响应传输）分开设置：
 // 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
@@ -62,6 +62,11 @@ export class LlmClient {
       'stream': body.stream,
       'enable_thinking': body.thinkingEnabled
     };
+    if (body.stream) {
+      // 流式请求显式要求返回 usage：OpenAI 标准下最后一个 chunk 才会带用量统计
+      const streamOptions: Record<string, Object> = { 'include_usage': true };
+      payload['stream_options'] = streamOptions;
+    }
     if (vllmCompat) {
       const thinkingKwargs: Record<string, Object> = { 'enable_thinking': body.thinkingEnabled };
       payload['chat_template_kwargs'] = thinkingKwargs;
@@ -178,6 +183,7 @@ export class LlmClient {
     let fullReasoning: string = '';
     let buffer: string = '';
     let rawData: string = '';
+    let tokenUsage: LlmTokenUsage = new LlmTokenUsage();
     try {
       const url: string = LlmClient.openAIUrl(config);
       const header: Record<string, string> = {
@@ -214,6 +220,7 @@ export class LlmClient {
             fullReasoning = fullReasoning + reasoningDelta;
             if (onReasoning !== undefined) onReasoning(reasoningDelta);
           }
+          LlmClient.updateOpenAIUsageFromSse(tokenUsage, events[i]);
         }
       };
 
@@ -264,12 +271,13 @@ export class LlmClient {
               fullReasoning = fullReasoning + reasoningDelta;
               if (onReasoning !== undefined) onReasoning(reasoningDelta);
             }
+            LlmClient.updateOpenAIUsageFromSse(tokenUsage, tailEvents[i]);
           }
         }
         if (!fullContent.trim() && !fullReasoning.trim()) {
           return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
         }
-        return new LlmResult(true, fullContent, '', '', fullReasoning);
+        return new LlmResult(true, fullContent, '', '', fullReasoning, tokenUsage);
       }
 
       const response = await httpRequest.request(url, {
@@ -291,7 +299,9 @@ export class LlmClient {
       const content: string = LlmClient.openAIContent(text);
       if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
       const reasoning: string = LlmClient.openAIReasoning(text);
-      return new LlmResult(true, content, '', '', reasoning);
+      const usage: LlmTokenUsage | null = LlmClient.openAIUsage(text);
+      return new LlmResult(true, content, '', '', reasoning,
+        usage !== null ? usage : new LlmTokenUsage());
     } catch (e) {
       return LlmClient.toResult(e);
     } finally {
@@ -324,6 +334,7 @@ export class LlmClient {
     let fullReasoning: string = '';
     let buffer: string = '';
     let rawData: string = '';
+    let tokenUsage: LlmTokenUsage = new LlmTokenUsage();
     try {
       const url: string = LlmClient.anthropicUrl(config);
       const header: Record<string, string> = {
@@ -361,6 +372,7 @@ export class LlmClient {
             fullReasoning = fullReasoning + reasoningDelta;
             if (onReasoning !== undefined) onReasoning(reasoningDelta);
           }
+          LlmClient.updateAnthropicUsageFromSse(tokenUsage, events[i]);
         }
       };
 
@@ -412,12 +424,13 @@ export class LlmClient {
               fullReasoning = fullReasoning + reasoningDelta;
               if (onReasoning !== undefined) onReasoning(reasoningDelta);
             }
+            LlmClient.updateAnthropicUsageFromSse(tokenUsage, tailEvents[i]);
           }
         }
         if (!fullContent.trim() && !fullReasoning.trim()) {
           return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
         }
-        return new LlmResult(true, fullContent, '', '', fullReasoning);
+        return new LlmResult(true, fullContent, '', '', fullReasoning, tokenUsage);
       }
 
       const response = await httpRequest.request(url, {
@@ -440,7 +453,9 @@ export class LlmClient {
       const content: string = LlmClient.anthropicContent(text);
       if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
       const reasoning: string = LlmClient.anthropicReasoning(text);
-      return new LlmResult(true, content, '', '', reasoning);
+      const usage: LlmTokenUsage | null = LlmClient.anthropicUsage(text);
+      return new LlmResult(true, content, '', '', reasoning,
+        usage !== null ? usage : new LlmTokenUsage());
     } catch (e) {
       return LlmClient.toResult(e);
     } finally {
@@ -729,6 +744,106 @@ export class LlmClient {
     } catch (e) {
       return '';
     }
+  }
+
+  // ---- Token 用量解析 ----
+
+  // 将任意值安全转为数字（非数字视为 0）
+  private static usageNum(val: Object): number {
+    if (typeof val === 'number') return val as number;
+    return 0;
+  }
+
+  // 从 OpenAI 非流式响应的 usage 字段提取 token 统计
+  private static openAIUsage(jsonText: string): LlmTokenUsage | null {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const usage: Object = parsed.usage;
+      if (usage === undefined || usage === null) return null;
+      const tokenUsage: LlmTokenUsage = new LlmTokenUsage();
+      LlmClient.applyOpenAIUsage(tokenUsage, usage as Record<string, Object>);
+      return tokenUsage;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // OpenAI 流式增量：usage 位于最后一个 chunk（可能带空 choices），每次出现都覆盖更新
+  private static updateOpenAIUsageFromSse(tokenUsage: LlmTokenUsage, event: string): void {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0 || data === '[DONE]') return;
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const usage: Object = parsed.usage;
+      if (usage !== undefined && usage !== null) {
+        LlmClient.applyOpenAIUsage(tokenUsage, usage as Record<string, Object>);
+      }
+    } catch (e) {
+    }
+  }
+
+  // 应用 OpenAI usage 对象（prompt_tokens / completion_tokens / total_tokens / prompt_tokens_details.cached_tokens）
+  private static applyOpenAIUsage(tokenUsage: LlmTokenUsage, usageObj: Record<string, Object>): void {
+    tokenUsage.inputTokens = LlmClient.usageNum(usageObj.prompt_tokens);
+    tokenUsage.outputTokens = LlmClient.usageNum(usageObj.completion_tokens);
+    tokenUsage.totalTokens = LlmClient.usageNum(usageObj.total_tokens);
+    tokenUsage.cachedTokens = 0;
+    const details: Object = usageObj.prompt_tokens_details;
+    if (details !== undefined && details !== null) {
+      tokenUsage.cachedTokens = LlmClient.usageNum((details as Record<string, Object>).cached_tokens);
+    }
+  }
+
+  // 从 Anthropic 非流式响应的 usage 字段提取 token 统计
+  private static anthropicUsage(jsonText: string): LlmTokenUsage | null {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const usage: Object = parsed.usage;
+      if (usage === undefined || usage === null) return null;
+      const tokenUsage: LlmTokenUsage = new LlmTokenUsage();
+      LlmClient.mergeAnthropicUsage(tokenUsage, usage as Record<string, Object>);
+      return tokenUsage;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Anthropic 流式增量：input 用量在 message_start，output 用量在 message_delta，增量合并
+  private static updateAnthropicUsageFromSse(tokenUsage: LlmTokenUsage, event: string): void {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0) return;
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const eventType: string = typeof parsed.type === 'string' ? parsed.type : '';
+      if (eventType === 'message_start') {
+        const message: Object = parsed.message;
+        if (message !== undefined && message !== null) {
+          const usage: Object = (message as Record<string, Object>).usage;
+          if (usage !== undefined && usage !== null) {
+            LlmClient.mergeAnthropicUsage(tokenUsage, usage as Record<string, Object>);
+          }
+        }
+      } else if (eventType === 'message_delta') {
+        const usage: Object = parsed.usage;
+        if (usage !== undefined && usage !== null) {
+          LlmClient.mergeAnthropicUsage(tokenUsage, usage as Record<string, Object>);
+        }
+      }
+    } catch (e) {
+    }
+  }
+
+  // 应用/合并 Anthropic usage 对象（input_tokens / output_tokens / cache_creation_input_tokens / cache_read_input_tokens）
+  // Anthropic 不返回 total_tokens，总数按 输入 + 输出 计算
+  private static mergeAnthropicUsage(tokenUsage: LlmTokenUsage, usageObj: Record<string, Object>): void {
+    const inputTokens: number = LlmClient.usageNum(usageObj.input_tokens);
+    const outputTokens: number = LlmClient.usageNum(usageObj.output_tokens);
+    const cacheCreation: number = LlmClient.usageNum(usageObj.cache_creation_input_tokens);
+    const cacheRead: number = LlmClient.usageNum(usageObj.cache_read_input_tokens);
+    if (inputTokens > 0) tokenUsage.inputTokens = inputTokens;
+    if (outputTokens > 0) tokenUsage.outputTokens = outputTokens;
+    if (cacheCreation + cacheRead > 0) tokenUsage.cachedTokens = cacheCreation + cacheRead;
+    tokenUsage.totalTokens = tokenUsage.inputTokens + tokenUsage.outputTokens;
   }
 
   // ---- 工具方法 ----

@@ -201,6 +201,26 @@ export class ChatMessage {
   }
 }
 
+// Token 消耗统计（从响应 usage 解析，解析不到时各字段为 0）
+export class LlmTokenUsage {
+  // 输入 Token 总数（OpenAI prompt_tokens / Anthropic input_tokens）
+  inputTokens: number;
+  // 输入缓存 Token（OpenAI prompt_tokens_details.cached_tokens / Anthropic cache_read + cache_creation）
+  cachedTokens: number;
+  // 输出 Token（OpenAI completion_tokens / Anthropic output_tokens）
+  outputTokens: number;
+  // 总 Token（服务端返回的 total_tokens；Anthropic 未提供时按输入 + 输出计算）
+  totalTokens: number;
+
+  constructor(inputTokens: number = 0, cachedTokens: number = 0, outputTokens: number = 0,
+    totalTokens: number = 0) {
+    this.inputTokens = inputTokens;
+    this.cachedTokens = cachedTokens;
+    this.outputTokens = outputTokens;
+    this.totalTokens = totalTokens;
+  }
+}
+
 // 请求结果
 export class LlmResult {
   success: boolean;
@@ -208,14 +228,16 @@ export class LlmResult {
   errorCode: string;
   errorMessage: string;
   reasoning: string; // 思考过程，成功时可能非空
+  tokenUsage: LlmTokenUsage; // Token 消耗统计，失败或服务端未返回时为 0 值
 
   constructor(success: boolean, content: string, errorCode: string = '', errorMessage: string = '',
-    reasoning: string = '') {
+    reasoning: string = '', tokenUsage: LlmTokenUsage = new LlmTokenUsage()) {
     this.success = success;
     this.content = content;
     this.errorCode = errorCode;
     this.errorMessage = errorMessage;
     this.reasoning = reasoning;
+    this.tokenUsage = tokenUsage;
   }
 }
 

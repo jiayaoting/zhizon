@@ -1,5 +1,5 @@
 // 智子 - AI 调用日志（仅记录摘要：时间/场景/模型/成败/耗时/字符量，不存 prompt 与响应全文）
-import { DatabaseHelper, AiCallLogEntry } from './DatabaseHelper';
+import { DatabaseHelper, AiCallLogEntry, AiTokenStats } from './DatabaseHelper';
 import { ChatMessage, LlmConfig, LlmResult } from '../common/LlmModels';
 
 // 调用场景类型
@@ -31,6 +31,11 @@ export class AiCallLog {
   errorMsg: string;
   promptChars: number;
   responseChars: number;
+  // Token 消耗（服务端 usage，未返回时为 0）
+  inputTokens: number;
+  cachedTokens: number;
+  outputTokens: number;
+  totalTokens: number;
 
   constructor(id: string, type: string, game: string, model: string, provider: string,
     startTime: number, promptChars: number) {
@@ -47,6 +52,10 @@ export class AiCallLog {
     this.errorMsg = '';
     this.promptChars = promptChars;
     this.responseChars = 0;
+    this.inputTokens = 0;
+    this.cachedTokens = 0;
+    this.outputTokens = 0;
+    this.totalTokens = 0;
   }
 }
 
@@ -70,6 +79,10 @@ export class AiCallLogger {
     log.errorCode = result.errorCode;
     log.errorMsg = result.errorMessage;
     log.responseChars = result.content.length;
+    log.inputTokens = result.tokenUsage.inputTokens;
+    log.cachedTokens = result.tokenUsage.cachedTokens;
+    log.outputTokens = result.tokenUsage.outputTokens;
+    log.totalTokens = result.tokenUsage.totalTokens;
     const entry: AiCallLogEntry = {
       id: log.id,
       type: log.type,
@@ -83,7 +96,11 @@ export class AiCallLogger {
       errorCode: log.errorCode,
       errorMsg: log.errorMsg,
       promptChars: log.promptChars,
-      responseChars: log.responseChars
+      responseChars: log.responseChars,
+      inputTokens: log.inputTokens,
+      cachedTokens: log.cachedTokens,
+      outputTokens: log.outputTokens,
+      totalTokens: log.totalTokens
     };
     DatabaseHelper.insertAiCallLog(entry);
   }
@@ -96,6 +113,11 @@ export class AiCallLogger {
   // 日志总数
   static async getLogCount(): Promise<number> {
     return await DatabaseHelper.countAiCallLogs();
+  }
+
+  // 累计统计（所有模型调用记录总和，删除模型/清空调用记录不会重置）
+  static async getTokenStats(): Promise<AiTokenStats> {
+    return await DatabaseHelper.getAiTokenStats();
   }
 
   // 清空全部日志
