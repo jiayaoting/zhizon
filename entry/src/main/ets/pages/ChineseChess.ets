@@ -543,7 +543,7 @@ struct ChineseChessPage {
           .backgroundColor('#33FF6B6B')
       }
       if (piece !== '.') {
-        Text(piece)
+        Text(this.pieceName(piece))
           .fontSize(this.cellSize() * 0.62)
           .fontFamily(this.palette.fontSans)
           .fontColor(ChineseChessEngine.isRed(piece) ? '#D32F2F' : '#212121')
