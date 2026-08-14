@@ -61,6 +61,12 @@ export class LlmClient {
     if (body.thinkingEnabled) {
       payload['enable_thinking'] = true;
     }
+    // vLLM 部署（如 api.do.top 的 Qwen3.6 系列）通过 chat_template_kwargs.enable_thinking 控制思考开关：
+    // 思考型模型默认开启思考，若不显式关闭，长 prompt 下 max_tokens 会被思考耗尽导致 content 为空、
+    // 响应慢（实测 8.3s 且空内容 vs 关闭后 0.98s 正常返回）。
+    // 普通 OpenAI 兼容网关（硅基流动等）会忽略未知字段，统一发送无副作用。
+    const thinkingKwargs: Record<string, Object> = { 'enable_thinking': body.thinkingEnabled };
+    payload['chat_template_kwargs'] = thinkingKwargs;
     return JSON.stringify(payload);
   }
 
