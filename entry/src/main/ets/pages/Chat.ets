@@ -529,8 +529,19 @@ export struct ChatTab {
     return '未选择模型';
   }
 
+  // 仅启用状态的模型可用于对话
+  private enabledModels(): LlmModelEntry[] {
+    const result: LlmModelEntry[] = [];
+    for (let i: number = 0; i < this.models.length; i++) {
+      if (this.models[i].enabled !== false) result.push(this.models[i]);
+    }
+    return result;
+  }
+
   private async selectModel(index: number): Promise<void> {
-    const m: LlmModelEntry = this.models[index];
+    const enabled: LlmModelEntry[] = this.enabledModels();
+    if (index < 0 || index >= enabled.length) return;
+    const m: LlmModelEntry = enabled[index];
     try {
       await ChatRepository.setActiveModelId(m.id);
     } catch (e) {
@@ -1132,48 +1143,56 @@ export struct ChatTab {
           .width('100%')
           .padding({ left: 4, right: 4, bottom: 8 })
 
-          Scroll() {
-            Column({ space: 4 }) {
-              ForEach(this.models, (m: LlmModelEntry, index: number) => {
-                Row({ space: 10 }) {
-                  Column({ space: 2 }) {
-                    Text(modelDisplayName(m))
-                      .fontSize(this.palette.fsSm)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textPrimary)
-                      .fontWeight(m.id === this.activeModelId ? FontWeight.Bold : FontWeight.Medium)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    Text(m.model)
-                      .fontSize(10)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textTertiary)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (this.enabledModels().length > 0) {
+            Scroll() {
+              Column({ space: 4 }) {
+                ForEach(this.enabledModels(), (m: LlmModelEntry, index: number) => {
+                  Row({ space: 10 }) {
+                    Column({ space: 2 }) {
+                      Text(modelDisplayName(m))
+                        .fontSize(this.palette.fsSm)
+                        .fontFamily(this.palette.fontSans)
+                        .fontColor(this.palette.textPrimary)
+                        .fontWeight(m.id === this.activeModelId ? FontWeight.Bold : FontWeight.Medium)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      Text(m.model)
+                        .fontSize(10)
+                        .fontFamily(this.palette.fontSans)
+                        .fontColor(this.palette.textTertiary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    }
+                    .alignItems(HorizontalAlign.Start)
+                    .layoutWeight(1)
+                    if (m.id === this.activeModelId) {
+                      Text('✓')
+                        .fontSize(16)
+                        .fontFamily(this.palette.fontSans)
+                        .fontColor(this.palette.primary)
+                        .fontWeight(FontWeight.Bold)
+                    }
                   }
-                  .alignItems(HorizontalAlign.Start)
-                  .layoutWeight(1)
-                  if (m.id === this.activeModelId) {
-                    Text('✓')
-                      .fontSize(16)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.primary)
-                      .fontWeight(FontWeight.Bold)
-                  }
-                }
-                .width('100%')
-                .padding(12)
-                .borderRadius(8)
-                .backgroundColor(m.id === this.activeModelId ? this.palette.primaryDim : this.palette.bgSurface)
-                .border({ width: m.id === this.activeModelId ? 1 : 0,
-                  color: m.id === this.activeModelId ? this.palette.primary : Color.Transparent })
-                .onClick(() => { this.selectModel(index); })
-              }, (m: LlmModelEntry) => m.id)
+                  .width('100%')
+                  .padding(12)
+                  .borderRadius(8)
+                  .backgroundColor(m.id === this.activeModelId ? this.palette.primaryDim : this.palette.bgSurface)
+                  .border({ width: m.id === this.activeModelId ? 1 : 0,
+                    color: m.id === this.activeModelId ? this.palette.primary : Color.Transparent })
+                  .onClick(() => { this.selectModel(index); })
+                }, (m: LlmModelEntry) => m.id)
+              }
+              .width('100%')
             }
-            .width('100%')
+            .scrollBar(BarState.Off)
+            .constraintSize({ maxHeight: 360 })
+          } else {
+            Text('没有已启用的模型，请到模型管理中启用')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding({ top: 16, bottom: 16 })
           }
-          .scrollBar(BarState.Off)
-          .constraintSize({ maxHeight: 360 })
         }
         .width('100%')
         .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
@@ -1391,8 +1410,10 @@ export struct ChatTab {
             .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
             .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
             .onClick(() => {
-              if (this.models.length > 0) {
+              if (this.enabledModels().length > 0) {
                 this.showModelPicker = true;
+              } else if (this.models.length > 0) {
+                promptAction.showToast({ message: '所有模型均已禁用，请先启用' });
               } else {
                 promptAction.showToast({ message: '请先配置模型' });
               }

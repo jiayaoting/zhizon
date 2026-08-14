@@ -156,8 +156,8 @@ export struct ProfilePage {
         .width('100%')
       Column({ space: 8 }) {
         this.groupRow('设置', '', true, () => { this.onNavigate('Settings'); })
-        this.groupRow('AI 调用记录', '', true, () => {
-          router.pushUrl({ url: 'pages/AiCallLog' });
+        this.groupRow('AI 模型', '', true, () => {
+          router.pushUrl({ url: 'pages/AiModelPage' });
         })
       }
       .width('100%')

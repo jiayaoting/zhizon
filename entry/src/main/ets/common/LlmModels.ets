@@ -78,6 +78,8 @@ export class LlmConfig {
   // vLLM 兼容模式：服务端为 vLLM 部署时（如 api.do.top 的 Qwen3 系列），
   // 通过 chat_template_kwargs.enable_thinking 控制思考开关；普通网关（tokenrhythm/硅基流动）必须关闭
   vllmCompat: boolean = false;
+  // 是否启用该模型：仅启用状态的模型可在对话中作为可选/使用
+  enabled: boolean = true;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -111,6 +113,8 @@ export class LlmModelEntry {
   followDefaultConfig: boolean = true;
   // vLLM 兼容模式（与 LlmConfig.vllmCompat 对应）
   vllmCompat: boolean = false;
+  // 是否启用该模型
+  enabled: boolean = true;
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -143,6 +147,7 @@ export function entryToConfig(entry: LlmModelEntry): LlmConfig {
   config.thinkingEnabled = entry.thinkingEnabled;
   config.followDefaultConfig = entry.followDefaultConfig;
   config.vllmCompat = entry.vllmCompat;
+  config.enabled = entry.enabled;
   return config;
 }
 
@@ -279,12 +284,13 @@ export class StoredLlmConfig {
   visionEnabled: boolean;
   thinkingEnabled: boolean;
   followDefaultConfig: boolean;
+  enabled: boolean;
 
   constructor(id: string, displayName: string, providerId: string, baseUrl: string, model: string,
     temperature: number, apiFormat: string = 'openai', maxTokens: number = 4096,
     useFullUrl: boolean = false, modelFamily: string = '', contextTokensIn: number = 128000,
     contextTokensOut: number = 4096, workers: number = 1, visionEnabled: boolean = false,
-    thinkingEnabled: boolean = false, followDefaultConfig: boolean = true) {
+    thinkingEnabled: boolean = false, followDefaultConfig: boolean = true, enabled: boolean = true) {
     this.id = id;
     this.displayName = displayName;
     this.providerId = providerId;
@@ -301,6 +307,7 @@ export class StoredLlmConfig {
     this.visionEnabled = visionEnabled;
     this.thinkingEnabled = thinkingEnabled;
     this.followDefaultConfig = followDefaultConfig;
+    this.enabled = enabled;
   }
 }
 

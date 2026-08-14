@@ -10,6 +10,7 @@
     "pages/Sudoku",
     "pages/ChineseChess",
     "pages/ChatConfig",
-    "pages/AiCallLog"
+    "pages/AiCallLog",
+    "pages/AiModelPage"
   ]
 }

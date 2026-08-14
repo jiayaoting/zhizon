@@ -61,6 +61,9 @@ struct ChatConfig {
   @State thinkingEnabled: boolean = false;
   @State followDefaultConfig: boolean = true;
   @State vllmCompat: boolean = false;
+  @State modelEnabled: boolean = true;
+  // 进入编辑/复制时的原始快照：用于判断表单是否有实际修改
+  private formSnapshot: LlmModelEntry | null = null;
 
   aboutToAppear(): void {
     this.load();
@@ -79,9 +82,8 @@ struct ChatConfig {
     this.editing = true;
   }
 
-  private editModel(index: number): void {
-    const m: LlmModelEntry = this.models[index];
-    this.editingIndex = index;
+  // 将模型条目回显到表单，并保存快照用于“无修改不可保存”判断
+  private fillFormFromEntry(m: LlmModelEntry): void {
     this.displayName = m.displayName;
     // 保留原 providerId，不强制兜底为 deepseek，避免覆盖用户自定义配置
     this.providerId = m.providerId && m.providerId.length > 0 ? m.providerId : 'custom';
@@ -102,7 +104,73 @@ struct ChatConfig {
     this.thinkingEnabled = m.thinkingEnabled || false;
     this.followDefaultConfig = m.followDefaultConfig !== false;
     this.vllmCompat = m.vllmCompat || false;
+    this.modelEnabled = m.enabled !== false;
     this.editing = true;
+  }
+
+  private editModel(index: number): void {
+    this.editingIndex = index;
+    const m: LlmModelEntry = this.models[index];
+    this.fillFormFromEntry(m);
+    this.formSnapshot = this.cloneEntry(m);
+  }
+
+  // 复制模型：回显全部字段作为一个新模型（新 id，不影响原模型）
+  private copyModel(index: number): void {
+    this.editingIndex = -1;
+    const m: LlmModelEntry = this.models[index];
+    this.fillFormFromEntry(m);
+    // 复制即新增：快照保存原字段，未修改任何内容时不允许保存
+    this.formSnapshot = this.cloneEntry(m);
+  }
+
+  private cloneEntry(m: LlmModelEntry): LlmModelEntry {
+    const c: LlmModelEntry = new LlmModelEntry();
+    c.id = m.id;
+    c.displayName = m.displayName;
+    c.providerId = m.providerId;
+    c.baseUrl = m.baseUrl;
+    c.apiKey = m.apiKey;
+    c.model = m.model;
+    c.temperature = m.temperature;
+    c.apiFormat = m.apiFormat;
+    c.maxTokens = m.maxTokens;
+    c.useFullUrl = m.useFullUrl;
+    c.modelFamily = m.modelFamily;
+    c.contextTokensIn = m.contextTokensIn;
+    c.contextTokensOut = m.contextTokensOut;
+    c.workers = m.workers;
+    c.visionEnabled = m.visionEnabled;
+    c.thinkingEnabled = m.thinkingEnabled;
+    c.followDefaultConfig = m.followDefaultConfig;
+    c.vllmCompat = m.vllmCompat;
+    c.enabled = m.enabled;
+    return c;
+  }
+
+  // 判断当前表单与快照是否有差异（差异才允许保存）
+  private hasChanges(): boolean {
+    const s: LlmModelEntry | null = this.formSnapshot;
+    if (s === null) return true;
+    if (this.displayName.trim() !== s.displayName.trim()) return true;
+    if (this.providerId !== s.providerId) return true;
+    if (this.baseUrl.trim() !== s.baseUrl.trim()) return true;
+    if (this.apiKey.trim() !== s.apiKey.trim()) return true;
+    if (this.model.trim() !== s.model.trim()) return true;
+    if (this.temperature !== s.temperature) return true;
+    if (this.apiFormat !== s.apiFormat) return true;
+    if (this.maxTokens !== s.maxTokens) return true;
+    if (this.useFullUrl !== s.useFullUrl) return true;
+    if (this.modelFamily.trim() !== s.modelFamily.trim()) return true;
+    if (this.contextTokensInText.trim() !== s.contextTokensIn.toString()) return true;
+    if (this.contextTokensOutText.trim() !== s.contextTokensOut.toString()) return true;
+    if (this.workersText.trim() !== s.workers.toString()) return true;
+    if (this.visionEnabled !== s.visionEnabled) return true;
+    if (this.thinkingEnabled !== s.thinkingEnabled) return true;
+    if (this.followDefaultConfig !== s.followDefaultConfig) return true;
+    if (this.vllmCompat !== s.vllmCompat) return true;
+    if (this.modelEnabled !== s.enabled) return true;
+    return false;
   }
 
   private backToList(): void {
@@ -122,9 +190,30 @@ struct ChatConfig {
       secondaryButton: {
         value: '删除',
         fontColor: Color.Red,
-        action: () => {
-          ChatRepository.deleteModel(m.id);
-          this.load();
+        action: async () => {
+          // 先从内存过滤，保证删除后列表立即刷新
+          const list: LlmModelEntry[] = [];
+          for (let i: number = 0; i < this.models.length; i++) {
+            if (this.models[i].id !== m.id) list.push(this.models[i]);
+          }
+          this.models = list;
+          // 若删除的是当前激活模型，切换到第一个启用的模型
+          if (m.id === this.activeModelId) {
+            let fallbackId: string = '';
+            for (let i: number = 0; i < list.length; i++) {
+              if (list[i].enabled !== false) { fallbackId = list[i].id; break; }
+            }
+            await ChatRepository.setActiveModelId(fallbackId);
+            this.activeModelId = fallbackId;
+          }
+          try {
+            await ChatRepository.saveModels(list);
+          } catch (e) {
+            promptAction.showToast({ message: '删除失败，请重试' });
+            await this.load();
+            return;
+          }
+          promptAction.showToast({ message: '已删除「' + modelDisplayName(m) + '」' });
         }
       }
     });
@@ -135,6 +224,34 @@ struct ChatConfig {
     await ChatRepository.setActiveModelId(m.id);
     this.activeModelId = m.id;
     promptAction.showToast({ message: '已切换为「' + modelDisplayName(m) + '」' });
+  }
+
+  // 启用/禁用模型：立即持久化
+  private async toggleEnabled(index: number, value: boolean): Promise<void> {
+    const m: LlmModelEntry = this.models[index];
+    const list: LlmModelEntry[] = this.models.concat([]);
+    const target: LlmModelEntry = this.cloneEntry(m);
+    target.enabled = value;
+    list[index] = target;
+    try {
+      await ChatRepository.saveModels(list);
+    } catch (e) {
+      promptAction.showToast({ message: '保存失败，请重试' });
+      return;
+    }
+    this.models = list;
+    // 若禁用的是当前激活模型，需切换激活到其他启用模型，避免对话无可用模型
+    if (m.id === this.activeModelId && !value) {
+      let fallbackId: string = '';
+      for (let i: number = 0; i < list.length; i++) {
+        if (list[i].enabled) { fallbackId = list[i].id; break; }
+      }
+      if (fallbackId.length > 0) {
+        await ChatRepository.setActiveModelId(fallbackId);
+        this.activeModelId = fallbackId;
+      }
+    }
+    promptAction.showToast({ message: value ? '已启用该模型' : '已禁用该模型' });
   }
 
   private resetForm(): void {
@@ -157,6 +274,8 @@ struct ChatConfig {
     this.thinkingEnabled = false;
     this.followDefaultConfig = true;
     this.vllmCompat = false;
+    this.modelEnabled = true;
+    this.formSnapshot = null;
   }
 
   // ---- 表单辅助 ----
@@ -238,9 +357,15 @@ struct ChatConfig {
     config.thinkingEnabled = this.thinkingEnabled;
     config.followDefaultConfig = this.followDefaultConfig;
     config.vllmCompat = this.vllmCompat;
+    config.enabled = this.modelEnabled;
   }
 
   private async save(): Promise<void> {
+    // 必须有实际修改才能保存
+    if (!this.hasChanges()) {
+      promptAction.showToast({ message: '未做任何修改' });
+      return;
+    }
     const config: LlmConfig = new LlmConfig();
     this.fillConfig(config);
     if (!config.baseUrl) {
@@ -283,6 +408,7 @@ struct ChatConfig {
     entry.thinkingEnabled = config.thinkingEnabled;
     entry.followDefaultConfig = config.followDefaultConfig;
     entry.vllmCompat = config.vllmCompat;
+    entry.enabled = config.enabled;
 
     let list: LlmModelEntry[] = this.models.concat([]);
     if (this.editingIndex >= 0) {
@@ -297,12 +423,23 @@ struct ChatConfig {
       promptAction.showToast({ message: '保存失败：' + (err.message ? err.message : '存储异常') });
       return;
     }
-    // 首次添加时自动设为激活模型
-    if (this.models.length === 0) {
+    // 首次添加时自动设为激活模型（仅当启用状态）
+    if (this.models.length === 0 && entry.enabled) {
       await ChatRepository.setActiveModelId(entry.id);
       this.activeModelId = entry.id;
     }
     this.models = list;
+    // 若保存后当前激活模型被禁用，回退到第一个启用的模型
+    if (entry.id === this.activeModelId && !entry.enabled) {
+      let fallbackId: string = '';
+      for (let i: number = 0; i < list.length; i++) {
+        if (list[i].enabled) { fallbackId = list[i].id; break; }
+      }
+      if (fallbackId.length > 0) {
+        await ChatRepository.setActiveModelId(fallbackId);
+        this.activeModelId = fallbackId;
+      }
+    }
     this.editing = false;
     promptAction.showToast({ message: '已保存模型' });
   }
@@ -900,6 +1037,8 @@ struct ChatConfig {
         .width('100%')
 
         // 能力开关
+        this.toggleRow('启用此模型', '关闭后该模型不可在对话中选择与使用', this.modelEnabled,
+          (value: boolean) => { this.modelEnabled = value; })
         this.toggleRow('支持图片输入', '开启后模型可接收图片消息', this.visionEnabled,
           (value: boolean) => { this.visionEnabled = value; })
         this.toggleRow('思考模式', '适用于 Claude 等支持 extended thinking 的模型', this.thinkingEnabled,
@@ -1251,6 +1390,12 @@ struct ChatConfig {
                 .fontColor(this.palette.primary)
                 .padding(6)
                 .onClick(() => { this.editModel(index); })
+              Text('复制')
+                .fontSize(this.palette.fsXs)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.primary)
+                .padding(6)
+                .onClick(() => { this.copyModel(index); })
               Text('✕')
                 .fontSize(14)
                 .fontFamily(this.palette.fontSans)
@@ -1279,6 +1424,14 @@ struct ChatConfig {
                   .backgroundColor(this.palette.primaryDim)
                   .onClick(() => { this.activateModel(index); })
               }
+              Text(m.enabled ? '启用' : '已禁用')
+                .fontSize(this.palette.fsXs)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(m.enabled ? this.palette.success : this.palette.textTertiary)
+                .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                .borderRadius(12)
+                .backgroundColor(m.enabled ? this.palette.bgSurface2 : this.palette.bgSurface2)
+                .onClick(() => { this.toggleEnabled(index, !m.enabled); })
             }
             .width('100%')
           }

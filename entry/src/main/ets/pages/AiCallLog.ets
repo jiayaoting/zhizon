@@ -76,7 +76,7 @@ export struct AiCallLogPage {
       Text('清空')
         .fontSize(this.palette.fsSm)
         .fontFamily(this.palette.fontSans)
-        .fontColor(this.logs.length > 0 ? this.palette.danger : this.palette.textTertiary)
+        .fontColor(this.palette.danger)
     }
     .width(44)
     .height(30)

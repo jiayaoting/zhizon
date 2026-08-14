@@ -40,7 +40,8 @@ export class ChatRepository {
       const m: LlmModelEntry = models[i];
       stored.push(new StoredLlmConfig(m.id, m.displayName, m.providerId, m.baseUrl, m.model,
         m.temperature, m.apiFormat, m.maxTokens, m.useFullUrl, m.modelFamily, m.contextTokensIn,
-        m.contextTokensOut, m.workers, m.visionEnabled, m.thinkingEnabled, m.followDefaultConfig));
+        m.contextTokensOut, m.workers, m.visionEnabled, m.thinkingEnabled, m.followDefaultConfig,
+        m.enabled));
       if (m.apiKey.trim().length > 0) {
         keys[m.id] = await CryptoHelper.encrypt(m.apiKey.trim());
       } else {
@@ -52,24 +53,6 @@ export class ChatRepository {
     // 迁移完成后清理旧键，避免重复迁移
     await DataRepository.setSetting(KEY_LEGACY_CONFIG, '');
     await DataRepository.setSetting(KEY_LEGACY_API_KEY, '');
-  }
-
-  // 删除指定模型；若删除的是当前激活模型，自动切换到列表第一个
-  static async deleteModel(id: string): Promise<void> {
-    const models: LlmModelEntry[] = await ChatRepository.loadModels();
-    const filtered: LlmModelEntry[] = [];
-    for (let i: number = 0; i < models.length; i++) {
-      if (models[i].id !== id) filtered.push(models[i]);
-    }
-    await ChatRepository.saveModels(filtered);
-    const activeId: string = await ChatRepository.loadActiveModelId();
-    if (activeId === id) {
-      if (filtered.length > 0) {
-        await ChatRepository.setActiveModelId(filtered[0].id);
-      } else {
-        await ChatRepository.setActiveModelId('');
-      }
-    }
   }
 
   // 生成新模型 id
@@ -91,15 +74,19 @@ export class ChatRepository {
     await DataRepository.setSetting(KEY_ACTIVE_MODEL, id);
   }
 
-  // 加载当前激活模型的完整配置；无配置返回 null
+  // 加载当前激活模型的完整配置；无启用配置返回 null
   static async loadActiveConfig(): Promise<LlmConfig | null> {
     const models: LlmModelEntry[] = await ChatRepository.loadModels();
     if (models.length === 0) return null;
     const activeId: string = await ChatRepository.loadActiveModelId();
     for (let i: number = 0; i < models.length; i++) {
-      if (models[i].id === activeId) return entryToConfig(models[i]);
+      if (models[i].id === activeId && models[i].enabled) return entryToConfig(models[i]);
     }
-    return entryToConfig(models[0]);
+    // 激活模型被禁用或缺失时，回退到第一个启用的模型
+    for (let i: number = 0; i < models.length; i++) {
+      if (models[i].enabled) return entryToConfig(models[i]);
+    }
+    return null;
   }
 
   // ---- 内部 ----
@@ -128,6 +115,7 @@ export class ChatRepository {
       if (typeof item.visionEnabled === 'boolean') entry.visionEnabled = item.visionEnabled as boolean;
       if (typeof item.thinkingEnabled === 'boolean') entry.thinkingEnabled = item.thinkingEnabled as boolean;
       if (typeof item.followDefaultConfig === 'boolean') entry.followDefaultConfig = item.followDefaultConfig as boolean;
+      if (typeof item.enabled === 'boolean') entry.enabled = item.enabled as boolean;
       const enc: string = keys[entry.id];
       if (enc !== undefined && enc.length > 0) {
         try {
