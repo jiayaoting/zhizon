@@ -12,6 +12,7 @@ import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS, SnakePoint } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
 
 const COLS: number = 16;
 const ROWS: number = 16;
@@ -973,11 +974,13 @@ export struct SnakePage {
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
+    ScreenKeepAlive.enable(getContext(this));
   }
 
   aboutToDisappear(): void {
     this.stopAi();
     this.stopTimer();
+    ScreenKeepAlive.disable(getContext(this));
     // 中途退出时保存当前分数
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();

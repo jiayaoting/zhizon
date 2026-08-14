@@ -13,6 +13,7 @@ import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS, SudokuCellInfo } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
 
 // ============================================================
 // 页面组件
@@ -486,11 +487,13 @@ export struct SudokuPage {
     this.initAiPanel();
     this.showHintTip = true;
     setTimeout(() => { this.showHintTip = false; }, 4000);
+    ScreenKeepAlive.enable(getContext(this));
   }
 
   aboutToDisappear(): void {
     this.stopAi();
     this.stopTimer();
+    ScreenKeepAlive.disable(getContext(this));
   }
 
   // ---- 键盘 ----

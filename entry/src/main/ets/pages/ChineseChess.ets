@@ -13,6 +13,7 @@ import { ChineseChessNotation } from '../service/ChineseChessNotation';
 import { DataRepository } from '../service/DataRepository';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
 
 // 对弈方类型
 type PlayerMode = 'human' | 'engine' | 'llm';
@@ -229,6 +230,11 @@ struct ChineseChessPage {
     });
     this.initAiModels();
     this.resetBoard();
+    ScreenKeepAlive.enable(getContext(this));
+  }
+
+  aboutToDisappear(): void {
+    ScreenKeepAlive.disable(getContext(this));
   }
 
   onPageHide(): void {

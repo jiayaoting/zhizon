@@ -12,6 +12,7 @@ import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
 
 const BOARD_SIZE: number = 6;
 const WIN_SCORE: number = 2048;
@@ -939,6 +940,7 @@ export struct Game2048Page {
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
+    ScreenKeepAlive.enable(getContext(this));
   }
 
   // ---- 页面隐藏时自动暂停 ----
@@ -962,6 +964,7 @@ export struct Game2048Page {
   aboutToDisappear(): void {
     // 中途退出时保存当前分数
     this.stopAi();
+    ScreenKeepAlive.disable(getContext(this));
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
     }

@@ -12,6 +12,7 @@ import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS, MinesweeperCellInfo } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
+import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
 
 // 难度配置
 class MinesweeperConfig {
@@ -1039,11 +1040,13 @@ export struct MinesweeperPage {
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
+    ScreenKeepAlive.enable(getContext(this));
   }
 
   aboutToDisappear(): void {
     this.stopAi();
     this.stopTimer();
+    ScreenKeepAlive.disable(getContext(this));
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
     }
