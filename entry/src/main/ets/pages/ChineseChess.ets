@@ -475,89 +475,190 @@ struct ChineseChessPage {
   }
 
   // ---- 尺寸 ----
+  @State boardWidth: number = 360;
+  private boardCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
+
   private cellSize(): number {
-    if (this.isSm) return Math.floor((this.getBoardSide()) / CHESS_COLS);
-    return Math.floor(360 / CHESS_COLS);
+    return this.boardWidth / CHESS_COLS;
   }
 
-  private getBoardSide(): number {
-    if (this.isSm) return 360;
-    return 360;
+  private boardHeight(): number {
+    return this.boardWidth / CHESS_COLS * CHESS_ROWS;
   }
 
   // ---- 渲染 ----
   @Builder
   statusBar() {
-    Row({ space: 8 }) {
-      Text(this.gameOver ? ('🏁 ' + this.winner) :
-        (this.thinkingSide !== '' ? ('⏳ ' + this.thinkingText) :
-          ('🎯 轮到 ' + this.sideLabel(this.currentSide()) +
-            (this.playerType(this.currentSide()) === 'human' ? '（你）' : '（AI）'))))
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
-        .layoutWeight(1)
-        .maxLines(2)
-      Text('悔棋 ' + this.undoUsed.toString() + '/' + this.undoLimit.toString())
-        .fontSize(this.palette.fsXs)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textSecondary)
+    Row({ space: 12 }) {
+      Column() {
+        Text(this.statusTitle())
+          .fontSize(this.palette.fsMd)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textPrimary)
+          .fontWeight(FontWeight.Bold)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.statusSubtitle())
+          .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textSecondary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: 3 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Column() {
+        Row({ space: 5 }) {
+          Circle()
+            .width(8)
+            .height(8)
+            .fill(this.redTurn ? '#C0392B' : '#2C3E50')
+          Text(this.redTurn ? '红方' : '黑方')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
+        }
+        Text('悔棋 ' + this.undoUsed.toString() + '/' +
+          (this.undoUnlimited ? '∞' : this.undoLimit.toString()))
+          .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+          .margin({ top: 3 })
+      }
+      .alignItems(HorizontalAlign.End)
     }
     .width('100%')
-    .padding({ left: 4, right: 4, bottom: 6 })
+    .padding(12)
+    .backgroundColor(this.palette.bgSurface2)
+    .borderRadius(this.palette.radiusLg)
+    .border({ width: 1, color: this.palette.borderSubtle })
   }
 
   @Builder
   chessboard() {
-    Column() {
-      ForEach(this.board, (row: string[], r: number) => {
+    Stack() {
+      // 棋盘底图：木色 + 网格线 + 九宫格 + 标记
+      Stack() {
+        Canvas(this.boardCtx)
+          .width(this.boardWidth)
+          .height(this.boardHeight())
+          .onReady(() => {
+            this.drawBoard();
+          })
+        // 楚河汉界
         Row() {
-          ForEach(row, (piece: string, c: number) => {
-            this.cell(piece, r, c)
-          }, (piece: string, c: number) => r.toString() + '_' + c.toString())
+          Blank()
+          Text('楚  河')
+            .fontSize(this.cellSize() * 0.74)
+            .fontFamily(this.palette.fontSans)
+            .fontColor('#7A4A21')
+            .fontWeight(FontWeight.Bold)
+          Blank()
+          Blank()
+          Text('汉  界')
+            .fontSize(this.cellSize() * 0.74)
+            .fontFamily(this.palette.fontSans)
+            .fontColor('#7A4A21')
+            .fontWeight(FontWeight.Bold)
+          Blank()
         }
         .width('100%')
-      }, (row: string[], r: number) => r.toString())
+        .height(this.cellSize() * 2)
+        .position({ x: 0, y: this.cellSize() * 4 })
+        .alignItems(VerticalAlign.Center)
+      }
+      .width(this.boardWidth)
+      .height(this.boardHeight())
+      .borderRadius(10)
+      .clip(true)
+
+      // 棋子层
+      Column() {
+        ForEach(this.board, (row: string[], r: number) => {
+          Row() {
+            ForEach(row, (piece: string, c: number) => {
+              this.cell(piece, r, c)
+            }, (piece: string, c: number) => r.toString() + '_' + c.toString())
+          }
+          .width('100%')
+        }, (row: string[], r: number) => r.toString())
+      }
+      .width(this.boardWidth)
+      .height(this.boardHeight())
     }
-    .width(this.getBoardSide())
-    .height(this.getBoardSide())
-    .backgroundColor('#D9A066')
-    .borderRadius(8)
-    .border({ width: 1, color: this.palette.borderSubtle })
-    .clip(true)
-    .onClick(() => { })
+    .width(this.boardWidth)
+    .height(this.boardHeight())
+    .shadow({ radius: 18, color: '#40000000', offsetX: 0, offsetY: 6 })
   }
 
   @Builder
   cell(piece: string, r: number, c: number) {
     Stack() {
       if (this.isTarget(r, c)) {
-        Column()
-          .width('100%').height('100%')
-          .backgroundColor('#33FFD700')
-      } else if (this.suggestionOn &&
+        if (piece === '.') {
+          Circle()
+            .width(this.cellSize() * 0.26)
+            .height(this.cellSize() * 0.26)
+            .fill('#E53935')
+        } else {
+          Circle()
+            .width(this.cellSize() * 0.84)
+            .height(this.cellSize() * 0.84)
+            .fill('#E5393545')
+        }
+      }
+      if (this.suggestionOn &&
         ((this.suggestFromR === r && this.suggestFromC === c) ||
           (this.suggestToR === r && this.suggestToC === c))) {
-        Column()
-          .width('100%').height('100%')
-          .backgroundColor('#33FF6B6B')
+        Circle()
+          .width(this.cellSize() * 0.94)
+          .height(this.cellSize() * 0.94)
+          .fill((this.suggestToR === r && this.suggestToC === c) ? '#FF6B6B45' : '#FFD70040')
       }
       if (piece !== '.') {
-        Text(this.pieceName(piece))
-          .fontSize(this.cellSize() * 0.62)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(ChineseChessEngine.isRed(piece) ? '#D32F2F' : '#212121')
-          .fontWeight(FontWeight.Bold)
+        this.piece(piece)
       }
       if (this.selR === r && this.selC === c) {
-        Column()
-          .width('100%').height('100%')
-          .border({ width: 2, color: '#FFD700' })
+        Circle()
+          .width(this.cellSize() * 0.98)
+          .height(this.cellSize() * 0.98)
+          .fill(Color.Transparent)
+          .stroke('#FFD700')
+          .strokeWidth(2.5)
       }
     }
     .width(this.cellSize())
     .height(this.cellSize())
     .onClick(() => { this.onCellTap(r, c); })
+  }
+
+  @Builder
+  piece(p: string) {
+    Stack() {
+      Circle()
+        .width('100%')
+        .height('100%')
+        .fill('#F9EFD7')
+        .stroke(ChineseChessEngine.isRed(p) ? '#B71C1C' : '#263238')
+        .strokeWidth(1.6)
+      Circle()
+        .width('72%')
+        .height('72%')
+        .fill(Color.Transparent)
+        .stroke(ChineseChessEngine.isRed(p) ? '#B71C1C' : '#263238')
+        .strokeWidth(1)
+      Text(this.pieceName(p))
+        .fontSize(this.cellSize() * 0.42)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(ChineseChessEngine.isRed(p) ? '#B71C1C' : '#263238')
+        .fontWeight(FontWeight.Bold)
+    }
+    .width(this.cellSize() * 0.92)
+    .height(this.cellSize() * 0.92)
+    .shadow({ radius: 5, color: '#4D000000', offsetX: 1, offsetY: 2 })
   }
 
   private isTarget(r: number, c: number): boolean {
@@ -567,57 +668,192 @@ struct ChineseChessPage {
     return false;
   }
 
+  private redrawBoard(): void {
+    setTimeout(() => {
+      this.drawBoard();
+    }, 0);
+  }
+
+  private drawBoard(): void {
+    const ctx: CanvasRenderingContext2D = this.boardCtx;
+    const cs: number = this.cellSize();
+    const totalW: number = this.boardWidth;
+    const totalH: number = this.boardHeight();
+    const left: number = cs / 2;
+    const top: number = cs / 2;
+    const lineW: number = cs * (CHESS_COLS - 1);
+    const lineH: number = cs * (CHESS_ROWS - 1);
+    const ink: string = '#7A4A21';
+
+    ctx.clearRect(0, 0, totalW, totalH);
+    // 木色底
+    ctx.fillStyle = '#E9C995';
+    ctx.fillRect(0, 0, totalW, totalH);
+    // 外框双线
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(left - 5, top - 5, lineW + 10, lineH + 10);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left - 1.5, top - 1.5, lineW + 3, lineH + 3);
+    // 横线
+    for (let r: number = 0; r < CHESS_ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(left, top + r * cs);
+      ctx.lineTo(left + lineW, top + r * cs);
+      ctx.stroke();
+    }
+    // 竖线（河界处断开）
+    for (let c: number = 0; c < CHESS_COLS; c++) {
+      const x: number = left + c * cs;
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, top + 4 * cs);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, top + 5 * cs);
+      ctx.lineTo(x, top + lineH);
+      ctx.stroke();
+    }
+    // 九宫格斜线
+    ctx.beginPath();
+    ctx.moveTo(left + 3 * cs, top);
+    ctx.lineTo(left + 5 * cs, top + 2 * cs);
+    ctx.moveTo(left + 5 * cs, top);
+    ctx.lineTo(left + 3 * cs, top + 2 * cs);
+    ctx.moveTo(left + 3 * cs, top + 7 * cs);
+    ctx.lineTo(left + 5 * cs, top + 9 * cs);
+    ctx.moveTo(left + 5 * cs, top + 7 * cs);
+    ctx.lineTo(left + 3 * cs, top + 9 * cs);
+    ctx.stroke();
+    // 炮位标记（十字）
+    const cannons: number[][] = [[2, 1], [2, 7], [7, 1], [7, 7]];
+    ctx.lineWidth = 1.5;
+    for (let i: number = 0; i < cannons.length; i++) {
+      const x: number = left + cannons[i][1] * cs;
+      const y: number = top + cannons[i][0] * cs;
+      ctx.beginPath();
+      ctx.moveTo(x - cs * 0.18, y);
+      ctx.lineTo(x + cs * 0.18, y);
+      ctx.moveTo(x, y - cs * 0.18);
+      ctx.lineTo(x, y + cs * 0.18);
+      ctx.stroke();
+    }
+    // 兵/卒位标记（圆点）
+    ctx.fillStyle = ink;
+    for (let rr: number = 4; rr <= 5; rr++) {
+      for (let cc: number = 0; cc < CHESS_COLS; cc += 2) {
+        const x: number = left + cc * cs;
+        const y: number = top + rr * cs;
+        ctx.beginPath();
+        ctx.arc(x, y, cs * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  private statusTitle(): string {
+    if (this.gameOver) return '🏁 ' + this.winner;
+    if (this.thinkingSide !== '') return '⏳ ' + this.thinkingText;
+    return '🎯 轮到 ' + this.sideLabel(this.currentSide()) +
+      (this.playerType(this.currentSide()) === 'human' ? '（你）' : '（AI）');
+  }
+
+  private statusSubtitle(): string {
+    if (this.gameOver) return '点击「结束」可重新开始对局';
+    if (this.thinkingSide !== '') return 'AI 正在分析最佳走法…';
+    if (this.matchMode === 'LvL') return 'AI 对 AI 自动对弈中';
+    if (this.playerType(this.currentSide()) === 'human') return '点击己方棋子选择，再点目标格落子';
+    return 'AI 思考中，请稍候';
+  }
+
   @Builder
   controlPanel() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        this.actionBtn('↩ 悔棋', this.palette.bgSurface2, () => { this.undo(); })
-        this.actionBtn('💡 AI提示', this.palette.bgSurface2, () => { this.suggestMove(); })
-        this.actionBtn('✕ 结束', this.palette.danger, () => { this.stopGame(); this.setupOpen = true; })
+    Column({ space: 10 }) {
+      Row({ space: 10 }) {
+        this.actionBtn('↩', '悔棋', this.palette.bgSurface2, this.palette.textPrimary,
+          () => { this.undo(); })
+        this.actionBtn('💡', 'AI 提示', this.palette.primary, Color.White,
+          () => { this.suggestMove(); })
+        this.actionBtn('✕', '结束', this.palette.danger, Color.White,
+          () => { this.stopGame(); this.setupOpen = true; })
       }
       .width('100%')
       if (this.suggestionOn) {
-        Row({ space: 8 }) {
-          Text('建议：' + this.suggestFromR.toString() + ',' + this.suggestFromC.toString() +
-            ' → ' + this.suggestToR.toString() + ',' + this.suggestToC.toString())
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .layoutWeight(1)
-          this.actionBtn('确认', this.palette.primary, () => { this.applySuggestion(); })
-          this.actionBtn('取消', this.palette.bgSurface2, () => { this.suggestionOn = false; })
+        Row({ space: 10 }) {
+          Column() {
+            Text('💡 建议走法')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+            Text(this.suggestFromR.toString() + ',' + this.suggestFromC.toString() +
+              ' → ' + this.suggestToR.toString() + ',' + this.suggestToC.toString())
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(FontWeight.Bold)
+              .margin({ top: 2 })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+          this.miniBtn('✓ 采纳', this.palette.primary, Color.White, () => { this.applySuggestion(); })
+          this.miniBtn('取消', this.palette.bgSurface2, this.palette.textSecondary,
+            () => { this.suggestionOn = false; })
         }
         .width('100%')
-        .padding(8)
+        .padding(10)
         .backgroundColor(this.palette.bgSurface2)
-        .borderRadius(8)
+        .borderRadius(this.palette.radiusLg)
+        .border({ width: 1, color: this.palette.borderSubtle })
       }
-      // 记谱
       if (this.moveHistory.length > 0) {
         Scroll() {
-          Text(this.moveHistory.join('  '))
+          Text('📜 ' + this.moveHistory.join('  '))
             .fontSize(this.palette.fsXs)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
             .width('100%')
         }
-        .height(60)
+        .width('100%')
+        .height(46)
         .scrollBar(BarState.Off)
+        .padding(10)
+        .backgroundColor(this.palette.bgSurface2)
+        .borderRadius(this.palette.radiusLg)
       }
     }
     .width('100%')
   }
 
   @Builder
-  actionBtn(label: string, color: string, onTap: () => void) {
+  actionBtn(icon: string, label: string, bg: string, fg: string, onTap: () => void) {
+    Row({ space: 6 }) {
+      Text(icon)
+        .fontSize(this.palette.fsBase)
+        .fontColor(fg)
+      Text(label)
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(fg)
+        .fontWeight(FontWeight.Medium)
+    }
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 12, bottom: 12 })
+    .borderRadius(this.palette.radiusLg)
+    .backgroundColor(bg)
+    .onClick(() => { onTap(); })
+  }
+
+  @Builder
+  miniBtn(label: string, bg: string, fg: string, onTap: () => void) {
     Text(label)
       .fontSize(this.palette.fsSm)
       .fontFamily(this.palette.fontSans)
-      .fontColor(Color.White)
+      .fontColor(fg)
       .fontWeight(FontWeight.Medium)
-      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-      .borderRadius(10)
-      .backgroundColor(color)
+      .padding({ left: 14, right: 14, top: 9, bottom: 9 })
+      .borderRadius(9)
+      .backgroundColor(bg)
       .onClick(() => { onTap(); })
   }
 
@@ -628,21 +864,35 @@ struct ChineseChessPage {
       Stack() {
         Column() {
           Blank()
-          Column({ space: 14 }) {
-            Text('开始对局')
-              .fontSize(this.palette.fsLg)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .fontWeight(FontWeight.Bold)
-            // 模式
+          Column({ space: 16 }) {
+            Row() {
+              Text('⚔ 对局设置')
+                .fontSize(this.palette.fsLg)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+                .layoutWeight(1)
+              Text('✕')
+                .fontSize(this.palette.fsBase)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textSecondary)
+                .padding(8)
+                .backgroundColor(this.palette.bgSurface2)
+                .borderRadius(8)
+                .onClick(() => { this.setupOpen = false; this.running = false; })
+            }
+            .width('100%')
+
+            this.settingLabel('对局模式')
             Row({ space: 8 }) {
               this.seg('人机', 'hvE')
               this.seg('人对AI', 'hvL')
               this.seg('AI对AI', 'LvL')
             }
             .width('100%')
-            // 选边（人机/人对AI 时）
+
             if (this.matchMode !== 'LvL') {
+              this.settingLabel('执子方')
               Row({ space: 8 }) {
                 this.seg('执红', 'red')
                 this.seg('执黑', 'black')
@@ -650,38 +900,34 @@ struct ChineseChessPage {
               }
               .width('100%')
             }
-            // 悔棋次数限制
+
+            this.settingLabel('悔棋次数')
             Row({ space: 8 }) {
-              Text('悔棋次数')
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
-                .layoutWeight(1)
               this.seg('0', '0')
               this.seg('3', '3')
               this.seg('5', '5')
               this.seg('不限', 'unlimited')
             }
             .width('100%')
-            // 引擎难度
-            Row({ space: 8 }) {
-              Text('引擎难度')
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
-                .layoutWeight(1)
-              this.seg('简单', 'easy')
-              this.seg('中等', 'medium')
-              this.seg('困难', 'hard')
+
+            if (this.matchMode === 'hvE') {
+              this.settingLabel('引擎难度')
+              Row({ space: 8 }) {
+                this.seg('简单', 'easy')
+                this.seg('中等', 'medium')
+                this.seg('困难', 'hard')
+              }
+              .width('100%')
             }
-            .width('100%')
-            // 模型选择
+
             if (this.matchMode === 'hvL') {
-              this.modelPicker('AI 方模型', this.redModelIndex, (idx: number): void => {
+              this.settingLabel('AI 方模型')
+              this.modelPicker('AI 方', this.redModelIndex, (idx: number): void => {
                 this.redModelIndex = idx;
                 DataRepository.setSetting(AI_MODEL_KEY, this.aiModels[idx].id);
               })
             } else if (this.matchMode === 'LvL') {
+              this.settingLabel('AI 模型')
               this.modelPicker('红方模型', this.redModelIndex, (idx: number): void => {
                 this.redModelIndex = idx;
                 DataRepository.setSetting(RED_MODEL_KEY, this.aiModels[idx].id);
@@ -691,13 +937,15 @@ struct ChineseChessPage {
                 DataRepository.setSetting(BLACK_MODEL_KEY, this.aiModels[idx].id);
               })
             }
-            this.actionBtn('开始对局', this.palette.primary, () => { this.onSetupConfirm(); })
+            this.actionBtn('🚀', '开始对局', this.palette.primary, Color.White,
+              () => { this.onSetupConfirm(); })
           }
-          .width(this.isSm ? '86%' : '64%')
-          .borderRadius(18)
-          .backgroundColor(this.palette.bgBase)
+          .width('100%')
           .padding(20)
-          .padding({ bottom: Math.max(16, this.navBarHeight) })
+          .padding({ bottom: Math.max(20, this.navBarHeight) })
+          .backgroundColor(this.palette.bgBase)
+          .borderRadius({ topLeft: 24, topRight: 24 })
+          .shadow({ radius: 24, color: '#33000000', offsetY: -4 })
         }
         .width('100%')
         .height('100%')
@@ -705,8 +953,17 @@ struct ChineseChessPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.4)')
+      .backgroundColor('rgba(0,0,0,0.45)')
     }
+  }
+
+  @Builder
+  settingLabel(text: string) {
+    Text(text)
+      .fontSize(this.palette.fsXs)
+      .fontFamily(this.palette.fontSans)
+      .fontColor(this.palette.textTertiary)
+      .margin({ top: 4 })
   }
 
   @Builder
@@ -716,9 +973,12 @@ struct ChineseChessPage {
       .fontFamily(this.palette.fontSans)
       .fontColor(this.segActive(value) ? Color.White : this.palette.textSecondary)
       .fontWeight(this.segActive(value) ? FontWeight.Bold : FontWeight.Normal)
-      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-      .borderRadius(9)
+      .padding({ left: 13, right: 13, top: 8, bottom: 8 })
+      .borderRadius(10)
       .backgroundColor(this.segActive(value) ? this.palette.primary : this.palette.bgSurface2)
+      .shadow(this.segActive(value) ?
+        { radius: 8, color: this.palette.primary + '66', offsetX: 0, offsetY: 3 } :
+        { radius: 0, color: '#00000000', offsetX: 0, offsetY: 0 })
       .onClick(() => { this.segTap(value); })
   }
 
@@ -755,7 +1015,7 @@ struct ChineseChessPage {
 
   @Builder
   modelPicker(title: string, index: number, onPick: (idx: number) => void) {
-    Row({ space: 8 }) {
+    Row({ space: 10 }) {
       Text(title)
         .fontSize(this.palette.fsSm)
         .fontFamily(this.palette.fontSans)
@@ -765,14 +1025,19 @@ struct ChineseChessPage {
         .fontSize(this.palette.fsSm)
         .fontFamily(this.palette.fontSans)
         .fontColor(this.modelsConfigured ? this.palette.textPrimary : this.palette.textTertiary)
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
         .backgroundColor(this.palette.bgSurface2)
-        .borderRadius(7)
+        .borderRadius(9)
+        .border({ width: 1, color: this.palette.borderSubtle })
         .onClick(() => {
           if (!this.modelsConfigured || this.aiModels.length === 0) return;
           const next: number = (index + 1) % this.aiModels.length;
           onPick(next);
         })
+      Text('切换')
+        .fontSize(this.palette.fsXs)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textTertiary)
     }
     .width('100%')
   }
@@ -792,17 +1057,27 @@ struct ChineseChessPage {
       Column() {
         TopBar({ title: '中国象棋', subtitle: this.modeLabel(this.matchMode) })
         Scroll() {
-          Column({ space: 10 }) {
+          Column({ space: 12 }) {
             this.statusBar()
             this.chessboard()
             this.controlPanel()
           }
           .width('100%')
+          .alignItems(HorizontalAlign.Center)
           .padding({
             left: this.isSm ? 10 : 24,
             right: this.isSm ? 10 : 24,
-            top: 8,
-            bottom: 12
+            top: 10,
+            bottom: 16
+          })
+          .onAreaChange((oldValue: Area, newValue: Area) => {
+            const pad: number = this.isSm ? 20 : 48;
+            const w: number = Math.floor(newValue.width - pad);
+            const target: number = Math.min(Math.max(w, 270), 430);
+            if (target > 0 && Math.abs(target - this.boardWidth) > 1) {
+              this.boardWidth = target;
+              this.redrawBoard();
+            }
           })
         }
         .width('100%')
