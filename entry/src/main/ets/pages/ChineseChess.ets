@@ -861,125 +861,255 @@ struct ChineseChessPage {
   @Builder
   setupDialog() {
     if (this.setupOpen) {
-      Stack() {
-        Column() {
-          Blank()
-          Column({ space: 16 }) {
-            Row() {
-              Text('⚔ 对局设置')
-                .fontSize(this.palette.fsLg)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .fontWeight(FontWeight.Bold)
-                .layoutWeight(1)
-              Text('✕')
-                .fontSize(this.palette.fsBase)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
-                .padding(8)
-                .backgroundColor(this.palette.bgSurface2)
-                .borderRadius(8)
-                .onClick(() => { this.setupOpen = false; this.running = false; })
-            }
-            .width('100%')
+      Column() {
+        // 遮罩
+        Column()
+          .width('100%')
+          .layoutWeight(1)
+          .backgroundColor('rgba(0, 0, 0, 0.45)')
+          .onClick(() => { this.setupOpen = false; })
+          .transition({ type: TransitionType.All, opacity: 0 })
 
-            this.settingLabel('对局模式')
-            Row({ space: 8 }) {
-              this.seg('人机', 'hvE')
-              this.seg('人对AI', 'hvL')
-              this.seg('AI对AI', 'LvL')
-            }
-            .width('100%')
-
-            if (this.matchMode !== 'LvL') {
-              this.settingLabel('执子方')
-              Row({ space: 8 }) {
-                this.seg('执红', 'red')
-                this.seg('执黑', 'black')
-                this.seg('随机', 'random')
-              }
-              .width('100%')
-            }
-
-            this.settingLabel('悔棋次数')
-            Row({ space: 8 }) {
-              this.seg('0', '0')
-              this.seg('3', '3')
-              this.seg('5', '5')
-              this.seg('不限', 'unlimited')
-            }
-            .width('100%')
-
-            if (this.matchMode === 'hvE') {
-              this.settingLabel('引擎难度')
-              Row({ space: 8 }) {
-                this.seg('简单', 'easy')
-                this.seg('中等', 'medium')
-                this.seg('困难', 'hard')
-              }
-              .width('100%')
-            }
-
-            if (this.matchMode === 'hvL') {
-              this.settingLabel('AI 方模型')
-              this.modelPicker('AI 方', this.redModelIndex, (idx: number): void => {
-                this.redModelIndex = idx;
-                DataRepository.setSetting(AI_MODEL_KEY, this.aiModels[idx].id);
-              })
-            } else if (this.matchMode === 'LvL') {
-              this.settingLabel('AI 模型')
-              this.modelPicker('红方模型', this.redModelIndex, (idx: number): void => {
-                this.redModelIndex = idx;
-                DataRepository.setSetting(RED_MODEL_KEY, this.aiModels[idx].id);
-              })
-              this.modelPicker('黑方模型', this.blackModelIndex, (idx: number): void => {
-                this.blackModelIndex = idx;
-                DataRepository.setSetting(BLACK_MODEL_KEY, this.aiModels[idx].id);
-              })
-            }
-            this.actionBtn('🚀', '开始对局', this.palette.primary, Color.White,
-              () => { this.onSetupConfirm(); })
+        // 底部面板
+        Column({ space: 14 }) {
+          Row() {
+            Blank()
+            Text('✕')
+              .fontSize(this.palette.fsLg)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => { this.setupOpen = false; })
           }
           .width('100%')
-          .padding(20)
-          .padding({ bottom: Math.max(20, this.navBarHeight) })
-          .backgroundColor(this.palette.bgBase)
-          .borderRadius({ topLeft: 24, topRight: 24 })
-          .shadow({ radius: 24, color: '#33000000', offsetY: -4 })
+          .padding({ right: 4, top: 4 })
+
+          Column({ space: 4 }) {
+            Text('对局设置')
+              .fontSize(this.palette.fsLg)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(FontWeight.Bold)
+              .width('100%')
+            Text('选择对弈模式与规则，AI 对 AI 模式可分别为双方选择模型')
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .width('100%')
+          }
+          .alignItems(HorizontalAlign.Start)
+
+          Scroll() {
+            Column({ space: 10 }) {
+              // 对局模式
+              Column({ space: 8 }) {
+                this.settingLabel('对局模式')
+                Row({ space: 10 }) {
+                  this.modeCard('hvE', '人机', '🤖')
+                  this.modeCard('hvL', '人对AI', '🧠')
+                  this.modeCard('LvL', 'AI对AI', '⚔')
+                }
+                .width('100%')
+              }
+              .width('100%')
+              .padding(12)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(this.palette.radiusLg)
+              .border({ width: 1, color: this.palette.borderSubtle })
+
+              // 执子方
+              if (this.matchMode !== 'LvL') {
+                Column({ space: 8 }) {
+                  this.settingLabel('执子方')
+                  Row({ space: 8 }) {
+                    this.chip('执红', 'red')
+                    this.chip('执黑', 'black')
+                    this.chip('随机', 'random')
+                  }
+                  .width('100%')
+                }
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(this.palette.radiusLg)
+                .border({ width: 1, color: this.palette.borderSubtle })
+              }
+
+              // 悔棋次数
+              Column({ space: 8 }) {
+                this.settingLabel('悔棋次数')
+                Row({ space: 8 }) {
+                  this.chip('0', '0')
+                  this.chip('3', '3')
+                  this.chip('5', '5')
+                  this.chip('不限', 'unlimited')
+                }
+                .width('100%')
+              }
+              .width('100%')
+              .padding(12)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(this.palette.radiusLg)
+              .border({ width: 1, color: this.palette.borderSubtle })
+
+              // 引擎难度
+              if (this.matchMode === 'hvE') {
+                Column({ space: 8 }) {
+                  this.settingLabel('引擎难度')
+                  Row({ space: 8 }) {
+                    this.chip('简单', 'easy')
+                    this.chip('中等', 'medium')
+                    this.chip('困难', 'hard')
+                  }
+                  .width('100%')
+                }
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(this.palette.radiusLg)
+                .border({ width: 1, color: this.palette.borderSubtle })
+              }
+
+              // AI 模型
+              if (this.matchMode === 'hvL') {
+                Column({ space: 8 }) {
+                  this.settingLabel('AI 方模型')
+                  this.modelPicker('AI 方', this.redModelIndex, (idx: number): void => {
+                    this.redModelIndex = idx;
+                    DataRepository.setSetting(AI_MODEL_KEY, this.aiModels[idx].id);
+                  })
+                }
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(this.palette.radiusLg)
+                .border({ width: 1, color: this.palette.borderSubtle })
+              } else if (this.matchMode === 'LvL') {
+                Column({ space: 8 }) {
+                  this.settingLabel('AI 模型')
+                  this.modelPicker('红方模型', this.redModelIndex, (idx: number): void => {
+                    this.redModelIndex = idx;
+                    DataRepository.setSetting(RED_MODEL_KEY, this.aiModels[idx].id);
+                  })
+                  this.modelPicker('黑方模型', this.blackModelIndex, (idx: number): void => {
+                    this.blackModelIndex = idx;
+                    DataRepository.setSetting(BLACK_MODEL_KEY, this.aiModels[idx].id);
+                  })
+                }
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(this.palette.radiusLg)
+                .border({ width: 1, color: this.palette.borderSubtle })
+              }
+            }
+            .width('100%')
+          }
+          .scrollBar(BarState.Off)
+          .constraintSize({ maxHeight: 400 })
+
+          this.startBtn()
         }
         .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.End)
+        .padding({ left: 20, right: 20, top: 8, bottom: Math.max(20, this.navBarHeight) })
+        .backgroundColor(this.palette.bgBase)
+        .borderRadius({ topLeft: 24, topRight: 24 })
+        .shadow({ radius: 24, color: '#33000000', offsetY: -4 })
+        .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.45)')
+      .justifyContent(FlexAlign.End)
     }
   }
 
   @Builder
   settingLabel(text: string) {
     Text(text)
-      .fontSize(this.palette.fsXs)
+      .fontSize(this.palette.fsSm)
       .fontFamily(this.palette.fontSans)
-      .fontColor(this.palette.textTertiary)
-      .margin({ top: 4 })
+      .fontColor(this.palette.textSecondary)
+      .fontWeight(FontWeight.Medium)
+      .width('100%')
   }
 
   @Builder
-  seg(label: string, value: string) {
+  modeCard(mode: string, label: string, icon: string) {
+    Column({ space: 4 }) {
+      Text(icon)
+        .fontSize(22)
+        .fontFamily(this.palette.fontSans)
+      Text(label)
+        .fontSize(this.palette.fsSm)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.matchMode === mode ? this.palette.primary : this.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+      Text(this.modeDesc(mode))
+        .fontSize(this.palette.fsXs)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(this.palette.textTertiary)
+        .maxLines(2)
+        .textAlign(TextAlign.Center)
+      if (this.matchMode === mode) {
+        Text('✓')
+          .fontSize(13)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(Color.White)
+          .fontWeight(FontWeight.Bold)
+          .padding({ left: 9, right: 9, top: 1, bottom: 1 })
+          .borderRadius(9)
+          .backgroundColor(this.palette.primary)
+          .margin({ top: 2 })
+      }
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+    .padding({ top: 12, bottom: 10, left: 4, right: 4 })
+    .borderRadius(12)
+    .border({ width: this.matchMode === mode ? 2 : 1,
+      color: this.matchMode === mode ? this.palette.primary : this.palette.borderDefault })
+    .backgroundColor(this.matchMode === mode ? this.palette.primaryDim : this.palette.bgSurface2)
+    .onClick(() => { this.matchMode = mode as MatchMode; })
+  }
+
+  private modeDesc(mode: string): string {
+    if (mode === 'hvE') return '对战本地引擎';
+    if (mode === 'hvL') return '对战大模型';
+    return '大模型互搏';
+  }
+
+  @Builder
+  chip(label: string, value: string) {
     Text(label)
       .fontSize(this.palette.fsSm)
       .fontFamily(this.palette.fontSans)
       .fontColor(this.segActive(value) ? Color.White : this.palette.textSecondary)
       .fontWeight(this.segActive(value) ? FontWeight.Bold : FontWeight.Normal)
-      .padding({ left: 13, right: 13, top: 8, bottom: 8 })
+      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
       .borderRadius(10)
       .backgroundColor(this.segActive(value) ? this.palette.primary : this.palette.bgSurface2)
-      .shadow(this.segActive(value) ?
-        { radius: 8, color: this.palette.primary + '66', offsetX: 0, offsetY: 3 } :
-        { radius: 0, color: '#00000000', offsetX: 0, offsetY: 0 })
       .onClick(() => { this.segTap(value); })
+  }
+
+  @Builder
+  startBtn() {
+    Row() {
+      Text('🚀')
+        .fontSize(this.palette.fsBase)
+        .fontFamily(this.palette.fontSans)
+      Text('开始对局')
+        .fontSize(this.palette.fsMd)
+        .fontFamily(this.palette.fontSans)
+        .fontColor(Color.White)
+        .fontWeight(FontWeight.Bold)
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding({ top: 14, bottom: 14 })
+    .borderRadius(12)
+    .backgroundColor(this.palette.primary)
+    .shadow({ radius: 12, color: this.palette.primary + '55', offsetX: 0, offsetY: 4 })
+    .onClick(() => { this.onSetupConfirm(); })
   }
 
   private segActive(value: string): boolean {
@@ -1021,23 +1151,28 @@ struct ChineseChessPage {
         .fontFamily(this.palette.fontSans)
         .fontColor(this.palette.textSecondary)
         .layoutWeight(1)
-      Text(this.aiModelNames.length > index ? this.aiModelNames[index] : '未配置')
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.modelsConfigured ? this.palette.textPrimary : this.palette.textTertiary)
-        .padding({ left: 12, right: 12, top: 7, bottom: 7 })
-        .backgroundColor(this.palette.bgSurface2)
-        .borderRadius(9)
-        .border({ width: 1, color: this.palette.borderSubtle })
-        .onClick(() => {
-          if (!this.modelsConfigured || this.aiModels.length === 0) return;
-          const next: number = (index + 1) % this.aiModels.length;
-          onPick(next);
-        })
-      Text('切换')
-        .fontSize(this.palette.fsXs)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+      Row({ space: 6 }) {
+        Text(this.aiModelNames.length > index ? this.aiModelNames[index] : '未配置')
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.modelsConfigured ? this.palette.textPrimary : this.palette.textTertiary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text('›')
+          .fontSize(this.palette.fsSm)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+      }
+      .constraintSize({ maxWidth: '62%' })
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+      .borderRadius(9)
+      .backgroundColor(this.palette.bgSurface2)
+      .border({ width: 1, color: this.palette.borderSubtle })
+      .onClick(() => {
+        if (!this.modelsConfigured || this.aiModels.length === 0) return;
+        const next: number = (index + 1) % this.aiModels.length;
+        onPick(next);
+      })
     }
     .width('100%')
   }
