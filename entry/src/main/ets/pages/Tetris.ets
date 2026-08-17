@@ -88,6 +88,7 @@ export struct TetrisPage {
   @State isGameOver: boolean = false;
   @State isPaused: boolean = false;
   @State clearedRows: number[] = [];
+  @State combo: number = -1;
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
   @State bestScore: number = 0;
@@ -371,7 +372,8 @@ export struct TetrisPage {
 
       const cleared: number = fullRows.length;
       this.lines += cleared;
-      const gained: number = scoreForLines(cleared);
+      this.combo += 1;
+      const gained: number = scoreForLines(cleared) + Math.max(0, this.combo) * 50;
       this.score += gained;
       this.level = Math.floor(this.lines / 10) + 1;
 
@@ -387,6 +389,8 @@ export struct TetrisPage {
 
       // 清除动画标记
       setTimeout(() => { this.clearedRows = []; }, 220);
+    } else {
+      this.combo = -1;
     }
 
     // 允许再次 Hold

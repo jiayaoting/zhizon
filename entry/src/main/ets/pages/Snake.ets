@@ -36,6 +36,7 @@ export struct SnakePage {
   @State snake: Point[] = [];
   @State food: Point = { x: 0, y: 0 };
   @State foodBonus: boolean = false;
+  @State wrapEnabled: boolean = false;
   @State snakeDirection: Direction = Direction.RIGHT;
   @State nextDirection: Direction = Direction.RIGHT;
   @State score: number = 0;
@@ -191,13 +192,18 @@ export struct SnakePage {
       case Direction.RIGHT: newHead.x += 1; break;
     }
 
-    // 碰墙检测
+    // 碰墙检测（穿墙模式开启时从另一侧出现）
     if (newHead.x < 0 || newHead.x >= COLS || newHead.y < 0 || newHead.y >= ROWS) {
-      this.isGameOver = true;
-      this.stopTimer();
-      this.vibrate(80);
-      this.finishGame();
-      return;
+      if (this.wrapEnabled) {
+        newHead.x = (newHead.x + COLS) % COLS;
+        newHead.y = (newHead.y + ROWS) % ROWS;
+      } else {
+        this.isGameOver = true;
+        this.stopTimer();
+        this.vibrate(80);
+        this.finishGame();
+        return;
+      }
     }
 
     // 碰自身检测（不含尾部，因为尾部会移除）
@@ -865,6 +871,22 @@ export struct SnakePage {
         .borderRadius(8)
         .backgroundColor(this.palette.bgSurface2)
         .onClick(() => { this.cycleDifficulty(); })
+        Row() {
+          Text('穿墙模式')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.wrapEnabled })
+            .selectedColor(this.palette.primary)
+            .onChange((v: boolean) => {
+              this.wrapEnabled = v;
+              promptAction.showToast({ message: v ? '已开启穿墙模式' : '已关闭穿墙模式' });
+            })
+        }
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(8)
+        .backgroundColor(this.palette.bgSurface2)
         Row({ space: 12 }) {
           // 继续
           Column({ space: 6 }) {
