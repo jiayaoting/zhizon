@@ -81,6 +81,7 @@ export struct TetrisPage {
   @State board: number[][] = [];
   @State currentPiece: Piece | null = null;
   @State nextType: number = 0;
+  private bag: number[] = [];
   @State score: number = 0;
   @State level: number = 1;
   @State lines: number = 0;
@@ -182,8 +183,21 @@ export struct TetrisPage {
     this.board = b;
   }
 
+  private nextFromBag(): number {
+    if (this.bag.length === 0) {
+      this.bag = [0, 1, 2, 3, 4, 5, 6];
+      for (let i: number = this.bag.length - 1; i > 0; i--) {
+        const j: number = Math.floor(Math.random() * (i + 1));
+        const tmp: number = this.bag[i];
+        this.bag[i] = this.bag[j];
+        this.bag[j] = tmp;
+      }
+    }
+    return this.bag.pop() as number;
+  }
+
   private randomType(): number {
-    return Math.floor(Math.random() * 7);
+    return this.nextFromBag();
   }
 
   private spawnPiece(): void {
