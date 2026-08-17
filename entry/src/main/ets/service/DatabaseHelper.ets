@@ -156,6 +156,20 @@ export class DatabaseHelper {
     }
     // 累计统计表：独立于 ai_call_logs，清空调用记录不影响
     await DatabaseHelper.store.executeSql(SQL_CREATE_AI_TOKEN_STATS);
+    // 旧库升级：为 ai_token_stats 补齐可能缺失的列（新库建表已含，会命中重复列错误并忽略）
+    const tokenStatAlters: string[] = [
+      'ALTER TABLE ai_token_stats ADD COLUMN call_count INTEGER DEFAULT 0',
+      'ALTER TABLE ai_token_stats ADD COLUMN input_tokens INTEGER DEFAULT 0',
+      'ALTER TABLE ai_token_stats ADD COLUMN cached_tokens INTEGER DEFAULT 0',
+      'ALTER TABLE ai_token_stats ADD COLUMN output_tokens INTEGER DEFAULT 0',
+      'ALTER TABLE ai_token_stats ADD COLUMN total_tokens INTEGER DEFAULT 0'
+    ];
+    for (let i: number = 0; i < tokenStatAlters.length; i++) {
+      try {
+        await DatabaseHelper.store.executeSql(tokenStatAlters[i]);
+      } catch (e) {
+      }
+    }
     await DatabaseHelper.initTokenStats();
     if (DatabaseHelper.store.version < DB_VERSION) {
       DatabaseHelper.store.version = DB_VERSION;
