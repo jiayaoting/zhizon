@@ -168,19 +168,23 @@ export struct GamesPage {
     if (!result.success) promptAction.showToast({ message: result.message });
   }
 
+  // 待选择难度的游戏（@Builder 中不允许局部变量声明，用 getter 取值）
+  private pendingGameEntry(): GameEntry {
+    return this.pendingGame as GameEntry;
+  }
+
   @Builder
   difficultyDialog() {
     if (this.pendingGame !== null) {
-      const game: GameEntry = this.pendingGame as GameEntry;
       Stack() {
         Column() {
           Blank()
           Column() {
             Row() {
-              Text(game.icon)
+              Text(this.pendingGameEntry().icon)
                 .fontSize(this.palette.fs2xl)
                 .fontFamily(this.palette.fontSans)
-              Text(game.name)
+              Text(this.pendingGameEntry().name)
                 .fontSize(this.palette.fsLg)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textPrimary)
@@ -227,9 +231,10 @@ export struct GamesPage {
               .width('100%')
               .height(44)
               .borderRadius(12)
-              .backgroundColor(game.color)
+              .backgroundColor(this.pendingGameEntry().color)
               .margin({ top: 12 })
               .onClick(() => {
+                const game: GameEntry = this.pendingGameEntry();
                 this.pendingGame = null;
                 this.openGame(game);
               })
