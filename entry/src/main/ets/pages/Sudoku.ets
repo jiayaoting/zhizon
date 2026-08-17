@@ -34,6 +34,9 @@ export struct SudokuPage {
   @State selectedC: number = -1;
   @State noteMode: boolean = false;
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @State currentLevel: number = 1;
+  @State bestLevel: number = 1;
+  @State timeLimit: number = 0;
   @State gameStarted: boolean = false;
   @State isPaused: boolean = false;
   @State isWin: boolean = false;
@@ -83,13 +86,19 @@ export struct SudokuPage {
     return SUDOKU_SIZE * this.boardCellSize();
   }
 
-  // 每难度挖空数
+  // 每难度基础挖空数
   private holesFor(level: DifficultyLevel): number {
     if (level === DifficultyLevel.VERY_EASY) return 30;
     if (level === DifficultyLevel.EASY) return 40;
     if (level === DifficultyLevel.HARD) return 58;
     if (level === DifficultyLevel.HELL) return 65;
     return 50;
+  }
+
+  // 闯关模式：随关卡增加挖空数
+  private levelHoles(levelNo: number): number {
+    const base: number = this.holesFor(this.difficulty);
+    return Math.min(72, base + (levelNo - 1) * 2);
   }
 
   private vibrate(duration: number): void {
@@ -114,7 +123,7 @@ export struct SudokuPage {
   private generatePuzzle(): void {
     const solution: number[][] = generateSolution();
     this.solution = solution;
-    const target: number = this.holesFor(this.difficulty);
+    const target: number = this.levelHoles(this.currentLevel);
     const given: number[][] = copyBoard(solution);
     const positions: number[][] = [];
     for (let r: number = 0; r < SUDOKU_SIZE; r++) {
@@ -343,6 +352,33 @@ export struct SudokuPage {
     this.bestTime = Number(stored);
   }
 
+  private async saveLevelProgress(): Promise<void> {
+    try {
+      await DataRepository.setSetting('sudoku_currentLevel', this.currentLevel.toString());
+      await DataRepository.setSetting('sudoku_bestLevel', this.bestLevel.toString());
+    } catch (e) {
+    }
+  }
+
+  private async loadLevelProgress(): Promise<void> {
+    try {
+      const current = Number(await DataRepository.getSetting('sudoku_currentLevel', '1'));
+      const best = Number(await DataRepository.getSetting('sudoku_bestLevel', '1'));
+      if (!Number.isNaN(current) && current > 0) this.currentLevel = current;
+      if (!Number.isNaN(best) && best > 0) this.bestLevel = best;
+    } catch (e) {
+    }
+  }
+
+  nextLevel(): void {
+    this.currentLevel += 1;
+    if (this.currentLevel > this.bestLevel) {
+      this.bestLevel = this.currentLevel;
+    }
+    this.saveLevelProgress();
+    this.restartGame();
+  }
+
   // ---- AI 托管 ----
   private async initAiPanel(): Promise<void> {
     this.aiModels = await GameAIService.loadModelOptions();
@@ -515,6 +551,7 @@ export struct SudokuPage {
       }
     }
     this.titleText = `数独 · ${difficultyLabel(this.difficulty)}`;
+    await this.loadLevelProgress();
     await this.loadBest();
     this.generatePuzzle();
     this.startTimer();
@@ -641,6 +678,24 @@ export struct SudokuPage {
   @Builder
   infoPanel() {
     Row({ space: 8 }) {
+      Column({ space: 2 }) {
+        Text('关卡')
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontSans)
+        Text(this.currentLevel.toString())
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.primary)
+          .fontWeight(FontWeight.Bold)
+          .fontFamily(this.palette.fontMono)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+      .padding(8)
+      .backgroundColor(this.palette.bgSurface)
+      .borderRadius(8)
+      .border({ width: 1, color: this.palette.borderSubtle })
+
       Column({ space: 2 }) {
         Text('用时')
           .fontSize(this.palette.fsXs)
@@ -897,14 +952,14 @@ export struct SudokuPage {
             .fontWeight(FontWeight.Bold)
         }
         Row({ space: 10 }) {
-          Button('再玩一局')
+          Button('下一关')
             .fontSize(this.palette.fsBase)
             .fontFamily(this.palette.fontSans)
             .fontColor(Color.White)
             .backgroundColor(this.palette.primary)
             .borderRadius(18)
             .height(36)
-            .onClick(() => { this.restartGame(); })
+            .onClick(() => { this.nextLevel(); })
           Button('历史记录')
             .fontSize(this.palette.fsBase)
             .fontFamily(this.palette.fontSans)

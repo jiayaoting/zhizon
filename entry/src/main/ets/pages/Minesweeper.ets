@@ -20,10 +20,12 @@ class MinesweeperConfig {
   rows: number;
   cols: number;
   mines: number;
-  constructor(rows: number, cols: number, mines: number) {
+  timeLimit: number;
+  constructor(rows: number, cols: number, mines: number, timeLimit: number = 0) {
     this.rows = rows;
     this.cols = cols;
     this.mines = mines;
+    this.timeLimit = timeLimit;
   }
 }
 
@@ -33,6 +35,37 @@ function configFor(level: DifficultyLevel): MinesweeperConfig {
   if (level === DifficultyLevel.MEDIUM) return new MinesweeperConfig(16, 16, 40);
   if (level === DifficultyLevel.HARD) return new MinesweeperConfig(14, 22, 60);
   return new MinesweeperConfig(16, 30, 99);
+}
+
+function levelConfig(level: DifficultyLevel, levelNo: number): MinesweeperConfig {
+  if (level === DifficultyLevel.VERY_EASY) {
+    const rows: number = 8 + Math.min(levelNo - 1, 4);
+    const cols: number = 8 + Math.min(levelNo - 1, 4);
+    const mines: number = 8 + (levelNo - 1);
+    return new MinesweeperConfig(rows, cols, mines, 0);
+  }
+  if (level === DifficultyLevel.EASY) {
+    const rows: number = 9 + Math.min(levelNo - 1, 5);
+    const cols: number = 9 + Math.min(levelNo - 1, 5);
+    const mines: number = 10 + (levelNo - 1) * 2;
+    return new MinesweeperConfig(rows, cols, mines, 0);
+  }
+  if (level === DifficultyLevel.MEDIUM) {
+    const rows: number = 12 + Math.min(levelNo - 1, 4);
+    const cols: number = 12 + Math.min(levelNo - 1, 4);
+    const mines: number = 24 + (levelNo - 1) * 3;
+    return new MinesweeperConfig(rows, cols, mines, Math.max(60, 120 - levelNo * 5));
+  }
+  if (level === DifficultyLevel.HARD) {
+    const rows: number = 14 + Math.min(levelNo - 1, 4);
+    const cols: number = 14 + Math.min(levelNo - 1, 4);
+    const mines: number = 36 + (levelNo - 1) * 4;
+    return new MinesweeperConfig(rows, cols, mines, Math.max(60, 90 - levelNo * 5));
+  }
+  const rows: number = 16 + Math.min(levelNo - 1, 4);
+  const cols: number = 16 + Math.min(levelNo - 1, 4);
+  const mines: number = 50 + (levelNo - 1) * 5;
+  return new MinesweeperConfig(rows, cols, mines, Math.max(60, 60));
 }
 
 // 格子状态：@Observed 使属性变化可被 @ObjectLink 精确观察
@@ -120,6 +153,9 @@ struct MineCellView {
 @Entry
 export struct MinesweeperPage {
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @State currentLevel: number = 1;
+  @State bestLevel: number = 1;
+  @State timeLimit: number = 0;
   @State gameStarted: boolean = false;
   @State isGameOver: boolean = false;
   @State showHelp: boolean = false;
@@ -201,10 +237,11 @@ export struct MinesweeperPage {
 
   // ---- 游戏初始化 ----
   private initBoard(): void {
-    const config: MinesweeperConfig = configFor(this.difficulty);
+    const config: MinesweeperConfig = levelConfig(this.difficulty, this.currentLevel);
     this.rows = config.rows;
     this.cols = config.cols;
     this.mineCount = config.mines;
+    this.timeLimit = config.timeLimit;
     const grid: MineCell[][] = [];
     for (let r: number = 0; r < this.rows; r++) {
       const row: MineCell[] = [];
@@ -362,8 +399,35 @@ export struct MinesweeperPage {
   private saveScore(): void {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
-    DataRepository.addGameScore('Minesweeper', this.score, 1, difficultyLabel(this.difficulty),
+    DataRepository.addGameScore('Minesweeper', this.score, this.currentLevel, difficultyLabel(this.difficulty),
       this.currentAiModelName(), this.playSeconds);
+  }
+
+  private async saveLevelProgress(): Promise<void> {
+    try {
+      await DataRepository.setSetting('minesweeper_currentLevel', this.currentLevel.toString());
+      await DataRepository.setSetting('minesweeper_bestLevel', this.bestLevel.toString());
+    } catch (e) {
+    }
+  }
+
+  private async loadLevelProgress(): Promise<void> {
+    try {
+      const current = Number(await DataRepository.getSetting('minesweeper_currentLevel', '1'));
+      const best = Number(await DataRepository.getSetting('minesweeper_bestLevel', '1'));
+      if (!Number.isNaN(current) && current > 0) this.currentLevel = current;
+      if (!Number.isNaN(best) && best > 0) this.bestLevel = best;
+    } catch (e) {
+    }
+  }
+
+  nextLevel(): void {
+    this.currentLevel += 1;
+    if (this.currentLevel > this.bestLevel) {
+      this.bestLevel = this.currentLevel;
+    }
+    this.saveLevelProgress();
+    this.restartGame();
   }
 
   // ---- 游戏控制 ----
@@ -442,6 +506,9 @@ export struct MinesweeperPage {
       if (order[i] === this.difficulty) { idx = i; break; }
     }
     this.difficulty = order[(idx + 1) % order.length];
+    this.currentLevel = 1;
+    this.bestLevel = 1;
+    this.saveLevelProgress();
     promptAction.showToast({ message: `难度：${difficultyLabel(this.difficulty)}` });
   }
 
@@ -752,6 +819,23 @@ export struct MinesweeperPage {
   infoPanel() {
     Row({ space: 8 }) {
       Column({ space: 2 }) {
+        Text('关卡')
+          .fontSize(this.palette.fsXs)
+          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.palette.fontSans)
+        Text(this.currentLevel.toString())
+          .fontSize(this.palette.fsLg)
+          .fontColor(this.palette.primary)
+          .fontWeight(FontWeight.Bold)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+      .padding(8)
+      .backgroundColor(this.palette.bgSurface)
+      .borderRadius(8)
+      .border({ width: 1, color: this.palette.borderSubtle })
+
+      Column({ space: 2 }) {
         Text('剩余雷')
           .fontSize(this.palette.fsXs)
           .fontColor(this.palette.textTertiary)
@@ -922,7 +1006,7 @@ export struct MinesweeperPage {
         Row({ space: 12 }) {
           Column({ space: 6 }) {
             Row() {
-              Text('↺')
+              Text(this.isWin ? '▶' : '↺')
                 .fontSize(22)
                 .fontColor('#0A0E1A')
                 .fontWeight(FontWeight.Bold)
@@ -932,13 +1016,13 @@ export struct MinesweeperPage {
             .borderRadius(24)
             .backgroundColor(this.palette.primary)
             .justifyContent(FlexAlign.Center)
-            Text('重新开始')
+            Text(this.isWin ? '下一关' : '重试本关')
               .fontSize(this.palette.fsXs)
               .fontColor(this.palette.textSecondary)
               .fontFamily(this.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { this.restartGame(); })
+          .onClick(() => { if (this.isWin) { this.nextLevel(); } else { this.restartGame(); } })
 
           Column({ space: 6 }) {
             Row() {
@@ -1068,7 +1152,7 @@ export struct MinesweeperPage {
   }
 
   // ---- 生命周期 ----
-  aboutToAppear(): void {
+  async aboutToAppear(): Promise<void> {
     const params: GameRouteParams | null = AppNavigator.getParam('pages/Minesweeper') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.MINESWEEPER);
     if (!result.success || result.request === null) {
@@ -1076,6 +1160,7 @@ export struct MinesweeperPage {
       AppNavigator.pop();
       return;
     }
+    await this.loadLevelProgress();
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
