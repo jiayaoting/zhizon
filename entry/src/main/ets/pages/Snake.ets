@@ -291,6 +291,48 @@ export struct SnakePage {
     }
   }
 
+  // AI 安全走一步：优先按当前方向，若会立即碰撞则尝试其他安全方向
+  private aiStep(): void {
+    if (this.isGameOver || this.isPaused) return;
+    const dirs: Direction[] = [this.snakeDirection, Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT];
+    for (const dir of dirs) {
+      if (this.isDirectionSafe(dir)) {
+        if (dir !== this.snakeDirection) {
+          this.changeDirection(dir);
+        }
+        this.moveSnake();
+        return;
+      }
+    }
+    // 无路可走，保持原逻辑
+    this.moveSnake();
+  }
+
+  private isDirectionSafe(dir: Direction): boolean {
+    const head: Point = this.snake[0];
+    let nx: number = head.x;
+    let ny: number = head.y;
+    switch (dir) {
+      case Direction.UP: ny -= 1; break;
+      case Direction.DOWN: ny += 1; break;
+      case Direction.LEFT: nx -= 1; break;
+      case Direction.RIGHT: nx += 1; break;
+    }
+    if (this.wrapEnabled) {
+      nx = (nx + COLS) % COLS;
+      ny = (ny + ROWS) % ROWS;
+    } else if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) {
+      return false;
+    }
+    for (let i: number = 0; i < this.snake.length - 1; i++) {
+      if (this.snake[i].x === nx && this.snake[i].y === ny) return false;
+    }
+    for (const o of this.obstacles) {
+      if (o.x === nx && o.y === ny) return false;
+    }
+    return true;
+  }
+
   // ---- 游戏结束收尾（新纪录/用时/保存） ----
   private finishGame(): void {
     this.newRecord = this.score > this.bestScore;
@@ -571,7 +613,7 @@ export struct SnakePage {
         else if (action.command === 'DOWN') this.changeDirection(Direction.DOWN);
         else if (action.command === 'LEFT') this.changeDirection(Direction.LEFT);
         else if (action.command === 'RIGHT') this.changeDirection(Direction.RIGHT);
-        this.moveSnake();
+        this.aiStep();
         if (this.isGameOver || this.isPaused) break;
         // 吃到食物（食物位置变化）：本序列结束，重新规划
         if (this.food.x !== foodBefore.x || this.food.y !== foodBefore.y) break;
@@ -584,7 +626,7 @@ export struct SnakePage {
       }
       if (this.isGameOver || this.isPaused) break;
       // 展示窗口结束后手动走一步，保持游戏节奏
-      this.moveSnake();
+      this.aiStep();
       if (this.isGameOver) break;
     }
     this.aiLoopActive = false;
