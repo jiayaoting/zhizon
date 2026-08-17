@@ -37,6 +37,8 @@ export struct SnakePage {
   @State food: Point = { x: 0, y: 0 };
   @State foodBonus: boolean = false;
   @State wrapEnabled: boolean = false;
+  @State obstacleEnabled: boolean = false;
+  @State obstacles: Point[] = [];
   @State snakeDirection: Direction = Direction.RIGHT;
   @State nextDirection: Direction = Direction.RIGHT;
   @State score: number = 0;
@@ -147,7 +149,34 @@ export struct SnakePage {
     this.level = 1;
     this.isGameOver = false;
     this.isPaused = false;
+    this.obstacles = [];
+    if (this.obstacleEnabled) {
+      this.generateObstacles();
+    }
     this.generateFood();
+  }
+
+  private generateObstacles(): void {
+    const count: number = Math.max(3, Math.floor(COLS * ROWS * 0.05));
+    let placed: number = 0;
+    let attempts: number = 0;
+    while (placed < count && attempts < 1000) {
+      attempts += 1;
+      const x: number = Math.floor(Math.random() * COLS);
+      const y: number = Math.floor(Math.random() * ROWS);
+      let conflict: boolean = false;
+      for (const s of this.snake) {
+        if (s.x === x && s.y === y) { conflict = true; break; }
+      }
+      if (conflict) continue;
+      for (const o of this.obstacles) {
+        if (o.x === x && o.y === y) { conflict = true; break; }
+      }
+      if (!conflict) {
+        this.obstacles.push({ x: x, y: y });
+        placed += 1;
+      }
+    }
   }
 
   private generateFood(): void {
@@ -160,6 +189,9 @@ export struct SnakePage {
             occupied = true;
             break;
           }
+        }
+        for (const o of this.obstacles) {
+          if (o.x === c && o.y === r) { occupied = true; break; }
         }
         if (!occupied) available.push({ x: c, y: r });
       }
@@ -209,6 +241,17 @@ export struct SnakePage {
     // 碰自身检测（不含尾部，因为尾部会移除）
     for (let i: number = 0; i < this.snake.length - 1; i++) {
       if (this.snake[i].x === newHead.x && this.snake[i].y === newHead.y) {
+        this.isGameOver = true;
+        this.stopTimer();
+        this.vibrate(80);
+        this.finishGame();
+        return;
+      }
+    }
+
+    // 碰障碍物检测
+    for (const o of this.obstacles) {
+      if (o.x === newHead.x && o.y === newHead.y) {
         this.isGameOver = true;
         this.stopTimer();
         this.vibrate(80);
@@ -596,6 +639,10 @@ export struct SnakePage {
       // 食物：金色为加分食物
       return this.foodBonus ? '#FBBF24' : this.palette.danger;
     }
+    if (cell === 4) {
+      // 障碍物
+      return this.palette.textTertiary;
+    }
     return this.palette.bgSurface2;
   }
 
@@ -607,6 +654,13 @@ export struct SnakePage {
         row.push(0);
       }
       grid.push(row);
+    }
+
+    // 障碍物
+    for (const o of this.obstacles) {
+      if (o.y >= 0 && o.y < ROWS && o.x >= 0 && o.x < COLS) {
+        grid[o.y][o.x] = 4;
+      }
     }
 
     // 食物
@@ -882,6 +936,23 @@ export struct SnakePage {
             .onChange((v: boolean) => {
               this.wrapEnabled = v;
               promptAction.showToast({ message: v ? '已开启穿墙模式' : '已关闭穿墙模式' });
+            })
+        }
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(8)
+        .backgroundColor(this.palette.bgSurface2)
+        Row() {
+          Text('障碍物模式')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.obstacleEnabled })
+            .selectedColor(this.palette.primary)
+            .onChange((v: boolean) => {
+              this.obstacleEnabled = v;
+              promptAction.showToast({ message: v ? '已开启障碍物模式' : '已关闭障碍物模式' });
+              this.restartGame();
             })
         }
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
