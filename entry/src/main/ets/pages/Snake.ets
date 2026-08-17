@@ -1,5 +1,6 @@
 // 智子 - 贪吃蛇
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
@@ -29,8 +30,8 @@ enum Direction {
   RIGHT
 }
 
-@Entry
 @Component
+@Entry
 export struct SnakePage {
   @State snake: Point[] = [];
   @State food: Point = { x: 0, y: 0 };
@@ -819,7 +820,7 @@ export struct SnakePage {
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -923,7 +924,7 @@ export struct SnakePage {
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -965,7 +966,7 @@ export struct SnakePage {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('Snake') });
+         AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('Snake'));
       })
 
       // 暂停
@@ -1000,11 +1001,11 @@ export struct SnakePage {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const params: GameRouteParams | null = AppNavigator.getParam('pages/Snake') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.SNAKE);
     if (!result.success || result.request === null) {
       promptAction.showToast({ message: result.message });
-      router.back();
+      AppNavigator.pop();
       return;
     }
     this.loadBestScore();

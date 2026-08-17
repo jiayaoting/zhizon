@@ -1,5 +1,6 @@
 // 智子 - 数独
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
@@ -25,8 +26,8 @@ interface SudokuCell extends SudokuCellInfo {
   notes: number[];   // 笔记候选数
   conflict: boolean; // 冲突标记
 }
-@Entry
 @Component
+@Entry
 export struct SudokuPage {
   @State cells: SudokuCell[][] = [];
   @State selectedR: number = -1;
@@ -501,15 +502,12 @@ export struct SudokuPage {
   }
 
   private openHistory(): void {
-    router.pushUrl({
-      url: 'pages/GameHistory',
-      params: new GameHistoryRouteParams(GameId.SUDOKU)
-    });
+    AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams(GameId.SUDOKU));
   }
 
   // ---- 生命周期 ----
   async aboutToAppear(): Promise<void> {
-    const params = router.getParams() as GameRouteParams | null;
+    const params = AppNavigator.getParam('pages/Sudoku') as GameRouteParams | null;
     if (params !== undefined && params !== null) {
       const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.SUDOKU);
       if (result.success && result.request !== null) {

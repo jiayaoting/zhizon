@@ -1,5 +1,6 @@
 // 智子 - AI 对话页
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { http } from '@kit.NetworkKit';
 import { webview } from '@kit.ArkWeb';
@@ -556,7 +557,7 @@ export struct ChatTab {
   }
 
   private openConfig(): void {
-    router.pushUrl({ url: 'pages/ChatConfig' });
+    AppNavigator.push('pages/ChatConfig');
   }
 
   private async clearChat(): Promise<void> {

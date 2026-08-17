@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { AppNavigator } from './AppNavigator';
 import { PageKey } from './Navigation';
 
 export enum DifficultyLevel {
@@ -174,10 +174,15 @@ export class GameLaunchFacade {
   }
 
   static parse(params: GameRouteParams | null, expectedGameId: GameId): GameLaunchResult {
-    const gameId: GameId | null = gameIdFromString(params === null ? '' : params.gameId.trim());
-    const difficulty: DifficultyLevel | null = difficultyFromString(params === null ? '' : params.difficulty.trim());
-    const sourcePage: PageKey | null = pageFromString(params === null ? '' : params.sourcePage.trim());
-    const launchVersion: number = Number(params === null ? '' : params.launchVersion);
+    if (params === null || params === undefined || params.gameId === undefined ||
+      params.difficulty === undefined || params.sourcePage === undefined || params.launchVersion === undefined) {
+      return new GameLaunchResult(false, null, GameLaunchFailureCode.INVALID_GAME_ARGUMENT,
+        '游戏启动参数无效，已返回游戏中心');
+    }
+    const gameId: GameId | null = gameIdFromString(params.gameId.trim());
+    const difficulty: DifficultyLevel | null = difficultyFromString(params.difficulty.trim());
+    const sourcePage: PageKey | null = pageFromString(params.sourcePage.trim());
+    const launchVersion: number = Number(params.launchVersion);
     if (gameId === null || difficulty === null || sourcePage === null) {
       return new GameLaunchResult(false, null, GameLaunchFailureCode.INVALID_GAME_ARGUMENT,
         '游戏启动参数无效，已返回游戏中心');
@@ -200,7 +205,7 @@ export class GameLaunchFacade {
         '游戏启动参数无效，已保留当前页面');
     }
     try {
-      await router.pushUrl({ url: registration.routeUrl, params: new GameRouteParams(request) });
+      AppNavigator.push(registration.routeUrl, new GameRouteParams(request));
       return validation;
     } catch (e) {
       return new GameLaunchResult(false, null, GameLaunchFailureCode.GAME_ROUTE_UNAVAILABLE,

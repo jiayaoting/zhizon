@@ -1,17 +1,16 @@
 // 智子 - 锁屏覆盖层（主密码 + 生物识别解锁）
-import { promptAction } from '@kit.ArkUI';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { SecurityService } from '../service/SecurityService';
 import { BiometricHelper } from '../service/BiometricHelper';
 
-@Component
+@ComponentV2
 export struct LockOverlay {
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('isSm') isSm: boolean = false;
-  @State passwordInput: string = '';
-  @State errorText: string = '';
-  @State authenticating: boolean = false;
-  onUnlocked: () => void = () => {};
+      @Local passwordInput: string = '';
+  @Local errorText: string = '';
+  @Local authenticating: boolean = false;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Event onUnlocked: () => void = () => {};
 
   private async tryUnlock(): Promise<void> {
     const pwd: string = this.passwordInput.trim();
@@ -62,46 +61,46 @@ export struct LockOverlay {
 
         Text('🔒')
           .fontSize(56)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
 
         Text('智子已锁定')
-          .fontSize(this.palette.fsXl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsXl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
 
         Text('请输入主密码解锁')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
 
         TextInput({ text: this.passwordInput, placeholder: '主密码' })
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
-          .placeholderColor(this.palette.textTertiary)
-          .backgroundColor(this.palette.bgSurface)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .placeholderColor(this.themeState.palette.textTertiary)
+          .backgroundColor(this.themeState.palette.bgSurface)
           .borderRadius(10)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .border({ width: 1, color: this.themeState.palette.borderSubtle })
           .height(46)
           .type(InputType.Password)
-          .width(this.isSm ? '80%' : '60%')
+          .width(this.themeState.isSm ? '80%' : '60%')
           .onChange((value: string) => { this.passwordInput = value; })
           .onSubmit(() => { this.tryUnlock(); })
 
         if (this.errorText.length > 0) {
           Text(this.errorText)
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.danger)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.danger)
         }
 
         Button(this.authenticating ? '解锁中…' : '解锁')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
           .height(42)
-          .width(this.isSm ? '80%' : '60%')
-          .backgroundColor(this.palette.primary)
+          .width(this.themeState.isSm ? '80%' : '60%')
+          .backgroundColor(this.themeState.palette.primary)
           .fontColor('#FFFFFF')
           .borderRadius(10)
           .enabled(!this.authenticating)
@@ -110,17 +109,17 @@ export struct LockOverlay {
         Row({ space: 6 }) {
           Text('🔐')
             .fontSize(14)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
           Text('生物识别解锁')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.primary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
             .fontWeight(FontWeight.Medium)
         }
         .padding({ left: 18, right: 18, top: 10, bottom: 10 })
         .borderRadius(10)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 1, color: this.themeState.palette.borderSubtle })
         .onClick(() => { this.tryBiometric(); })
 
         Blank()
@@ -130,6 +129,6 @@ export struct LockOverlay {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

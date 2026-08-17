@@ -1,5 +1,6 @@
 // 智子 - 扫雷（重做版：@Observed + @ObjectLink 标准状态管理架构）
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
@@ -115,8 +116,8 @@ struct MineCellView {
   }
 }
 
-@Entry
 @Component
+@Entry
 export struct MinesweeperPage {
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
@@ -856,7 +857,7 @@ export struct MinesweeperPage {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('Minesweeper') });
+         AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('Minesweeper'));
       })
 
       Row() {
@@ -956,7 +957,7 @@ export struct MinesweeperPage {
               .fontFamily(this.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -1053,7 +1054,7 @@ export struct MinesweeperPage {
               .fontFamily(this.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -1068,11 +1069,11 @@ export struct MinesweeperPage {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const params: GameRouteParams | null = AppNavigator.getParam('pages/Minesweeper') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.MINESWEEPER);
     if (!result.success || result.request === null) {
       promptAction.showToast({ message: result.message });
-      router.back();
+      AppNavigator.pop();
       return;
     }
     this.loadBestScore();

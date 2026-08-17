@@ -1,5 +1,6 @@
 // 智子 - 俄罗斯方块
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
@@ -74,8 +75,8 @@ interface Piece {
   y: number;
 }
 
-@Entry
 @Component
+@Entry
 export struct TetrisPage {
   @State board: number[][] = [];
   @State currentPiece: Piece | null = null;
@@ -967,7 +968,7 @@ export struct TetrisPage {
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -1071,7 +1072,7 @@ export struct TetrisPage {
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -1130,7 +1131,7 @@ export struct TetrisPage {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('Tetris') });
+         AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('Tetris'));
       })
 
       // 暂停/继续
@@ -1165,11 +1166,11 @@ export struct TetrisPage {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const params: GameRouteParams | null = AppNavigator.getParam('pages/Tetris') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.TETRIS);
     if (!result.success || result.request === null) {
       promptAction.showToast({ message: result.message });
-      router.back();
+      AppNavigator.pop();
       return;
     }
     this.loadBestScore();

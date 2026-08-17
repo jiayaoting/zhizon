@@ -1,5 +1,6 @@
 // 智子 - 中国象棋（人机 / 人对AI / AI对AI）
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { DifficultyLevel, GameId, GameLaunchFacade, GameLaunchResult, GameRouteParams } from '../common/Difficulty';
@@ -33,9 +34,9 @@ class BoardSnapshot {
   }
 }
 
-@Entry
 @Component
-struct ChineseChessPage {
+@Entry
+export struct ChineseChessPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
@@ -213,10 +214,10 @@ struct ChineseChessPage {
 
   // ---- 启动/初始化 ----
   aboutToAppear(): void {
-    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const params: GameRouteParams | null = AppNavigator.getParam('pages/ChineseChess') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.CHINESE_CHESS);
     if (!result.success || result.request === null) {
-      router.back();
+      AppNavigator.pop();
       return;
     }
     this.difficulty = result.request.difficulty;
@@ -1134,7 +1135,7 @@ struct ChineseChessPage {
           () => { this.suggestMove(); })
         this.actionBtn('🏆', '战绩', this.palette.bgSurface2, this.palette.textPrimary,
           () => {
-            router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('ChineseChess') });
+            AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('ChineseChess'));
           })
         this.actionBtn('✕', '结束', this.palette.danger, Color.White,
           () => { this.stopGame(); this.setupOpen = true; })

@@ -1,9 +1,11 @@
 // 智子 - 响应式多主题系统（沉浸光感版）
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { AppStorageV2 } from '@kit.ArkUI';
 import { DataRepository } from '../service/DataRepository';
 import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
 import { PreferenceSnapshot, PreferencePersistenceResult } from '../model/GovernanceModels';
 import { ThemeMode, ThemePreference, GlobalBackgroundPreference } from './ThemeContracts';
+import { ThemeState } from './ThemeState';
 
 export { ThemeMode, ThemePreference, GlobalBackgroundPreference } from './ThemeContracts';
 
@@ -400,6 +402,7 @@ export class ThemeManager {
   private fontFamily: string = 'HarmonyOS Sans';
   private context: Context | null = null;
   private initialized: boolean = false;
+  private themeState: ThemeState | null = null;
   private themeOperationVersion: number = 0;
   private lastSuccessfulThemeVersion: number = 0;
   private lastSuccessfulTheme: EffectiveThemeState = new EffectiveThemeState(true, ThemeMode.DARK, ThemeMode.DARK);
@@ -455,17 +458,19 @@ export class ThemeManager {
       DataRepository.initializePreferenceSnapshot(this.createPreferenceSnapshot(0));
 
       this.initialized = true;
+      this.themeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
       hilog.info(DOMAIN, 'Theme', '主题管理器初始化完成: color=%{public}s dark=%{public}s followSys=%{public}s glass=%{public}s',
         this.currentColorTheme, this.getIsDark() ? 'true' : 'false', this.followSystem ? 'true' : 'false',
         this.glassEffectEnabled ? 'true' : 'false');
 
-      // 首次写入 AppStorage
+      // 首次写入 AppStorage 与 AppStorageV2
       this.applyTheme();
       this.publishInitialBackground();
     } catch (e) {
       hilog.error(DOMAIN, 'Theme', '主题读取失败 reason=%{public}s fallback=%{public}s',
         PreferenceFailureReason.PERSISTENCE_FAILED, 'true');
       this.initialized = true;
+      this.themeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
       this.applyTheme(); // 使用默认值
       this.publishInitialBackground();
     }
@@ -557,7 +562,7 @@ export class ThemeManager {
     return base; // standard
   }
 
-  // 应用主题到 AppStorage
+  // 应用主题到 AppStorage 与 AppStorageV2
   private applyTheme(): void {
     const raw = buildPalette(this.currentColorTheme, this.effectiveMode === ThemeMode.DARK);
     applyFontPreferences(raw, this.fontSizeScale, this.fontFamily);
@@ -570,12 +575,26 @@ export class ThemeManager {
     AppStorage.setOrCreate('globalBackgroundUri', this.backgroundPreference.globalUri);
     AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundPreference.visibleStrength);
     AppStorage.setOrCreate('glassEffectEnabled', this.glassEffectEnabled);
+    if (this.themeState !== null) {
+      this.themeState.palette = raw;
+      this.themeState.isDark = raw.isDark;
+      this.themeState.glassEnabled = this.glassEffectEnabled;
+      this.themeState.globalBackgroundUri = this.backgroundPreference.globalUri;
+      this.themeState.backgroundVisibleStrength = this.backgroundPreference.visibleStrength;
+      this.themeState.followSystemDark = this.followSystem;
+      this.themeState.colorThemeId = this.currentColorTheme;
+    }
   }
 
   private publishInitialBackground(): void {
     AppStorage.setOrCreate('backgroundCandidateUri', '');
     AppStorage.setOrCreate('backgroundDisplayState', this.backgroundPreference.globalUri.length > 0 ?
       BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
+    if (this.themeState !== null) {
+      this.themeState.backgroundCandidateUri = '';
+      this.themeState.backgroundDisplayState = this.backgroundPreference.globalUri.length > 0 ?
+        BackgroundDisplayState.READY : BackgroundDisplayState.INVALID;
+    }
   }
 
   getThemeState(): EffectiveThemeState {
@@ -678,8 +697,8 @@ export class ThemeManager {
       queued = this.executeMutation(mutation, operationVersion);
     } else {
       queued = this.mutationQueue.then(
-        this.continueMutation.bind(this, mutation, operationVersion),
-        this.continueMutationAfterFailure.bind(this, mutation, operationVersion));
+        (): Promise<PreferenceMutationResult> => this.continueMutation(mutation, operationVersion),
+        (): Promise<PreferenceMutationResult> => this.continueMutationAfterFailure(mutation, operationVersion));
     }
     this.mutationQueue = queued;
     return await queued;

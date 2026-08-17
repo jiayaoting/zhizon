@@ -1,20 +1,18 @@
 // 智子 - 通用组件：顶栏（沉浸光感版）
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { GlassStyle, GlassLevel } from './GlassEffect';
-import { router } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 
-@Component
+@ComponentV2
 export struct TopBar {
-  @Prop title: string;
-  @Prop subtitle: string = '';
-  @Prop showBack: boolean = false;
-  // 自定义返回回调：嵌入子页（非路由压栈）时，由宿主提供返回逻辑；缺省时回退到 router.back()
-  onBackTap: (() => void) | undefined = undefined;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @BuilderParam actions: () => void = this.emptyActions;
+  @Param title: string = '';
+  @Param subtitle: string = '';
+  @Param showBack: boolean = false;
+  // 自定义返回回调：嵌入子页（非路由压栈）时，由宿主提供返回逻辑；缺省时回退到 AppNavigator.pop()
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Event onBackTap: () => void = () => { AppNavigator.pop(); };
+          @BuilderParam actions: () => void = this.emptyActions;
 
   @Builder emptyActions() {}
 
@@ -24,38 +22,32 @@ export struct TopBar {
         Row() {
           Text('‹')
             .fontSize(22)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textSecondary)
             .fontWeight(FontWeight.Bold)
         }
         .width(32)
         .height(32)
         .borderRadius(8)
-        .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          if (this.onBackTap !== undefined) {
-            this.onBackTap();
-          } else {
-            router.back();
-          }
-        })
+        .onClick(() => { this.onBackTap(); })
       }
 
       Column() {
         Text(this.title)
-          .fontSize(this.palette.fsXl)
-          .fontColor(this.palette.textPrimary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXl)
+          .fontColor(this.themeState.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
           .fontWeight(FontWeight.Bold)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (this.subtitle) {
+        if (this.subtitle.length > 0) {
           Text(this.subtitle)
-            .fontSize(this.palette.fsXs)
-            .fontColor(this.palette.textTertiary)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontColor(this.themeState.palette.textTertiary)
+            .fontFamily(this.themeState.palette.fontSans)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .margin({ top: 2 })
@@ -67,9 +59,9 @@ export struct TopBar {
       this.actions()
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: this.statusBarHeight + 16, bottom: 16 })
+    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: this.themeState.statusBarHeight + 16, bottom: 16 })
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
-    .border({ width: { bottom: 1 }, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
+    .border({ width: { bottom: 1 }, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
   }
 }

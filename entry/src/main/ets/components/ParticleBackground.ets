@@ -1,9 +1,10 @@
 // 智子 - 星尘粒子背景（基于 HarmonyOS Particle 粒子动画组件）
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 
-@Component
+@ComponentV2
 export struct ParticleBackground {
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   build() {
     Stack() {
@@ -24,7 +25,7 @@ export struct ParticleBackground {
               size: ['100%', '100%']
             },
             color: {
-              range: [this.palette.primary, this.palette.purple],
+              range: [this.themeState.palette.primary, this.themeState.palette.purple],
               distributionType: DistributionType.UNIFORM
             },
             opacity: {

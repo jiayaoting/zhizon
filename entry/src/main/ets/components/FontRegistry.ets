@@ -13,7 +13,7 @@
 //   ZCOOL KuaiLe     - The ZCOOL KuaiLe Project Authors（中文字体）
 import { font } from '@kit.ArkUI';
 
-@Component
+@ComponentV2
 export struct FontRegistry {
   // 在 UI 上下文中注册 rawfile 内打包的开源字体
   aboutToAppear(): void {

@@ -1,19 +1,17 @@
-import { BackgroundDisplayState, ThemeManager, ThemePalette, defaultLightPalette } from '../common/Theme';
+import { BackgroundDisplayState, ThemeManager } from '../common/Theme';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 
-@Component
+@ComponentV2
 export struct GlobalBackgroundLayer {
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('globalBackgroundUri') globalUri: string = '';
-  @StorageLink('backgroundCandidateUri') candidateUri: string = '';
-  @StorageLink('backgroundVisibleStrength') visibleStrength: number = 50;
-  @StorageLink('backgroundDisplayState') displayState: BackgroundDisplayState = BackgroundDisplayState.READY;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   private displayUri(): string {
-    if (this.displayState === BackgroundDisplayState.LOADING && this.candidateUri.length > 0) {
-      return this.candidateUri;
+    if (this.themeState.backgroundDisplayState === BackgroundDisplayState.LOADING && this.themeState.backgroundCandidateUri.length > 0) {
+      return this.themeState.backgroundCandidateUri;
     }
-    if (this.displayState === BackgroundDisplayState.INVALID) return '';
-    return this.globalUri;
+    if (this.themeState.backgroundDisplayState === BackgroundDisplayState.INVALID) return '';
+    return this.themeState.globalBackgroundUri;
   }
 
   build() {
@@ -21,13 +19,13 @@ export struct GlobalBackgroundLayer {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.palette.bgBase)
-      if (this.displayUri().length > 0 && this.visibleStrength > 0) {
+        .backgroundColor(this.themeState.palette.bgBase)
+      if (this.displayUri().length > 0 && this.themeState.backgroundVisibleStrength > 0) {
         Image(this.displayUri())
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Cover)
-          .opacity(this.visibleStrength / 100)
+          .opacity(this.themeState.backgroundVisibleStrength / 100)
           .onComplete(() => {
             ThemeManager.getInstance().reportBackgroundReady(this.displayUri());
           })
@@ -38,7 +36,7 @@ export struct GlobalBackgroundLayer {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.palette.isDark ? 'rgba(10, 14, 26, 0.45)' : 'rgba(245, 246, 250, 0.45)')
+        .backgroundColor(this.themeState.palette.isDark ? 'rgba(10, 14, 26, 0.45)' : 'rgba(245, 246, 250, 0.45)')
     }
     .width('100%')
     .height('100%')

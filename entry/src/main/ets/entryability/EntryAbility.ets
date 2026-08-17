@@ -1,5 +1,6 @@
 import { UIAbility, AbilityConstant, Want, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
-import { window } from '@kit.ArkUI';
+import { window, AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DatabaseHelper } from '../service/DatabaseHelper';
 import { CryptoHelper } from '../common/CryptoHelper';
@@ -18,6 +19,12 @@ export enum StartupState {
 export default class EntryAbility extends UIAbility {
   private initialized: boolean = false;
   private mainWindow: window.Window | null = null;
+
+  private setStartupState(state: StartupState): void {
+    AppStorage.setOrCreate('startupState', state);
+    const themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+    themeState.startupState = state;
+  }
   private windowEnvironmentProvider: WindowEnvironmentProvider = new WindowEnvironmentProvider();
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -53,7 +60,7 @@ export default class EntryAbility extends UIAbility {
 
   private async prepareWindowStage(windowStage: window.WindowStage): Promise<void> {
     try {
-      AppStorage.setOrCreate('startupState', StartupState.INITIALIZING);
+      this.setStartupState(StartupState.INITIALIZING);
       const mainWindow: window.Window = await windowStage.getMainWindow();
       this.mainWindow = mainWindow;
       this.windowEnvironmentProvider.attach(mainWindow);
@@ -62,7 +69,7 @@ export default class EntryAbility extends UIAbility {
       if (!initialized) return;
       windowStage.loadContent('pages/AppShell', (error) => {
         if (error.code) {
-          AppStorage.setOrCreate('startupState', StartupState.FAILED);
+          this.setStartupState(StartupState.FAILED);
           hilog.error(DOMAIN, 'EntryAbility',
             'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
             'startup-page-load', 'STARTUP', 'PAGE_LOAD_FAILED', 'degraded');
@@ -73,7 +80,7 @@ export default class EntryAbility extends UIAbility {
         this.updateStatusBarColor();
       });
     } catch (error) {
-      AppStorage.setOrCreate('startupState', StartupState.FAILED);
+      this.setStartupState(StartupState.FAILED);
       hilog.error(DOMAIN, 'EntryAbility',
         'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
         'window-stage-create', 'STARTUP', 'WINDOW_STAGE_CREATE_FAILED', 'degraded');
@@ -82,11 +89,11 @@ export default class EntryAbility extends UIAbility {
 
   private async initializeApplication(): Promise<boolean> {
     if (this.initialized) {
-      AppStorage.setOrCreate('startupState', StartupState.READY);
+      this.setStartupState(StartupState.READY);
       return true;
     }
     this.initialized = true;
-    AppStorage.setOrCreate('startupState', StartupState.INITIALIZING);
+    this.setStartupState(StartupState.INITIALIZING);
     const sysColorMode: ConfigurationConstant.ColorMode | undefined = this.context.config.colorMode;
     let sysIsDark: boolean = true;
     if (sysColorMode === ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT) {
@@ -102,12 +109,12 @@ export default class EntryAbility extends UIAbility {
       hilog.info(DOMAIN, 'EntryAbility', '数据库初始化成功');
       await ThemeManager.getInstance().init(this.context, sysIsDark);
       hilog.info(DOMAIN, 'EntryAbility', '主题系统初始化成功');
-      AppStorage.setOrCreate('startupState', StartupState.READY);
+      this.setStartupState(StartupState.READY);
       this.updateStatusBarColor();
       return true;
     } catch (error) {
       this.initialized = false;
-      AppStorage.setOrCreate('startupState', StartupState.FAILED);
+      this.setStartupState(StartupState.FAILED);
       hilog.error(DOMAIN, 'EntryAbility',
         'operation=%{public}s category=%{public}s code=%{public}s rollback=%{public}s',
         'application-initialize', 'STARTUP', 'INITIALIZATION_FAILED', 'degraded');

@@ -2,6 +2,9 @@
 import { userAuth } from '@kit.UserAuthenticationKit';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+const BIOMETRIC_DOMAIN: number = 0x9201;
 
 const FINGERPRINT: userAuth.UserAuthType = userAuth.UserAuthType.FINGERPRINT;
 const FACE: userAuth.UserAuthType = userAuth.UserAuthType.FACE;
@@ -60,7 +63,8 @@ export class BiometricHelper {
     } catch (e) {
       const err: BusinessError = e as BusinessError;
       resolve(false);
-      console.error('BiometricHelper start failed: ' + err.code + ' ' + err.message);
+      hilog.error(BIOMETRIC_DOMAIN, 'BiometricHelper', 'start failed code=%{public}d msg=%{public}s',
+        err.code, err.message);
     }
   }
 }

@@ -3,6 +3,8 @@
 import { DataRepository } from './DataRepository';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { util } from '@kit.ArkTS';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 
 const KEY_PASSWORD_HASH = 'securityPasswordHash';
 const KEY_BIOMETRIC = 'biometricUnlock';
@@ -27,6 +29,9 @@ export class SecurityService {
   }
 
   static async setPassword(password: string): Promise<void> {
+    if (password.length === 0) {
+      throw new Error('EMPTY_PASSWORD');
+    }
     const saltB64: string = await SecurityService.randomSalt();
     const hashB64: string = await SecurityService.hashPassword(password, saltB64);
     await DataRepository.setSetting(KEY_PASSWORD_HASH, saltB64 + ':' + hashB64);
@@ -81,17 +86,21 @@ export class SecurityService {
 
   static lock(): void {
     AppStorage.setOrCreate('appLocked', true);
+    const themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+    themeState.appLocked = true;
   }
 
   static unlock(): void {
     AppStorage.setOrCreate('appLocked', false);
+    const themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+    themeState.appLocked = false;
   }
 
   // 应用进入后台：记录时间；"立即锁定"时直接锁定
   static async onBackground(): Promise<void> {
     AppStorage.setOrCreate('appBackgroundTime', Date.now());
-    if (await SecurityService.hasPassword() &&
-      await SecurityService.getAutoLockValue() === AUTO_LOCK_IMMEDIATE) {
+    if ((await SecurityService.hasPassword()) &&
+      (await SecurityService.getAutoLockValue()) === AUTO_LOCK_IMMEDIATE) {
       SecurityService.lock();
     }
   }
@@ -111,8 +120,7 @@ export class SecurityService {
       SecurityService.lock();
       return;
     }
-    const bgTimeObj: Object | undefined = AppStorage.get<number>('appBackgroundTime');
-    const bgTime: number = bgTimeObj === undefined ? 0 : bgTimeObj as number;
+    const bgTime: number = AppStorage.get<number>('appBackgroundTime') ?? 0;
     if (bgTime > 0 && Date.now() - bgTime >= value * 60000) {
       SecurityService.lock();
     }

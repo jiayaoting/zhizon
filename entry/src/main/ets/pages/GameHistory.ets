@@ -1,8 +1,9 @@
 // 智子 - 游戏历史战绩
-import { router } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { DataRepository } from '../service/DataRepository';
 import { ScoreEntry } from '../service/DatabaseHelper';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { GameHistoryRouteParams } from '../common/Navigation';
 
@@ -68,19 +69,18 @@ function medalIcon(rank: number): string {
   return (rank + 1).toString();
 }
 
+@ComponentV2
 @Entry
-@Component
 export struct GameHistoryPage {
-  @State gameKey: string = '2048';
-  @State scores: ScoreEntry[] = [];
-  @State loading: boolean = true;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local gameKey: string = '2048';
+  @Local scores: ScoreEntry[] = [];
+  @Local loading: boolean = true;
+    
   private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU', 'ChineseChess'];
 
   aboutToAppear(): void {
-    const params: GameHistoryRouteParams | null = router.getParams() as GameHistoryRouteParams | null;
+    const params: GameHistoryRouteParams | null = AppNavigator.getParam('pages/GameHistory') as GameHistoryRouteParams | null;
     if (params !== null && params !== undefined && isGameHistoryKey(params.game)) {
       this.gameKey = params.game;
     }
@@ -112,20 +112,20 @@ export struct GameHistoryPage {
           ForEach(this.gameKeys, (key: string) => {
             Row({ space: 4 }) {
               Text(gameIcon(key))
-                .fontSize(this.palette.fsMd)
-                .fontFamily(this.palette.fontSans)
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
               Text(gameName(key))
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.gameKey === key ? this.palette.textPrimary : this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.gameKey === key ? this.themeState.palette.textPrimary : this.themeState.palette.textTertiary)
                 .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
             }
             .height(36)
             .padding({ left: 12, right: 12 })
             .justifyContent(FlexAlign.Center)
             .borderRadius(8)
-            .backgroundColor(this.gameKey === key ? this.palette.primary + '20' : Color.Transparent)
-            .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? this.palette.primary : Color.Transparent })
+            .backgroundColor(this.gameKey === key ? this.themeState.palette.primary + '20' : Color.Transparent)
+            .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? this.themeState.palette.primary : Color.Transparent })
             .onClick(() => {
               this.gameKey = key;
               this.loadScores();
@@ -143,15 +143,15 @@ export struct GameHistoryPage {
         Column({ space: 8 }) {
           Text('📋')
             .fontSize(48)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
           Text('暂无战绩')
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
           Text('快去玩一局吧！')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .layoutWeight(1)
         .width('100%')
@@ -163,8 +163,8 @@ export struct GameHistoryPage {
               Row({ space: 10 }) {
                 // 排名
                 Text(medalIcon(idx))
-                  .fontSize(this.palette.fsXl)
-                  .fontFamily(this.palette.fontSans)
+                  .fontSize(this.themeState.palette.fsXl)
+                  .fontFamily(this.themeState.palette.fontSans)
                   .width(32)
                   .textAlign(TextAlign.Center)
 
@@ -172,15 +172,15 @@ export struct GameHistoryPage {
                 Column({ space: 2 }) {
                   Text(this.gameKey === 'ChineseChess' ? (entry.score > 0 ? '胜' : '负') :
                     entry.score.toString())
-                    .fontSize(this.palette.fsXl)
-                    .fontFamily(this.palette.fontSans)
+                    .fontSize(this.themeState.palette.fsXl)
+                    .fontFamily(this.themeState.palette.fontSans)
                     .fontColor(this.gameKey === 'ChineseChess' ?
-                      (entry.score > 0 ? '#10B981' : this.palette.danger) : this.palette.textPrimary)
+                      (entry.score > 0 ? '#10B981' : this.themeState.palette.danger) : this.themeState.palette.textPrimary)
                     .fontWeight(FontWeight.Bold)
                   Text(this.gameKey === 'ChineseChess' ? '结果' : '分数')
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsXs)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
@@ -189,28 +189,28 @@ export struct GameHistoryPage {
                 // 等级
                 Column({ space: 2 }) {
                   Text('Lv.' + entry.level.toString())
-                    .fontSize(this.palette.fsMd)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.warning)
+                    .fontSize(this.themeState.palette.fsMd)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.warning)
                     .fontWeight(FontWeight.Medium)
                   Text('等级')
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsXs)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
                 // 难度
                 Column({ space: 2 }) {
                   Text(entry.difficulty)
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(difficultyColor(entry.difficulty, this.palette.textSecondary))
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(difficultyColor(entry.difficulty, this.themeState.palette.textSecondary))
                     .fontWeight(FontWeight.Medium)
                   Text('难度')
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsXs)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
@@ -218,16 +218,16 @@ export struct GameHistoryPage {
                 if (entry.model.length > 0) {
                   Column({ space: 2 }) {
                     Text(entry.model)
-                      .fontSize(this.palette.fsXs)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.info)
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.info)
                       .maxLines(1)
                       .constraintSize({ maxWidth: 96 })
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                     Text('模型')
-                      .fontSize(this.palette.fsXs)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textTertiary)
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textTertiary)
                   }
                   .alignItems(HorizontalAlign.Center)
                 }
@@ -235,26 +235,26 @@ export struct GameHistoryPage {
                 // 用时（本局总耗时）
                 Column({ space: 2 }) {
                   Text(formatDuration(entry.duration))
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                     .fontWeight(FontWeight.Medium)
                   Text('用时')
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsXs)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Center)
 
                 // 时间
                 Text(formatTime(entry.createdAt))
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
               }
               .width('100%')
               .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-              .backgroundColor(idx % 2 === 0 ? this.palette.bgSurface : this.palette.bgSurface2)
+              .backgroundColor(idx % 2 === 0 ? this.themeState.palette.bgSurface : this.themeState.palette.bgSurface2)
               .borderRadius(8)
             }
           }, (entry: ScoreEntry) => entry.id)
@@ -268,14 +268,14 @@ export struct GameHistoryPage {
       Row({ space: 12 }) {
         Row() {
           Text('🗑 清空战绩')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .backgroundColor(this.palette.bgSurface2)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .borderRadius(8)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .border({ width: 1, color: this.themeState.palette.borderSubtle })
         .onClick(() => { this.clearScores(); })
       }
       .width('100%')
@@ -284,6 +284,6 @@ export struct GameHistoryPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

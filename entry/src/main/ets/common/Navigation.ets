@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { AppNavigator } from './AppNavigator';
 
 export enum MainNavKey {
   Index = 'Index',
@@ -215,8 +215,8 @@ export class NavigationFacade {
     const options: NavigationRouteOptions = new NavigationRouteOptions('pages/AppShell',
       new AppShellRouteParams(target));
     try {
-      if (replace) await router.replaceUrl(options);
-      else await router.pushUrl(options);
+      if (replace) AppNavigator.replace(options.url, options.params);
+      else AppNavigator.push(options.url, options.params);
       return result;
     } catch (e) {
       return new NavigationFailure(NavigationFailureReason.PAGE_UNAVAILABLE, copyState(previous), source);

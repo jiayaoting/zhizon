@@ -21,22 +21,6 @@
         }
       },
       {
-        "name": "ohos.permission.READ_MEDIA",
-        "reason": "$string:media_permission_reason",
-        "usedScene": {
-          "abilities": ["EntryAbility"],
-          "when": "inuse"
-        }
-      },
-      {
-        "name": "ohos.permission.WRITE_MEDIA",
-        "reason": "$string:media_permission_reason",
-        "usedScene": {
-          "abilities": ["EntryAbility"],
-          "when": "inuse"
-        }
-      },
-      {
         "name": "ohos.permission.VIBRATE",
         "reason": "$string:vibrate_permission_reason",
         "usedScene": {
@@ -51,12 +35,6 @@
           "abilities": ["EntryAbility"],
           "when": "inuse"
         }
-      }
-    ],
-    "metadata": [
-      {
-        "name": "ohos.arkui.UIMaterial.state",
-        "value": "ENABLE"
       }
     ],
     "pages": "$profile:main_pages",

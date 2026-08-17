@@ -1,31 +1,32 @@
 import { DifficultyDefinition, DifficultyLevel } from '../common/Difficulty';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 
-@Component
+@ComponentV2
 export struct DifficultyOption {
-  @Prop definition: DifficultyDefinition;
-  @Prop selected: boolean = false;
-  @Prop disabled: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  onSelect: (level: DifficultyLevel) => void = () => {};
+  @Param definition: DifficultyDefinition = new DifficultyDefinition(DifficultyLevel.MEDIUM, '中等', '🤔', '经典体验');
+  @Param selected: boolean = false;
+  @Param disabled: boolean = false;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Event onSelect: (level: DifficultyLevel) => void = () => {};
 
   build() {
     Row({ space: 12 }) {
       Text(this.definition.icon)
         .fontSize(24)
-        .fontFamily(this.palette.fontSans)
+        .fontFamily(this.themeState.palette.fontSans)
         .width(32)
       Column({ space: 3 }) {
         Text(this.definition.label)
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.disabled ? this.palette.textTertiary : this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.disabled ? this.themeState.palette.textTertiary : this.themeState.palette.textPrimary)
           .fontWeight(this.selected ? FontWeight.Bold : FontWeight.Medium)
           .maxLines(1)
         Text(this.definition.description)
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .maxLines(2)
       }
       .alignItems(HorizontalAlign.Start)
@@ -33,17 +34,17 @@ export struct DifficultyOption {
       if (this.selected) {
         Text('✓')
           .fontSize(16)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.palette.primary)
+          .fontColor(this.themeState.palette.primary)
       }
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })
     .padding({ left: 14, right: 14, top: 10, bottom: 10 })
     .borderRadius(8)
-    .border({ width: this.selected ? 2 : 1, color: this.selected ? this.palette.primary : this.palette.borderDefault })
-    .backgroundColor(this.selected ? this.palette.primaryDim : this.palette.bgSurface)
+    .border({ width: this.selected ? 2 : 1, color: this.selected ? this.themeState.palette.primary : this.themeState.palette.borderDefault })
+    .backgroundColor(this.selected ? this.themeState.palette.primaryDim : this.themeState.palette.bgSurface)
     .opacity(this.disabled ? 0.5 : 1)
     .accessibilityText(this.definition.label + (this.selected ? '，已选中' : ''))
     .onClick(() => {

@@ -1,6 +1,7 @@
 // 智子 - 我的页（用户信息 + 设置入口 + 关于）
-import { promptAction, router } from '@kit.ArkUI';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
+import { ThemeState } from '../common/ThemeState';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
@@ -13,15 +14,12 @@ interface AboutRow {
   action: number; // 0=无动作，1=检查更新，2=用户协议，3=隐私政策，4=开源许可，5=反馈
 }
 
-@Component
+@ComponentV2
 export struct ProfilePage {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @State avatarId: string = 'liquid';
-  @State avatarUri: string = '';
-  onNavigate: (key: string) => void = () => {};
+          @Local avatarId: string = 'liquid';
+  @Local avatarUri: string = '';
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Event onNavigate: (key: string) => void = () => {};
 
   private aboutRows: AboutRow[] = [
     { label: '版本', value: AppConstants.appVersion, action: 0 },
@@ -45,11 +43,11 @@ export struct ProfilePage {
     if (row.action === 1) {
       promptAction.showToast({ message: '已是最新版本' });
     } else if (row.action === 2) {
-      router.pushUrl({ url: 'pages/LegalDoc', params: new LegalDocRouteParams('agreement') });
+      AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('agreement'));
     } else if (row.action === 3) {
-      router.pushUrl({ url: 'pages/LegalDoc', params: new LegalDocRouteParams('privacy') });
+      AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('privacy'));
     } else if (row.action === 4) {
-      router.pushUrl({ url: 'pages/LegalDoc', params: new LegalDocRouteParams('license') });
+      AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('license'));
     } else if (row.action === 5) {
       promptAction.showToast({ message: '反馈功能即将上线' });
     } else if (row.value.length > 0) {
@@ -81,7 +79,7 @@ export struct ProfilePage {
             .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
           Text('Z')
             .fontSize(28)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontColor(Color.White)
             .fontWeight(FontWeight.Bold)
         }
@@ -90,15 +88,15 @@ export struct ProfilePage {
 
       Column({ space: 4 }) {
         Text(AppConstants.appName)
-          .fontSize(this.palette.fsXl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsXl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row({ space: 6 }) {
           Text('休闲游戏 · AI 对话 · 个性化外观')
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
       }
       .alignItems(HorizontalAlign.Start)
@@ -107,8 +105,8 @@ export struct ProfilePage {
     .width('100%')
     .padding(20)
     .borderRadius(16)
-    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -116,28 +114,28 @@ export struct ProfilePage {
   groupRow(label: string, value: string, showChevron: boolean, onClick?: () => void) {
     Row() {
       Text(label)
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .layoutWeight(1)
       if (value) {
         Text(value)
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ right: 6 })
       }
       if (showChevron) {
         Text('›')
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 13, bottom: 13 })
     .borderRadius(8)
-    .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+    .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
     .onClick(() => {
       if (onClick) {
         onClick();
@@ -149,15 +147,15 @@ export struct ProfilePage {
   commonGroup() {
     Column({ space: 10 }) {
       Text('通用')
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
       Column({ space: 8 }) {
         this.groupRow('设置', '', true, () => { this.onNavigate('Settings'); })
         this.groupRow('AI 模型', '', true, () => {
-          router.pushUrl({ url: 'pages/AiModelPage' });
+          AppNavigator.push('pages/AiModelPage');
         })
       }
       .width('100%')
@@ -165,8 +163,8 @@ export struct ProfilePage {
     .width('100%')
     .padding(16)
     .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -174,9 +172,9 @@ export struct ProfilePage {
   aboutGroup() {
     Column({ space: 10 }) {
       Text('关于')
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
       Column({ space: 8 }) {
@@ -189,21 +187,21 @@ export struct ProfilePage {
     .width('100%')
     .padding(16)
     .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
     .alignItems(HorizontalAlign.Start)
   }
 
   build() {
     Column() {
       Text('我的')
-        .fontSize(this.palette.fsXl)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsXl)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
-          top: this.statusBarHeight + 16, bottom: 16 })
+        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
+          top: this.themeState.statusBarHeight + 16, bottom: 16 })
 
       Scroll() {
         Column({ space: 16 }) {
@@ -216,7 +214,7 @@ export struct ProfilePage {
           Column().height(20)
         }
         .width('100%')
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)

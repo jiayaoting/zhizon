@@ -1,4 +1,5 @@
-import { display, window } from '@kit.ArkUI';
+import { display, window, AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
@@ -160,6 +161,14 @@ export class WindowEnvironmentProvider {
     AppStorage.setOrCreate('isLandscape', snapshot.orientation === WindowOrientation.LANDSCAPE);
     // 侧边导航开关：按物理设备类型判定（避免手机横屏被误判为大屏）
     AppStorage.setOrCreate('isWideNav', this.resolveSideNavNeeded(snapshot.orientation));
+    const themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+    themeState.statusBarHeight = snapshot.safeTop;
+    themeState.navBarHeight = snapshot.safeBottom;
+    themeState.isSm = snapshot.width < BP_SM;
+    themeState.isMd = snapshot.width >= BP_SM && snapshot.width < BP_LG;
+    themeState.isLg = snapshot.width >= BP_LG;
+    themeState.isLandscape = snapshot.orientation === WindowOrientation.LANDSCAPE;
+    themeState.isWideNav = this.resolveSideNavNeeded(snapshot.orientation);
   }
 
   // 是否使用侧边导航（大屏布局）：2in1 恒用；平板横屏用；手机无论横竖屏都不用

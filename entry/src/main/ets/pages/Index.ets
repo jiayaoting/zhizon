@@ -1,8 +1,9 @@
 // 智子 - 首页（沉浸光感版）
 // 欢迎区 + 游戏入口大卡 + 最近游戏战绩
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
@@ -27,60 +28,57 @@ interface ScoreRow {
   best: number;
 }
 
-@Component
+@ComponentV2
 export struct IndexPage {
-  @State currentTime: string = '';
-  @State greeting: string = '';
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('isLg') isLg: boolean = false;
-  @StorageLink('isLandscape') isLandscape: boolean = false;
-  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @State scoreRows: ScoreRow[] = [];
-  @State loading: boolean = true;
-  @State avatarId: string = 'liquid';
-  @State avatarUri: string = '';
-  onNavigate: (key: string) => void = () => {};
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local currentTime: string = '';
+  @Local greeting: string = '';
+              @Local scoreRows: ScoreRow[] = [];
+  @Local loading: boolean = true;
+  @Local avatarId: string = 'liquid';
+  @Local avatarUri: string = '';
+  @Event onNavigate: (key: string) => void = () => {};
 
   // 首页游戏入口
-  private homeGames: HomeGameEntry[] = [
+  private get homeGames(): HomeGameEntry[] {
+    return [
     {
       gameId: GameId.TETRIS,
       name: '俄罗斯方块',
       icon: '🧱',
       desc: '经典方块消除，触屏手势 + 按钮双控制',
-      color: this.palette.primary
+      color: this.themeState.palette.primary
     },
     {
       gameId: GameId.GAME_2048,
       name: '2048',
       icon: '🔢',
       desc: '滑动合并数字，挑战 2048 极限',
-      color: this.palette.warning
+      color: this.themeState.palette.warning
     },
     {
       gameId: GameId.SNAKE,
       name: '贪吃蛇',
       icon: '🐍',
       desc: '控制方向吃食物，不断变长',
-      color: this.palette.success
+      color: this.themeState.palette.success
     },
     {
       gameId: GameId.MINESWEEPER,
       name: '扫雷',
       icon: '💣',
       desc: '逻辑推理，翻开数字找出地雷',
-      color: this.palette.purple
+      color: this.themeState.palette.purple
     },
     {
       gameId: GameId.SUDOKU,
       name: '数独',
       icon: '🧩',
       desc: '数字推理，每行每列每宫填 1-9 不重复',
-      color: this.palette.info
+      color: this.themeState.palette.info
     }
   ];
+  }
 
   aboutToAppear() {
     this.currentTime = this.formatNow();
@@ -168,14 +166,14 @@ export struct IndexPage {
     Row() {
       Column() {
         Text(this.greeting)
-          .fontSize(this.palette.fsXl + 4)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsXl + 4)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text(this.currentTime)
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Start)
@@ -185,17 +183,17 @@ export struct IndexPage {
       Stack() {
         if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
           Image(this.avatarUri)
-            .width(this.isSm ? 40 : 44)
-            .height(this.isSm ? 40 : 44)
-            .borderRadius(this.isSm ? 20 : 22)
+            .width(this.themeState.isSm ? 40 : 44)
+            .height(this.themeState.isSm ? 40 : 44)
+            .borderRadius(this.themeState.isSm ? 20 : 22)
             .objectFit(ImageFit.Cover)
             .border({ width: 1.5, color: '#80FFFFFF' })
         } else {
           // 渐变底
           Column()
-            .width(this.isSm ? 40 : 44)
-            .height(this.isSm ? 40 : 44)
-            .borderRadius(this.isSm ? 20 : 22)
+            .width(this.themeState.isSm ? 40 : 44)
+            .height(this.themeState.isSm ? 40 : 44)
+            .borderRadius(this.themeState.isSm ? 20 : 22)
             .linearGradient({
               angle: 135,
               colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
@@ -203,14 +201,14 @@ export struct IndexPage {
             .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
           // 描边圆环
           Column()
-            .width(this.isSm ? 40 : 44)
-            .height(this.isSm ? 40 : 44)
-            .borderRadius(this.isSm ? 20 : 22)
+            .width(this.themeState.isSm ? 40 : 44)
+            .height(this.themeState.isSm ? 40 : 44)
+            .borderRadius(this.themeState.isSm ? 20 : 22)
             .border({ width: 1.5, color: '#80FFFFFF' })
           // Z 字
           Text('Z')
-            .fontSize(this.isSm ? 16 : 18)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.isSm ? 16 : 18)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontColor(Color.White)
             .fontWeight(FontWeight.Bold)
         }
@@ -220,7 +218,7 @@ export struct IndexPage {
       })
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8 })
+    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 8 })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -230,21 +228,21 @@ export struct IndexPage {
     Column({ space: 0 }) {
       Row() {
         Text('游戏中心')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('查看全部 ›')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
           .onClick(() => {
             this.onNavigate('Games');
           })
       }
       .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
       .margin({ bottom: 12 })
 
       Column({ space: 10 }) {
@@ -256,7 +254,7 @@ export struct IndexPage {
                 .fill(game.color)
               Text(game.icon)
                 .fontSize(24)
-                .fontFamily(this.palette.fontSans)
+                .fontFamily(this.themeState.palette.fontSans)
             }
             .width(48)
             .height(48)
@@ -264,14 +262,14 @@ export struct IndexPage {
             // 标题 + 描述
             Column({ space: 4 }) {
               Text(game.name)
-                .fontSize(this.palette.fsBase + 2)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontSize(this.themeState.palette.fsBase + 2)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
               Text(game.desc)
-                .fontSize(this.palette.fsSm - 1)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsSm - 1)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
@@ -280,8 +278,8 @@ export struct IndexPage {
 
             // 开始按钮
             Button('开始')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
               .fontColor(Color.White)
               .backgroundColor(game.color)
               .borderRadius(14)
@@ -294,14 +292,14 @@ export struct IndexPage {
           .width('100%')
           .padding(14)
           .borderRadius(12)
-          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+          .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
+          .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
           .alignItems(VerticalAlign.Center)
           .focusable(true)
           .tabIndex(index)
         }, (game: HomeGameEntry) => game.gameId)
       }
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
     }
     .width('100%')
   }
@@ -312,21 +310,21 @@ export struct IndexPage {
     Column({ space: 0 }) {
       Row() {
         Text('最佳战绩')
-          .fontSize(this.palette.fsMd)
-          .fontColor(this.palette.textPrimary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontColor(this.themeState.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('进入游戏 ›')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
           .onClick(() => {
             this.onNavigate('Games');
           })
       }
       .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
       .margin({ bottom: 12 })
 
       Scroll() {
@@ -334,12 +332,12 @@ export struct IndexPage {
           ForEach(this.scoreRows, (row: ScoreRow) => {
             Column({ space: 6 }) {
               Text(row.icon)
-                .fontSize(this.palette.fsLg)
-                .fontFamily(this.palette.fontSans)
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
               Text(row.name)
-                .fontSize(this.palette.fsXs)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textSecondary)
                 .fontWeight(FontWeight.Medium)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -347,24 +345,24 @@ export struct IndexPage {
                 .fontSize(this.scoreFontSize(row.best))
                 .fontColor(row.color)
                 .fontWeight(FontWeight.Bold)
-                .fontFamily(this.palette.fontMono)
+                .fontFamily(this.themeState.palette.fontMono)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text('查看记录 ›')
-                .fontSize(this.palette.fsXs - 2)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.primary)
+                .fontSize(this.themeState.palette.fsXs - 2)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.primary)
             }
             .width(110)
             .padding({ top: 16, bottom: 16 })
             .borderRadius(12)
-            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+            .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
+            .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
             .alignItems(HorizontalAlign.Center)
             .onClick(() => { this.openHistory(row.gameId); })
           }, (row: ScoreRow) => row.gameId)
         }
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24 })
+        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
@@ -377,7 +375,7 @@ export struct IndexPage {
   private openHistory(gameId: GameId): void {
     const key: string = this.gameHistoryKey(gameId);
     if (key.length === 0) return;
-    router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams(key) });
+    AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams(key));
   }
 
   private gameHistoryKey(gameId: GameId): string {
@@ -400,11 +398,11 @@ export struct IndexPage {
             LoadingProgress()
               .width(36)
               .height(36)
-              .color(this.palette.primary)
+              .color(this.themeState.palette.primary)
             Text('加载中...')
-              .fontSize(this.palette.fsMd)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsMd)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
               .margin({ top: 12 })
           }
           .width('100%')
@@ -429,10 +427,10 @@ export struct IndexPage {
                 Column().height(20)
               }
               .width('100%')
-              .constraintSize({ maxWidth: this.isLg ? 720 : undefined })
+              .constraintSize({ maxWidth: this.themeState.isLg ? 720 : undefined })
             }
             .width('100%')
-            .padding({ top: this.statusBarHeight + (this.isSm ? 16 : 24) })
+            .padding({ top: this.themeState.statusBarHeight + (this.themeState.isSm ? 16 : 24) })
           }
           .layoutWeight(1)
           .scrollBar(BarState.Auto)

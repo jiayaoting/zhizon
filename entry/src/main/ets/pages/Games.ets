@@ -1,6 +1,6 @@
 // 智子 - 游戏中心
-import { promptAction } from '@kit.ArkUI';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { PAGE_PADDING, CARD_RADIUS } from '../common/Constants';
 import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
@@ -16,62 +16,60 @@ interface GameEntry {
   color: string;
 }
 
-@Component
+@ComponentV2
 export struct GamesPage {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('isMd') isMd: boolean = false;
-  @StorageLink('isLg') isLg: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
-  @State showHelpFor: GameId | null = null;
+            @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local showHelpFor: GameId | null = null;
   // 待选难度的游戏（点击游戏卡片后弹出该游戏专属难度选择）
-  @State pendingGame: GameEntry | null = null;
-  @State pendingDifficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @Local pendingGame: GameEntry | null = null;
+  @Local pendingDifficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
 
-  private games: GameEntry[] = [
+  private get games(): GameEntry[] {
+    return [
     {
       gameId: GameId.TETRIS,
       name: '俄罗斯方块',
       icon: '🧱',
       desc: '经典方块消除游戏，支持触屏手势和按钮双控制',
-      color: this.palette.primary
+      color: this.themeState.palette.primary
     },
     {
       gameId: GameId.GAME_2048,
       name: '2048',
       icon: '🔢',
       desc: '滑动合并数字，挑战 2048 极限',
-      color: this.palette.warning
+      color: this.themeState.palette.warning
     },
     {
       gameId: GameId.SNAKE,
       name: '贪吃蛇',
       icon: '🐍',
       desc: '经典贪吃蛇，控制方向吃食物不断变长',
-      color: this.palette.success
+      color: this.themeState.palette.success
     },
     {
       gameId: GameId.MINESWEEPER,
       name: '扫雷',
       icon: '💣',
       desc: '逻辑推理经典，翻开数字找出所有地雷',
-      color: this.palette.purple
+      color: this.themeState.palette.purple
     },
     {
       gameId: GameId.SUDOKU,
       name: '数独',
       icon: '🧩',
       desc: '数字推理经典，每行每列每宫填 1-9 不重复',
-      color: this.palette.info
+      color: this.themeState.palette.info
     },
     {
       gameId: GameId.CHINESE_CHESS,
       name: '中国象棋',
       icon: '♟️',
       desc: '人机 / 人对AI / AI对AI，经典楚河汉界',
-      color: this.palette.danger
+      color: this.themeState.palette.danger
     }
   ];
+  }
 
   private gameHelpText(gameId: GameId): string {
     if (gameId === GameId.TETRIS) {
@@ -182,19 +180,19 @@ export struct GamesPage {
           Column() {
             Row() {
               Text(this.pendingGameEntry().icon)
-                .fontSize(this.palette.fs2xl)
-                .fontFamily(this.palette.fontSans)
+                .fontSize(this.themeState.palette.fs2xl)
+                .fontFamily(this.themeState.palette.fontSans)
               Text(this.pendingGameEntry().name)
-                .fontSize(this.palette.fsLg)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
                 .margin({ left: 8 })
               Blank()
               Text('✕')
-                .fontSize(this.palette.fsLg)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .padding(8)
                 .onClick(() => { this.pendingGame = null; })
             }
@@ -202,9 +200,9 @@ export struct GamesPage {
             .padding({ left: 4, top: 4 })
 
             Text('选择难度')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .fontWeight(FontWeight.Medium)
               .width('100%')
               .margin({ top: 8, bottom: 4 })
@@ -225,8 +223,8 @@ export struct GamesPage {
             .constraintSize({ maxHeight: 360 })
 
             Button('开始游戏')
-              .fontSize(this.palette.fsMd)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsMd)
+              .fontFamily(this.themeState.palette.fontSans)
               .fontColor(Color.White)
               .width('100%')
               .height(44)
@@ -241,8 +239,8 @@ export struct GamesPage {
           }
           .width('100%')
           .borderRadius(16)
-          .backgroundColor(this.palette.bgBase)
-          .padding({ left: 20, right: 20, bottom: Math.max(16, this.navBarHeight) })
+          .backgroundColor(this.themeState.palette.bgBase)
+          .padding({ left: 20, right: 20, bottom: Math.max(16, this.themeState.navBarHeight) })
           .onClick(() => {})
         }
         .width('100%')
@@ -271,19 +269,19 @@ export struct GamesPage {
             .justifyContent(FlexAlign.Center)
           Text(game.icon)
             .fontSize(24)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
         }
 
         Column({ space: 4 }) {
           Text(game.name)
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
           Text(game.desc)
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textSecondary)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
@@ -293,13 +291,13 @@ export struct GamesPage {
         // 使用说明按钮
         Row() {
           Text('📖')
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontSans)
         }
         .width(36)
         .height(36)
         .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
         .onClick(() => { this.showHelpFor = game.gameId; })
       }
@@ -307,9 +305,9 @@ export struct GamesPage {
       .padding(16)
     }
     .width('100%')
-    .backgroundColor(this.palette.bgSurface)
+    .backgroundColor(this.themeState.palette.bgSurface)
     .borderRadius(CARD_RADIUS)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .border({ width: 1, color: this.themeState.palette.borderSubtle })
     .onClick(() => { this.pendingGame = game; })
     .focusable(true)
     .tabIndex(index)
@@ -325,9 +323,9 @@ export struct GamesPage {
             Row() {
               Blank()
               Text('✕')
-                .fontSize(this.palette.fsLg)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .padding(8)
                 .onClick(() => { this.showHelpFor = null; })
             }
@@ -336,9 +334,9 @@ export struct GamesPage {
 
             Scroll() {
               Text(this.gameHelpText(this.showHelpFor as GameId))
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
                 .lineHeight(22)
                 .width('100%')
             }
@@ -348,8 +346,8 @@ export struct GamesPage {
           }
           .width('100%')
           .borderRadius(16)
-          .backgroundColor(this.palette.bgBase)
-          .padding({ bottom: Math.max(16, this.navBarHeight) })
+          .backgroundColor(this.themeState.palette.bgBase)
+          .padding({ bottom: Math.max(16, this.themeState.navBarHeight) })
         }
         .width('100%')
         .height('100%')
@@ -371,9 +369,9 @@ export struct GamesPage {
           Column({ space: 12 }) {
             // 标题区
             Text('可用游戏')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .fontWeight(FontWeight.Medium)
               .padding({ left: 4, top: 8, bottom: 4 })
               .width('100%')
@@ -384,8 +382,8 @@ export struct GamesPage {
           }
           .width('100%')
           .padding({
-            left: this.isSm ? 16 : 24,
-            right: this.isSm ? 16 : 24,
+            left: this.themeState.isSm ? 16 : 24,
+            right: this.themeState.isSm ? 16 : 24,
             bottom: 24
           })
         }

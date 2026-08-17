@@ -1,5 +1,6 @@
 // 智子 - 2048
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
+import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
@@ -49,8 +50,8 @@ interface DifficultyConfig2048 {
   initTiles: number;
 }
 
-@Entry
 @Component
+@Entry
 export struct Game2048Page {
   @State board: number[][] = [];
   @State score: number = 0;
@@ -787,7 +788,7 @@ export struct Game2048Page {
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -891,7 +892,7 @@ export struct Game2048Page {
               .fontColor(this.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
-          .onClick(() => { router.back(); })
+          .onClick(() => { AppNavigator.pop(); })
         }
         .margin({ top: 4 })
       }
@@ -932,7 +933,7 @@ export struct Game2048Page {
       .backgroundColor(this.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
-         router.pushUrl({ url: 'pages/GameHistory', params: new GameHistoryRouteParams('2048') });
+         AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('2048'));
       })
 
       // 暂停/继续
@@ -966,11 +967,11 @@ export struct Game2048Page {
 
   // ---- 生命周期 ----
   aboutToAppear(): void {
-    const params: GameRouteParams | null = router.getParams() as GameRouteParams | null;
+    const params: GameRouteParams | null = AppNavigator.getParam('pages/Game2048') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.GAME_2048);
     if (!result.success || result.request === null) {
       promptAction.showToast({ message: result.message });
-      router.back();
+      AppNavigator.pop();
       return;
     }
     this.loadBestScore();

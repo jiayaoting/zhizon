@@ -20,9 +20,9 @@ class ContextChipItem {
   }
 }
 
-@Entry
 @Component
-struct ChatConfig {
+@Entry
+export struct ChatConfig {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('navBarHeight') navBarHeight: number = 12;

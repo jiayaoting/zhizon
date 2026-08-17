@@ -1,6 +1,7 @@
 // 智子 - 用户协议 / 隐私政策 / 开源许可 通用展示页
-import { router } from '@kit.ArkUI';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { AppNavigator } from '../common/AppNavigator';
+import { AppStorageV2 } from '@kit.ArkUI';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { LegalDocRouteParams } from '../common/Navigation';
@@ -151,7 +152,7 @@ function privacySections(): DocSection[] {
       title: '五、权限说明',
       paragraphs: [
         '网络权限（ohos.permission.INTERNET）：当您使用 AI 对话功能时，用于连接您自行配置的大模型服务商 API。本应用不会通过该权限进行任何其他网络通信，不会上传任何您的个人信息。',
-        '读取/写入媒体文件（ohos.permission.READ_MEDIA / WRITE_MEDIA）：仅在您主动选择自定义背景图时申请使用，用于读取并设置所选图片，设置完成后不再访问。',
+        '背景图片选择：本应用使用系统照片选择器（PhotoViewPicker）让您选择自定义背景图，仅读取您主动选择的图片并复制到应用私有沙箱，不申请读取/写入媒体库权限，不扫描或上传您的相册。',
         '振动（ohos.permission.VIBRATE）：用于游戏内的触觉反馈（如消除方块、翻出地雷等），不涉及信息收集。',
         '您可以随时在系统设置中关闭本应用的权限授权，关闭后仅影响对应功能（如 AI 对话、更换背景图、振动反馈），不影响其他功能的使用。'
       ]
@@ -266,16 +267,14 @@ function licenseSections(): DocSection[] {
   ];
 }
 
+@ComponentV2
 @Entry
-@Component
 export struct LegalDocPage {
-  @State docType: LegalDocType = LegalDocType.AGREEMENT;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local docType: LegalDocType = LegalDocType.AGREEMENT;
+      
   aboutToAppear(): void {
-    const params: LegalDocRouteParams | null = router.getParams() as LegalDocRouteParams | null;
+    const params: LegalDocRouteParams | null = AppNavigator.getParam('pages/LegalDoc') as LegalDocRouteParams | null;
     if (params !== null && params !== undefined && isLegalDocType(params.type)) {
       this.docType = params.type as LegalDocType;
     }
@@ -291,17 +290,17 @@ export struct LegalDocPage {
   sectionCard(section: DocSection) {
     Column({ space: 10 }) {
       Text(section.title)
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
       ForEach(section.paragraphs, (paragraph: string) => {
         if (paragraph.length > 0) {
           Text(paragraph)
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textSecondary)
             .lineHeight(22)
             .width('100%')
         } else {
@@ -314,8 +313,8 @@ export struct LegalDocPage {
     .width('100%')
     .padding(16)
     .borderRadius(10)
-    .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -330,7 +329,7 @@ export struct LegalDocPage {
           }, (section: DocSection) => section.title)
         }
         .width('100%')
-        .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, bottom: 40 })
+        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, bottom: 40 })
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
@@ -338,6 +337,6 @@ export struct LegalDocPage {
       .align(Alignment.Top)
     }
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

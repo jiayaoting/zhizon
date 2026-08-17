@@ -1,6 +1,6 @@
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { FixedBottomNav } from '../components/FixedBottomNav';
 import { SideNav } from '../components/SideNav';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
@@ -16,35 +16,33 @@ import { PrivacyDialog } from '../components/PrivacyDialog';
 import { LockOverlay } from '../components/LockOverlay';
 import { SecurityService } from '../service/SecurityService';
 import { StartupState } from '../entryability/EntryAbility';
-import { WindowEnvironmentConfidence, WindowEnvironmentSnapshot, WindowDeviceType,
-  WindowOrientation } from '../service/WindowEnvironmentProvider';
+import { AppNavigator } from '../common/AppNavigator';
+import { TetrisPage } from './Tetris';
+import { Game2048Page } from './Game2048';
+import { SnakePage } from './Snake';
+import { MinesweeperPage } from './Minesweeper';
+import { SudokuPage } from './Sudoku';
+import { ChineseChessPage } from './ChineseChess';
+import { GameHistoryPage } from './GameHistory';
+import { LegalDocPage } from './LegalDoc';
+import { ChatConfig } from './ChatConfig';
+import { AiModelPage } from './AiModelPage';
+import { AiCallLogPage } from './AiCallLog';
 
 const DOMAIN = 0x9201;
 
 @Entry
-@Component
+@ComponentV2
 struct AppShell {
-  @State navigation: NavigationState = new NavigationState(PageKey.Index, MainNavKey.Index);
-  @StorageLink('startupState') startupState: StartupState = StartupState.INITIALIZING;
-  @StorageLink('windowEnvironmentSnapshot') environment: WindowEnvironmentSnapshot =
-    new WindowEnvironmentSnapshot(WindowDeviceType.PHONE, 0, 0, WindowOrientation.PORTRAIT, 1, 44, 24,
-      WindowEnvironmentConfidence.FALLBACK);
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('isWideNav') isWideNav: boolean = false;
-  @State privacyConsented: boolean = false;
-  @StorageLink('appLocked') appLocked: boolean = false;
-
+  @Local navigation: NavigationState = new NavigationState(PageKey.Index, MainNavKey.Index);
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local privacyConsented: boolean = false;
+  
   aboutToAppear(): void {
     // 启动时按自动锁定策略初始化锁定状态
     SecurityService.checkAndLockOnForeground().catch((e: Error) => {
       hilog.warn(0x9201, 'AppShell', '安全锁定检查失败 %{public}s', e.message);
     });
-    const params: AppShellRouteParams | null = router.getParams() as AppShellRouteParams | null;
-    if (params !== undefined && params !== null && params.page !== undefined) {
-      const initialResult: NavigationResult = NavigationFacade.navigateLegacy(this.navigation, params.page,
-        NavigationSource.INITIAL);
-      this.handleNavigationResult(params.page, initialResult, false);
-    }
   }
 
   aboutToDisappear(): void {
@@ -166,31 +164,58 @@ struct AppShell {
       LoadingProgress()
         .width(32)
         .height(32)
-        .visibility(this.startupState === StartupState.INITIALIZING ? Visibility.Visible : Visibility.None)
-      Text(this.startupState === StartupState.FAILED ? '应用初始化失败' : '正在初始化应用')
-        .fontSize(this.palette.fsLg)
-        .fontFamily(this.palette.fontSans)
+        .visibility(this.themeState.startupState === StartupState.INITIALIZING ? Visibility.Visible : Visibility.None)
+      Text(this.themeState.startupState === StartupState.FAILED ? '应用初始化失败' : '正在初始化应用')
+        .fontSize(this.themeState.palette.fsLg)
+        .fontFamily(this.themeState.palette.fontSans)
         .fontWeight(FontWeight.Medium)
-        .fontColor(this.palette.textPrimary)
-      if (this.startupState === StartupState.FAILED) {
+        .fontColor(this.themeState.palette.textPrimary)
+      if (this.themeState.startupState === StartupState.FAILED) {
         Text('核心数据未加载，请重新打开应用后重试')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
       }
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(this.themeState.palette.bgBase)
+  }
+
+  @Builder
+  routeDestination(name: string, param: Object) {
+    if (name === 'pages/Tetris') {
+      TetrisPage()
+    } else if (name === 'pages/Game2048') {
+      Game2048Page()
+    } else if (name === 'pages/Snake') {
+      SnakePage()
+    } else if (name === 'pages/Minesweeper') {
+      MinesweeperPage()
+    } else if (name === 'pages/Sudoku') {
+      SudokuPage()
+    } else if (name === 'pages/ChineseChess') {
+      ChineseChessPage()
+    } else if (name === 'pages/GameHistory') {
+      GameHistoryPage()
+    } else if (name === 'pages/LegalDoc') {
+      LegalDocPage()
+    } else if (name === 'pages/ChatConfig') {
+      ChatConfig()
+    } else if (name === 'pages/AiModelPage') {
+      AiModelPage()
+    } else if (name === 'pages/AiCallLog') {
+      AiCallLogPage()
+    }
   }
 
   build() {
-    if (this.startupState !== StartupState.READY) {
+    if (this.themeState.startupState !== StartupState.READY) {
       this.startupPage()
     } else {
       Stack() {
-        if (this.isWideNav) {
+        if (this.themeState.isWideNav) {
           // 大屏（2in1 / 平板横屏）：左侧导航 + 右侧内容
           Row() {
             SideNav({
@@ -212,7 +237,7 @@ struct AppShell {
           }
           .width('100%')
           .height('100%')
-          .backgroundColor(this.palette.bgBase)
+          .backgroundColor(this.themeState.palette.bgBase)
         } else {
           // 手机 / 平板竖屏：底部导航 + 上方内容
           Column() {
@@ -235,7 +260,7 @@ struct AppShell {
           }
           .width('100%')
           .height('100%')
-          .backgroundColor(this.palette.bgBase)
+          .backgroundColor(this.themeState.palette.bgBase)
         }
 
         // 隐私政策同意弹窗（未同意时覆盖）
@@ -248,10 +273,10 @@ struct AppShell {
         }
 
         // 锁屏覆盖层（设置了主密码且触发自动锁定时显示）
-        if (this.appLocked) {
+        if (this.themeState.appLocked) {
           LockOverlay({
             onUnlocked: (): void => {
-              this.appLocked = false;
+              this.themeState.appLocked = false;
             }
           })
         }
