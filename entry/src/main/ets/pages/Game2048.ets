@@ -48,6 +48,20 @@ interface DifficultyConfig2048 {
   initTiles: number;
 }
 
+class LevelConfig2048 {
+  boardSize: number;
+  targetValue: number;
+  initTiles: number;
+  prob4: number;
+
+  constructor(boardSize: number, targetValue: number, initTiles: number, prob4: number) {
+    this.boardSize = boardSize;
+    this.targetValue = targetValue;
+    this.initTiles = initTiles;
+    this.prob4 = prob4;
+  }
+}
+
 @Component
 @Entry
 export struct Game2048Page {
@@ -150,27 +164,27 @@ export struct Game2048Page {
   }
 
   // 关卡配置：根据难度和关卡号计算棋盘大小与目标数字
-  private levelConfig(levelNo: number): { boardSize: number; targetValue: number; initTiles: number; prob4: number } {
+  private levelConfig(levelNo: number): LevelConfig2048 {
     const base = this.difficultyConfig(this.difficulty);
     if (this.difficulty === DifficultyLevel.VERY_EASY) {
-      return { boardSize: 4, targetValue: 128 * Math.pow(2, levelNo - 1), initTiles: 3, prob4: base.prob4 };
+      return new LevelConfig2048(4, 128 * Math.pow(2, levelNo - 1), 3, base.prob4);
     }
     if (this.difficulty === DifficultyLevel.EASY) {
-      if (levelNo <= 2) return { boardSize: 4, targetValue: 256 * Math.pow(2, levelNo - 1), initTiles: 3, prob4: base.prob4 };
-      if (levelNo <= 4) return { boardSize: 5, targetValue: 256 * Math.pow(2, levelNo - 1), initTiles: 3, prob4: base.prob4 };
-      return { boardSize: 6, targetValue: 256 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
+      if (levelNo <= 2) return new LevelConfig2048(4, 256 * Math.pow(2, levelNo - 1), 3, base.prob4);
+      if (levelNo <= 4) return new LevelConfig2048(5, 256 * Math.pow(2, levelNo - 1), 3, base.prob4);
+      return new LevelConfig2048(6, 256 * Math.pow(2, levelNo - 1), 4, base.prob4);
     }
     if (this.difficulty === DifficultyLevel.MEDIUM) {
-      if (levelNo <= 3) return { boardSize: 5, targetValue: 512 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
-      return { boardSize: 6, targetValue: 512 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
+      if (levelNo <= 3) return new LevelConfig2048(5, 512 * Math.pow(2, levelNo - 1), 4, base.prob4);
+      return new LevelConfig2048(6, 512 * Math.pow(2, levelNo - 1), 4, base.prob4);
     }
     if (this.difficulty === DifficultyLevel.HARD) {
-      if (levelNo <= 3) return { boardSize: 6, targetValue: 1024 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
-      return { boardSize: 7, targetValue: 1024 * Math.pow(2, levelNo - 1), initTiles: 5, prob4: base.prob4 };
+      if (levelNo <= 3) return new LevelConfig2048(6, 1024 * Math.pow(2, levelNo - 1), 4, base.prob4);
+      return new LevelConfig2048(7, 1024 * Math.pow(2, levelNo - 1), 5, base.prob4);
     }
     // HELL
-    if (levelNo <= 3) return { boardSize: 6, targetValue: 2048 * Math.pow(2, levelNo - 1), initTiles: 5, prob4: base.prob4 };
-    return { boardSize: 8, targetValue: 2048 * Math.pow(2, levelNo - 1), initTiles: 6, prob4: base.prob4 };
+    if (levelNo <= 3) return new LevelConfig2048(6, 2048 * Math.pow(2, levelNo - 1), 5, base.prob4);
+    return new LevelConfig2048(8, 2048 * Math.pow(2, levelNo - 1), 6, base.prob4);
   }
 
   // ---- 初始化 ----
