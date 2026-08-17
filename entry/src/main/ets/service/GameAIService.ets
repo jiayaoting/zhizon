@@ -139,10 +139,10 @@ export class GameAIService {
   static systemPrompt(kind: GameKind, difficulty: DifficultyLevel): string {
     const diff: string = difficultyLabel(difficulty);
     if (kind === '2048') {
-      return '你正在玩 2048 游戏。棋盘是 6×6 网格，数字表示方块值，0 表示空格。\n' +
-        '当前难度：' + diff + '。游戏已暂停等待你的决策，无需考虑时间因素。\n' +
+      return '你正在玩 2048 闯关模式。数字表示方块值，0 表示空格。\n' +
+        '当前难度：' + diff + '。用户消息中会给出当前关卡、目标数字和棋盘大小。\n' +
         '可用动作：LEFT、RIGHT、UP、DOWN，只输出一个动作。\n' +
-        '策略：优先合并大数并让大数保持在角落，避免棋盘过早填满。\n' +
+        '策略：优先合成目标数字，同时让大数保持在角落，避免棋盘过早填满。\n' +
         '只回复一个动作单词，不要输出任何其他文字或解释。';
     }
     if (kind === 'Tetris') {

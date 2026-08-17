@@ -15,8 +15,6 @@ import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAISer
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
 
-const BOARD_SIZE: number = 6;
-const WIN_SCORE: number = 2048;
 
 interface TileStyle {
   bg: string;
@@ -61,6 +59,10 @@ export struct Game2048Page {
   @State hasWonBefore: boolean = false;
   @State moveAnimating: boolean = false;
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @State boardSize: number = 4;
+  @State currentLevel: number = 1;
+  @State targetValue: number = 256;
+  @State bestLevel: number = 1;
   @State gameStarted: boolean = false;
   @State isPaused: boolean = false;
   @State autoPaused: boolean = false;
@@ -114,10 +116,10 @@ export struct Game2048Page {
   private boardSide(): number {
     if (this.isSm) {
       // 手机端：TopBar + 记分牌 + 间距 + 安全区
-      return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 240, 12, 72);
+      return this.boardSize * DeviceMetrics.fitCellSize(this.boardSize, this.boardSize, 240, 12, 72);
     }
     // 平板端：TopBar + 安全区
-    return BOARD_SIZE * DeviceMetrics.fitCellSize(BOARD_SIZE, BOARD_SIZE, 160, 16, 96);
+    return this.boardSize * DeviceMetrics.fitCellSize(this.boardSize, this.boardSize, 160, 16, 96);
   }
 
   private showScoreFloat(text: string): void {
@@ -147,12 +149,36 @@ export struct Game2048Page {
     return this.difficultyConfigs[2];
   }
 
+  // 关卡配置：根据难度和关卡号计算棋盘大小与目标数字
+  private levelConfig(levelNo: number): { boardSize: number; targetValue: number; initTiles: number; prob4: number } {
+    const base = this.difficultyConfig(this.difficulty);
+    if (this.difficulty === DifficultyLevel.VERY_EASY) {
+      return { boardSize: 4, targetValue: 128 * Math.pow(2, levelNo - 1), initTiles: 3, prob4: base.prob4 };
+    }
+    if (this.difficulty === DifficultyLevel.EASY) {
+      if (levelNo <= 2) return { boardSize: 4, targetValue: 256 * Math.pow(2, levelNo - 1), initTiles: 3, prob4: base.prob4 };
+      if (levelNo <= 4) return { boardSize: 5, targetValue: 256 * Math.pow(2, levelNo - 1), initTiles: 3, prob4: base.prob4 };
+      return { boardSize: 6, targetValue: 256 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
+    }
+    if (this.difficulty === DifficultyLevel.MEDIUM) {
+      if (levelNo <= 3) return { boardSize: 5, targetValue: 512 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
+      return { boardSize: 6, targetValue: 512 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
+    }
+    if (this.difficulty === DifficultyLevel.HARD) {
+      if (levelNo <= 3) return { boardSize: 6, targetValue: 1024 * Math.pow(2, levelNo - 1), initTiles: 4, prob4: base.prob4 };
+      return { boardSize: 7, targetValue: 1024 * Math.pow(2, levelNo - 1), initTiles: 5, prob4: base.prob4 };
+    }
+    // HELL
+    if (levelNo <= 3) return { boardSize: 6, targetValue: 2048 * Math.pow(2, levelNo - 1), initTiles: 5, prob4: base.prob4 };
+    return { boardSize: 8, targetValue: 2048 * Math.pow(2, levelNo - 1), initTiles: 6, prob4: base.prob4 };
+  }
+
   // ---- 初始化 ----
   private initBoard(): void {
     const b: number[][] = [];
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
       const row: number[] = [];
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         row.push(0);
       }
       b.push(row);
@@ -162,8 +188,8 @@ export struct Game2048Page {
 
   private addRandomTile(): void {
     const empty: Array<[number, number]> = [];
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         if (this.board[r][c] === 0) empty.push([r, c]);
       }
     }
@@ -174,9 +200,9 @@ export struct Game2048Page {
     const value: number = Math.random() < config.prob4 ? 4 : 2;
 
     const newBoard: number[][] = [];
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
       const row: number[] = [];
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         row.push(this.board[r][c]);
       }
       newBoard.push(row);
@@ -207,15 +233,15 @@ export struct Game2048Page {
       }
     }
     // 补0
-    while (merged.length < BOARD_SIZE) {
+    while (merged.length < this.boardSize) {
       merged.push(0);
     }
     return merged;
   }
 
   private boardEquals(a: number[][], b: number[][]): boolean {
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         if (a[r][c] !== b[r][c]) return false;
       }
     }
@@ -224,9 +250,9 @@ export struct Game2048Page {
 
   private copyBoard(): number[][] {
     const copy: number[][] = [];
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
       const row: number[] = [];
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         row.push(this.board[r][c]);
       }
       copy.push(row);
@@ -242,50 +268,50 @@ export struct Game2048Page {
     let newBoard: number[][] = [];
 
     if (direction === 'left') {
-      for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let r: number = 0; r < this.boardSize; r++) {
         const row: number[] = [];
-        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(this.board[r][c]);
+        for (let c: number = 0; c < this.boardSize; c++) row.push(this.board[r][c]);
         const slid: number[] = this.slideRow(row);
         newBoard.push(slid);
       }
     } else if (direction === 'right') {
-      for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let r: number = 0; r < this.boardSize; r++) {
         const row: number[] = [];
-        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(this.board[r][c]);
+        for (let c: number = 0; c < this.boardSize; c++) row.push(this.board[r][c]);
         const reversed: number[] = [];
-        for (let c: number = BOARD_SIZE - 1; c >= 0; c--) reversed.push(row[c]);
+        for (let c: number = this.boardSize - 1; c >= 0; c--) reversed.push(row[c]);
         const slid: number[] = this.slideRow(reversed);
         const back: number[] = [];
-        for (let c: number = BOARD_SIZE - 1; c >= 0; c--) back.push(slid[c]);
+        for (let c: number = this.boardSize - 1; c >= 0; c--) back.push(slid[c]);
         newBoard.push(back);
       }
     } else if (direction === 'up') {
-      for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let r: number = 0; r < this.boardSize; r++) {
         const row: number[] = [];
-        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(0);
+        for (let c: number = 0; c < this.boardSize; c++) row.push(0);
         newBoard.push(row);
       }
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         const col: number[] = [];
-        for (let r: number = 0; r < BOARD_SIZE; r++) col.push(this.board[r][c]);
+        for (let r: number = 0; r < this.boardSize; r++) col.push(this.board[r][c]);
         const slid: number[] = this.slideRow(col);
-        for (let r: number = 0; r < BOARD_SIZE; r++) newBoard[r][c] = slid[r];
+        for (let r: number = 0; r < this.boardSize; r++) newBoard[r][c] = slid[r];
       }
     } else if (direction === 'down') {
-      for (let r: number = 0; r < BOARD_SIZE; r++) {
+      for (let r: number = 0; r < this.boardSize; r++) {
         const row: number[] = [];
-        for (let c: number = 0; c < BOARD_SIZE; c++) row.push(0);
+        for (let c: number = 0; c < this.boardSize; c++) row.push(0);
         newBoard.push(row);
       }
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         const col: number[] = [];
-        for (let r: number = 0; r < BOARD_SIZE; r++) col.push(this.board[r][c]);
+        for (let r: number = 0; r < this.boardSize; r++) col.push(this.board[r][c]);
         const reversed: number[] = [];
         for (let i: number = col.length - 1; i >= 0; i--) reversed.push(col[i]);
         const slid: number[] = this.slideRow(reversed);
         const back: number[] = [];
         for (let i: number = slid.length - 1; i >= 0; i--) back.push(slid[i]);
-        for (let r: number = 0; r < BOARD_SIZE; r++) newBoard[r][c] = back[r];
+        for (let r: number = 0; r < this.boardSize; r++) newBoard[r][c] = back[r];
       }
     }
 
@@ -313,9 +339,9 @@ export struct Game2048Page {
   // ---- 胜负判定 ----
   private checkGameOver(): void {
     // 检查是否有2048
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
-        if (this.board[r][c] >= WIN_SCORE && !this.hasWonBefore) {
+    for (let r: number = 0; r < this.boardSize; r++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
+        if (this.board[r][c] >= this.targetValue && !this.hasWonBefore) {
           this.isWin = true;
           this.hasWonBefore = true;
           return;
@@ -324,20 +350,20 @@ export struct Game2048Page {
     }
 
     // 检查是否还有空位
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
-      for (let c: number = 0; c < BOARD_SIZE; c++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
+      for (let c: number = 0; c < this.boardSize; c++) {
         if (this.board[r][c] === 0) return;
       }
     }
 
     // 检查是否还能合并
-    for (let r: number = 0; r < BOARD_SIZE; r++) {
-      for (let c: number = 0; c < BOARD_SIZE - 1; c++) {
+    for (let r: number = 0; r < this.boardSize; r++) {
+      for (let c: number = 0; c < this.boardSize - 1; c++) {
         if (this.board[r][c] === this.board[r][c + 1]) return;
       }
     }
-    for (let c: number = 0; c < BOARD_SIZE; c++) {
-      for (let r: number = 0; r < BOARD_SIZE - 1; r++) {
+    for (let c: number = 0; c < this.boardSize; c++) {
+      for (let r: number = 0; r < this.boardSize - 1; r++) {
         if (this.board[r][c] === this.board[r + 1][c]) return;
       }
     }
@@ -353,13 +379,17 @@ export struct Game2048Page {
   private saveScore(): void {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
-    DataRepository.addGameScore('2048', this.score, 1, difficultyLabel(this.difficulty),
+    DataRepository.addGameScore('2048', this.score, this.currentLevel, difficultyLabel(this.difficulty),
       this.currentAiModelName(), this.playSeconds);
   }
 
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.difficulty = level;
+    this.currentLevel = 1;
+    const lc = this.levelConfig(this.currentLevel);
+    this.boardSize = lc.boardSize;
+    this.targetValue = lc.targetValue;
     this.gameStarted = true;
     this.initBoard();
     this.score = 0;
@@ -372,8 +402,7 @@ export struct Game2048Page {
     this.playSeconds = 0;
     this.scoreSaved = false;
     this.gameStartTime = Date.now();
-    const config = this.difficultyConfig(this.difficulty);
-    for (let i: number = 0; i < config.initTiles; i++) {
+    for (let i: number = 0; i < lc.initTiles; i++) {
       this.addRandomTile();
     }
   }
@@ -381,6 +410,9 @@ export struct Game2048Page {
   restartGame(): void {
     this.stopAi();
     this.aiHosted = false;
+    const lc = this.levelConfig(this.currentLevel);
+    this.boardSize = lc.boardSize;
+    this.targetValue = lc.targetValue;
     this.initBoard();
     this.score = 0;
     this.isGameOver = false;
@@ -392,14 +424,40 @@ export struct Game2048Page {
     this.playSeconds = 0;
     this.scoreSaved = false;
     this.gameStartTime = Date.now();
-    const config = this.difficultyConfig(this.difficulty);
-    for (let i: number = 0; i < config.initTiles; i++) {
+    for (let i: number = 0; i < lc.initTiles; i++) {
       this.addRandomTile();
     }
   }
 
   continueGame(): void {
     this.isWin = false;
+  }
+
+  nextLevel(): void {
+    this.currentLevel += 1;
+    if (this.currentLevel > this.bestLevel) {
+      this.bestLevel = this.currentLevel;
+    }
+    this.saveLevelProgress();
+    this.restartGame();
+  }
+
+  private async saveLevelProgress(): Promise<void> {
+    try {
+      await DataRepository.setSetting('2048_currentLevel', this.currentLevel.toString());
+      await DataRepository.setSetting('2048_bestLevel', this.bestLevel.toString());
+    } catch (e) {
+    }
+  }
+
+  private async loadLevelProgress(): Promise<void> {
+    try {
+      const current = Number(await DataRepository.getSetting('2048_currentLevel', '1'));
+      const best = Number(await DataRepository.getSetting('2048_bestLevel', '1'));
+      if (!Number.isNaN(current) && current > 0) this.currentLevel = current;
+      if (!Number.isNaN(best) && best > 0) this.bestLevel = best;
+    } catch (e) {
+    }
   }
 
   // ---- 暂停 ----
@@ -537,7 +595,8 @@ export struct Game2048Page {
       this.aiThinkCount += 1;
       this.aiStatus = 'AI 思考中…';
       this.startThinkTimer();
-      const stateText: string = GameAIService.serializeGrid2048(this.board);
+      const stateText: string = `当前关卡：${this.currentLevel}，目标数字：${this.targetValue}，棋盘：${this.boardSize}x${this.boardSize}\n` +
+        GameAIService.serializeGrid2048(this.board);
       const messages = GameAIService.buildMessages('2048', this.difficulty, stateText);
       const result = await GameAIService.decide(this.aiConfig, messages, '2048');
       this.stopThinkTimer();
@@ -631,6 +690,44 @@ export struct Game2048Page {
   @Builder
   scoreBoard() {
     Row({ space: 12 }) {
+      // 当前关卡
+      Column({ space: 2 }) {
+        Text('关卡')
+          .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+        Text(this.currentLevel.toString())
+          .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.info)
+          .fontWeight(FontWeight.Bold)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+      .padding(12)
+      .backgroundColor(this.palette.bgSurface)
+      .borderRadius(10)
+      .border({ width: 1, color: this.palette.borderSubtle })
+
+      // 目标数字
+      Column({ space: 2 }) {
+        Text('目标')
+          .fontSize(this.palette.fsXs)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.textTertiary)
+        Text(this.targetValue.toString())
+          .fontSize(this.palette.fs2xl)
+          .fontFamily(this.palette.fontSans)
+          .fontColor(this.palette.warning)
+          .fontWeight(FontWeight.Bold)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Center)
+      .padding(12)
+      .backgroundColor(this.palette.bgSurface)
+      .borderRadius(10)
+      .border({ width: 1, color: this.palette.borderSubtle })
+
       // 当前分数
       Column({ space: 2 }) {
         Text('分数')
@@ -682,7 +779,7 @@ export struct Game2048Page {
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.primary)
           .fontWeight(FontWeight.Bold)
-        Text('你达到了 2048！')
+        Text('你达到了 ' + this.targetValue.toString() + '！')
           .fontSize(this.palette.fsMd)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
@@ -693,7 +790,7 @@ export struct Game2048Page {
             .borderRadius(8)
             .border({ width: 1, color: this.palette.borderSubtle })
             .onClick(() => { this.continueGame(); })
-          Text('继续游戏')
+          Text('继续刷分')
             .fontSize(this.palette.fsMd)
             .fontFamily(this.palette.fontSans)
             .fontColor(this.palette.textSecondary)
@@ -703,8 +800,8 @@ export struct Game2048Page {
             .padding({ left: 20, right: 20, top: 10, bottom: 10 })
             .backgroundColor(this.palette.primary)
             .borderRadius(8)
-            .onClick(() => { this.restartGame(); })
-          Text('重新开始')
+            .onClick(() => { this.nextLevel(); })
+          Text('下一关')
             .fontSize(this.palette.fsMd)
             .fontFamily(this.palette.fontSans)
             .fontColor('#0A0E1A')
@@ -966,7 +1063,7 @@ export struct Game2048Page {
   }
 
   // ---- 生命周期 ----
-  aboutToAppear(): void {
+  async aboutToAppear(): Promise<void> {
     const params: GameRouteParams | null = AppNavigator.getParam('pages/Game2048') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.GAME_2048);
     if (!result.success || result.request === null) {
@@ -974,6 +1071,7 @@ export struct Game2048Page {
       AppNavigator.pop();
       return;
     }
+    await this.loadLevelProgress();
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
@@ -1067,7 +1165,7 @@ export struct Game2048Page {
       Column() {
         TopBar({
           title: this.titleText,
-          subtitle: '合并数字，达到2048',
+          subtitle: '第' + this.currentLevel.toString() + '关 · 目标' + this.targetValue.toString(),
           showBack: true
         }) {
           this.actionsBuilder()
@@ -1158,7 +1256,7 @@ export struct Game2048Page {
                     .fontSize(this.palette.fsSm)
                     .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.textSecondary)
-                  Text('目标：达到 2048！')
+                  Text('目标：达到 ' + this.targetValue.toString() + '！')
                     .fontSize(this.palette.fsSm)
                     .fontFamily(this.palette.fontSans)
                     .fontColor(this.palette.primary)
