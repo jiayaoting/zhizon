@@ -35,6 +35,7 @@ enum Direction {
 export struct SnakePage {
   @State snake: Point[] = [];
   @State food: Point = { x: 0, y: 0 };
+  @State foodBonus: boolean = false;
   @State snakeDirection: Direction = Direction.RIGHT;
   @State nextDirection: Direction = Direction.RIGHT;
   @State score: number = 0;
@@ -172,6 +173,7 @@ export struct SnakePage {
     }
     const idx: number = Math.floor(Math.random() * available.length);
     this.food = available[idx];
+    this.foodBonus = Math.random() < 0.2;
   }
 
   // ---- 移动逻辑 ----
@@ -217,7 +219,8 @@ export struct SnakePage {
 
     // 检查是否吃到食物
     if (newHead.x === this.food.x && newHead.y === this.food.y) {
-      this.score += 10;
+      const gained: number = this.foodBonus ? 50 : 10;
+      this.score += gained;
       this.level = Math.floor(this.score / 100) + 1;
       // 保持尾部，蛇变长
       this.snake = newSnake;
@@ -226,7 +229,7 @@ export struct SnakePage {
       this.restartTimer();
       // 触觉反馈 + 飘字
       this.vibrate(15);
-      this.showScoreFloat('+10');
+      this.showScoreFloat('+' + gained.toString());
       // 等级提升提示
       if (this.level > this.lastLevel) {
         promptAction.showToast({ message: `等级提升 → Level ${this.level}` });
@@ -584,8 +587,8 @@ export struct SnakePage {
       return this.palette.primaryDim;
     }
     if (cell === 3) {
-      // 食物
-      return this.palette.danger;
+      // 食物：金色为加分食物
+      return this.foodBonus ? '#FBBF24' : this.palette.danger;
     }
     return this.palette.bgSurface2;
   }
