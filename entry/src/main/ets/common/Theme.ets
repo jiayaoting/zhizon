@@ -398,6 +398,7 @@ export class ThemeManager {
   private effectiveMode: ThemeMode = ThemeMode.DARK;
   private backgroundPreference: GlobalBackgroundPreference = new GlobalBackgroundPreference('', 50);
   private glassEffectEnabled: boolean = false;
+  private liquidGlassEnabled: boolean = false;
   private fontSizeScale: string = 'standard';
   private fontFamily: string = 'HarmonyOS Sans';
   private context: Context | null = null;
@@ -453,6 +454,12 @@ export class ThemeManager {
       // 加载毛玻璃开关
       const glassEnabled = await DataRepository.getSetting('glassEffectEnabled', 'false');
       this.glassEffectEnabled = glassEnabled === 'true';
+      // 加载液态玻璃开关（与毛玻璃互斥）
+      const liquidGlassEnabled = await DataRepository.getSetting('liquidGlassEnabled', 'false');
+      this.liquidGlassEnabled = liquidGlassEnabled === 'true';
+      if (this.liquidGlassEnabled) {
+        this.glassEffectEnabled = false;
+      }
 
       this.applyFontSize(this.fontSizeScale);
       DataRepository.initializePreferenceSnapshot(this.createPreferenceSnapshot(0));
@@ -575,10 +582,12 @@ export class ThemeManager {
     AppStorage.setOrCreate('globalBackgroundUri', this.backgroundPreference.globalUri);
     AppStorage.setOrCreate('backgroundVisibleStrength', this.backgroundPreference.visibleStrength);
     AppStorage.setOrCreate('glassEffectEnabled', this.glassEffectEnabled);
+    AppStorage.setOrCreate('liquidGlassEnabled', this.liquidGlassEnabled);
     if (this.themeState !== null) {
       this.themeState.palette = raw;
       this.themeState.isDark = raw.isDark;
       this.themeState.glassEnabled = this.glassEffectEnabled;
+      this.themeState.liquidGlassEnabled = this.liquidGlassEnabled;
       this.themeState.globalBackgroundUri = this.backgroundPreference.globalUri;
       this.themeState.backgroundVisibleStrength = this.backgroundPreference.visibleStrength;
       this.themeState.followSystemDark = this.followSystem;
@@ -659,15 +668,37 @@ export class ThemeManager {
       false, '', strength));
   }
 
-  // 设置毛玻璃效果开关
+  // 设置毛玻璃效果开关（开启时自动关闭液态玻璃）
   async setGlassEffect(enabled: boolean): Promise<PreferenceMutationResult> {
+    if (enabled && this.liquidGlassEnabled) {
+      this.liquidGlassEnabled = false;
+      await DataRepository.setSetting('liquidGlassEnabled', 'false');
+    }
     return await this.enqueueMutation(new PreferenceMutation(PreferenceMutationType.GLASS_EFFECT,
       enabled, '', 0));
+  }
+
+  // 设置液态玻璃效果开关（开启时自动关闭毛玻璃）
+  async setLiquidGlassEffect(enabled: boolean): Promise<PreferenceMutationResult> {
+    if (enabled && this.glassEffectEnabled) {
+      this.glassEffectEnabled = false;
+      await DataRepository.setSetting('glassEffectEnabled', 'false');
+    }
+    this.liquidGlassEnabled = enabled;
+    await DataRepository.setSetting('liquidGlassEnabled', enabled ? 'true' : 'false');
+    this.applyTheme();
+    return new PreferenceMutationResult(true, false, true, null, ++this.operationVersion,
+      DataRepository.getPreferenceSnapshot(), DataRepository.getPreferenceSnapshot());
   }
 
   // 获取毛玻璃效果是否开启
   getGlassEffectEnabled(): boolean {
     return this.glassEffectEnabled;
+  }
+
+  // 获取液态玻璃效果是否开启
+  getLiquidGlassEnabled(): boolean {
+    return this.liquidGlassEnabled;
   }
 
   reportBackgroundLoadFailure(uri: string): void {

@@ -13,6 +13,7 @@ export class ThemeState {
   @Trace statusBarHeight: number = 20;
   @Trace isWideNav: boolean = false;
   @Trace glassEnabled: boolean = false;
+  @Trace liquidGlassEnabled: boolean = false;
   @Trace isLandscape: boolean = false;
   @Trace globalBackgroundUri: string = '';
   @Trace backgroundCandidateUri: string = '';

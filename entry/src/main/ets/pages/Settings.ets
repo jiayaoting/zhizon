@@ -69,6 +69,7 @@ export struct SettingsPage {
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
+  @StorageLink('liquidGlassEnabled') liquidGlassEnabled: boolean = false;
   @StorageLink('isDarkMode') isDarkMode: boolean = true;
   @StorageLink('followSystemDark') followSystemDark: boolean = true;
   @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
@@ -387,12 +388,29 @@ export struct SettingsPage {
 
   private async updateGlassEffect(enabled: boolean): Promise<void> {
     this.glassEnabled = enabled;
+    if (enabled) {
+      this.liquidGlassEnabled = false;
+    }
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setGlassEffect(enabled);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(enabled ? '已开启毛玻璃效果' : '已关闭毛玻璃效果');
     } else {
       this.glassEnabled = !enabled;
+      this.toast('设置未保存，请重试');
+    }
+  }
+
+  private async updateLiquidGlassEffect(enabled: boolean): Promise<void> {
+    this.liquidGlassEnabled = enabled;
+    if (enabled) {
+      this.glassEnabled = false;
+    }
+    const result: PreferenceMutationResult = await ThemeManager.getInstance().setLiquidGlassEffect(enabled);
+    if (result.success) {
+      this.toast(enabled ? '已开启液态玻璃效果' : '已关闭液态玻璃效果');
+    } else {
+      this.liquidGlassEnabled = !enabled;
       this.toast('设置未保存，请重试');
     }
   }
@@ -1471,6 +1489,36 @@ export struct SettingsPage {
                 .borderRadius(6)
                 .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
                 Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
+
+                // 液态玻璃效果
+                Text('液态玻璃效果')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .margin({ top: 12 })
+                Row() {
+                  Text('启用液态玻璃效果')
+                    .fontSize(this.palette.fsBase)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textPrimary)
+                    .layoutWeight(1)
+                  Toggle({ type: ToggleType.Switch, isOn: this.liquidGlassEnabled })
+                    .selectedColor(this.palette.primary)
+                    .onChange((v: boolean) => {
+                      this.updateLiquidGlassEffect(v);
+                    })
+                }
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+                .borderRadius(6)
+                .backgroundColor(GlassStyle.innerBackgroundColor(this.liquidGlassEnabled, this.palette))
+                Text('开启后界面呈现更通透的液态玻璃质感，与毛玻璃互斥。')
                   .fontSize(this.palette.fsXs)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)

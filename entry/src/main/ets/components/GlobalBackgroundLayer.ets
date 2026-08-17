@@ -37,6 +37,14 @@ export struct GlobalBackgroundLayer {
         .width('100%')
         .height('100%')
         .backgroundColor(this.themeState.palette.isDark ? 'rgba(10, 14, 26, 0.45)' : 'rgba(245, 246, 250, 0.45)')
+      if (this.themeState.liquidGlassEnabled) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.themeState.palette.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.20)')
+          .border({ width: 1, color: this.themeState.palette.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.60)' })
+          .backdropBlur(24)
+      }
     }
     .width('100%')
     .height('100%')
