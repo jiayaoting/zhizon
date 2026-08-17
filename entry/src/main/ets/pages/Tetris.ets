@@ -89,6 +89,8 @@ export struct TetrisPage {
   @State isPaused: boolean = false;
   @State clearedRows: number[] = [];
   @State combo: number = -1;
+  @State tSpin: boolean = false;
+  @State lastAction: string = 'drop';
   @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   @State gameStarted: boolean = false;
   @State bestScore: number = 0;
@@ -235,6 +237,7 @@ export struct TetrisPage {
     const p: Piece = this.currentPiece;
     if (!this.collides(p.type, p.rotation, p.x + dx, p.y + dy)) {
       this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x + dx, y: p.y + dy };
+      this.lastAction = 'move';
       return true;
     }
     return false;
@@ -250,6 +253,7 @@ export struct TetrisPage {
     // 尝试基础旋转
     if (!this.collides(p.type, newRot, p.x, p.y)) {
       this.currentPiece = { type: p.type, rotation: newRot, x: p.x, y: p.y };
+      this.lastAction = 'rotate';
       this.vibrate(10);
       return;
     }
@@ -258,6 +262,7 @@ export struct TetrisPage {
     for (let k: number = 0; k < kicks.length; k++) {
       if (!this.collides(p.type, newRot, p.x + kicks[k], p.y)) {
         this.currentPiece = { type: p.type, rotation: newRot, x: p.x + kicks[k], y: p.y };
+        this.lastAction = 'rotate';
         this.vibrate(10);
         return;
       }
@@ -270,6 +275,7 @@ export struct TetrisPage {
     const p: Piece = this.currentPiece;
     if (!this.collides(p.type, p.rotation, p.x, p.y + 1)) {
       this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x, y: p.y + 1 };
+      this.lastAction = 'drop';
       this.score += 1;
     } else {
       this.lockPiece();
@@ -284,6 +290,7 @@ export struct TetrisPage {
       dropY++;
     }
     this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x, y: dropY };
+    this.lastAction = 'drop';
     this.vibrate(20);
     this.lockPiece();
   }
@@ -322,6 +329,20 @@ export struct TetrisPage {
   private lockPiece(): void {
     if (this.currentPiece === null) return;
     const p: Piece = this.currentPiece;
+    // T-spin 简化检测：T 块且最后动作为旋转时，检查三个角是否被占用
+    this.tSpin = false;
+    if (p.type === 2 && this.lastAction === 'rotate') {
+      const corners: Array<[number, number]> = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+      let blocked: number = 0;
+      for (const corner of corners) {
+        const cx: number = p.x + corner[0];
+        const cy: number = p.y + corner[1];
+        if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS || (cy >= 0 && cy < ROWS && cx >= 0 && cx < COLS && this.board[cy][cx] !== 0)) {
+          blocked += 1;
+        }
+      }
+      this.tSpin = blocked >= 3;
+    }
     const shape: number[][] = SHAPES[p.type][p.rotation];
     const newBoard: number[][] = [];
     for (let r: number = 0; r < ROWS; r++) {
@@ -373,7 +394,7 @@ export struct TetrisPage {
       const cleared: number = fullRows.length;
       this.lines += cleared;
       this.combo += 1;
-      const gained: number = scoreForLines(cleared) + Math.max(0, this.combo) * 50;
+      const gained: number = scoreForLines(cleared) + Math.max(0, this.combo) * 50 + (this.tSpin ? 400 : 0);
       this.score += gained;
       this.level = Math.floor(this.lines / 10) + 1;
 
