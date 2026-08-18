@@ -56,6 +56,8 @@ export struct ChatTab {
   @State elapsedSeconds: number = 0;
   // 流式渲染节流：同一时刻最多一次定时刷新
   private renderScheduled: boolean = false;
+  // 当前待触发的流式刷新定时器（流结束时需取消，防止用清空后的 streamingContent 覆盖最终内容）
+  private flushTimer: number = -1;
   // 输入区高度（TextArea 动态增高）
   @State inputHeight: number = 44;
   // 图片附件（vision 模型）
@@ -105,6 +107,8 @@ export struct ChatTab {
 
   aboutToDisappear(): void {
     this.chatVm.dispose();
+    // 页面销毁时取消未触发的流式刷新定时器，避免回调在组件销毁后仍写入消息对象
+    this.cancelRenderFlush();
   }
 
   // 作为 Tab 嵌入后无 onPageShow，改为监听宿主递增的刷新 token（ChatConfig 返回/切回本 Tab 时触发）
@@ -368,12 +372,28 @@ export struct ChatTab {
   private scheduleRenderFlush(assistantMessage: ChatMessage): void {
     if (this.renderScheduled) return;
     this.renderScheduled = true;
-    setTimeout(() => {
+    this.flushTimer = setTimeout(() => {
       this.renderScheduled = false;
-      assistantMessage.content = this.streamingContent;
-      assistantMessage.reasoning = this.streamingReasoning;
-      this.scrollToBottom();
+      this.flushTimer = -1;
+      // 内容未变化时跳过赋值，避免无意义的整条重渲染（@ObjectLink 监听赋值）
+      if (assistantMessage.content !== this.streamingContent ||
+        assistantMessage.reasoning !== this.streamingReasoning) {
+        assistantMessage.content = this.streamingContent;
+        assistantMessage.reasoning = this.streamingReasoning;
+        this.scrollToBottom();
+      }
     }, 60);
+  }
+
+  // 流结束/停止时取消尚未触发的刷新定时器：
+  // 若不清除，定时器会在 streamingContent 被清空后触发，用空字符串覆盖最终内容，
+  // 导致流式结束消息只剩占位符 …（useMarkdown 判定内容为空）
+  private cancelRenderFlush(): void {
+    if (this.flushTimer >= 0) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = -1;
+    }
+    this.renderScheduled = false;
   }
 
 
@@ -501,7 +521,9 @@ export struct ChatTab {
     this.sending = false;
     this.streaming = false;
     this.chatVm.finish();
-    this.renderScheduled = false;
+    // 取消尚未触发的流式刷新定时器：此时 streamingContent 即将被清空，
+    // 若定时器稍后触发会把空字符串写回消息，覆盖刚设置好的最终内容
+    this.cancelRenderFlush();
     this.streamRequest = null;
     // 记录状态与用量
     assistantMessage.status = result.success ? 'ok' : 'failed';
@@ -570,7 +592,8 @@ export struct ChatTab {
     this.streaming = false;
     this.sending = false;
     this.chatVm.stopByUser();
-    this.renderScheduled = false;
+    // 取消尚未触发的流式刷新定时器（避免其稍后用旧 streamingContent 覆盖）
+    this.cancelRenderFlush();
     if (this.streamingContent.length === 0 && this.streamingReasoning.length === 0) {
       // 若停止时无内容，移除最后一条空的 assistant 消息
       if (this.messages.length > 0) {
