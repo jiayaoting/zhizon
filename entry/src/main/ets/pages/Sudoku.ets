@@ -62,6 +62,7 @@ export struct SudokuPage {
   @State aiFailCount: number = 0;
   @State aiThinkCount: number = 0;
   @State aiThinkTimeMs: number = 0;
+  @State aiThinkTotalMs: number = 0;
   private aiThinkTimer: number = -1;
   private aiThinkStart: number = 0;
   private aiHosted: boolean = false;
@@ -221,6 +222,7 @@ export struct SudokuPage {
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
     this.aiThinkTimeMs = 0;
+    this.aiThinkTotalMs = 0;
     this.generatePuzzle();
     this.startTimer();
     this.vibrate(20);
@@ -344,7 +346,7 @@ export struct SudokuPage {
     }
     try {
       await DataRepository.addGameScore(GameId.SUDOKU, this.playSeconds, 0, difficultyLabel(this.difficulty),
-        this.currentAiModelName(), this.playSeconds);
+        this.currentAiModelName(), this.playSeconds, Math.floor(this.aiThinkTotalMs / 1000));
     } catch (e) {
       // 战绩写入失败不影响游戏流程
     }
@@ -425,6 +427,12 @@ export struct SudokuPage {
     this.isPaused = false;
     this.aiHosted = true;
     this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
+    this.aiThinkTotalMs = 0;
+    // 游戏时间从点击「AI 托管」这一刻开始计时（含 AI 思考耗时）
+    this.gameStartTime = Date.now();
+    this.playSeconds = 0;
     this.aiRunning = true;
     this.aiStatus = 'AI 准备中…';
     this.aiLoop().catch((e: Object) => {
@@ -441,9 +449,9 @@ export struct SudokuPage {
 
   // 本轮思考计时：每次思考开始刷新起始点并启动 100ms 定时器实时更新耗时
   private startThinkTimer(): void {
+    this.stopThinkTimer();
     this.aiThinkStart = Date.now();
     this.aiThinkTimeMs = 0;
-    this.stopThinkTimer();
     this.aiThinkTimer = setInterval(() => {
       this.aiThinkTimeMs = Date.now() - this.aiThinkStart;
     }, 100);
@@ -453,6 +461,8 @@ export struct SudokuPage {
     if (this.aiThinkTimer >= 0) {
       clearInterval(this.aiThinkTimer);
       this.aiThinkTimer = -1;
+      // 累计 AI 思考总时长（毫秒）
+      this.aiThinkTotalMs += Math.max(0, Date.now() - this.aiThinkStart);
     }
   }
 
@@ -1192,6 +1202,7 @@ export struct SudokuPage {
                 thinkingCount: this.aiThinkCount,
                 thinkingFailCount: this.aiFailCount,
                 thinkingTimeMs: this.aiThinkTimeMs,
+                thinkingTotalMs: this.aiThinkTotalMs,
                 onSelectModel: (index: number): void => { this.selectAiModel(index); },
                 onToggleRun: (): void => { this.toggleAi(); },
                 onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
@@ -1242,6 +1253,7 @@ export struct SudokuPage {
                   thinkingCount: this.aiThinkCount,
                   thinkingFailCount: this.aiFailCount,
                   thinkingTimeMs: this.aiThinkTimeMs,
+                  thinkingTotalMs: this.aiThinkTotalMs,
                   onSelectModel: (index: number): void => { this.selectAiModel(index); },
                   onToggleRun: (): void => { this.toggleAi(); },
                   onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }

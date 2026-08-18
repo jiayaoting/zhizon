@@ -16,6 +16,8 @@ export struct GameAIPanel {
   @Param thinkingFailCount: number = 0;
   // 本轮思考已用时间（毫秒，由托管方实时刷新）
   @Param thinkingTimeMs: number = 0;
+  // AI 思考累计总时长（毫秒，托管期间累积，用于展示思考总耗时）
+  @Param thinkingTotalMs: number = 0;
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Event onSelectModel: (index: number) => void = () => {};
   @Event onToggleRun: () => void = () => {};
@@ -104,11 +106,12 @@ export struct GameAIPanel {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // 第三行：思考统计（总次数 / 失败次数）—— 右对齐，有数据时才显示
+      // 第三行：思考统计（总次数 / 累计思考时长 / 失败次数）—— 右对齐，有数据时才显示
       if (this.thinkingCount > 0 || this.thinkingFailCount > 0) {
         Row({ space: 8 }) {
           if (this.thinkingCount > 0) {
-            Text('思考 ' + this.thinkingCount.toString() + ' 次')
+            Text('思考 ' + this.thinkingCount.toString() + ' 次' +
+              (this.thinkingTotalMs > 0 ? ' · 共 ' + this.formatThinkTime(this.thinkingTotalMs) : ''))
               .fontSize(this.themeState.palette.fsXs)
               .fontFamily(this.themeState.palette.fontSans)
               .fontColor(this.themeState.palette.textSecondary)

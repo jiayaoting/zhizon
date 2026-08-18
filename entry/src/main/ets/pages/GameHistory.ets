@@ -232,7 +232,7 @@ export struct GameHistoryPage {
                   .alignItems(HorizontalAlign.Center)
                 }
 
-                // 用时（本局总耗时）
+                // 用时（本局总耗时）+ AI 思考总时长（AI 托管时显示）
                 Column({ space: 2 }) {
                   Text(formatDuration(entry.duration))
                     .fontSize(this.themeState.palette.fsSm)
@@ -243,6 +243,12 @@ export struct GameHistoryPage {
                     .fontSize(this.themeState.palette.fsXs)
                     .fontFamily(this.themeState.palette.fontSans)
                     .fontColor(this.themeState.palette.textTertiary)
+                  if (entry.aiThinkTime > 0) {
+                    Text('🤖 思考 ' + formatDuration(entry.aiThinkTime))
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.primary)
+                  }
                 }
                 .alignItems(HorizontalAlign.Center)
 

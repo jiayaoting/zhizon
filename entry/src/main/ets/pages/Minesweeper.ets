@@ -190,6 +190,7 @@ export struct MinesweeperPage {
   @State aiFailCount: number = 0;
   @State aiThinkCount: number = 0;
   @State aiThinkTimeMs: number = 0;
+  @State aiThinkTotalMs: number = 0;
   private aiThinkTimer: number = -1;
   private aiThinkStart: number = 0;
   private aiHosted: boolean = false;
@@ -400,7 +401,7 @@ export struct MinesweeperPage {
     if (this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('Minesweeper', this.score, this.currentLevel, difficultyLabel(this.difficulty),
-      this.currentAiModelName(), this.playSeconds);
+      this.currentAiModelName(), this.playSeconds, Math.floor(this.aiThinkTotalMs / 1000));
   }
 
   private async saveLevelProgress(): Promise<void> {
@@ -437,6 +438,7 @@ export struct MinesweeperPage {
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
     this.aiThinkTimeMs = 0;
+    this.aiThinkTotalMs = 0;
     this.difficulty = level;
     this.gameStarted = true;
     this.isGameOver = false;
@@ -457,6 +459,7 @@ export struct MinesweeperPage {
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
     this.aiThinkTimeMs = 0;
+    this.aiThinkTotalMs = 0;
     this.stopTimer();
     this.isGameOver = false;
     this.isWin = false;
@@ -567,6 +570,12 @@ export struct MinesweeperPage {
     this.isPaused = false;
     this.aiHosted = true;
     this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
+    this.aiThinkTotalMs = 0;
+    // 游戏时间从点击「AI 托管」这一刻开始计时（含 AI 思考耗时）
+    this.playSeconds = 0;
+    this.startTimer();
     this.aiRunning = true;
     this.aiStatus = 'AI 准备中…';
     this.aiLoop().catch((e: Object) => {
@@ -583,9 +592,9 @@ export struct MinesweeperPage {
 
   // 本轮思考计时：每次思考开始刷新起始点并启动 100ms 定时器实时更新耗时
   private startThinkTimer(): void {
+    this.stopThinkTimer();
     this.aiThinkStart = Date.now();
     this.aiThinkTimeMs = 0;
-    this.stopThinkTimer();
     this.aiThinkTimer = setInterval(() => {
       this.aiThinkTimeMs = Date.now() - this.aiThinkStart;
     }, 100);
@@ -595,6 +604,8 @@ export struct MinesweeperPage {
     if (this.aiThinkTimer >= 0) {
       clearInterval(this.aiThinkTimer);
       this.aiThinkTimer = -1;
+      // 累计 AI 思考总时长（毫秒）
+      this.aiThinkTotalMs += Math.max(0, Date.now() - this.aiThinkStart);
     }
   }
 
@@ -1312,6 +1323,7 @@ export struct MinesweeperPage {
                 thinkingCount: this.aiThinkCount,
                 thinkingFailCount: this.aiFailCount,
                 thinkingTimeMs: this.aiThinkTimeMs,
+                thinkingTotalMs: this.aiThinkTotalMs,
                 onSelectModel: (index: number): void => { this.selectAiModel(index); },
                 onToggleRun: (): void => { this.toggleAi(); },
                 onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }
@@ -1363,6 +1375,7 @@ export struct MinesweeperPage {
                     thinkingCount: this.aiThinkCount,
                     thinkingFailCount: this.aiFailCount,
                     thinkingTimeMs: this.aiThinkTimeMs,
+                    thinkingTotalMs: this.aiThinkTotalMs,
                     onSelectModel: (index: number): void => { this.selectAiModel(index); },
                     onToggleRun: (): void => { this.toggleAi(); },
                     onSpeedChange: (index: number): void => { this.changeAiSpeed(index); }

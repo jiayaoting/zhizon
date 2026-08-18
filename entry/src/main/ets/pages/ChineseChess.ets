@@ -123,6 +123,8 @@ export struct ChineseChessPage {
   // AI 思考等待计时（每秒刷新 thinkingText，避免界面长时间无变化）
   private thinkTimer: number = -1;
   private thinkStart: number = 0;
+  // AI 思考累计总时长（毫秒，本局内累积）
+  private aiThinkTotalMs: number = 0;
 
   // ---- 棋子/记谱 ----
   private pieceName(piece: string): string {
@@ -287,6 +289,7 @@ export struct ChineseChessPage {
     this.redInCheck = false;
     this.blackInCheck = false;
     this.stopThinkTimer();
+    this.aiThinkTotalMs = 0;
     this.stopStepDelay();
   }
 
@@ -364,6 +367,8 @@ export struct ChineseChessPage {
     if (this.thinkTimer >= 0) {
       clearInterval(this.thinkTimer);
       this.thinkTimer = -1;
+      // 累计 AI 思考总时长（毫秒）
+      this.aiThinkTotalMs += Math.max(0, Date.now() - this.thinkStart);
     }
   }
 
@@ -621,7 +626,7 @@ export struct ChineseChessPage {
     const duration: number = this.gameStartTime > 0 ?
       Math.max(0, Math.floor((Date.now() - this.gameStartTime) / 1000)) : 0;
     DataRepository.addGameScore('ChineseChess', playerWins ? 1 : 0, this.engineDiffIndex, diffLabel,
-      this.currentAiModelName(), duration);
+      this.currentAiModelName(), duration, Math.floor(this.aiThinkTotalMs / 1000));
   }
 
   // AI 托管时使用的模型显示名（取配置中的显示名称）；纯手动/仅本地引擎返回空串
