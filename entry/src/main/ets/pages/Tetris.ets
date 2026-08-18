@@ -36,6 +36,20 @@ const SHAPES: Array<Array<Array<[number, number]>>> = [
   [[[2,0],[0,1],[1,1],[2,1]], [[1,0],[1,1],[1,2],[2,2]], [[0,1],[1,1],[2,1],[0,2]], [[0,0],[1,0],[1,1],[1,2]]]
 ];
 
+// SRS 踢墙表（简化标准）
+const SRS_KICKS_JLSTZ: Array<Array<[number, number]>> = [
+  [[-1, 0], [-1, 1], [0, -2], [-1, -2]],
+  [[1, 0], [1, -1], [0, 2], [1, 2]],
+  [[1, 0], [1, 1], [0, -2], [1, -2]],
+  [[-1, 0], [-1, -1], [0, 2], [-1, 2]]
+];
+const SRS_KICKS_I: Array<Array<[number, number]>> = [
+  [[-2, 0], [1, 0], [-2, -1], [1, 2]],
+  [[-1, 0], [2, 0], [-1, 2], [2, -1]],
+  [[2, 0], [-1, 0], [2, 1], [-1, -2]],
+  [[1, 0], [-2, 0], [1, -2], [-2, 1]]
+];
+
 const PIECE_COLORS: string[] = [
   '#00D4AA',   // I - 青绿
   '#FBBF24',   // O - 黄
@@ -257,11 +271,14 @@ export struct TetrisPage {
       this.vibrate(10);
       return;
     }
-    // Wall kick：尝试左右偏移
-    const kicks: number[] = [-1, 1, -2, 2];
+    // SRS Wall kick：根据方块类型和旋转状态尝试标准踢墙表
+    const kickTable: Array<Array<[number, number]>> = p.type === 0 ? SRS_KICKS_I : SRS_KICKS_JLSTZ;
+    const kicks: Array<[number, number]> = kickTable[p.rotation];
     for (let k: number = 0; k < kicks.length; k++) {
-      if (!this.collides(p.type, newRot, p.x + kicks[k], p.y)) {
-        this.currentPiece = { type: p.type, rotation: newRot, x: p.x + kicks[k], y: p.y };
+      const dx: number = kicks[k][0];
+      const dy: number = kicks[k][1];
+      if (!this.collides(p.type, newRot, p.x + dx, p.y + dy)) {
+        this.currentPiece = { type: p.type, rotation: newRot, x: p.x + dx, y: p.y + dy };
         this.lastAction = 'rotate';
         this.vibrate(10);
         return;
