@@ -640,25 +640,38 @@ export struct SnakePage {
   // ---- 棋盘渲染 ----
   @Builder
   gameBoard() {
-    Column() {
-      ForEach(this.getDisplayGrid(), (row: number[], rowIdx: number) => {
-        Row() {
-          ForEach(row, (cell: number, colIdx: number) => {
-            Row()
-              .layoutWeight(1)
-              .aspectRatio(1)
-              .borderRadius(2)
-              .backgroundColor(this.cellColor(cell, colIdx, rowIdx))
-              // 食物脉冲动画
-              .scale(cell === 3 ? { x: 1.12, y: 1.12 } : { x: 1, y: 1 })
-              .animation(cell === 3 ?
-                { duration: 600, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate } :
-                { duration: 0 })
-          }, (colIdx: number) => colIdx.toString())
-        }
-        .layoutWeight(1)
-        .width('100%')
-      }, (rowIdx: number) => rowIdx.toString())
+    Stack() {
+      Column() {
+        ForEach(this.getDisplayGrid(), (row: number[], rowIdx: number) => {
+          Row() {
+            ForEach(row, (cell: number, colIdx: number) => {
+              Row()
+                .layoutWeight(1)
+                .aspectRatio(1)
+                .borderRadius(2)
+                .backgroundColor(this.cellColor(cell, colIdx, rowIdx))
+                .scale(cell === 3 ? { x: 1.12, y: 1.12 } : { x: 1, y: 1 })
+                .animation(cell === 3 ?
+                  { duration: 600, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate } :
+                  { duration: 0 })
+            }, (colIdx: number) => colIdx.toString())
+          }
+          .layoutWeight(1)
+          .width('100%')
+        }, (rowIdx: number) => rowIdx.toString())
+      }
+      .width('100%')
+      .height('100%')
+
+      ForEach(this.snake, (seg: Point, index: number) => {
+        Row()
+          .width(this.boardCellSize())
+          .height(this.boardCellSize())
+          .borderRadius(3)
+          .backgroundColor(index === 0 ? this.palette.primary : this.palette.primaryDim)
+          .position({ x: seg.x * this.boardCellSize(), y: seg.y * this.boardCellSize() })
+          .animation({ duration: 120, curve: Curve.EaseInOut })
+      }, (seg: Point, index: number) => index.toString())
     }
     .width('100%')
     .aspectRatio(1)
