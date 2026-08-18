@@ -483,6 +483,9 @@ export struct TetrisPage {
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.difficulty = level;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.gameStarted = true;
     this.initBoard();
     this.score = 0;
@@ -506,6 +509,9 @@ export struct TetrisPage {
   restartGame(): void {
     this.stopAi();
     this.aiHosted = false;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.initBoard();
     this.score = 0;
     this.level = 1;
@@ -723,7 +729,20 @@ export struct TetrisPage {
       this.aiFailCount = 0;
       // 俄罗斯方块：一次请求返回完整动作序列，一次放置只调用一次 LLM，大幅提速
       const actions: GameAction[] = GameAIService.parseActionSequence('Tetris', result.content);
-      if (actions.length === 0) continue;
+      // 兜底：模型没有输出动作，或没有收尾下落时，强制 HARD_DROP，保证每轮一定落子
+      if (actions.length === 0) {
+        actions.push(new GameAction('HARD_DROP'));
+      }
+      let hasDrop: boolean = false;
+      for (let i: number = 0; i < actions.length; i++) {
+        if (actions[i].command === 'HARD_DROP' || actions[i].command === 'SOFT_DROP') {
+          hasDrop = true;
+          break;
+        }
+      }
+      if (!hasDrop) {
+        actions.push(new GameAction('HARD_DROP'));
+      }
       this.aiStatus = 'AI 执行 ' + actions.length.toString() + ' 步';
       for (let i: number = 0; i < actions.length; i++) {
         if (!this.aiRunning || this.isGameOver || this.isPaused) break;

@@ -433,6 +433,10 @@ export struct MinesweeperPage {
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.stopAi();
+    this.aiHosted = false;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.difficulty = level;
     this.gameStarted = true;
     this.isGameOver = false;
@@ -450,6 +454,9 @@ export struct MinesweeperPage {
   restartGame(): void {
     this.stopAi();
     this.aiHosted = false;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.stopTimer();
     this.isGameOver = false;
     this.isWin = false;
@@ -666,6 +673,27 @@ export struct MinesweeperPage {
     });
   }
 
+  // 本地兜底动作：优先翻开确定安全的未翻开格；无安全格时标记未标记的雷
+  private localSafeAction(): GameAction | null {
+    for (let r: number = 0; r < this.rows; r++) {
+      for (let c: number = 0; c < this.cols; c++) {
+        const cell: MineCell = this.board[r][c];
+        if (!cell.revealed && !cell.flagged && !cell.isMine) {
+          return new GameAction('REVEAL', r, c);
+        }
+      }
+    }
+    for (let r: number = 0; r < this.rows; r++) {
+      for (let c: number = 0; c < this.cols; c++) {
+        const cell: MineCell = this.board[r][c];
+        if (!cell.revealed && !cell.flagged && cell.isMine) {
+          return new GameAction('FLAG', r, c);
+        }
+      }
+    }
+    return null;
+  }
+
   // AI 决策循环：先本地确定性推理翻开/标旗，推理僵局后再调大模型决策
   private async aiLoop(): Promise<void> {
     if (!this.aiRunning || this.aiLoopActive) return;
@@ -679,16 +707,24 @@ export struct MinesweeperPage {
       this.startThinkTimer();
       this.aiStatus = 'AI 推理中…';
       let progressed: boolean = true;
+      let localProgress: boolean = false;
       while (progressed && this.aiRunning) {
         if (this.isGameOver || this.isWin || this.isPaused) break;
         progressed = this.inferStep();
-        if (progressed && this.aiSpeedIndex < AI_SPEED_DELAYS.length &&
-          AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
-          await this.inferDelay();
+        if (progressed) {
+          localProgress = true;
+          if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
+            await this.inferDelay();
+          }
         }
       }
       if (!this.aiRunning) break;
       if (this.isGameOver || this.isWin || this.isPaused) break;
+      // 本地推理已推进时无需调用大模型，继续下一轮本地推理，避免模型重复无效动作
+      if (localProgress) {
+        this.stopThinkTimer();
+        continue;
+      }
 
       // 阶段二：推理僵局，调用大模型决策
       this.aiStatus = 'AI 思考中…';
@@ -709,11 +745,30 @@ export struct MinesweeperPage {
       }
       this.aiFailCount = 0;
       const action: GameAction | null = GameAIService.parseAction('Minesweeper', result.content);
-      if (action === null) continue;
-      if (action.r < 0 || action.r >= this.rows || action.c < 0 || action.c >= this.cols) continue;
-      this.aiStatus = 'AI 执行 ' + action.command + ' (' + action.r.toString() + ',' + action.c.toString() + ')';
-      if (action.command === 'REVEAL') this.revealCell(action.r, action.c);
-      else if (action.command === 'FLAG') this.toggleFlag(action.r, action.c);
+      let acted: boolean = false;
+      if (action !== null && action.r >= 0 && action.r < this.rows &&
+        action.c >= 0 && action.c < this.cols) {
+        const cell: MineCell = this.board[action.r][action.c];
+        if (action.command === 'REVEAL' && !cell.revealed && !cell.flagged) {
+          this.aiStatus = 'AI 执行 REVEAL (' + action.r.toString() + ',' + action.c.toString() + ')';
+          this.revealCell(action.r, action.c);
+          acted = true;
+        } else if (action.command === 'FLAG' && !cell.revealed && !cell.flagged) {
+          this.aiStatus = 'AI 执行 FLAG (' + action.r.toString() + ',' + action.c.toString() + ')';
+          this.toggleFlag(action.r, action.c);
+          acted = true;
+        }
+      }
+      if (!acted) {
+        const fallback: GameAction | null = this.localSafeAction();
+        if (fallback !== null) {
+          this.aiStatus = 'AI 使用安全兜底 ' + fallback.command + ' (' + fallback.r.toString() + ',' + fallback.c.toString() + ')';
+          if (fallback.command === 'REVEAL') this.revealCell(fallback.r, fallback.c);
+          else this.toggleFlag(fallback.r, fallback.c);
+        } else {
+          break;
+        }
+      }
       if (this.isGameOver || this.isWin) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
         await new Promise<void>((resolve) => {

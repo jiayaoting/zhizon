@@ -400,6 +400,9 @@ export struct Game2048Page {
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.difficulty = level;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.currentLevel = 1;
     const lc = this.levelConfig(this.currentLevel);
     this.boardSize = lc.boardSize;
@@ -424,6 +427,9 @@ export struct Game2048Page {
   restartGame(): void {
     this.stopAi();
     this.aiHosted = false;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     const lc = this.levelConfig(this.currentLevel);
     this.boardSize = lc.boardSize;
     this.targetValue = lc.targetValue;
@@ -603,14 +609,17 @@ export struct Game2048Page {
   private async aiLoop(): Promise<void> {
     if (!this.aiRunning || this.aiLoopActive) return;
     this.aiLoopActive = true;
+    let noProgress: number = 0;
     while (this.aiRunning) {
       if (this.isGameOver || this.isWin || this.isPaused) break;
       if (this.aiConfig === null) break;
+      const localBest: string = GameAIService.suggest2048Move(this.board, this.targetValue);
       this.aiThinkCount += 1;
       this.aiStatus = 'AI 思考中…';
       this.startThinkTimer();
+      const hint: string = localBest.length > 0 ? '\n本回合推荐动作：' + localBest + '\n' : '';
       const stateText: string = `当前关卡：${this.currentLevel}，目标数字：${this.targetValue}，棋盘：${this.boardSize}x${this.boardSize}\n` +
-        GameAIService.serializeGrid2048(this.board);
+        GameAIService.serializeGrid2048(this.board) + hint;
       const messages = GameAIService.buildMessages('2048', this.difficulty, stateText);
       const result = await GameAIService.decide(this.aiConfig, messages, '2048');
       this.stopThinkTimer();
@@ -627,9 +636,40 @@ export struct Game2048Page {
       }
       this.aiFailCount = 0;
       const action: GameAction | null = GameAIService.parseAction('2048', result.content);
-      if (action === null) continue;
-      this.aiStatus = 'AI 执行 ' + action.command;
-      this.move(action.command.toLowerCase());
+      let command: string = action === null ? '' : action.command;
+      // 模型无有效动作，或本地发现一步制胜而模型未采用时，改走本地最优解
+      if (command.length === 0 && localBest.length > 0) {
+        this.aiStatus = 'AI 使用本地最优解';
+        command = localBest;
+      } else if (localBest.length > 0 && command.length > 0 &&
+        GameAIService.wouldWin2048(this.board, localBest, this.targetValue) &&
+        !GameAIService.wouldWin2048(this.board, command, this.targetValue)) {
+        this.aiStatus = 'AI 命中制胜步';
+        command = localBest;
+      }
+      if (command.length === 0) {
+        noProgress += 1;
+        if (noProgress >= 3) {
+          this.aiStatus = 'AI 无有效动作，已暂停';
+          this.stopAi();
+          break;
+        }
+        continue;
+      }
+      const before: number[][] = this.copyBoard();
+      this.aiStatus = 'AI 执行 ' + command;
+      this.move(command.toLowerCase());
+      if (!this.aiRunning) break;
+      if (!this.boardEquals(before, this.board)) {
+        noProgress = 0;
+      } else {
+        noProgress += 1;
+        if (localBest.length > 0 && localBest !== command) {
+          this.aiStatus = 'AI 修正：' + localBest;
+          this.move(localBest.toLowerCase());
+          noProgress = 0;
+        }
+      }
       if (this.isGameOver || this.isWin) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
         await new Promise<void>((resolve) => {
@@ -637,6 +677,11 @@ export struct Game2048Page {
         });
       }
       if (this.isGameOver || this.isWin) break;
+      if (noProgress >= 3) {
+        this.aiStatus = 'AI 无法推进，已暂停';
+        this.stopAi();
+        break;
+      }
     }
     this.aiLoopActive = false;
     this.stopThinkTimer();
@@ -797,29 +842,49 @@ export struct Game2048Page {
           .fontSize(this.palette.fsMd)
           .fontFamily(this.palette.fontSans)
           .fontColor(this.palette.textSecondary)
-        Row({ space: 12 }) {
-          Row()
-            .padding({ left: 20, right: 20, top: 10, bottom: 10 })
+        Row({ space: 16 }) {
+          // 继续刷分
+          Column({ space: 6 }) {
+            Row() {
+              Text('♾')
+                .fontSize(20)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
             .backgroundColor(this.palette.bgSurface2)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .onClick(() => { this.continueGame(); })
-          Text('继续刷分')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
-            .fontWeight(FontWeight.Medium)
+            .justifyContent(FlexAlign.Center)
+            Text('继续刷分')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.continueGame(); })
 
-          Row()
-            .padding({ left: 20, right: 20, top: 10, bottom: 10 })
+          // 下一关
+          Column({ space: 6 }) {
+            Row() {
+              Text('▶')
+                .fontSize(20)
+                .fontFamily(this.palette.fontSans)
+                .fontColor('#0A0E1A')
+                .fontWeight(FontWeight.Bold)
+            }
+            .width(48)
+            .height(48)
+            .borderRadius(24)
             .backgroundColor(this.palette.primary)
-            .borderRadius(8)
-            .onClick(() => { this.nextLevel(); })
-          Text('下一关')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor('#0A0E1A')
-            .fontWeight(FontWeight.Medium)
+            .justifyContent(FlexAlign.Center)
+            Text('下一关')
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+          }
+          .alignItems(HorizontalAlign.Center)
+          .onClick(() => { this.nextLevel(); })
         }
       }
       .alignItems(HorizontalAlign.Center)

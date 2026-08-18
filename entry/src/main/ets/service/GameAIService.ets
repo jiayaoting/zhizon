@@ -64,6 +64,27 @@ export class GameAction {
   }
 }
 
+// 2048 本地评估用结果：滑动/整盘模拟后的棋盘与本次合并得分
+class Slide2048Result {
+  line: number[];
+  gained: number;
+
+  constructor(line: number[], gained: number) {
+    this.line = line;
+    this.gained = gained;
+  }
+}
+
+class Move2048Result {
+  board: number[][];
+  gained: number;
+
+  constructor(board: number[][], gained: number) {
+    this.board = board;
+    this.gained = gained;
+  }
+}
+
 // 中国象棋走法描述（用于给 LLM 列出合法走法选项）
 export class ChineseChessMoveOption {
   index: number;
@@ -140,9 +161,12 @@ export class GameAIService {
     const diff: string = difficultyLabel(difficulty);
     if (kind === '2048') {
       return '你正在玩 2048 闯关模式。数字表示方块值，0 表示空格。\n' +
-        '当前难度：' + diff + '。用户消息中会给出当前关卡、目标数字和棋盘大小。\n' +
+        '当前难度：' + diff + '。用户消息中会给出当前关卡、目标数字、棋盘大小和推荐动作。\n' +
         '可用动作：LEFT、RIGHT、UP、DOWN，只输出一个动作。\n' +
-        '策略：优先合成目标数字，同时让大数保持在角落，避免棋盘过早填满。\n' +
+        '策略（严格优先级）：\n' +
+        '1. 若某方向能直接合成目标数字，必须无条件选择该方向。\n' +
+        '2. 优先合并相同的大数字，让最大数字保持在角落，避免棋盘过早填满。\n' +
+        '3. 禁止选择不会改变棋盘的方向；上一轮无效的方向本轮不得重复。\n' +
         '只回复一个动作单词，不要输出任何其他文字或解释。';
     }
     if (kind === 'Tetris') {
@@ -152,6 +176,7 @@ export class GameAIService {
         '请规划当前方块从当前位置到放置完成的完整动作序列，一次输出全部动作，最后以 HARD_DROP 收尾。\n' +
         '示例：LEFT LEFT ROTATE LEFT HARD_DROP\n' +
         '策略：优先消除行，尽量让方块落在低洼处并贴合已有方块，避免堆高，不要悬空。\n' +
+        '一旦确定落点就立即 HARD_DROP 收尾，禁止在可以落底时反复左右移动。\n' +
         '只输出动作序列（可含空格分隔的多个动作），不要输出任何其他文字或解释。';
     }
     if (kind === 'Snake') {
@@ -159,7 +184,8 @@ export class GameAIService {
         '当前难度：' + diff + '。\n' +
         '可用动作（用空格分隔一次输出多个）：UP、DOWN、LEFT、RIGHT。\n' +
         '请规划蛇头从当前位置到食物的移动路径，一次输出一串方向，直达食物或遇到危险就停。\n' +
-        '注意：不能直接掉头（反向移动会无效）。策略：优先走向食物，同时避免撞墙和撞到自己。\n' +
+        '注意：不能直接掉头（反向移动会无效）；禁止反复绕圈，每一步都应尽量接近食物。\n' +
+        '策略：优先走向食物，同时避免撞墙和撞到自己。\n' +
         '只输出方向序列（可含空格分隔的多个方向），不要输出任何其他文字或解释。';
     }
     if (kind === 'Minesweeper') {
@@ -167,6 +193,7 @@ export class GameAIService {
         '当前难度：' + diff + '。游戏已暂停等待你的决策，无需考虑时间因素。\n' +
         '可用动作：REVEAL r c（翻开格子）、FLAG r c（标记/取消标记），r、c 从 0 开始。\n' +
         '策略：优先翻开确定安全的格子，用数字推理标记地雷，绝不翻开已知有雷的格子。\n' +
+        '禁止选择已经翻开或已经标旗的格子；无把握时优先选择边界安全格。\n' +
         '只输出一个动作，格式如 REVEAL 3 5 或 FLAG 1 2，不要输出任何其他文字。';
     }
     if (kind === 'ChineseChess') {
@@ -186,7 +213,7 @@ export class GameAIService {
       '可用动作：SET r c v（在 r 行 c 列填入数字 v，一次可输出多行），r、c、v 均为 1-9。\n' +
       '规则：每行、每列、每个 3×3 宫格内数字 1-9 不重复。\n' +
       '请一次性推理出所有空格并输出，每个空格一行，格式：SET r c v\n' +
-      '策略：用排除法找唯一解，只填确定无冲突的格子。\n' +
+      '策略：用排除法找唯一解，只填确定无冲突的格子；已经正确填写的格子不要重复 SET。\n' +
       '只按格式输出 SET 行，不要输出任何其他文字。';
   }
 
@@ -438,6 +465,169 @@ export class GameAIService {
       out = out + '[' + board[r].join(', ') + ']\n';
     }
     return out;
+  }
+
+  // ---- 2048 本地评估（用于兜底与制胜步纠正，避免模型绕路或重复无效动作） ----
+
+  // 返回当前局面下本地评估出的最优方向；没有任何方向能改变棋盘时返回 ''
+  static suggest2048Move(board: number[][], targetValue: number): string {
+    const dirs: string[] = ['LEFT', 'RIGHT', 'UP', 'DOWN'];
+    let best: string = '';
+    let bestScore: number = -1000000000;
+    for (let d: number = 0; d < dirs.length; d++) {
+      const moved: Move2048Result | null = GameAIService.simulate2048(board, dirs[d]);
+      if (moved === null) continue;
+      const maxTile: number = GameAIService.maxTile2048(moved.board);
+      const empty: number = GameAIService.emptyCount2048(moved.board);
+      const mono: number = GameAIService.monotonicity2048(moved.board);
+      let score: number = moved.gained * 10 + empty * 200 + mono;
+      if (maxTile >= targetValue) score += 1000000;
+      score += GameAIService.cornerBonus2048(moved.board, maxTile);
+      if (score > bestScore) {
+        bestScore = score;
+        best = dirs[d];
+      }
+    }
+    return best;
+  }
+
+  // 判断执行某方向后是否直接达成目标数字
+  static wouldWin2048(board: number[][], direction: string, targetValue: number): boolean {
+    const moved: Move2048Result | null = GameAIService.simulate2048(board, direction);
+    if (moved === null) return false;
+    return GameAIService.maxTile2048(moved.board) >= targetValue;
+  }
+
+  private static simulate2048(board: number[][], direction: string): Move2048Result | null {
+    const size: number = board.length;
+    const out: number[][] = [];
+    for (let r: number = 0; r < size; r++) {
+      const row: number[] = [];
+      for (let c: number = 0; c < size; c++) row.push(0);
+      out.push(row);
+    }
+    let gained: number = 0;
+    if (direction === 'LEFT') {
+      for (let r: number = 0; r < size; r++) {
+        const slid: Slide2048Result = GameAIService.slide2048Left(board[r]);
+        out[r] = slid.line;
+        gained += slid.gained;
+      }
+    } else if (direction === 'RIGHT') {
+      for (let r: number = 0; r < size; r++) {
+        const reversed: number[] = GameAIService.reverseLine2048(board[r]);
+        const slid: Slide2048Result = GameAIService.slide2048Left(reversed);
+        out[r] = GameAIService.reverseLine2048(slid.line);
+        gained += slid.gained;
+      }
+    } else if (direction === 'UP') {
+      for (let c: number = 0; c < size; c++) {
+        const col: number[] = [];
+        for (let r: number = 0; r < size; r++) col.push(board[r][c]);
+        const slid: Slide2048Result = GameAIService.slide2048Left(col);
+        for (let r: number = 0; r < size; r++) out[r][c] = slid.line[r];
+        gained += slid.gained;
+      }
+    } else if (direction === 'DOWN') {
+      for (let c: number = 0; c < size; c++) {
+        const col: number[] = [];
+        for (let r: number = 0; r < size; r++) col.push(board[r][c]);
+        const reversed: number[] = GameAIService.reverseLine2048(col);
+        const slid: Slide2048Result = GameAIService.slide2048Left(reversed);
+        const back: number[] = GameAIService.reverseLine2048(slid.line);
+        for (let r: number = 0; r < size; r++) out[r][c] = back[r];
+        gained += slid.gained;
+      }
+    } else {
+      return null;
+    }
+    let changed: boolean = false;
+    for (let r: number = 0; r < size; r++) {
+      for (let c: number = 0; c < size; c++) {
+        if (out[r][c] !== board[r][c]) {
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+    if (!changed) return null;
+    return new Move2048Result(out, gained);
+  }
+
+  private static slide2048Left(input: number[]): Slide2048Result {
+    const filtered: number[] = [];
+    for (let i: number = 0; i < input.length; i++) {
+      if (input[i] !== 0) filtered.push(input[i]);
+    }
+    const merged: number[] = [];
+    let gained: number = 0;
+    let i: number = 0;
+    while (i < filtered.length) {
+      if (i + 1 < filtered.length && filtered[i] === filtered[i + 1]) {
+        const sum: number = filtered[i] * 2;
+        merged.push(sum);
+        gained += sum;
+        i += 2;
+      } else {
+        merged.push(filtered[i]);
+        i += 1;
+      }
+    }
+    while (merged.length < input.length) merged.push(0);
+    return new Slide2048Result(merged, gained);
+  }
+
+  private static reverseLine2048(line: number[]): number[] {
+    const out: number[] = [];
+    for (let i: number = line.length - 1; i >= 0; i--) out.push(line[i]);
+    return out;
+  }
+
+  private static maxTile2048(board: number[][]): number {
+    let max: number = 0;
+    for (let r: number = 0; r < board.length; r++) {
+      for (let c: number = 0; c < board[r].length; c++) {
+        if (board[r][c] > max) max = board[r][c];
+      }
+    }
+    return max;
+  }
+
+  private static emptyCount2048(board: number[][]): number {
+    let count: number = 0;
+    for (let r: number = 0; r < board.length; r++) {
+      for (let c: number = 0; c < board[r].length; c++) {
+        if (board[r][c] === 0) count += 1;
+      }
+    }
+    return count;
+  }
+
+  private static monotonicity2048(board: number[][]): number {
+    let score: number = 0;
+    for (let r: number = 0; r < board.length; r++) {
+      for (let c: number = 0; c < board[r].length - 1; c++) {
+        if (board[r][c] >= board[r][c + 1]) score += 2;
+        else score -= 2;
+      }
+    }
+    for (let c: number = 0; c < board[0].length; c++) {
+      for (let r: number = 0; r < board.length - 1; r++) {
+        if (board[r][c] >= board[r + 1][c]) score += 2;
+        else score -= 2;
+      }
+    }
+    return score;
+  }
+
+  private static cornerBonus2048(board: number[][], maxTile: number): number {
+    const size: number = board.length;
+    const corners: number[][] = [[0, 0], [0, size - 1], [size - 1, 0], [size - 1, size - 1]];
+    for (let i: number = 0; i < corners.length; i++) {
+      if (board[corners[i][0]][corners[i][1]] === maxTile) return 500;
+    }
+    return 0;
   }
 
   static serializeTetris(board: number[][], currentType: number, currentRotation: number,

@@ -380,6 +380,9 @@ export struct SnakePage {
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.difficulty = level;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.gameStarted = true;
     this.initGame();
     this.isStarted = true;
@@ -394,6 +397,9 @@ export struct SnakePage {
   restartGame(): void {
     this.stopAi();
     this.aiHosted = false;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.stopTimer();
     this.initGame();
     this.isStarted = true;
@@ -575,17 +581,141 @@ export struct SnakePage {
     this.aiSpeedIndex = index;
   }
 
+  private directionLabel(): string {
+    switch (this.snakeDirection) {
+      case Direction.UP: return 'UP';
+      case Direction.DOWN: return 'DOWN';
+      case Direction.LEFT: return 'LEFT';
+      case Direction.RIGHT: return 'RIGHT';
+    }
+    return 'RIGHT';
+  }
+
+  // BFS 寻路到食物：返回从蛇头下一格开始的路径（不含蛇头），找不到返回空数组
+  private bfsToFood(): Point[] {
+    const head: Point = this.snake[0];
+    const visited: boolean[][] = [];
+    const prev: Point[][] = [];
+    for (let r: number = 0; r < ROWS; r++) {
+      const vrow: boolean[] = [];
+      const prow: Point[] = [];
+      for (let c: number = 0; c < COLS; c++) {
+        vrow.push(false);
+        prow.push({ x: -1, y: -1 });
+      }
+      visited.push(vrow);
+      prev.push(prow);
+    }
+    const queue: Point[] = [{ x: head.x, y: head.y }];
+    visited[head.y][head.x] = true;
+    let qi: number = 0;
+    const dirs: number[][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    while (qi < queue.length) {
+      const cur: Point = queue[qi];
+      qi += 1;
+      if (cur.x === this.food.x && cur.y === this.food.y) break;
+      for (let d: number = 0; d < dirs.length; d++) {
+        let nx: number = cur.x + dirs[d][0];
+        let ny: number = cur.y + dirs[d][1];
+        if (this.wrapEnabled) {
+          nx = (nx + COLS) % COLS;
+          ny = (ny + ROWS) % ROWS;
+        } else if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) {
+          continue;
+        }
+        if (visited[ny][nx]) continue;
+        // 从起点出发时禁止反向掉头
+        if (cur.x === head.x && cur.y === head.y && this.isReverseStep(nx, ny)) continue;
+        let blocked: boolean = false;
+        for (let oi: number = 0; oi < this.obstacles.length; oi++) {
+          if (this.obstacles[oi].x === nx && this.obstacles[oi].y === ny) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+        // 蛇身除尾部外都不能走（尾部即将移开）
+        for (let si: number = 0; si < this.snake.length - 1; si++) {
+          if (this.snake[si].x === nx && this.snake[si].y === ny) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+        visited[ny][nx] = true;
+        prev[ny][nx] = { x: cur.x, y: cur.y };
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    if (!visited[this.food.y][this.food.x]) return [];
+    const path: Point[] = [];
+    let cx: number = this.food.x;
+    let cy: number = this.food.y;
+    while (!(cx === head.x && cy === head.y)) {
+      path.push({ x: cx, y: cy });
+      const p: Point = prev[cy][cx];
+      if (p.x < 0 || p.y < 0) return [];
+      cx = p.x;
+      cy = p.y;
+    }
+    const out: Point[] = [];
+    for (let i: number = path.length - 1; i >= 0; i--) out.push(path[i]);
+    return out;
+  }
+
+  private isReverseStep(nx: number, ny: number): boolean {
+    if (this.wrapEnabled) return false;
+    const head: Point = this.snake[0];
+    const dx: number = nx - head.x;
+    const dy: number = ny - head.y;
+    if (this.snakeDirection === Direction.UP && dy === 1) return true;
+    if (this.snakeDirection === Direction.DOWN && dy === -1) return true;
+    if (this.snakeDirection === Direction.LEFT && dx === 1) return true;
+    if (this.snakeDirection === Direction.RIGHT && dx === -1) return true;
+    return false;
+  }
+
+  private bfsFirstAction(): string {
+    const path: Point[] = this.bfsToFood();
+    if (path.length === 0) return '';
+    const head: Point = this.snake[0];
+    const next: Point = path[0];
+    if (next.x < head.x) return 'LEFT';
+    if (next.x > head.x) return 'RIGHT';
+    if (next.y < head.y) return 'UP';
+    if (next.y > head.y) return 'DOWN';
+    return '';
+  }
+
+  private stepByBfs(): void {
+    const action: string = this.bfsFirstAction();
+    if (action.length === 0) {
+      this.aiStep();
+      return;
+    }
+    if (action === 'UP') this.changeDirection(Direction.UP);
+    else if (action === 'DOWN') this.changeDirection(Direction.DOWN);
+    else if (action === 'LEFT') this.changeDirection(Direction.LEFT);
+    else if (action === 'RIGHT') this.changeDirection(Direction.RIGHT);
+    this.aiStep();
+  }
+
   // AI 决策循环：冻结移动，每轮 决策 → 转向 → 展示窗口 → 手动走一步
   private async aiLoop(): Promise<void> {
     if (!this.aiRunning || this.aiLoopActive) return;
     this.aiLoopActive = true;
+    const recentHeads: string[] = [];
     while (this.aiRunning) {
       if (this.isGameOver || this.isPaused) break;
       if (this.aiConfig === null) break;
+      const bfsAction: string = this.bfsFirstAction();
+      const head: Point = this.snake[0];
       this.aiThinkCount += 1;
       this.aiStatus = 'AI 思考中…';
       this.startThinkTimer();
-      const stateText: string = GameAIService.serializeSnake(this.snake, this.food, COLS, ROWS);
+      const hint: string = bfsAction.length > 0 ? '\n本回合推荐方向：' + bfsAction + '\n' : '';
+      const stateText: string = '当前蛇头方向：' + this.directionLabel() + '\n' +
+        GameAIService.serializeSnake(this.snake, this.food, COLS, ROWS) + hint;
       const messages = GameAIService.buildMessages('Snake', this.difficulty, stateText);
       const result = await GameAIService.decide(this.aiConfig, messages, 'Snake');
       this.stopThinkTimer();
@@ -603,20 +733,36 @@ export struct SnakePage {
       this.aiFailCount = 0;
       // 贪吃蛇：一次请求返回一串方向，连续走多步，减少 LLM 调用次数
       const actions: GameAction[] = GameAIService.parseActionSequence('Snake', result.content);
-      if (actions.length === 0) continue;
-      this.aiStatus = 'AI 执行 ' + actions.length.toString() + ' 步';
-      for (let i: number = 0; i < actions.length; i++) {
-        if (!this.aiRunning || this.isGameOver || this.isPaused) break;
-        const foodBefore: Point = this.food;
-        const action: GameAction = actions[i];
-        if (action.command === 'UP') this.changeDirection(Direction.UP);
-        else if (action.command === 'DOWN') this.changeDirection(Direction.DOWN);
-        else if (action.command === 'LEFT') this.changeDirection(Direction.LEFT);
-        else if (action.command === 'RIGHT') this.changeDirection(Direction.RIGHT);
-        this.aiStep();
-        if (this.isGameOver || this.isPaused) break;
-        // 吃到食物（食物位置变化）：本序列结束，重新规划
-        if (this.food.x !== foodBefore.x || this.food.y !== foodBefore.y) break;
+      let useBfs: boolean = actions.length === 0;
+      const headKey: string = head.x.toString() + ',' + head.y.toString() + ':' + this.score.toString();
+      if (!useBfs) {
+        for (let i: number = 0; i < recentHeads.length; i++) {
+          if (recentHeads[i] === headKey) {
+            useBfs = true;
+            break;
+          }
+        }
+        recentHeads.push(headKey);
+        if (recentHeads.length > 12) recentHeads.splice(0, 1);
+      }
+      if (useBfs) {
+        this.aiStatus = bfsAction.length > 0 ? 'AI 寻路：' + bfsAction : 'AI 安全步进';
+        this.stepByBfs();
+      } else {
+        this.aiStatus = 'AI 执行 ' + actions.length.toString() + ' 步';
+        for (let i: number = 0; i < actions.length; i++) {
+          if (!this.aiRunning || this.isGameOver || this.isPaused) break;
+          const foodBefore: Point = this.food;
+          const action: GameAction = actions[i];
+          if (action.command === 'UP') this.changeDirection(Direction.UP);
+          else if (action.command === 'DOWN') this.changeDirection(Direction.DOWN);
+          else if (action.command === 'LEFT') this.changeDirection(Direction.LEFT);
+          else if (action.command === 'RIGHT') this.changeDirection(Direction.RIGHT);
+          this.aiStep();
+          if (this.isGameOver || this.isPaused) break;
+          // 吃到食物（食物位置变化）：本序列结束，重新规划
+          if (this.food.x !== foodBefore.x || this.food.y !== foodBefore.y) break;
+        }
       }
       if (this.isGameOver || this.isPaused) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {

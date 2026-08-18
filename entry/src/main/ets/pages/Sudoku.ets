@@ -218,6 +218,9 @@ export struct SudokuPage {
   private restartGame(): void {
     this.stopAi();
     this.aiHosted = false;
+    this.aiFailCount = 0;
+    this.aiThinkCount = 0;
+    this.aiThinkTimeMs = 0;
     this.generatePuzzle();
     this.startTimer();
     this.vibrate(20);
@@ -478,6 +481,28 @@ export struct SudokuPage {
     this.aiSpeedIndex = index;
   }
 
+  // 本地兜底：按题目唯一解纠正错误格或填入下一空格，保证 AI 一定向前推进
+  private fillNextSolutionCell(): boolean {
+    for (let r: number = 0; r < SUDOKU_SIZE; r++) {
+      for (let c: number = 0; c < SUDOKU_SIZE; c++) {
+        const cell: SudokuCell = this.cells[r][c];
+        if (cell.fixed) continue;
+        const correct: number = this.solution[r][c];
+        if (cell.value === correct) continue;
+        cell.value = correct;
+        cell.notes = [];
+        this.cells = this.copyCells(this.cells);
+        this.selectedR = r;
+        this.selectedC = c;
+        this.refreshConflicts();
+        this.vibrate(10);
+        this.checkWin();
+        return true;
+      }
+    }
+    return false;
+  }
+
   // AI 决策循环：纯回合制，每轮 决策 → 填入数字
   private async aiLoop(): Promise<void> {
     if (!this.aiRunning || this.aiLoopActive) return;
@@ -506,21 +531,34 @@ export struct SudokuPage {
       this.aiFailCount = 0;
       // 数独：一次请求返回多个 SET，一次填多格，减少 LLM 调用次数
       const actions: GameAction[] = GameAIService.parseActionSequence('Sudoku', result.content);
-      if (actions.length === 0) continue;
-      this.aiStatus = 'AI 填入 ' + actions.length.toString() + ' 格';
-      for (let i: number = 0; i < actions.length; i++) {
-        if (!this.aiRunning || this.isWin || this.isPaused) break;
-        const action: GameAction = actions[i];
-        const r: number = action.r - 1;
-        const c: number = action.c - 1;
-        const v: number = action.value;
-        if (r < 0 || r >= SUDOKU_SIZE || c < 0 || c >= SUDOKU_SIZE || v < 1 || v > 9) continue;
-        const cell: SudokuCell = this.cells[r][c];
-        if (cell.fixed) continue;
-        this.selectedR = r;
-        this.selectedC = c;
-        this.inputNumber(v);
-        if (this.isWin) break;
+      let madeProgress: boolean = false;
+      if (actions.length === 0) {
+        this.aiStatus = 'AI 使用本地求解';
+        madeProgress = this.fillNextSolutionCell();
+      } else {
+        this.aiStatus = 'AI 填入 ' + actions.length.toString() + ' 格';
+        for (let i: number = 0; i < actions.length; i++) {
+          if (!this.aiRunning || this.isWin || this.isPaused) break;
+          const action: GameAction = actions[i];
+          const r: number = action.r - 1;
+          const c: number = action.c - 1;
+          const v: number = action.value;
+          if (r < 0 || r >= SUDOKU_SIZE || c < 0 || c >= SUDOKU_SIZE || v < 1 || v > 9) continue;
+          const cell: SudokuCell = this.cells[r][c];
+          if (cell.fixed || cell.value === v) continue;
+          // 只接受与唯一解一致的填入，避免错误数字导致后续死循环
+          if (v !== this.solution[r][c]) continue;
+          this.selectedR = r;
+          this.selectedC = c;
+          this.inputNumber(v);
+          madeProgress = true;
+          if (this.isWin) break;
+        }
+      }
+      // 模型没有产生任何有效推进时，用本地求解器兜底，绝不原地空转
+      if (!madeProgress && !this.isWin && this.aiRunning) {
+        this.aiStatus = 'AI 本地求解补位';
+        this.fillNextSolutionCell();
       }
       if (this.isWin || this.isPaused) break;
       if (this.aiSpeedIndex < AI_SPEED_DELAYS.length && AI_SPEED_DELAYS[this.aiSpeedIndex] > 0) {
