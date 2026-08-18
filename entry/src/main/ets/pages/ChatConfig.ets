@@ -5,6 +5,7 @@ import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
+import { DataRepository } from '../service/DataRepository';
 import { API_FORMAT_LABELS, ApiFormat, LLM_PROVIDER_TEMPLATES, LlmConfig, LlmModelEntry,
   LlmProviderTemplate, LlmResult, modelDisplayName, providerTemplateById } from '../common/LlmModels';
 
@@ -63,6 +64,11 @@ export struct ChatConfig {
   @State vllmCompat: boolean = false;
   @State modelEnabled: boolean = true;
   @State systemPrompt: string = '';
+  // 联网搜索配置（对话页 🌐 开关使用）
+  @State webSearchEnabled: boolean = false;
+  @State webSearchBaseUrl: string = '';
+  @State webSearchApiKey: string = '';
+  @State showSearchKey: boolean = false;
   // 进入编辑/复制时的原始快照：用于判断表单是否有实际修改
   private formSnapshot: LlmModelEntry | null = null;
 
@@ -73,6 +79,10 @@ export struct ChatConfig {
   private async load(): Promise<void> {
     this.models = await ChatRepository.loadModels();
     this.activeModelId = await ChatRepository.loadActiveModelId();
+    this.webSearchEnabled = await DataRepository.getSetting('webSearchEnabled', 'false') === 'true';
+    this.webSearchBaseUrl = await DataRepository.getSetting('webSearchBaseUrl',
+      'https://api.duckduckgo.com/?q={q}&format=json&no_html=1');
+    this.webSearchApiKey = await DataRepository.getSetting('webSearchApiKey', '');
   }
 
   // ---- 列表操作 ----
@@ -1481,6 +1491,79 @@ export struct ChatConfig {
       .borderRadius(10)
       .backgroundColor(this.palette.primary)
       .onClick(() => { this.addModel(); })
+
+      // ==================== 联网搜索配置 ====================
+      Column({ space: 10 }) {
+        Row({ space: 8 }) {
+          Text('🌐 联网搜索')
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.webSearchEnabled })
+            .selectedColor(this.palette.primary)
+            .onChange((isOn: boolean) => {
+              this.webSearchEnabled = isOn;
+              DataRepository.setSetting('webSearchEnabled', isOn ? 'true' : 'false');
+            })
+        }
+        .width('100%')
+
+        if (this.webSearchEnabled) {
+          Column({ space: 6 }) {
+            this.rowLabel('搜索接口地址', 'GET 请求，{q} 会被替换为查询词；支持 DuckDuckGo Instant Answer / SerpAPI 等 JSON 接口')
+            TextInput({ text: this.webSearchBaseUrl, placeholder: 'https://api.duckduckgo.com/?q={q}&format=json&no_html=1' })
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .placeholderColor(this.palette.textTertiary)
+              .backgroundColor(this.palette.bgSurface)
+              .borderRadius(8)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .height(44)
+              .width('100%')
+              .onChange((value: string) => {
+                this.webSearchBaseUrl = value;
+                DataRepository.setSetting('webSearchBaseUrl', value);
+              })
+          }
+          .width('100%')
+
+          Column({ space: 6 }) {
+            this.rowLabel('搜索 API Key（可选）', '需要鉴权的接口填写；留空表示无需 Key')
+            Row({ space: 8 }) {
+              TextInput({ text: this.webSearchApiKey, placeholder: '选填' })
+                .fontSize(this.palette.fsSm)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .placeholderColor(this.palette.textTertiary)
+                .backgroundColor(this.palette.bgSurface)
+                .borderRadius(8)
+                .border({ width: 1, color: this.palette.borderSubtle })
+                .height(44)
+                .layoutWeight(1)
+                .type(this.showSearchKey ? InputType.Normal : InputType.Password)
+                .onChange((value: string) => {
+                  this.webSearchApiKey = value;
+                  DataRepository.setSetting('webSearchApiKey', value);
+                })
+              Text(this.showSearchKey ? '🙈' : '👁️')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+                .padding(8)
+                .onClick(() => { this.showSearchKey = !this.showSearchKey; })
+            }
+            .width('100%')
+          }
+          .width('100%')
+        }
+      }
+      .width('100%')
+      .padding(12)
+      .borderRadius(10)
+      .backgroundColor(this.palette.bgSurface)
+      .border({ width: 1, color: this.palette.borderSubtle })
 
       Text('隐私说明：API Key 仅以 AES-256 加密形式保存在本机数据库，发送请求时直接携带给所选服务商，不经过任何第三方中转。')
         .fontSize(10)

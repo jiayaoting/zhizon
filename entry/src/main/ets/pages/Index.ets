@@ -76,6 +76,13 @@ export struct IndexPage {
       icon: '🧩',
       desc: '数字推理，每行每列每宫填 1-9 不重复',
       color: this.themeState.palette.info
+    },
+    {
+      gameId: GameId.GOMOKU,
+      name: '五子棋',
+      icon: '⚫',
+      desc: '15×15 棋盘人机对弈，率先连五获胜',
+      color: this.themeState.palette.primary
     }
   ];
   }
@@ -104,6 +111,7 @@ export struct IndexPage {
     if (gameId === GameId.SNAKE) return 'Snake';
     if (gameId === GameId.MINESWEEPER) return 'Minesweeper';
     if (gameId === GameId.SUDOKU) return 'SUDOKU';
+    if (gameId === GameId.GOMOKU) return 'Gomoku';
     return '';
   }
 
@@ -384,6 +392,7 @@ export struct IndexPage {
     if (gameId === GameId.SNAKE) return 'Snake';
     if (gameId === GameId.MINESWEEPER) return 'Minesweeper';
     if (gameId === GameId.SUDOKU) return 'SUDOKU';
+    if (gameId === GameId.GOMOKU) return 'Gomoku';
     return '';
   }
 

@@ -9,7 +9,7 @@ import { GameHistoryRouteParams } from '../common/Navigation';
 
 function isGameHistoryKey(key: string): boolean {
   return key === '2048' || key === 'Snake' || key === 'Tetris' || key === 'Minesweeper' ||
-    key === 'Breakout' || key === 'SUDOKU' || key === 'ChineseChess';
+    key === 'Breakout' || key === 'SUDOKU' || key === 'ChineseChess' || key === 'Gomoku';
 }
 
 function gameIcon(key: string): string {
@@ -19,6 +19,7 @@ function gameIcon(key: string): string {
   if (key === 'Breakout') return '🎱';
   if (key === 'SUDOKU') return '🧩';
   if (key === 'ChineseChess') return '♟️';
+  if (key === 'Gomoku') return '⚫';
   return '🔢';
 }
 
@@ -29,6 +30,7 @@ function gameName(key: string): string {
   if (key === 'Breakout') return '打砖块';
   if (key === 'SUDOKU') return '数独';
   if (key === 'ChineseChess') return '中国象棋';
+  if (key === 'Gomoku') return '五子棋';
   return '2048';
 }
 
@@ -77,7 +79,7 @@ export struct GameHistoryPage {
   @Local scores: ScoreEntry[] = [];
   @Local loading: boolean = true;
     
-  private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU', 'ChineseChess'];
+  private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU', 'ChineseChess', 'Gomoku'];
 
   aboutToAppear(): void {
     const params: GameHistoryRouteParams | null = AppNavigator.getParam('pages/GameHistory') as GameHistoryRouteParams | null;

@@ -15,12 +15,14 @@ export struct ChatMessageBubble {
   @Prop selectionMode: boolean = false;
   @Prop selected: boolean = false;
   @Prop isStreaming: boolean = false;
+  @Prop speaking: boolean = false;
   onRetry: (index: number) => void = () => {};
   onLongPressMessage: (index: number) => void = () => {};
   onToggleSelect: (index: number) => void = () => {};
   onExpandReasoning: (index: number) => void = () => {};
   onFullscreen: (index: number) => void = () => {};
   onCopyCode: (lang: string, code: string) => void = () => {};
+  onSpeak: (index: number) => void = () => {};
   @State reasoningExpanded: boolean = false;
   // 思考内容滚动控制器：展开后自动滚到底部
   private reasoningScroller: Scroller = new Scroller();
@@ -125,6 +127,16 @@ export struct ChatMessageBubble {
               .fontSize(9)
               .fontFamily(this.palette.fontSans)
               .fontColor(this.palette.textTertiary)
+            // 朗读按钮：助手消息且非流式中显示
+            if (!this.isStreaming && this.message.content.trim().length > 0 && !this.isFailure()) {
+              Text(this.speaking ? '🛑' : '🔊')
+                .fontSize(12)
+                .fontFamily(this.palette.fontSans)
+                .padding(3)
+                .borderRadius(5)
+                .backgroundColor(this.speaking ? this.palette.primaryDim : Color.Transparent)
+                .onClick(() => { this.onSpeak(this.index); })
+            }
           }
           // 思考过程折叠区块：默认收起，点击展开查看思考内容
           if (this.message.reasoning.trim().length > 0) {

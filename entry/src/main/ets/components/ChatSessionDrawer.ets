@@ -25,6 +25,9 @@ export struct ChatSessionDrawer {
   onDeleteSession: (id: string) => void = () => {};
   onExport: () => void = () => {};
   onImport: () => void = () => {};
+  onExportFile: () => void = () => {};
+  onExportCurrentFile: () => void = () => {};
+  onImportFile: () => void = () => {};
   onSearchChange: (value: string) => void = () => {};
   @State searchText: string = '';
 
@@ -185,36 +188,84 @@ export struct ChatSessionDrawer {
           .scrollBar(BarState.Off)
           .layoutWeight(1)
           .width('100%')
-        // 底部操作：导出 / 导入
-        Row({ space: 8 }) {
+        // 底部操作：导出 Markdown / 导出备份文件 / 导入
+        Column({ space: 8 }) {
+          Row({ space: 8 }) {
+            Row() {
+              Text('📋 导出 Markdown')
+                .fontSize(11)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+            }
+            .layoutWeight(1)
+            .height(36)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.palette.bgSurface)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .onClick(() => { this.onExport(); })
+            Row() {
+              Text('📋 导入')
+                .fontSize(11)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+            }
+            .layoutWeight(1)
+            .height(36)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.palette.bgSurface)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .onClick(() => { this.onImport(); })
+          }
+          .width('100%')
+          Row({ space: 8 }) {
+            Row() {
+              Text('💾 备份全部会话')
+                .fontSize(11)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+            }
+            .layoutWeight(1)
+            .height(36)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.palette.bgSurface)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .onClick(() => { this.onExportFile(); })
+            Row() {
+              Text('💾 备份当前会话')
+                .fontSize(11)
+                .fontFamily(this.palette.fontSans)
+                .fontColor(this.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+            }
+            .layoutWeight(1)
+            .height(36)
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(8)
+            .backgroundColor(this.palette.bgSurface)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .onClick(() => { this.onExportCurrentFile(); })
+          }
+          .width('100%')
           Row() {
-            Text('导出')
+            Text('📂 从文件导入备份')
               .fontSize(11)
               .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontColor(this.palette.primary)
               .fontWeight(FontWeight.Medium)
           }
-          .layoutWeight(1)
+          .width('100%')
           .height(36)
           .justifyContent(FlexAlign.Center)
           .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
-          .onClick(() => { this.onExport(); })
-          Row() {
-            Text('导入')
-              .fontSize(11)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .fontWeight(FontWeight.Medium)
-          }
-          .layoutWeight(1)
-          .height(36)
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
-          .onClick(() => { this.onImport(); })
+          .backgroundColor(this.palette.primaryDim)
+          .border({ width: 1, color: this.palette.primary })
+          .onClick(() => { this.onImportFile(); })
         }
         .width('100%')
         }

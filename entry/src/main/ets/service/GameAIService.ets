@@ -8,7 +8,7 @@ import { DifficultyLevel, difficultyLabel } from '../common/Difficulty';
 import { ChineseChessMove } from './ChineseChessEngine';
 import { ChineseChessNotation } from './ChineseChessNotation';
 
-export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku' | 'ChineseChess';
+export type GameKind = '2048' | 'Tetris' | 'Snake' | 'Minesweeper' | 'Sudoku' | 'ChineseChess' | 'Gomoku';
 
 // AI 模型记忆存储键：聊天/AI 使用默认键，各游戏独立记忆自己的键
 const AI_MODEL_KEY_PREFIX = 'aiModelId';
@@ -208,6 +208,16 @@ export class GameAIService {
         '你【必须】且【只能】从合法走法列表中选择一个【序号】。\n' +
         '输出格式（严格）：MOVE 序号（例如 MOVE 1），不要输出任何其他文字、解释或坐标。';
     }
+    if (kind === 'Gomoku') {
+      return '你在下五子棋。棋盘 15 行 × 15 列，你是黑方（先手）。\n' +
+        '当前难度：' + diff + '。\n' +
+        '规则：黑白双方轮流在交叉点落子，率先形成横向、纵向或斜向连续 5 子（含 5 子以上）的一方获胜。\n' +
+        '用户消息中会列出当前棋盘和你所有可选的落子位置（每条带【序号】和坐标 (行,列)，均从 0 开始）。\n' +
+        '你【必须】且【只能】从可选落子列表中选择一个【序号】。\n' +
+        '策略：优先形成自己的活四/冲四与活三，同时必须阻止对手的活四与冲四（对手连四必须立即堵住），\n' +
+        '攻防兼顾，先成五连者胜。\n' +
+        '输出格式（严格）：MOVE 序号（例如 MOVE 1），不要输出任何其他文字、解释或坐标。';
+    }
     return '你正在玩数独。棋盘 9×9，0 表示空格，1-9 为已填数字（题目给定的数字不可修改）。\n' +
       '当前难度：' + diff + '。\n' +
       '可用动作：SET r c v（在 r 行 c 列填入数字 v，一次可输出多行），r、c、v 均为 1-9。\n' +
@@ -369,6 +379,25 @@ export class GameAIService {
         }
       }
       // 兜底：模型回复中没有 MOVE 关键字（说明它没听懂指令），返回 null 让上层重试
+      return null;
+    }
+    if (kind === 'Gomoku') {
+      // 与象棋一致的序号选择模式：MOVE 序号（1-based）
+      const moveIdx: number = upper.indexOf('MOVE');
+      if (moveIdx >= 0) {
+        const after: string = text.substring(moveIdx + 'MOVE'.length);
+        const nums: number[] = GameAIService.extractNumbers(after);
+        if (nums.length >= 1) {
+          // 序号模式：1 个数字
+          if (nums.length === 1) {
+            return new GameAction('MOVE_IDX', 0, nums[0] - 1);
+          }
+          // 兜底：2 个数字 = 坐标 (行, 列)
+          if (nums.length >= 2) {
+            return new GameAction('MOVE', nums[0], nums[1]);
+          }
+        }
+      }
       return null;
     }
     return null;
@@ -721,6 +750,32 @@ export class GameAIService {
     }
     out = out + '\n只需要输出：MOVE 序号\n';
     out = out + '例如想走第1步则输出：MOVE 1\n';
+    out = out + '不要输出任何其他文字或解释。';
+    return out;
+  }
+
+  // 五子棋棋盘序列化：棋盘 + 当前轮到黑方（LLM 托管时黑方由 LLM 执子）+ 可选落子序号列表
+  static serializeGomoku(board: number[][], legalMoves: number[][]): string {
+    let out: string = '五子棋棋盘，15行 × 15列。行号row和列号col都从0开始。\n';
+    out = out + '棋子编码：1=黑子（你），2=白子（对手），0=空位。\n';
+    out = out + '当前轮到：黑方（你）落子。\n';
+    out = out + '     col:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14\n';
+    for (let r: number = 0; r < board.length; r++) {
+      let line: string = 'row' + r.toString().padStart(2, ' ') + '  ';
+      for (let c: number = 0; c < board[r].length; c++) {
+        line = line + (board[r][c] === 0 ? '.' : board[r][c].toString()) + '  ';
+      }
+      out = out + line + '\n';
+    }
+    out = out + '\n【当前你（黑方）可选的全部落子位置】\n';
+    out = out + '你必须从下面' + legalMoves.length.toString() + '个位置里选一个，禁止输出表中不存在的坐标。\n';
+    out = out + '每条格式：序号 | (行,列)\n';
+    for (let i: number = 0; i < legalMoves.length; i++) {
+      out = out + '  ' + (i + 1).toString() + '  (row' + legalMoves[i][0].toString() +
+        ', col' + legalMoves[i][1].toString() + ')\n';
+    }
+    out = out + '\n只需要输出：MOVE 序号\n';
+    out = out + '例如想选第1个位置则输出：MOVE 1\n';
     out = out + '不要输出任何其他文字或解释。';
     return out;
   }

@@ -7,12 +7,19 @@ import { webview } from '@kit.ArkWeb';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import { fileIo as fs, picker } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { ChatRepository } from '../service/ChatRepository';
 import { LlmClient } from '../service/LlmClient';
+import { SpeechService } from '../service/SpeechService';
+import { LiveViewService } from '../service/LiveViewService';
+import { WebSearchService, WebSearchResult } from '../service/WebSearchService';
+import { DataRepository } from '../service/DataRepository';
+import { PromptPreset, PROMPT_PRESETS, presetMatches, applyPreset } from '../common/PromptPresets';
 import { AiCallContext } from '../service/AiCallLogger';
 import { ChatExporter, ImportedChat } from '../service/ChatExporter';
 import { ImageAttachment, AttachmentResult } from '../service/ImageAttachment';
@@ -63,12 +70,23 @@ export struct ChatTab {
   // 图片附件（vision 模型）
   @State attachmentDataUrl: string = '';
   @State attachmentName: string = '';
+  // 语音输入（Speech Kit）
+  @State voiceRecognizing: boolean = false;
+  // 正在朗读的助手消息 id（空表示未朗读）
+  @State speakingMessageId: string = '';
+  // 联网搜索开关（配置在 模型管理 → 联网搜索）
+  @State webSearchEnabled: boolean = false;
+  // 搜索进行中标记（发送按钮显示加载态）
+  @State webSearchBusy: boolean = false;
   // 编辑重发目标索引（-1 表示普通发送）
   private editTargetIndex: number = -1;
   // 用户主动停止标记：停止后保留已生成内容
   private stopRequested: boolean = false;
   // 生成状态机（阶段/计时/停止标记集中管理）
   private chatVm: ChatViewModel = new ChatViewModel();
+  // 实况窗（Live View）：对话生成进度
+  private liveViewEvent: string = '';
+  private liveViewTick: number = 0;
 
   // 模型切换
   @State models: LlmModelEntry[] = [];
@@ -101,7 +119,16 @@ export struct ChatTab {
   aboutToAppear(): void {
     // 订阅状态机回调，驱动 UI 状态
     this.chatVm.onPhaseChange = (phase: ChatPhase): void => { this.chatPhase = phase; };
-    this.chatVm.onElapsedChange = (seconds: number): void => { this.elapsedSeconds = seconds; };
+    this.chatVm.onElapsedChange = (seconds: number): void => {
+      this.elapsedSeconds = seconds;
+      // 生成期间节流更新实况窗进度（每 2 秒）
+      if (this.liveViewEvent.length > 0) {
+        this.liveViewTick += 1;
+        if (this.liveViewTick % 2 === 0) {
+          LiveViewService.update(this.liveViewEvent, '智子 AI 生成中', Math.min(90, seconds * 4));
+        }
+      }
+    };
     this.load();
   }
 
@@ -109,6 +136,9 @@ export struct ChatTab {
     this.chatVm.dispose();
     // 页面销毁时取消未触发的流式刷新定时器，避免回调在组件销毁后仍写入消息对象
     this.cancelRenderFlush();
+    // 停止语音识别与朗读，释放语音引擎
+    SpeechService.stopRecognition();
+    SpeechService.releaseTts();
   }
 
   // 作为 Tab 嵌入后无 onPageShow，改为监听宿主递增的刷新 token（ChatConfig 返回/切回本 Tab 时触发）
@@ -121,6 +151,7 @@ export struct ChatTab {
 
   private async load(): Promise<void> {
     this.sessions = await ChatRepository.ensureSessions();
+    this.webSearchEnabled = await DataRepository.getSetting('webSearchEnabled', 'false') === 'true';
     let activeId: string = await ChatRepository.loadActiveSessionId();
     if (activeId.length === 0 && this.sessions.length > 0) {
       activeId = this.sessions[0].id;
@@ -452,6 +483,133 @@ export struct ChatTab {
     this.attachmentName = '';
   }
 
+  // ==================== 斜杠命令 / 提示词预设 ====================
+
+  // 输入以 / 开头时匹配的预设列表
+  private matchedPresets(): PromptPreset[] {
+    if (!this.inputText.startsWith('/')) return [];
+    return presetMatches(this.inputText);
+  }
+
+  // 点击预设：用模板替换输入内容（{text} 替换为命令后的内容）
+  private choosePreset(preset: PromptPreset): void {
+    this.inputText = applyPreset(preset, this.inputText);
+    this.onInputChange(this.inputText);
+  }
+
+  @Builder
+  presetPanel() {
+    if (this.matchedPresets().length > 0) {
+      Column({ space: 4 }) {
+        Row() {
+          Text('⌘ 斜杠命令')
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+          Blank()
+          Text('点击填入模板')
+            .fontSize(10)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textTertiary)
+        }
+        .width('100%')
+
+        Scroll() {
+          Row({ space: 6 }) {
+            ForEach(this.matchedPresets(), (preset: PromptPreset) => {
+              Row({ space: 4 }) {
+                Text(preset.icon)
+                  .fontSize(12)
+                  .fontFamily(this.palette.fontSans)
+                Text(preset.name)
+                  .fontSize(11)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+              }
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .borderRadius(14)
+              .backgroundColor(this.palette.bgSurface)
+              .border({ width: 1, color: this.palette.borderSubtle })
+              .onClick(() => { this.choosePreset(preset); })
+            }, (preset: PromptPreset) => preset.id)
+          }
+          .width('100%')
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .width('100%')
+      }
+      .width('100%')
+    }
+  }
+
+  // ==================== 语音输入（Speech Kit） ====================
+
+  // 点击麦克风：开始 / 结束语音听写
+  private toggleVoiceInput(): void {
+    if (this.voiceRecognizing) {
+      // 结束听写：finish 后会收到最终结果回调（若为空则保留已输入文本）
+      SpeechService.stopRecognition();
+      this.voiceRecognizing = false;
+      return;
+    }
+    if (this.sending || this.streaming) {
+      promptAction.showToast({ message: '生成进行中，暂不支持语音输入' });
+      return;
+    }
+    const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    SpeechService.startRecognition(context, {
+      onPartial: (text: string): void => {
+        // 实时把识别结果填入输入框（保持已有文本 + 新识别文本）
+        this.inputText = text;
+      },
+      onFinal: (text: string): void => {
+        this.inputText = text;
+        this.voiceRecognizing = false;
+        if (text.trim().length > 0) {
+          promptAction.showToast({ message: '已识别：' + text.trim().substring(0, 20) });
+        }
+      },
+      onError: (code: number, message: string): void => {
+        this.voiceRecognizing = false;
+        promptAction.showToast({ message: '语音识别失败：' + message });
+      }
+    }).then((started: boolean) => {
+      if (started) {
+        this.voiceRecognizing = true;
+      } else {
+        this.voiceRecognizing = false;
+      }
+    });
+  }
+
+  // ==================== 朗读回复（TTS） ====================
+
+  // 点击 🔊：朗读助手消息；再次点击停止
+  private toggleSpeak(message: ChatMessage): void {
+    if (this.speakingMessageId === message.id) {
+      SpeechService.stopSpeaking();
+      this.speakingMessageId = '';
+      return;
+    }
+    if (message.content.trim().length === 0) {
+      promptAction.showToast({ message: '没有可朗读的内容' });
+      return;
+    }
+    SpeechService.stopSpeaking();
+    this.speakingMessageId = message.id;
+    SpeechService.speak(message.content, {
+      onComplete: (): void => {
+        this.speakingMessageId = '';
+      },
+      onError: (code: number, msg: string): void => {
+        this.speakingMessageId = '';
+        promptAction.showToast({ message: '朗读失败：' + msg });
+      }
+    });
+  }
+
   private inputTokenHint(): string {
     const text: string = this.inputText.trim();
     if (text.length === 0) return '';
@@ -464,7 +622,14 @@ export struct ChatTab {
 
   private async send(): Promise<void> {
     const text: string = this.inputText.trim();
-    if (text.length === 0 || this.sending || this.streaming) return;
+    if (text.length === 0 || this.sending || this.streaming || this.webSearchBusy) return;
+    // 发送前停止朗读与语音听写
+    SpeechService.stopSpeaking();
+    this.speakingMessageId = '';
+    if (this.voiceRecognizing) {
+      SpeechService.stopRecognition();
+      this.voiceRecognizing = false;
+    }
     const config: LlmConfig | null = this.activeConfig;
     if (config === null || !config.configured) {
       promptAction.showToast({ message: '请先配置大模型 API' });
@@ -473,6 +638,21 @@ export struct ChatTab {
     if (config.needsKey && !config.apiKey) {
       promptAction.showToast({ message: '请先配置 API Key' });
       return;
+    }
+    // 联网搜索：开启时先检索，把结果拼进用户消息
+    let sendText: string = text;
+    if (this.webSearchEnabled) {
+      this.webSearchBusy = true;
+      const baseUrl: string = await DataRepository.getSetting('webSearchBaseUrl',
+        'https://api.duckduckgo.com/?q={q}&format=json&no_html=1');
+      const searchKey: string = await DataRepository.getSetting('webSearchApiKey', '');
+      const results: WebSearchResult[] = await WebSearchService.search(text, baseUrl, searchKey);
+      this.webSearchBusy = false;
+      if (results.length > 0) {
+        sendText = WebSearchService.buildContext(text, results);
+      } else {
+        promptAction.showToast({ message: '未获取到搜索结果，将直接回答' });
+      }
     }
     this.inputText = '';
     this.lastUserText = text;
@@ -487,7 +667,7 @@ export struct ChatTab {
       base = base.slice(0, this.editTargetIndex);
       this.editTargetIndex = -1;
     }
-    const userMessage: ChatMessage = ChatMessage.create('user', text);
+    const userMessage: ChatMessage = ChatMessage.create('user', sendText);
     userMessage.modelId = config.id;
     userMessage.modelName = this.currentModelName();
     if (this.attachmentDataUrl.length > 0) {
@@ -503,6 +683,10 @@ export struct ChatTab {
     this.chatVm.start();
     this.streamingContent = '';
     this.streamingReasoning = '';
+    // 启动实况窗（后台可见生成进度；不支持的设备自动忽略）
+    this.liveViewEvent = LiveViewService.nextEvent('chat');
+    this.liveViewTick = 0;
+    LiveViewService.publish(this.liveViewEvent, '智子 AI 生成中', 0);
     this.scrollToBottom();
 
     const history: ChatMessage[] = ChatRepository.requestMessages(
@@ -547,6 +731,7 @@ export struct ChatTab {
         await ChatRepository.touchSession(this.activeSessionId);
         this.sessions = await ChatRepository.loadSessions();
         this.chatVm.finish();
+        this.finishChatLiveView();
         this.scrollToBottom();
         return;
       }
@@ -576,7 +761,20 @@ export struct ChatTab {
     } catch (e) {
       promptAction.showToast({ message: '消息保存失败' });
     }
+    this.finishChatLiveView();
     this.scrollToBottom();
+  }
+
+  // 生成结束：实况窗标记完成并关闭
+  private finishChatLiveView(): void {
+    if (this.liveViewEvent.length > 0) {
+      const event: string = this.liveViewEvent;
+      this.liveViewEvent = '';
+      LiveViewService.update(event, '智子 AI 生成完成', 100);
+      setTimeout(() => {
+        LiveViewService.close(event);
+      }, 1500);
+    }
   }
 
   // 停止当前流式请求（保留已生成内容，标记为 stopped）
@@ -718,6 +916,141 @@ export struct ChatTab {
     const md: string = ChatExporter.toMarkdown(session, this.messages);
     this.copyText(md);
     this.closeSessionDrawer();
+  }
+
+  // ==================== 会话备份 / 恢复（文件） ====================
+
+  // 导出全部会话为备份文件并拉起系统分享
+  private async exportAllSessionsToFile(): Promise<void> {
+    try {
+      if (this.sessions.length === 0) {
+        promptAction.showToast({ message: '暂无会话可导出' });
+        return;
+      }
+      // 逐会话加载消息（消息较多时稍慢，属正常）
+      const msgMap: Record<string, ChatMessage[]> = {};
+      for (let i: number = 0; i < this.sessions.length; i++) {
+        const id: string = this.sessions[i].id;
+        msgMap[id] = id === this.activeSessionId ? this.messages : await ChatRepository.loadMessages(id);
+      }
+      const json: string = ChatExporter.toJsonAll(this.sessions, (sessionId: string): ChatMessage[] => {
+        const msgs: ChatMessage[] | undefined = msgMap[sessionId];
+        return msgs === undefined ? [] : msgs;
+      });
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      const fileName: string = 'zhizon-backup-' + ChatTab.etsTimestamp() + '.json';
+      const filePath: string = context.filesDir + '/' + fileName;
+      const file = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
+      fs.writeSync(file.fd, json);
+      fs.closeSync(file);
+      this.shareBackupFile(filePath, fileName);
+      this.closeSessionDrawer();
+    } catch (e) {
+      promptAction.showToast({ message: '导出失败，请重试' });
+    }
+  }
+
+  // 导出当前会话为备份 JSON 文件并拉起系统分享
+  private async exportCurrentSessionToFile(): Promise<void> {
+    try {
+      let session: ChatSession | null = null;
+      for (let i: number = 0; i < this.sessions.length; i++) {
+        if (this.sessions[i].id === this.activeSessionId) {
+          session = this.sessions[i];
+          break;
+        }
+      }
+      if (session === null) {
+        promptAction.showToast({ message: '会话不存在' });
+        return;
+      }
+      const json: string = ChatExporter.toJson(session, this.messages);
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      const fileName: string = 'zhizon-chat-' + ChatTab.etsTimestamp() + '.json';
+      const filePath: string = context.filesDir + '/' + fileName;
+      const file = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
+      fs.writeSync(file.fd, json);
+      fs.closeSync(file);
+      this.shareBackupFile(filePath, fileName);
+      this.closeSessionDrawer();
+    } catch (e) {
+      promptAction.showToast({ message: '导出失败，请重试' });
+    }
+  }
+
+  // 以 FILE 类型拉起系统分享面板分享备份文件
+  private shareBackupFile(filePath: string, fileName: string): void {
+    try {
+      const data: systemShare.SharedData = new systemShare.SharedData({
+        utd: utd.UniformDataType.FILE,
+        uri: 'file://' + filePath,
+        title: fileName
+      });
+      const controller: systemShare.ShareController = new systemShare.ShareController(data);
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      controller.show(context, {
+        previewMode: systemShare.SharePreviewMode.DETAIL,
+        selectionMode: systemShare.SelectionMode.SINGLE
+      }).catch((e: Object) => {
+      });
+      promptAction.showToast({ message: '已生成备份文件：' + fileName });
+    } catch (e) {
+      promptAction.showToast({ message: '分享失败' });
+    }
+  }
+
+  // 从文件导入备份（支持多会话备份与单会话 JSON）
+  private async importSessionFromFile(): Promise<void> {
+    try {
+      const documentPicker = new picker.DocumentViewPicker();
+      const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
+      options.maxSelectNumber = 1;
+      options.fileSuffixFilters = ['.json'];
+      const uris: string[] = await documentPicker.select(options);
+      if (uris.length === 0) return;
+      const file = fs.openSync(uris[0], fs.OpenMode.READ_ONLY);
+      const stat = fs.statSync(uris[0]);
+      const buf: ArrayBuffer = new ArrayBuffer(stat.size);
+      fs.readSync(file.fd, buf);
+      fs.closeSync(file);
+      const decoder: util.TextDecoder = util.TextDecoder.create('utf-8');
+      const json: string = decoder.decodeToString(new Uint8Array(buf));
+      if (json.trim().length === 0) {
+        promptAction.showToast({ message: '文件内容为空' });
+        return;
+      }
+      const importedList: ImportedChat[] = ChatExporter.parseImportAll(json.trim());
+      if (importedList.length === 0) {
+        promptAction.showToast({ message: '格式无效：请选择智子导出的备份文件' });
+        return;
+      }
+      for (let i: number = 0; i < importedList.length; i++) {
+        const imported: ImportedChat = importedList[i];
+        const session: ChatSession = await ChatRepository.createSession(imported.title);
+        await ChatRepository.appendMessages(session.id, imported.messages);
+        if (i === importedList.length - 1) {
+          // 最后导入的会话作为当前会话
+          this.activeSessionId = session.id;
+          await ChatRepository.setActiveSessionId(session.id);
+          this.messages = await ChatRepository.loadMessages(session.id);
+        }
+      }
+      this.sessions = await ChatRepository.loadSessions();
+      this.closeSessionDrawer();
+      const last: ImportedChat = importedList[importedList.length - 1];
+      promptAction.showToast({ message: '已导入 ' + importedList.length.toString() + ' 个会话' +
+        '（共 ' + last.messages.length.toString() + ' 条消息）' });
+    } catch (e) {
+      promptAction.showToast({ message: '读取文件失败' });
+    }
+  }
+
+  // 文件名时间戳
+  private static etsTimestamp(): string {
+    const d: Date = new Date();
+    const p: (n: number) => string = (n: number): string => n < 10 ? '0' + n.toString() : n.toString();
+    return d.getFullYear().toString() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+      p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
   }
 
   // 从剪贴板导入会话 JSON（智子导出的格式）
@@ -1288,12 +1621,17 @@ export struct ChatTab {
                   selectionMode: this.selectionMode,
                   selected: this.isSelected(message.id),
                   isStreaming: this.streaming,
+                  speaking: this.speakingMessageId === message.id,
                   onRetry: (i: number): void => { this.retryLast(); },
                   onLongPressMessage: (i: number): void => { this.showActionSheet(i); },
                   onToggleSelect: (i: number): void => { this.toggleSelect(i); },
                   onExpandReasoning: (i: number): void => { this.expandReasoning(i); },
                   onFullscreen: (i: number): void => { this.openFullscreen(i); },
-                  onCopyCode: (lang: string, code: string): void => { this.copyCode(lang, code); } })
+                  onCopyCode: (lang: string, code: string): void => { this.copyCode(lang, code); },
+                  onSpeak: (i: number): void => {
+                    const displayed: ChatMessage[] = this.displayMessages();
+                    if (i >= 0 && i < displayed.length) this.toggleSpeak(displayed[i]);
+                  } })
               }
             }, (message: ChatMessage) => message.id)
           }
@@ -1410,6 +1748,26 @@ export struct ChatTab {
                 .fontSize(10)
                 .fontFamily(this.palette.fontSans)
                 .fontColor(this.palette.textTertiary)
+              Blank()
+              // 联网搜索开关
+              Row({ space: 4 }) {
+                Text('🌐')
+                  .fontSize(12)
+                  .fontFamily(this.palette.fontSans)
+                Text('联网搜索')
+                  .fontSize(10)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.webSearchEnabled ? '#FFFFFF' : this.palette.textSecondary)
+                  .fontWeight(this.webSearchEnabled ? FontWeight.Medium : FontWeight.Normal)
+              }
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .borderRadius(10)
+              .backgroundColor(this.webSearchEnabled ? this.palette.primary : this.palette.bgSurface2)
+              .onClick(() => {
+                this.webSearchEnabled = !this.webSearchEnabled;
+                DataRepository.setSetting('webSearchEnabled', this.webSearchEnabled ? 'true' : 'false');
+                promptAction.showToast({ message: this.webSearchEnabled ? '已开启联网搜索' : '已关闭联网搜索' });
+              })
             }
             .width('100%')
             .padding({ left: 10, right: 10, top: 6, bottom: 6 })
@@ -1426,6 +1784,7 @@ export struct ChatTab {
                 promptAction.showToast({ message: '请先配置模型' });
               }
             })
+            this.presetPanel()
             ChatInputBar({
               inputText: this.inputText,
               inputHeight: this.inputHeight,
@@ -1434,15 +1793,19 @@ export struct ChatTab {
               chatPhase: this.chatPhase,
               elapsedSeconds: this.elapsedSeconds,
               tokenHint: this.inputTokenHint(),
-              sessionTokensText: (!this.showSearch && this.messages.length > 0)
-                ? ChatRepository.estimateSessionTokens(this.messages).toString() + ' tokens 已用' : '',
+              sessionTokens: (!this.showSearch && this.messages.length > 0)
+                ? ChatRepository.estimateSessionTokens(this.messages) : 0,
+              contextTokens: this.activeConfig !== null ? this.activeConfig.contextTokensIn : 128000,
               visionEnabled: this.activeConfig !== null && this.activeConfig.visionEnabled,
               attachmentName: this.attachmentName,
+              recognizing: this.voiceRecognizing,
+              webSearchBusy: this.webSearchBusy,
               onChangeText: (value: string): void => { this.onInputChange(value); },
               onSend: (): void => { this.send(); },
               onStop: (): void => { this.stopStreaming(); },
               onPickImage: (): void => { this.pickImageAttachment(); },
-              onRemoveImage: (): void => { this.removeImageAttachment(); }
+              onRemoveImage: (): void => { this.removeImageAttachment(); },
+              onMicTap: (): void => { this.toggleVoiceInput(); }
             })
           }
           .width('100%')
@@ -1471,6 +1834,9 @@ export struct ChatTab {
           onDeleteSession: (id: string): void => { this.deleteSessionFromDrawer(id); },
           onExport: (): void => { this.exportCurrentSession(); },
           onImport: (): void => { this.importSessionFromClipboard(); },
+          onExportFile: (): void => { this.exportAllSessionsToFile(); },
+          onExportCurrentFile: (): void => { this.exportCurrentSessionToFile(); },
+          onImportFile: (): void => { this.importSessionFromFile(); },
           onSearchChange: (value: string): void => { this.onDrawerSearch(value); }
         })
       }

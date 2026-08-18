@@ -44,7 +44,8 @@ export enum GameId {
   SNAKE = 'SNAKE',
   MINESWEEPER = 'MINESWEEPER',
   SUDOKU = 'SUDOKU',
-  CHINESE_CHESS = 'CHINESE_CHESS'
+  CHINESE_CHESS = 'CHINESE_CHESS',
+  GOMOKU = 'GOMOKU'
 }
 
 export enum GameLaunchFailureCode {
@@ -113,7 +114,8 @@ export const GAME_REGISTRY: GameRegistration[] = [
   new GameRegistration(GameId.SNAKE, 'pages/Snake', '贪吃蛇'),
   new GameRegistration(GameId.MINESWEEPER, 'pages/Minesweeper', '扫雷'),
   new GameRegistration(GameId.SUDOKU, 'pages/Sudoku', '数独'),
-  new GameRegistration(GameId.CHINESE_CHESS, 'pages/ChineseChess', '中国象棋')
+  new GameRegistration(GameId.CHINESE_CHESS, 'pages/ChineseChess', '中国象棋'),
+  new GameRegistration(GameId.GOMOKU, 'pages/Gomoku', '五子棋')
 ];
 
 export function isDifficultyLevel(value: string): boolean {
@@ -128,6 +130,7 @@ function gameIdFromString(value: string): GameId | null {
   if (value === GameId.MINESWEEPER) return GameId.MINESWEEPER;
   if (value === GameId.SUDOKU) return GameId.SUDOKU;
   if (value === GameId.CHINESE_CHESS) return GameId.CHINESE_CHESS;
+  if (value === GameId.GOMOKU) return GameId.GOMOKU;
   return null;
 }
 

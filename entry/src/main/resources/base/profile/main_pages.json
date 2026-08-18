@@ -9,6 +9,7 @@
     "pages/LegalDoc",
     "pages/Sudoku",
     "pages/ChineseChess",
+    "pages/Gomoku",
     "pages/ChatConfig",
     "pages/AiCallLog",
     "pages/AiModelPage"

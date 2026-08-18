@@ -67,6 +67,13 @@ export struct GamesPage {
       icon: '♟️',
       desc: '人机 / 人对AI / AI对AI，经典楚河汉界',
       color: this.themeState.palette.danger
+    },
+    {
+      gameId: GameId.GOMOKU,
+      name: '五子棋',
+      icon: '⚫',
+      desc: '15×15 棋盘，人机对弈，率先连五获胜',
+      color: this.themeState.palette.primary
     }
   ];
   }
@@ -155,6 +162,19 @@ export struct GamesPage {
         '• 马蹩腿、象塞象眼且不过河、炮隔子吃\n' +
         '• 兵/卒过河后可横走，不能后退\n' +
         '• 将死或困毙对方即获胜';
+    }
+    if (gameId === GameId.GOMOKU) {
+      return '🎮 五子棋\n\n' +
+        '【目标】\n' +
+        '黑白双方轮流在交叉点落子，率先形成横、竖、斜任意方向连续 5 子（含 5 子以上）即获胜。\n\n' +
+        '【操作】\n' +
+        '• 点击棋盘交叉点落子，你是黑方先手\n' +
+        '• 白方由本地 AI 引擎执子，难度越高思考越深\n' +
+        '• ↩ 悔棋：回退上一步（每局有次数上限）\n' +
+        '• 🤖 AI 托管：让大模型替你执黑落子\n\n' +
+        '【规则】\n' +
+        '• 连成 5 子及以上获胜，平局为棋盘下满\n' +
+        '• 注意防守：对手连成 4 子时必须立即堵住';
     }
     return '';
   }
