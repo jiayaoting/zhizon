@@ -310,6 +310,14 @@ export class MarkdownConverter {
     return out.join('');
   }
 
+  // 任务列表项：- [ ] xxx → ☐ xxx；- [x] / - [X] xxx → ☑ xxx
+  private static taskItem(raw: string): string {
+    const t: string = raw.trim();
+    if (t.startsWith('[ ] ')) return '☐ ' + t.substring(4);
+    if (t.startsWith('[x] ') || t.startsWith('[X] ')) return '☑ ' + t.substring(4);
+    return raw;
+  }
+
   private static splitTableRow(line: string): string[] {
     let t: string = line.trim();
     if (t.startsWith('|')) t = t.substring(1);
@@ -464,16 +472,17 @@ export class MarkdownConverter {
         i++;
         continue;
       }
-      // 代码块
+      // 代码块（流式容错：围栏未闭合时剩余行全部视为代码）
       if (line.startsWith('```')) {
+        const lang: string = line.substring(3).trim();
         const codeLines: string[] = [];
         i++;
         while (i < n && !lines[i].trim().startsWith('```')) {
           codeLines.push(lines[i]);
           i++;
         }
-        i++;
-        out.push(new MdBlock('code', '', codeLines, []));
+        if (i < n) i++; // 闭合围栏时跳过结尾 ```；未闭合则已到末尾
+        out.push(new MdBlock('code', lang, codeLines, []));
         continue;
       }
       // 标题
@@ -511,13 +520,13 @@ export class MarkdownConverter {
         i++;
         continue;
       }
-      // 无序列表
+      // 无序列表（支持任务列表 - [ ] / - [x]）
       if (/^[-*+]\s+/.test(line)) {
         const items: string[] = [];
         while (i < n) {
           const t: string = lines[i].trim();
           if (/^[-*+]\s+/.test(t)) {
-            items.push(t.replace(/^[-*+]\s+/, ''));
+            items.push(MarkdownConverter.taskItem(t.replace(/^[-*+]\s+/, '')));
             i++;
           } else if (t.length === 0) {
             break;

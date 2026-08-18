@@ -13,6 +13,8 @@ export interface ScoreEntry {
   model: string;
   // 本局游戏总耗时（秒）
   duration: number;
+  // AI 托管累计思考总时长（秒）；非 AI 托管为 0
+  aiThinkTime: number;
   createdAt: number;
 }
 
@@ -47,7 +49,7 @@ export interface AiTokenStats {
 }
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 8;
+const DB_VERSION = 11;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -66,6 +68,7 @@ const SQL_CREATE_GAME_SCORES = `
     difficulty TEXT DEFAULT '中等',
     model TEXT DEFAULT '',
     duration INTEGER DEFAULT 0,
+    ai_think_time INTEGER DEFAULT 0,
     created_at INTEGER
   )
 `;
@@ -108,6 +111,21 @@ const SQL_CREATE_AI_TOKEN_STATS = `CREATE TABLE IF NOT EXISTS ai_token_stats (
   id TEXT PRIMARY KEY, call_count INTEGER DEFAULT 0, input_tokens INTEGER DEFAULT 0,
   cached_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0
 )`;
+// AI 对话多会话：会话表 + 消息表（v9）
+const SQL_CREATE_CHAT_SESSIONS = `CREATE TABLE IF NOT EXISTS chat_sessions (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL, pinned INTEGER DEFAULT 0, active_model_id TEXT DEFAULT ''
+)`;
+const SQL_CREATE_CHAT_MESSAGES = `CREATE TABLE IF NOT EXISTS chat_messages (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
+  reasoning TEXT DEFAULT '', time INTEGER NOT NULL, status TEXT DEFAULT 'ok',
+  error_code TEXT DEFAULT '', error_msg TEXT DEFAULT '', model_id TEXT DEFAULT '',
+  model_name TEXT DEFAULT '', input_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0,
+  output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0,
+  image_data TEXT DEFAULT ''
+)`;
+const SQL_CREATE_CHAT_MSG_INDEX = `CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+  ON chat_messages (session_id, time)`;
 
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
@@ -154,8 +172,26 @@ export class DatabaseHelper {
       } catch (e) {
       }
     }
+    if (DatabaseHelper.store.version < 11) {
+      // 旧库升级：为 game_scores 补齐 AI 思考总时长列（新库建表已含，会命中重复列错误并忽略）
+      try {
+        await DatabaseHelper.store.executeSql("ALTER TABLE game_scores ADD COLUMN ai_think_time INTEGER DEFAULT 0");
+      } catch (e) {
+      }
+    }
     // 累计统计表：独立于 ai_call_logs，清空调用记录不影响
     await DatabaseHelper.store.executeSql(SQL_CREATE_AI_TOKEN_STATS);
+    // AI 对话多会话表（v9/v10）
+    await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_SESSIONS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_MESSAGES);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_MSG_INDEX);
+    if (DatabaseHelper.store.version < 10) {
+      // 旧库升级：为 chat_messages 补齐图片附件列（新库建表已含，重复列错误被忽略）
+      try {
+        await DatabaseHelper.store.executeSql("ALTER TABLE chat_messages ADD COLUMN image_data TEXT DEFAULT ''");
+      } catch (e) {
+      }
+    }
     // 旧库升级：为 ai_token_stats 补齐可能缺失的列（新库建表已含，会命中重复列错误并忽略）
     const tokenStatAlters: string[] = [
       'ALTER TABLE ai_token_stats ADD COLUMN call_count INTEGER DEFAULT 0',
@@ -184,7 +220,7 @@ export class DatabaseHelper {
   // ========== 游戏战绩 ==========
 
   static async addGameScore(game: string, score: number, level: number, difficulty: string,
-    model: string = '', duration: number = 0): Promise<void> {
+    model: string = '', duration: number = 0, aiThinkTime: number = 0): Promise<void> {
     const store = DatabaseHelper.getStore();
     const id: string = 'gs-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
     const valueBucket: relationalStore.ValuesBucket = {
@@ -195,6 +231,7 @@ export class DatabaseHelper {
       difficulty: difficulty,
       model: model,
       duration: duration,
+      ai_think_time: aiThinkTime,
       created_at: Date.now()
     };
     await store.insert('game_scores', valueBucket);
@@ -217,6 +254,7 @@ export class DatabaseHelper {
           difficulty: resultSet.getString(resultSet.getColumnIndex('difficulty')),
           model: resultSet.getString(resultSet.getColumnIndex('model')),
           duration: resultSet.getLong(resultSet.getColumnIndex('duration')),
+          aiThinkTime: resultSet.getLong(resultSet.getColumnIndex('ai_think_time')),
           createdAt: resultSet.getLong(resultSet.getColumnIndex('created_at'))
         } as ScoreEntry);
       }

@@ -80,6 +80,8 @@ export class LlmConfig {
   vllmCompat: boolean = false;
   // 是否启用该模型：仅启用状态的模型可在对话中作为可选/使用
   enabled: boolean = true;
+  // 系统提示词（system prompt）：随模型配置保存，请求时注入 system 消息
+  systemPrompt: string = '';
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -115,6 +117,8 @@ export class LlmModelEntry {
   vllmCompat: boolean = false;
   // 是否启用该模型
   enabled: boolean = true;
+  // 系统提示词（system prompt）
+  systemPrompt: string = '';
 
   get configured(): boolean {
     return this.baseUrl.trim().length > 0 && this.model.trim().length > 0;
@@ -148,6 +152,7 @@ export function entryToConfig(entry: LlmModelEntry): LlmConfig {
   config.followDefaultConfig = entry.followDefaultConfig;
   config.vllmCompat = entry.vllmCompat;
   config.enabled = entry.enabled;
+  config.systemPrompt = entry.systemPrompt;
   return config;
 }
 
@@ -169,6 +174,37 @@ export function modelDisplayNameFromConfig(config: LlmConfig): string {
   return providerName;
 }
 
+// 对话会话（多会话管理）
+export class ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  activeModelId: string;
+
+  constructor(id: string = '', title: string = '', createdAt: number = 0, updatedAt: number = 0,
+    pinned: boolean = false, activeModelId: string = '') {
+    this.id = id;
+    this.title = title;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.pinned = pinned;
+    this.activeModelId = activeModelId;
+  }
+
+  static create(title: string, activeModelId: string = ''): ChatSession {
+    const now: number = Date.now();
+    return new ChatSession(ChatSession.newId(), title, now, now, false, activeModelId);
+  }
+
+  static newId(): string {
+    const ts: string = Date.now().toString(36);
+    const rand: string = Math.random().toString(36).substring(2, 8);
+    return 'sess-' + ts + '-' + rand;
+  }
+}
+
 // 对话消息（@Observed 用于流式增量更新，仅修改 content 即可触发 UI 刷新，无需重建整个数组）
 @Observed
 export class ChatMessage {
@@ -177,6 +213,19 @@ export class ChatMessage {
   content: string;
   reasoning: string; // 思考过程（thinking/reasoning），与正文分离展示
   time: number;
+  // ---- 多会话 / 状态 / 用量（默认值保证旧代码与旧数据兼容） ----
+  sessionId: string = '';
+  status: string = 'ok'; // ok / failed / stopped / streaming
+  errorCode: string = '';
+  errorMessage: string = '';
+  modelId: string = '';
+  modelName: string = '';
+  inputTokens: number = 0;
+  cachedTokens: number = 0;
+  outputTokens: number = 0;
+  totalTokens: number = 0;
+  // 图片附件（data URL，如 data:image/jpeg;base64,xxx；仅用户消息使用）
+  imageDataUrl: string = '';
 
   constructor(id: string, role: string, content: string, time: number = Date.now(),
     reasoning: string = '') {
@@ -198,6 +247,26 @@ export class ChatMessage {
     const ts: string = Date.now().toString(36);
     const rand: string = Math.random().toString(36).substring(2, 8);
     return 'msg-' + ts + '-' + rand;
+  }
+}
+
+// 会话持久化结构（RDB chat_sessions 行）
+export class StoredChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  activeModelId: string;
+
+  constructor(id: string, title: string, createdAt: number, updatedAt: number,
+    pinned: boolean = false, activeModelId: string = '') {
+    this.id = id;
+    this.title = title;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.pinned = pinned;
+    this.activeModelId = activeModelId;
   }
 }
 
@@ -245,6 +314,8 @@ export class LlmResult {
 export class ChatRequestMessage {
   role: string;
   content: string;
+  // 图片附件 data URL（多模态消息使用；空串表示纯文本）
+  imageDataUrl: string = '';
 
   constructor(role: string, content: string) {
     this.role = role;
@@ -277,14 +348,17 @@ export class AnthropicRequestBody {
   messages: ChatRequestMessage[];
   stream: boolean;
   thinkingEnabled: boolean;
+  // 顶层 system 字段（Anthropic API 规范，而非消息数组中的 system role）
+  system: string = '';
 
   constructor(model: string, maxTokens: number, messages: ChatRequestMessage[], stream: boolean,
-    thinkingEnabled: boolean = false) {
+    thinkingEnabled: boolean = false, systemPrompt: string = '') {
     this.model = model;
     this.max_tokens = maxTokens;
     this.messages = messages;
     this.stream = stream;
     this.thinkingEnabled = thinkingEnabled;
+    this.system = systemPrompt;
   }
 }
 
@@ -307,12 +381,14 @@ export class StoredLlmConfig {
   thinkingEnabled: boolean;
   followDefaultConfig: boolean;
   enabled: boolean;
+  systemPrompt: string = '';
 
   constructor(id: string, displayName: string, providerId: string, baseUrl: string, model: string,
     temperature: number, apiFormat: string = 'openai', maxTokens: number = 4096,
     useFullUrl: boolean = false, modelFamily: string = '', contextTokensIn: number = 128000,
     contextTokensOut: number = 4096, workers: number = 1, visionEnabled: boolean = false,
-    thinkingEnabled: boolean = false, followDefaultConfig: boolean = true, enabled: boolean = true) {
+    thinkingEnabled: boolean = false, followDefaultConfig: boolean = true, enabled: boolean = true,
+    systemPrompt: string = '') {
     this.id = id;
     this.displayName = displayName;
     this.providerId = providerId;
@@ -330,6 +406,7 @@ export class StoredLlmConfig {
     this.thinkingEnabled = thinkingEnabled;
     this.followDefaultConfig = followDefaultConfig;
     this.enabled = enabled;
+    this.systemPrompt = systemPrompt;
   }
 }
 

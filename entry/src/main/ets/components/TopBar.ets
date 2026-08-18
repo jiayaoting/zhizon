@@ -12,12 +12,30 @@ export struct TopBar {
   // 自定义返回回调：嵌入子页（非路由压栈）时，由宿主提供返回逻辑；缺省时回退到 AppNavigator.pop()
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Event onBackTap: () => void = () => { AppNavigator.pop(); };
+  // 左侧菜单按钮（会话列表等入口）：布尔开关 + 事件回调，不引入第二个 @BuilderParam（会破坏尾随闭包语法）
+  @Param showLeading: boolean = false;
+  @Event onLeadingTap: () => void = () => {};
           @BuilderParam actions: () => void = this.emptyActions;
 
   @Builder emptyActions() {}
 
   build() {
     Row({ space: 12 }) {
+      if (this.showLeading) {
+        Row() {
+          Text('☰')
+            .fontSize(18)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+        }
+        .width(32)
+        .height(32)
+        .borderRadius(8)
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { this.onLeadingTap(); })
+      }
       if (this.showBack) {
         Row() {
           Text('‹')

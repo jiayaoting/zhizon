@@ -33,6 +33,17 @@ class AnthropicThinkingParam {
   }
 }
 
+// 图片 data URL 解析结果（Anthropic image block 需要 media_type + base64 data）
+class ImageDataUrl {
+  mediaType: string;
+  data: string;
+
+  constructor(mediaType: string, data: string) {
+    this.mediaType = mediaType;
+    this.data = data;
+  }
+}
+
 export class LlmClient {
   // 非流式单次对话（用于测试连接）
   static async testConnection(config: LlmConfig): Promise<LlmResult> {
@@ -50,6 +61,98 @@ export class LlmClient {
     }
   }
 
+  // 构建请求消息列表：systemPrompt 非空时前置 system 消息（OpenAI 兼容格式）
+  private static buildRequestMessages(messages: ChatMessage[], systemPrompt: string): ChatRequestMessage[] {
+    const result: ChatRequestMessage[] = [];
+    const sp: string = systemPrompt.trim();
+    if (sp.length > 0) {
+      result.push(new ChatRequestMessage('system', sp));
+    }
+    for (let i: number = 0; i < messages.length; i++) {
+      const rm = new ChatRequestMessage(messages[i].role, messages[i].content);
+      rm.imageDataUrl = messages[i].imageDataUrl;
+      result.push(rm);
+    }
+    return result;
+  }
+
+  // 复制消息列表（Anthropic 路径：system 走顶层字段，不注入消息数组）
+  private static copyRequestMessages(messages: ChatMessage[]): ChatRequestMessage[] {
+    const result: ChatRequestMessage[] = [];
+    for (let i: number = 0; i < messages.length; i++) {
+      const rm = new ChatRequestMessage(messages[i].role, messages[i].content);
+      rm.imageDataUrl = messages[i].imageDataUrl;
+      result.push(rm);
+    }
+    return result;
+  }
+
+  // OpenAI 消息序列化：带图片的消息转为 content 数组（多模态格式）
+  private static openAIMessagesPayload(messages: ChatRequestMessage[]): Object[] {
+    const out: Object[] = [];
+    for (let i: number = 0; i < messages.length; i++) {
+      const m: ChatRequestMessage = messages[i];
+      if (m.imageDataUrl.trim().length > 0) {
+        const textPart: Record<string, Object> = { 'type': 'text', 'text': m.content };
+        const urlObj: Record<string, Object> = {};
+        urlObj['url'] = m.imageDataUrl.trim();
+        const imagePart: Record<string, Object> = {
+          'type': 'image_url',
+          'image_url': urlObj
+        };
+        const parts: Object[] = [textPart, imagePart];
+        const item: Record<string, Object> = { 'role': m.role, 'content': parts };
+        out.push(item);
+      } else {
+        const item: Record<string, Object> = { 'role': m.role, 'content': m.content };
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  // Anthropic 消息序列化：图片转为 content blocks（image 在前，text 在后，符合 Claude 规范）
+  private static anthropicMessagesPayload(messages: ChatRequestMessage[]): Object[] {
+    const out: Object[] = [];
+    for (let i: number = 0; i < messages.length; i++) {
+      const m: ChatRequestMessage = messages[i];
+      if (m.imageDataUrl.trim().length > 0) {
+        const parsed: ImageDataUrl = LlmClient.parseImageDataUrl(m.imageDataUrl);
+        const sourceObj: Record<string, Object> = {};
+        sourceObj['type'] = 'base64';
+        sourceObj['media_type'] = parsed.mediaType;
+        sourceObj['data'] = parsed.data;
+        const imageBlock: Record<string, Object> = {
+          'type': 'image',
+          'source': sourceObj
+        };
+        const textBlock: Record<string, Object> = { 'type': 'text', 'text': m.content };
+        const blocks: Object[] = [imageBlock, textBlock];
+        const item: Record<string, Object> = { 'role': m.role, 'content': blocks };
+        out.push(item);
+      } else {
+        const item: Record<string, Object> = { 'role': m.role, 'content': m.content };
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  // 解析 data URL：data:image/jpeg;base64,xxxx → mediaType + base64 数据
+  private static parseImageDataUrl(dataUrl: string): ImageDataUrl {
+    const commaIdx: number = dataUrl.indexOf(',');
+    if (commaIdx > 0) {
+      const meta: string = dataUrl.substring(0, commaIdx);
+      const data: string = dataUrl.substring(commaIdx + 1);
+      let mediaType: string = 'image/jpeg';
+      if (meta.indexOf('image/png') >= 0) mediaType = 'image/png';
+      else if (meta.indexOf('image/webp') >= 0) mediaType = 'image/webp';
+      else if (meta.indexOf('image/gif') >= 0) mediaType = 'image/gif';
+      return new ImageDataUrl(mediaType, data);
+    }
+    return new ImageDataUrl('image/jpeg', dataUrl);
+  }
+
   // 构建 OpenAI 兼容请求 payload：
   // - enable_thinking 顶层字段始终显式发送（true/false），tokenrhythm/硅基流动/DeepSeek 等网关以此控制思考开关
   // - chat_template_kwargs 仅 vLLM 兼容模式发送（vllmCompat）：vLLM 部署（如 api.do.top 的 Qwen3 系列）
@@ -57,7 +160,7 @@ export class LlmClient {
   private static buildOpenAIPayload(body: ChatRequestBody, vllmCompat: boolean): string {
     const payload: Record<string, Object> = {
       'model': body.model,
-      'messages': body.messages,
+      'messages': LlmClient.openAIMessagesPayload(body.messages),
       'temperature': body.temperature,
       'stream': body.stream,
       'enable_thinking': body.thinkingEnabled
@@ -79,9 +182,12 @@ export class LlmClient {
     const payload: Record<string, Object> = {
       'model': body.model,
       'max_tokens': body.max_tokens,
-      'messages': body.messages,
+      'messages': LlmClient.anthropicMessagesPayload(body.messages),
       'stream': body.stream
     };
+    if (body.system.trim().length > 0) {
+      payload['system'] = body.system.trim();
+    }
     if (body.thinkingEnabled) {
       payload['thinking'] = new AnthropicThinkingParam('enabled', body.max_tokens);
     }
@@ -197,8 +303,7 @@ export class LlmClient {
       if (config.needsKey) {
         header['Authorization'] = 'Bearer ' + config.apiKey.trim();
       }
-      const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
-        new ChatRequestMessage(m.role, m.content));
+      const requestMessages: ChatRequestMessage[] = LlmClient.buildRequestMessages(messages, config.systemPrompt);
       const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature,
         stream, config.thinkingEnabled);
 
@@ -349,10 +454,9 @@ export class LlmClient {
       if (config.needsKey) {
         header['x-api-key'] = config.apiKey.trim();
       }
-      const requestMessages: ChatRequestMessage[] = messages.map((m: ChatMessage): ChatRequestMessage =>
-        new ChatRequestMessage(m.role, m.content));
+      const requestMessages: ChatRequestMessage[] = LlmClient.copyRequestMessages(messages);
       const body: AnthropicRequestBody = new AnthropicRequestBody(config.model.trim(), config.maxTokens,
-        requestMessages, stream, config.thinkingEnabled);
+        requestMessages, stream, config.thinkingEnabled, config.systemPrompt);
 
       const processData = (data: ArrayBuffer): void => {
         const chunk: string = LlmClient.arrayBufferToString(data);

@@ -62,6 +62,7 @@ export struct ChatConfig {
   @State followDefaultConfig: boolean = true;
   @State vllmCompat: boolean = false;
   @State modelEnabled: boolean = true;
+  @State systemPrompt: string = '';
   // 进入编辑/复制时的原始快照：用于判断表单是否有实际修改
   private formSnapshot: LlmModelEntry | null = null;
 
@@ -105,6 +106,7 @@ export struct ChatConfig {
     this.followDefaultConfig = m.followDefaultConfig !== false;
     this.vllmCompat = m.vllmCompat || false;
     this.modelEnabled = m.enabled !== false;
+    this.systemPrompt = m.systemPrompt || '';
     this.editing = true;
   }
 
@@ -145,6 +147,7 @@ export struct ChatConfig {
     c.followDefaultConfig = m.followDefaultConfig;
     c.vllmCompat = m.vllmCompat;
     c.enabled = m.enabled;
+    c.systemPrompt = m.systemPrompt;
     return c;
   }
 
@@ -170,6 +173,7 @@ export struct ChatConfig {
     if (this.followDefaultConfig !== s.followDefaultConfig) return true;
     if (this.vllmCompat !== s.vllmCompat) return true;
     if (this.modelEnabled !== s.enabled) return true;
+    if (this.systemPrompt.trim() !== s.systemPrompt.trim()) return true;
     return false;
   }
 
@@ -275,6 +279,7 @@ export struct ChatConfig {
     this.followDefaultConfig = true;
     this.vllmCompat = false;
     this.modelEnabled = true;
+    this.systemPrompt = '';
     this.formSnapshot = null;
   }
 
@@ -358,6 +363,7 @@ export struct ChatConfig {
     config.followDefaultConfig = this.followDefaultConfig;
     config.vllmCompat = this.vllmCompat;
     config.enabled = this.modelEnabled;
+    config.systemPrompt = this.systemPrompt.trim();
   }
 
   private async save(): Promise<void> {
@@ -409,6 +415,7 @@ export struct ChatConfig {
     entry.followDefaultConfig = config.followDefaultConfig;
     entry.vllmCompat = config.vllmCompat;
     entry.enabled = config.enabled;
+    entry.systemPrompt = config.systemPrompt;
 
     let list: LlmModelEntry[] = this.models.concat([]);
     if (this.editingIndex >= 0) {
@@ -1048,6 +1055,23 @@ export struct ChatConfig {
         this.toggleRow('vLLM 兼容模式',
           '服务端为 vLLM 部署时开启（如 api.do.top 的 Qwen3 系列）；普通网关（tokenrhythm/硅基流动等）请保持关闭',
           this.vllmCompat, (value: boolean) => { this.vllmCompat = value; })
+
+        // 系统提示词
+        Column({ space: 6 }) {
+          this.rowLabel('系统提示词', '注入 system 消息，定义该模型的角色与行为；留空则不注入')
+          TextArea({ text: this.systemPrompt, placeholder: '例如：你是一位资深鸿蒙开发工程师，回答简洁准确…' })
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(this.palette.textPrimary)
+            .placeholderColor(this.palette.textTertiary)
+            .backgroundColor(this.palette.bgSurface)
+            .borderRadius(8)
+            .border({ width: 1, color: this.palette.borderSubtle })
+            .height(96)
+            .width('100%')
+            .onChange((value: string) => { this.systemPrompt = value; })
+        }
+        .width('100%')
       }
     }
     .width('100%')
