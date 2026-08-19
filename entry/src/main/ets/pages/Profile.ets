@@ -93,7 +93,7 @@ export struct ProfilePage {
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row({ space: 6 }) {
-          Text('休闲游戏 · AI 对话 · 个性化外观')
+          Text('AI 资讯 · 智能对话 · 休闲游戏')
             .fontSize(this.themeState.palette.fsXs)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
@@ -165,6 +165,12 @@ export struct ProfilePage {
         })
         this.groupRow('排行榜', '', true, () => {
           AppNavigator.push('pages/Leaderboard');
+        })
+        this.groupRow('收藏 / 稍后读', '', true, () => {
+          AppNavigator.push('pages/NewsFavorites');
+        })
+        this.groupRow('为你推荐', '', true, () => {
+          AppNavigator.push('pages/NewsRecommend');
         })
       }
       .width('100%')

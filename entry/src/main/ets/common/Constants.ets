@@ -25,9 +25,9 @@ export class AppConstants {
   static readonly dbName = 'zhizon_db';
 
   static readonly navItems: NavItem[] = [
-    new NavItem(MainNavKey.Index, '首页', '🏠'),
-    new NavItem(MainNavKey.Games, '游戏', '🎮'),
+    new NavItem(MainNavKey.Index, '资讯', '📰'),
     new NavItem(MainNavKey.Chat, 'AI对话', '🗨️'),
+    new NavItem(MainNavKey.Games, '游戏', '🎮'),
     new NavItem(MainNavKey.Profile, '我的', '👤')
   ];
 }

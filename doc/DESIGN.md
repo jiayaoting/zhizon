@@ -579,6 +579,53 @@ AppShell (主框架)
 
 ---
 
+## 十·一、新闻资讯功能（AI 资讯阅读器 · v8.0）
+
+> 定位：**新闻资讯升级为应用主功能**，游戏降为次要功能；AI 摘要等 AI 能力全部手动触发。
+> 详细方案与决策记录见 [news-feature-plan.md](news-feature-plan.md)（v2.1）。
+
+### 10.1.1 功能总览
+
+| 模块 | 说明 |
+|------|------|
+| 资讯首页（Index 重写） | 问候栏 + ⭐收藏入口 + AI 今日要闻卡 + 频道 Tabs + 资讯流（下拉刷新/上拉加载） |
+| 频道 | 推荐（全源合并）/ 科技 / AI专题（关键词派生）/ 财经 / 国际 |
+| 内置源 | 知乎日报（JSON）、Hacker News Algolia（JSON）、少数派/IT之家/36氪/BBC中文（RSS/Atom，@ohos.convertxml 解析） |
+| 详情页 | ArkWeb 加载原文 + 收藏/已读 + AI 摘要/翻译/问AI 面板（流式 + 复制 + 失败兜底）+ 🔊 朗读（TTS） |
+| AI 今日要闻 | 独立全屏页，手动生成 8~10 条简报，按日期缓存（news_digests 表），可重新生成/复制 |
+| 为你推荐 | 基于收藏历史 + AI 排序候选新闻 |
+| 收藏/稍后读 | news_favorites 表，列表页/详情页管理 |
+| 设置 | 「资讯」分组：6 个内置源独立开关 + 自定义 RSS 订阅管理（settings.newsCustomRss） |
+| 离线缓存 | 频道快照（news_cache 表）：网络失败自动回退本地快照，离线可浏览标题/摘要 |
+| 平板适配 | isLg 宽屏下资讯首页切换为双列网格 |
+
+### 10.1.2 数据表（DatabaseHelper v14）
+
+- news_favorites(id, url, title, summary, image_url, source_name, added_at) — 收藏/稍后读
+- news_read(url PK, read_at) — 已读标记
+- news_digests(id, date, content, model_name, created_at) — AI 今日要闻缓存（按日期幂等覆盖）
+
+### 10.1.3 服务层
+
+| 服务 | 职责 |
+|------|------|
+| NewsService | 多源并发拉取 → 归一化 NewsItem → 按时间合并去重 → 10 分钟内存缓存；源开关过滤；RSS/Atom 解析（convertxml） |
+| NewsRepository | 收藏/已读/今日要闻的 RDB 门面 |
+| NewsAiService | AI 摘要/翻译/问AI/今日要闻/为你推荐；正文截断 8000 字符；场景 news_* 写入 ai_call_logs |
+
+### 10.1.4 导航
+
+- 主 Tab：📰 资讯（Index）/ 🗨️ AI对话 / 🎮 游戏 / 👤 我的
+- 路由页：pages/NewsDetail、pages/NewsDigest、pages/NewsFavorites、pages/NewsRecommend（均已注册 main_pages.json）
+
+### 10.1.5 单元测试
+
+- NewsServiceTest：知乎日报 / HN / RSS 2.0 / Atom 解析 + 合并去重
+- NewsAiServiceTest：截断、文章上下文构造
+- NewsRepositoryTest：今日日期键与标签格式
+
+---
+
 ## 十一、开发历史
 
 ### 11.1 里程碑
@@ -643,6 +690,7 @@ AppShell (主框架)
 | v6.0.0 | 2026-08-11 | 清理孤儿组件、首页聚焦游戏中心，应用定位精简为游戏中心 + 多主题系统 |
 | v7.0.0 | 2026-08-13 | 导航重构为 4 Tab（首页/游戏/AI对话/我的）、新增扫雷/数独/中国象棋、AI 对话、AI 托管、全站字号统一 |
 | v7.1.0 | 2026-08-13 | 新增 AI 调用记录（摘要日志 + ai_call_logs 表 + 查看/清空 + 我的页入口） |
+| v8.0.0 | 2026-08-19 | 新闻资讯主功能（资讯首页 + 多源聚合 + 收藏/已读 + AI 摘要/翻译/问AI + AI 今日要闻 + 为你推荐，RDB v14） |
 
 ---
 

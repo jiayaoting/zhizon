@@ -13,6 +13,9 @@ import { BiometricHelper } from '../service/BiometricHelper';
 import { SoundService } from '../service/SoundService';
 import { HuaweiAccountService } from '../service/HuaweiAccountService';
 import { CloudSyncService } from '../service/CloudSyncService';
+import { AppNavigator } from '../common/AppNavigator';
+import { NEWS_SOURCES } from '../common/NewsChannels';
+import { NewsSourceDef } from '../common/NewsModels';
 
 import { TopBar } from '../components/TopBar';
 
@@ -36,6 +39,12 @@ interface AppIconOption {
   label: string;    // 显示名称
   style: string;    // 风格描述
   resource: string; // media 资源名（不带 $media: 前缀）
+}
+
+// 自定义 RSS 订阅持久化结构（settings.newsCustomRss）
+interface CustomRssSetting {
+  name: string;
+  url: string;
 }
 
 // 分组卡片组件
@@ -113,6 +122,11 @@ export struct SettingsPage {
   @State syncBusy: boolean = false;
   // Agent
   @State agentEnabled: boolean = false;
+  // 资讯
+  @State newsEnabledIds: string[] = [];
+  @State customRssName: string = '';
+  @State customRssUrl: string = '';
+  @State customSources: NewsSourceDef[] = [];
 
   // 字号/字体选项
   private fontSizeOptions: FontSizeOption[] = [
@@ -165,6 +179,7 @@ export struct SettingsPage {
       this.autoBackup = autoBackupVal === 'true';
       this.soundEnabled = SoundService.isEnabled();
       this.agentEnabled = await DataRepository.getSetting('agentEnabled', 'false') === 'true';
+      this.loadNewsSourceSettings();
       const profile = await HuaweiAccountService.getStoredProfile();
       this.huaweiNick = profile !== null ? profile.nickName : '';
       this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
@@ -202,6 +217,120 @@ export struct SettingsPage {
 
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
+  }
+
+  // ==================== 资讯 ====================
+  private async loadNewsSourceSettings(): Promise<void> {
+    try {
+      const raw: string = await DataRepository.getSetting('newsEnabledSources', '');
+      if (raw.trim().length > 0) {
+        const parsed: Object = JSON.parse(raw) as Object;
+        if (Array.isArray(parsed)) {
+          const ids: string[] = [];
+          const arr: Object[] = parsed as Object[];
+          for (let i: number = 0; i < arr.length; i++) {
+            if (typeof arr[i] === 'string') ids.push(arr[i] as string);
+          }
+          this.newsEnabledIds = ids;
+        }
+      }
+    } catch (e) {
+    }
+    this.loadCustomRss();
+  }
+
+  private newsSourceEnabled(id: string): boolean {
+    return this.newsEnabledIds.indexOf(id) >= 0;
+  }
+
+  private sourceNameOf(id: string): string {
+    for (let i: number = 0; i < NEWS_SOURCES.length; i++) {
+      if (NEWS_SOURCES[i].id === id) return NEWS_SOURCES[i].name;
+    }
+    return id;
+  }
+
+  private async onNewsSourceToggle(id: string, enabled: boolean): Promise<void> {
+    let ids: string[] = this.newsEnabledIds.slice();
+    const pos: number = ids.indexOf(id);
+    if (enabled && pos < 0) {
+      ids = ids.concat([id]);
+    }
+    if (!enabled && pos >= 0) {
+      ids.splice(pos, 1);
+    }
+    this.newsEnabledIds = ids;
+    await DataRepository.setSetting('newsEnabledSources', JSON.stringify(ids));
+    this.toast((enabled ? '已开启：' : '已关闭：') + this.sourceNameOf(id));
+  }
+
+  private async loadCustomRss(): Promise<void> {
+    try {
+      const raw: string = await DataRepository.getSetting('newsCustomRss', '');
+      const sources: NewsSourceDef[] = [];
+      if (raw.trim().length > 0) {
+        const parsed: Object = JSON.parse(raw) as Object;
+        if (Array.isArray(parsed)) {
+          const arr: Object[] = parsed as Object[];
+          for (let i: number = 0; i < arr.length; i++) {
+            const entry: Record<string, Object> = arr[i] as Record<string, Object>;
+            const name: string = typeof entry['name'] === 'string' ? entry['name'] as string : '';
+            const url: string = typeof entry['url'] === 'string' ? entry['url'] as string : '';
+            if (name.trim().length > 0 && url.trim().length > 0) {
+              sources.push(new NewsSourceDef('custom:' + url, name.trim(), 'recommend', 'rss', url.trim()));
+            }
+          }
+        }
+      }
+      this.customSources = sources;
+    } catch (e) {
+      this.customSources = [];
+    }
+  }
+
+  private async persistCustomRss(): Promise<void> {
+    const rows: CustomRssSetting[] = [];
+    for (let i: number = 0; i < this.customSources.length; i++) {
+      const row: CustomRssSetting = { name: this.customSources[i].name, url: this.customSources[i].url };
+      rows.push(row);
+    }
+    await DataRepository.setSetting('newsCustomRss', JSON.stringify(rows));
+  }
+
+  private async addCustomRss(): Promise<void> {
+    const name: string = this.customRssName.trim();
+    let url: string = this.customRssUrl.trim();
+    if (name.length === 0 || url.length === 0) {
+      this.toast('请填写订阅名称和 RSS 地址');
+      return;
+    }
+    if (url.indexOf('http://') !== 0 && url.indexOf('https://') !== 0) {
+      this.toast('RSS 地址需以 http:// 或 https:// 开头');
+      return;
+    }
+    for (let i: number = 0; i < this.customSources.length; i++) {
+      if (this.customSources[i].url === url) {
+        this.toast('该订阅已存在');
+        return;
+      }
+    }
+    this.customSources = this.customSources.concat([new NewsSourceDef('custom:' + url, name, 'recommend', 'rss', url)]);
+    await this.persistCustomRss();
+    this.customRssName = '';
+    this.customRssUrl = '';
+    this.toast('已添加订阅：' + name + '（刷新资讯页后生效）');
+  }
+
+  private async removeCustomRss(url: string): Promise<void> {
+    const next: NewsSourceDef[] = [];
+    for (let i: number = 0; i < this.customSources.length; i++) {
+      if (this.customSources[i].url !== url) {
+        next.push(this.customSources[i]);
+      }
+    }
+    this.customSources = next;
+    await this.persistCustomRss();
+    this.toast('已删除订阅');
   }
 
   // ==================== 游戏音效 ====================
@@ -1621,6 +1750,95 @@ export struct SettingsPage {
                 this.valueRow('头像', this.avatarLabelText(), () => {
                   this.openAvatarPicker();
                 })
+              }
+              .width('100%')
+            }
+
+            // 资讯
+            GroupCard({ title: '资讯' }) {
+              Column({ space: 8 }) {
+                Text('资讯源开关')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .width('100%')
+                ForEach(NEWS_SOURCES, (source: NewsSourceDef) => {
+                  this.toggleRow(source.name, this.newsSourceEnabled(source.id), (v: boolean) => {
+                    this.onNewsSourceToggle(source.id, v);
+                  })
+                }, (source: NewsSourceDef) => source.id)
+                Text('关闭的源不再出现在资讯流中；全部关闭时资讯流为空。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
+                this.valueRow('AI 摘要 / 翻译 / 问 AI', '手动触发', () => {
+                  this.toast('在新闻详情页手动触发，使用「我的 → AI 模型」配置的模型');
+                })
+                this.valueRow('AI 今日要闻 / 为你推荐', '', () => {
+                  AppNavigator.push('pages/NewsRecommend');
+                })
+                Text('自定义 RSS 订阅')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .width('100%')
+                  .margin({ top: 8 })
+                TextInput({ placeholder: '订阅名称（如 我的博客）', text: this.customRssName })
+                  .width('100%')
+                  .height(38)
+                  .fontSize(this.palette.fsSm)
+                  .fontFamily(this.palette.fontSans)
+                  .onChange((v: string) => { this.customRssName = v; })
+                Row({ space: 8 }) {
+                  TextInput({ placeholder: 'https://example.com/feed', text: this.customRssUrl })
+                    .layoutWeight(1)
+                    .height(38)
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
+                    .onChange((v: string) => { this.customRssUrl = v; })
+                  Button('添加')
+                    .height(38)
+                    .fontSize(this.palette.fsSm)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(Color.White)
+                    .backgroundColor(this.palette.primary)
+                    .borderRadius(8)
+                    .onClick(() => { this.addCustomRss(); })
+                }
+                .width('100%')
+                if (this.customSources.length > 0) {
+                  ForEach(this.customSources, (s: NewsSourceDef) => {
+                    Row() {
+                      Text('📡 ' + s.name)
+                        .fontSize(this.palette.fsSm)
+                        .fontFamily(this.palette.fontSans)
+                        .fontColor(this.palette.textPrimary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                      Text('✕')
+                        .fontSize(this.palette.fsSm)
+                        .fontFamily(this.palette.fontSans)
+                        .fontColor(this.palette.textTertiary)
+                        .padding(6)
+                        .onClick(() => { this.removeCustomRss(s.url); })
+                    }
+                    .width('100%')
+                    .padding({ left: 8, right: 8 })
+                    .borderRadius(6)
+                    .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+                  }, (s: NewsSourceDef) => s.url)
+                } else {
+                  Text('暂无自定义订阅，添加后自动并入「推荐」频道。')
+                    .fontSize(this.palette.fsXs)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textTertiary)
+                    .width('100%')
+                }
               }
               .width('100%')
             }

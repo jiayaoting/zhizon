@@ -59,7 +59,7 @@ export struct SideNav {
             .fontWeight(FontWeight.Bold)
         }
         .alignItems(VerticalAlign.Center)
-        Text('休闲游戏 · AI 对话 · 个性化外观')
+        Text('AI 资讯 · 智能对话 · 休闲游戏')
           .fontSize(this.themeState.palette.fsXs)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)

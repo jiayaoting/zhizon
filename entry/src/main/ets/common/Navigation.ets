@@ -12,7 +12,11 @@ export enum PageKey {
   Games = 'Games',
   Chat = 'Chat',
   Settings = 'Settings',
-  Profile = 'Profile'
+  Profile = 'Profile',
+  NewsDetail = 'NewsDetail',
+  NewsDigest = 'NewsDigest',
+  NewsFavorites = 'NewsFavorites',
+  NewsRecommend = 'NewsRecommend'
 }
 
 export enum NavigationSource {
@@ -165,6 +169,10 @@ export function pageFromString(key: string): PageKey | null {
   if (key === PageKey.Chat) return PageKey.Chat;
   if (key === PageKey.Settings) return PageKey.Settings;
   if (key === PageKey.Profile) return PageKey.Profile;
+  if (key === PageKey.NewsDetail) return PageKey.NewsDetail;
+  if (key === PageKey.NewsDigest) return PageKey.NewsDigest;
+  if (key === PageKey.NewsFavorites) return PageKey.NewsFavorites;
+  if (key === PageKey.NewsRecommend) return PageKey.NewsRecommend;
   return null;
 }
 

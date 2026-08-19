@@ -28,6 +28,10 @@ import { LegalDocPage } from './LegalDoc';
 import { ChatConfig } from './ChatConfig';
 import { AiModelPage } from './AiModelPage';
 import { AiCallLogPage } from './AiCallLog';
+import { NewsDetailPage } from './NewsDetail';
+import { NewsDigestPage } from './NewsDigest';
+import { NewsFavoritesPage } from './NewsFavorites';
+import { NewsRecommendPage } from './NewsRecommend';
 
 const DOMAIN = 0x9201;
 
@@ -207,6 +211,14 @@ struct AppShell {
       AiModelPage()
     } else if (name === 'pages/AiCallLog') {
       AiCallLogPage()
+    } else if (name === 'pages/NewsDetail') {
+      NewsDetailPage()
+    } else if (name === 'pages/NewsDigest') {
+      NewsDigestPage()
+    } else if (name === 'pages/NewsFavorites') {
+      NewsFavoritesPage()
+    } else if (name === 'pages/NewsRecommend') {
+      NewsRecommendPage()
     }
   }
 

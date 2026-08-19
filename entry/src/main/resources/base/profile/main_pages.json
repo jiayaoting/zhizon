@@ -16,6 +16,10 @@
     "pages/Achievements",
     "pages/ReplayList",
     "pages/GameStats",
-    "pages/Leaderboard"
+    "pages/Leaderboard",
+    "pages/NewsDetail",
+    "pages/NewsDigest",
+    "pages/NewsFavorites",
+    "pages/NewsRecommend"
   ]
 }
