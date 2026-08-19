@@ -7,6 +7,7 @@ import { CryptoHelper } from '../common/CryptoHelper';
 import { ThemeManager, ThemePalette, PreferenceFailureReason } from '../common/Theme';
 import { WindowEnvironmentProvider } from '../service/WindowEnvironmentProvider';
 import { SecurityService } from '../service/SecurityService';
+import { SoundService } from '../service/SoundService';
 
 const DOMAIN = 0x9201;
 
@@ -107,6 +108,10 @@ export default class EntryAbility extends UIAbility {
       hilog.info(DOMAIN, 'EntryAbility', '凭据加密初始化成功');
       await DatabaseHelper.init(this.context);
       hilog.info(DOMAIN, 'EntryAbility', '数据库初始化成功');
+      // 音效非关键路径，异步初始化失败不影响启动
+      SoundService.init(this.context).catch((e: Error) => {
+        hilog.warn(DOMAIN, 'EntryAbility', '音效初始化失败 %{public}s', e.message);
+      });
       await ThemeManager.getInstance().init(this.context, sysIsDark);
       hilog.info(DOMAIN, 'EntryAbility', '主题系统初始化成功');
       this.setStartupState(StartupState.READY);

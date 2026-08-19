@@ -72,12 +72,14 @@ export class GameRouteParams {
   difficulty: string;
   sourcePage: string;
   launchVersion: string;
+  replayId: string = '';
 
-  constructor(request: GameLaunchRequest) {
+  constructor(request: GameLaunchRequest, replayId: string = '') {
     this.gameId = request.gameId;
     this.difficulty = request.difficulty;
     this.sourcePage = request.sourcePage;
     this.launchVersion = request.launchVersion.toString();
+    this.replayId = replayId;
   }
 }
 

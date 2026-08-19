@@ -14,6 +14,7 @@ import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS, MinesweeperCellInfo } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { SoundService } from '../service/SoundService';
 
 // 难度配置
 class MinesweeperConfig {
@@ -311,6 +312,7 @@ export struct MinesweeperPage {
       this.isGameOver = true;
       this.stopTimer();
       this.vibrate(80);
+      SoundService.play('gameover');
       for (let rr: number = 0; rr < this.rows; rr++) {
         for (let cc: number = 0; cc < this.cols; cc++) {
           if (this.board[rr][cc].isMine && !this.board[rr][cc].flagged) {
@@ -387,6 +389,7 @@ export struct MinesweeperPage {
 
   // ---- 游戏结束收尾 ----
   private finishGame(win: boolean): void {
+    SoundService.play(win ? 'win' : 'gameover');
     const cells: number = this.rows * this.cols;
     this.score = Math.max(100, this.mineCount * 80 + cells - this.playSeconds * 2);
     if (!win) this.score = 0;

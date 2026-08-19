@@ -13,6 +13,8 @@ import { DataRepository } from '../service/DataRepository';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/ReplayService';
+import { SoundService } from '../service/SoundService';
 
 // 对弈方类型
 type PlayerMode = 'human' | 'engine' | 'llm';
@@ -75,9 +77,9 @@ export struct GomokuPage {
   @State showModelPicker: boolean = false;
   private pickSide: ModelSide = 'ai';
   private aiModels: LlmModelEntry[] = [];
-  private blackModelIndex: number = 0;
-  private whiteModelIndex: number = 0;
-  private aiModelIndex: number = 0;
+  @State blackModelIndex: number = 0;
+  @State whiteModelIndex: number = 0;
+  @State aiModelIndex: number = 0;
   private blackConfig: LlmConfig | null = null;
   private whiteConfig: LlmConfig | null = null;
   private aiConfig: LlmConfig | null = null;
@@ -88,6 +90,16 @@ export struct GomokuPage {
 
   // 本局开始时间（战绩时长统计）
   private gameStartTime: number = 0;
+
+  // ---- 对局回放 ----
+  @State replayMode: boolean = false;
+  @State replaySpeed: number = 1;
+  private recorder: ReplayRecorder = new ReplayRecorder();
+  private replayEvents: ReplayEvent[] = [];
+  private replayIndex: number = 0;
+  private replayElapsed: number = 0;
+  private replayTimer: number = -1;
+  private replayApplying: boolean = false;
 
   // AI vs AI 对弈节奏：0慢 1中 2快 3极速
   @State aiSpeedIndex: number = 1;
@@ -114,14 +126,23 @@ export struct GomokuPage {
   private boardCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D();
 
   // ---- 启动/初始化 ----
-  aboutToAppear(): void {
+  async aboutToAppear(): Promise<void> {
     this.parseParams();
+    const params: GameRouteParams | null = AppNavigator.getParam('pages/Gomoku') as GameRouteParams | null;
+    if (params !== null && params !== undefined && params.replayId.length > 0) {
+      const record: ReplayRecord | null = await ReplayService.get(params.replayId);
+      if (record !== null) {
+        this.startReplay(record);
+        return;
+      }
+    }
     this.initAiModels();
     this.resetBoard();
     ScreenKeepAlive.enable(getContext(this));
   }
 
   aboutToDisappear(): void {
+    this.stopReplayTimer();
     ScreenKeepAlive.disable(getContext(this));
   }
 
@@ -216,6 +237,68 @@ export struct GomokuPage {
     return 2; // 中等
   }
 
+  // ---- 对局回放 ----
+  private startReplay(record: ReplayRecord): void {
+    this.replayMode = true;
+    this.stopReplayTimer();
+    this.resetBoard();
+    this.setupOpen = false;
+    this.running = true;
+    this.gameStarted = true;
+    this.gameStartTime = 0;
+    this.replayEvents = ReplayService.parseEvents(record.eventsJson);
+    this.replayIndex = 0;
+    this.replayElapsed = 0;
+    this.replaySpeed = 1;
+    this.startReplayTimer();
+  }
+
+  private startReplayTimer(): void {
+    this.stopReplayTimer();
+    this.replayTimer = setInterval(() => { this.replayTick(); }, 120);
+  }
+
+  private stopReplayTimer(): void {
+    if (this.replayTimer !== -1) {
+      clearInterval(this.replayTimer);
+      this.replayTimer = -1;
+    }
+  }
+
+  private replayTick(): void {
+    this.replayElapsed += 120 * this.replaySpeed;
+    let guard: number = 0;
+    while (this.replayIndex < this.replayEvents.length &&
+      this.replayEvents[this.replayIndex].t <= this.replayElapsed && guard < 60 && !this.gameOver) {
+      const ev: ReplayEvent = this.replayEvents[this.replayIndex];
+      if (ev.type === 'move') {
+        const parts: string[] = ev.data.split(',');
+        if (parts.length === 3) {
+          this.replayApplying = true;
+          this.applyMove(Number(parts[0]), Number(parts[1]), Number(parts[2]));
+          this.replayApplying = false;
+        }
+      }
+      this.replayIndex += 1;
+      guard += 1;
+    }
+    if (this.gameOver || this.replayIndex >= this.replayEvents.length) {
+      this.stopReplayTimer();
+    }
+  }
+
+  private exitReplay(): void {
+    this.stopReplayTimer();
+    this.replayMode = false;
+    AppNavigator.pop();
+  }
+
+  private cycleReplaySpeed(): void {
+    if (this.replaySpeed === 1) this.replaySpeed = 2;
+    else if (this.replaySpeed === 2) this.replaySpeed = 4;
+    else this.replaySpeed = 1;
+  }
+
   // ---- 对局控制 ----
   private resetBoard(): void {
     this.board = GomokuEngine.createBoard();
@@ -241,6 +324,9 @@ export struct GomokuPage {
 
   // ---- 开始对局 ----
   private async startGame(): Promise<void> {
+    this.replayMode = false;
+    this.stopReplayTimer();
+    this.recorder.start();
     if (this.matchMode === 'hvL' || this.matchMode === 'LvL') {
       if (!this.modelsConfigured) {
         promptAction.showToast({ message: '请先在 AI 对话中配置可用模型' });
@@ -303,6 +389,7 @@ export struct GomokuPage {
 
   // ---- 对弈调度 ----
   private scheduleNext(): void {
+    if (this.replayMode) return;
     if (!this.running || this.gameOver) return;
     const side: string = this.currentSide();
     const type: PlayerMode = this.playerType(side);
@@ -456,6 +543,7 @@ export struct GomokuPage {
   // ---- 落子核心 ----
   private applyMove(r: number, c: number, player: number): void {
     if (!GomokuEngine.isValidMove(this.board, r, c)) return;
+    if (!this.replayMode) this.recorder.record('move', r.toString() + ',' + c.toString() + ',' + player.toString());
     // 保存悔棋快照
     this.moveStack.push(new GomokuSnapshot(GomokuEngine.cloneBoard(this.board), this.currentPlayer));
     GomokuEngine.place(this.board, r, c, player);
@@ -481,6 +569,7 @@ export struct GomokuPage {
 
   // 玩家点击落子
   private onCellTap(r: number, c: number): void {
+    if (this.replayMode) return;
     if (!this.running || this.gameOver) return;
     if (this.thinkingSide !== '') return; // AI 思考中锁定
     if (this.playerType(this.currentSide()) !== 'human') return;
@@ -489,6 +578,7 @@ export struct GomokuPage {
 
   // ---- 悔棋 ----
   private undo(): void {
+    if (this.replayMode) return;
     if (!this.running && !this.gameOver) return;
     if (this.thinkingSide !== '') return;
     if (this.matchMode === 'LvL') {
@@ -589,6 +679,13 @@ export struct GomokuPage {
 
   // ---- 结束与战绩 ----
   private finishGame(winner: string): void {
+    if (this.replayMode) {
+      this.gameOver = true;
+      this.running = false;
+      this.winner = winner;
+      this.stopReplayTimer();
+      return;
+    }
     this.gameOver = true;
     this.running = false;
     this.thinkingSide = '';
@@ -597,10 +694,13 @@ export struct GomokuPage {
     this.winner = winner;
     this.stopThinkTimer();
     this.stopStepDelay();
+    SoundService.play(winner === 'draw' ? 'gameover' : 'win');
     // 记录战绩：仅人类参与的模式（AI 对 AI 不记）
     if (this.matchMode !== 'LvL') {
       this.recordScore(winner);
     }
+    this.recorder.finish('Gomoku', this.engineDiffIndex, winner === this.humanSide ? 1 : 0,
+      difficultyLabel(this.difficulty));
   }
 
   private recordScore(winner: string): void {
@@ -1461,6 +1561,29 @@ export struct GomokuPage {
     Stack() {
       Column() {
         TopBar({ title: '五子棋', subtitle: this.modeLabel(this.matchMode) + ' · ' + difficultyLabel(this.difficulty) })
+        if (this.replayMode) {
+          Row({ space: 10 }) {
+            Text('🎬 回放中 · 速度 x' + this.replaySpeed.toString())
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .layoutWeight(1)
+            Button('速度')
+              .fontSize(this.palette.fsSm)
+              .height(30)
+              .backgroundColor(this.palette.bgSurface)
+              .fontColor(this.palette.textPrimary)
+              .onClick(() => { this.cycleReplaySpeed(); })
+            Button('退出')
+              .fontSize(this.palette.fsSm)
+              .height(30)
+              .backgroundColor(this.palette.danger)
+              .fontColor('#FFFFFF')
+              .onClick(() => { this.exitReplay(); })
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        }
         if (!this.paramsValid) {
           Column({ space: 12 }) {
             Text('⚠️ 启动参数无效')

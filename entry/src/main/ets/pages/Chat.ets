@@ -14,6 +14,7 @@ import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { ChatRepository } from '../service/ChatRepository';
+import { DatabaseHelper } from '../service/DatabaseHelper';
 import { LlmClient } from '../service/LlmClient';
 import { SpeechService } from '../service/SpeechService';
 import { LiveViewService } from '../service/LiveViewService';
@@ -24,6 +25,9 @@ import { AiCallContext } from '../service/AiCallLogger';
 import { ChatExporter, ImportedChat } from '../service/ChatExporter';
 import { ImageAttachment, AttachmentResult } from '../service/ImageAttachment';
 import { ChatViewModel, ChatPhase } from '../service/ChatViewModel';
+import { OnDeviceAiService } from '../service/OnDeviceAiService';
+import { AgentOrchestrator } from '../service/AgentOrchestrator';
+import { AgentStep, LlmAgentResult } from '../common/AgentModels';
 import { ChatMessage, ChatSession, entryToConfig, LlmConfig, LlmModelEntry, LlmResult,
   modelDisplayName, modelDisplayNameFromConfig } from '../common/LlmModels';
 import { MarkdownConverter, MdBlock, InlineSpan } from '../common/MarkdownConverter';
@@ -72,6 +76,12 @@ export struct ChatTab {
   @State attachmentName: string = '';
   // 语音输入（Speech Kit）
   @State voiceRecognizing: boolean = false;
+  @State ocrBusy: boolean = false;
+  // Agent 化（P0：工具闭环）
+  @State agentEnabled: boolean = false;
+  @State agentRunning: boolean = false;
+  @State agentSteps: AgentStep[] = [];
+  @State agentMaxSteps: number = 5;
   // 正在朗读的助手消息 id（空表示未朗读）
   @State speakingMessageId: string = '';
   // 联网搜索开关（配置在 模型管理 → 联网搜索）
@@ -152,6 +162,7 @@ export struct ChatTab {
   private async load(): Promise<void> {
     this.sessions = await ChatRepository.ensureSessions();
     this.webSearchEnabled = await DataRepository.getSetting('webSearchEnabled', 'false') === 'true';
+    this.agentEnabled = await DataRepository.getSetting('agentEnabled', 'false') === 'true';
     let activeId: string = await ChatRepository.loadActiveSessionId();
     if (activeId.length === 0 && this.sessions.length > 0) {
       activeId = this.sessions[0].id;
@@ -584,6 +595,28 @@ export struct ChatTab {
     });
   }
 
+  // ==================== 端侧 OCR 文字识别 ====================
+
+  private async onOcrTap(): Promise<void> {
+    if (this.ocrBusy || this.sending || this.streaming) return;
+    this.ocrBusy = true;
+    try {
+      const result = await OnDeviceAiService.pickAndRecognize();
+      if (result.ok && result.text.length > 0) {
+        // 识别文本追加到输入框，便于继续编辑或发送
+        this.inputText = this.inputText.length > 0
+          ? this.inputText + '\n' + result.text
+          : result.text;
+        this.onInputChange(this.inputText);
+        promptAction.showToast({ message: '已识别 ' + result.text.length.toString() + ' 字，可发送给 AI 翻译/总结' });
+      } else {
+        promptAction.showToast({ message: result.message });
+      }
+    } finally {
+      this.ocrBusy = false;
+    }
+  }
+
   // ==================== 朗读回复（TTS） ====================
 
   // 点击 🔊：朗读助手消息；再次点击停止
@@ -678,6 +711,11 @@ export struct ChatTab {
     const assistantMessage: ChatMessage = ChatMessage.create('assistant', '');
     const newMessages: ChatMessage[] = base.concat([userMessage, assistantMessage]);
     this.messages = newMessages;
+    if (this.agentEnabled) {
+      await this.runAgent(config, newMessages.slice(0, newMessages.length - 1), userMessage,
+        assistantMessage, removedIds);
+      return;
+    }
     this.sending = true;
     this.streaming = true;
     this.chatVm.start();
@@ -763,6 +801,99 @@ export struct ChatTab {
     }
     this.finishChatLiveView();
     this.scrollToBottom();
+  }
+
+  // ==================== Agent 执行（工具闭环） ====================
+
+  private async runAgent(config: LlmConfig, history: ChatMessage[], userMessage: ChatMessage,
+    assistantMessage: ChatMessage, removedIds: string[]): Promise<void> {
+    this.sending = true;
+    this.streaming = false;
+    this.agentRunning = true;
+    this.agentSteps = [];
+    this.stopRequested = false;
+    this.chatVm.start();
+    this.scrollToBottom();
+    const result: LlmAgentResult = await AgentOrchestrator.run(config, history, this.agentMaxSteps,
+      (step: AgentStep): void => {
+        this.agentSteps = this.agentSteps.concat([step]);
+        DatabaseHelper.addAgentStep(this.activeSessionId, assistantMessage.id, step.stepIndex,
+          step.status, step.toolName, step.args, step.result, step.startedAt, step.endedAt);
+        this.scrollToBottom();
+      },
+      (): boolean => this.stopRequested);
+    this.agentRunning = false;
+    this.sending = false;
+    this.chatVm.finish();
+
+    assistantMessage.status = result.success ? 'ok' : (this.stopRequested ? 'stopped' : 'failed');
+    assistantMessage.errorCode = result.errorCode;
+    assistantMessage.errorMessage = result.errorMessage;
+    assistantMessage.modelId = config.id;
+    assistantMessage.modelName = this.currentModelName();
+    assistantMessage.inputTokens = result.tokenUsage.inputTokens;
+    assistantMessage.cachedTokens = result.tokenUsage.cachedTokens;
+    assistantMessage.outputTokens = result.tokenUsage.outputTokens;
+    assistantMessage.totalTokens = result.tokenUsage.totalTokens;
+    if (result.success) {
+      assistantMessage.content = result.content;
+      assistantMessage.reasoning = result.reasoning;
+    } else {
+      assistantMessage.content = this.stopRequested ? '已停止' : '⚠️ 请求失败：' + result.errorMessage;
+    }
+
+    // 空回复不持久化为助手消息，仅保留用户消息
+    const toSave: ChatMessage[] = [userMessage];
+    if (assistantMessage.content.trim().length > 0 || assistantMessage.reasoning.trim().length > 0) {
+      toSave.push(assistantMessage);
+    } else {
+      this.messages = this.messages.filter((m: ChatMessage): boolean => m.id !== assistantMessage.id);
+    }
+    try {
+      if (removedIds.length > 0) {
+        await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+      }
+      await ChatRepository.appendMessages(this.activeSessionId, toSave);
+      await ChatRepository.touchSession(this.activeSessionId);
+      this.sessions = await ChatRepository.loadSessions();
+    } catch (e) {
+      promptAction.showToast({ message: '消息保存失败' });
+    }
+    this.scrollToBottom();
+  }
+
+  @Builder
+  agentStepsPanel() {
+    Column({ space: 6 }) {
+      ForEach(this.agentSteps, (step: AgentStep) => {
+        Row({ space: 8 }) {
+          Text(step.status === 'done' ? '🔧' : '⚠️')
+            .fontSize(14)
+            .fontFamily(this.palette.fontSans)
+          Column({ space: 2 }) {
+            Text(step.toolName + (step.status === 'done' ? ' · 完成' : ' · 失败'))
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textSecondary)
+              .fontWeight(FontWeight.Medium)
+            Text(step.result.length > 80 ? step.result.substring(0, 80) + '…' : step.result)
+              .fontSize(10)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding(8)
+        .borderRadius(8)
+        .backgroundColor(this.palette.bgSurface2)
+      }, (step: AgentStep) => step.stepIndex.toString() + '_' + step.startedAt.toString())
+    }
+    .width('100%')
+    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8 })
   }
 
   // 生成结束：实况窗标记完成并关闭
@@ -1606,6 +1737,11 @@ export struct ChatTab {
           this.searchBar()
         }
 
+        // Agent 执行步骤
+        if (this.agentSteps.length > 0) {
+          this.agentStepsPanel()
+        }
+
         // 消息列表
         if (this.messages.length === 0) {
           this.emptyWelcome()
@@ -1800,12 +1936,14 @@ export struct ChatTab {
               attachmentName: this.attachmentName,
               recognizing: this.voiceRecognizing,
               webSearchBusy: this.webSearchBusy,
+              ocrBusy: this.ocrBusy,
               onChangeText: (value: string): void => { this.onInputChange(value); },
               onSend: (): void => { this.send(); },
               onStop: (): void => { this.stopStreaming(); },
               onPickImage: (): void => { this.pickImageAttachment(); },
               onRemoveImage: (): void => { this.removeImageAttachment(); },
-              onMicTap: (): void => { this.toggleVoiceInput(); }
+              onMicTap: (): void => { this.toggleVoiceInput(); },
+              onOcrTap: (): void => { this.onOcrTap(); }
             })
           }
           .width('100%')

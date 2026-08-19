@@ -14,6 +14,7 @@ import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { SoundService } from '../service/SoundService';
 
 const COLS: number = 10;
 const ROWS: number = 20;
@@ -444,6 +445,7 @@ export struct TetrisPage {
       this.currentPiece = null;
       this.stopTimer();
       this.vibrate(80);
+      SoundService.play('gameover');
       this.newRecord = this.score > this.bestScore;
       if (this.newRecord) this.bestScore = this.score;
       this.playSeconds = Math.floor((Date.now() - this.gameStartTime) / 1000);

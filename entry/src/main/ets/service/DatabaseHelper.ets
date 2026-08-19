@@ -4,6 +4,18 @@ import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AffectedFeature, DefectInput, DefectRecord, DefectSeverity, DefectStateHistory, DefectStatus, EvidenceConclusion, EvidenceType, FixEvidence, FixResult } from '../model/GovernanceModels';
 
+export interface GameScoreRecord {
+  game: string;
+  id: string;
+  score: number;
+  level: number;
+  difficulty: string;
+  model: string;
+  duration: number;
+  aiThinkTime: number;
+  createdAt: number;
+}
+
 export interface ScoreEntry {
   id: string;
   score: number;
@@ -49,7 +61,7 @@ export interface AiTokenStats {
 }
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 11;
+const DB_VERSION = 13;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -127,6 +139,28 @@ const SQL_CREATE_CHAT_MESSAGES = `CREATE TABLE IF NOT EXISTS chat_messages (
 const SQL_CREATE_CHAT_MSG_INDEX = `CREATE INDEX IF NOT EXISTS idx_chat_messages_session
   ON chat_messages (session_id, time)`;
 
+// 成就系统（v12）
+const SQL_CREATE_ACHIEVEMENTS = `CREATE TABLE IF NOT EXISTS achievements (
+  id TEXT PRIMARY KEY, unlocked INTEGER DEFAULT 0, progress INTEGER DEFAULT 0,
+  unlocked_at INTEGER DEFAULT 0
+)`;
+
+// 对局回放（v12）：events_json/meta_json 存 JSON 字符串
+const SQL_CREATE_GAME_REPLAYS = `CREATE TABLE IF NOT EXISTS game_replays (
+  id TEXT PRIMARY KEY, game TEXT NOT NULL, level INTEGER DEFAULT 1,
+  score INTEGER DEFAULT 0, duration_ms INTEGER DEFAULT 0,
+  events_json TEXT DEFAULT '', meta_json TEXT DEFAULT '',
+  created_at INTEGER NOT NULL
+)`;
+
+// Agent 执行步骤（v13）
+const SQL_CREATE_CHAT_AGENT_STEPS = `CREATE TABLE IF NOT EXISTS chat_agent_steps (
+  id TEXT PRIMARY KEY, session_id TEXT NOT NULL, message_id TEXT DEFAULT '',
+  step_index INTEGER DEFAULT 0, status TEXT DEFAULT 'done', tool_name TEXT DEFAULT '',
+  args_json TEXT DEFAULT '', result_json TEXT DEFAULT '',
+  started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL
+)`;
+
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
 
@@ -185,6 +219,11 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_SESSIONS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_MESSAGES);
     await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_MSG_INDEX);
+    // 成就 + 对局回放（v12，CREATE IF NOT EXISTS 保证幂等）
+    await DatabaseHelper.store.executeSql(SQL_CREATE_ACHIEVEMENTS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_GAME_REPLAYS);
+    // Agent 执行步骤（v13）
+    await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_AGENT_STEPS);
     if (DatabaseHelper.store.version < 10) {
       // 旧库升级：为 chat_messages 补齐图片附件列（新库建表已含，重复列错误被忽略）
       try {
@@ -296,6 +335,188 @@ export class DatabaseHelper {
     const predicates = new relationalStore.RdbPredicates('game_scores');
     predicates.equalTo('game', game);
     await store.delete(predicates);
+  }
+
+  // ========== 统计计数（成就系统） ==========
+
+  static async getGameCount(): Promise<number> {
+    return await DatabaseHelper.countRows('game_scores', '');
+  }
+
+  static async getGameWinCount(game: string): Promise<number> {
+    return await DatabaseHelper.countRows('game_scores', game);
+  }
+
+  static async getAiHostCount(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    const predicates = new relationalStore.RdbPredicates('game_scores');
+    predicates.notEqualTo('model', '');
+    try {
+      const resultSet = await store.query(predicates);
+      let count: number = 0;
+      while (resultSet.goToNextRow()) count += 1;
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  static async getChatMessageCount(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    const predicates = new relationalStore.RdbPredicates('chat_messages');
+    predicates.equalTo('role', 'user');
+    try {
+      const resultSet = await store.query(predicates);
+      let count: number = 0;
+      while (resultSet.goToNextRow()) count += 1;
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  private static async countRows(table: string, winGame: string): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    const predicates = new relationalStore.RdbPredicates(table);
+    if (winGame.length > 0) {
+      predicates.equalTo('game', winGame);
+      predicates.greaterThan('score', 0);
+    }
+    try {
+      const resultSet = await store.query(predicates);
+      let count: number = 0;
+      while (resultSet.goToNextRow()) count += 1;
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // ========== 云同步导出/恢复辅助 ==========
+
+  static async getAllSettings(): Promise<Record<string, string>> {
+    const store = DatabaseHelper.getStore();
+    const result: Record<string, string> = {};
+    try {
+      const predicates = new relationalStore.RdbPredicates('settings');
+      const resultSet = await store.query(predicates);
+      while (resultSet.goToNextRow()) {
+        result[resultSet.getString(resultSet.getColumnIndex('key'))] =
+          resultSet.getString(resultSet.getColumnIndex('value'));
+      }
+      resultSet.close();
+    } catch (e) {
+    }
+    return result;
+  }
+
+  static async replaceAllSettings(settings: Record<string, string>): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    await store.beginTransaction();
+    try {
+      await store.delete(new relationalStore.RdbPredicates('settings'));
+      const keys: string[] = Object.keys(settings);
+      for (let i: number = 0; i < keys.length; i++) {
+        const bucket: relationalStore.ValuesBucket = {
+          key: keys[i],
+          value: settings[keys[i]]
+        };
+        await store.insert('settings', bucket);
+      }
+      await store.commit();
+    } catch (e) {
+      await store.rollBack();
+    }
+  }
+
+  static async getAllGameScores(): Promise<GameScoreRecord[]> {
+    const store = DatabaseHelper.getStore();
+    const results: GameScoreRecord[] = [];
+    try {
+      const predicates = new relationalStore.RdbPredicates('game_scores');
+      predicates.orderByDesc('created_at');
+      const resultSet = await store.query(predicates);
+      while (resultSet.goToNextRow()) {
+        results.push({
+          game: resultSet.getString(resultSet.getColumnIndex('game')),
+          id: resultSet.getString(resultSet.getColumnIndex('id')),
+          score: resultSet.getLong(resultSet.getColumnIndex('score')),
+          level: resultSet.getLong(resultSet.getColumnIndex('level')),
+          difficulty: resultSet.getString(resultSet.getColumnIndex('difficulty')),
+          model: resultSet.getString(resultSet.getColumnIndex('model')),
+          duration: resultSet.getLong(resultSet.getColumnIndex('duration')),
+          aiThinkTime: resultSet.getLong(resultSet.getColumnIndex('ai_think_time')),
+          createdAt: resultSet.getLong(resultSet.getColumnIndex('created_at'))
+        } as GameScoreRecord);
+      }
+      resultSet.close();
+    } catch (e) {
+    }
+    return results;
+  }
+
+  static async clearGameScoresAll(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    await store.delete(new relationalStore.RdbPredicates('game_scores'));
+  }
+
+  static async insertGameScoreRaw(game: string, entry: ScoreEntry): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const bucket: relationalStore.ValuesBucket = {
+      id: entry.id,
+      game: game,
+      score: entry.score,
+      level: entry.level,
+      difficulty: entry.difficulty,
+      model: entry.model,
+      duration: entry.duration,
+      ai_think_time: entry.aiThinkTime,
+      created_at: entry.createdAt
+    };
+    await store.insert('game_scores', bucket);
+  }
+
+  // 从云备份 JSON 对象解析战绩条目
+  static scoreFromCloud(item: Record<string, Object>): ScoreEntry {
+    const num = (v: Object, fallback: number): number => typeof v === 'number' ? v as number : fallback;
+    const str = (v: Object, fallback: string): string => typeof v === 'string' ? v as string : fallback;
+    return {
+      id: str(item['id'], 'gs-' + Date.now().toString(36)),
+      score: num(item['score'], 0),
+      level: num(item['level'], 1),
+      difficulty: str(item['difficulty'], '中等'),
+      model: str(item['model'], ''),
+      duration: num(item['duration'], 0),
+      aiThinkTime: num(item['aiThinkTime'], 0),
+      createdAt: num(item['createdAt'], Date.now())
+    } as ScoreEntry;
+  }
+
+  // ========== Agent 执行步骤（v13，追加保存，P0 仅落库不做查询） ==========
+
+  static async addAgentStep(sessionId: string, messageId: string, stepIndex: number, status: string,
+    toolName: string, argsJson: string, resultJson: string, startedAt: number, endedAt: number): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const id: string = 'ags-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+    const bucket: relationalStore.ValuesBucket = {
+      id: id,
+      session_id: sessionId,
+      message_id: messageId,
+      step_index: stepIndex,
+      status: status,
+      tool_name: toolName,
+      args_json: argsJson,
+      result_json: resultJson,
+      started_at: startedAt,
+      ended_at: endedAt
+    };
+    try {
+      await store.insert('chat_agent_steps', bucket);
+    } catch (e) {
+    }
   }
 
   // ========== 缺陷记录（只允许追加历史，不提供物理删除） ==========

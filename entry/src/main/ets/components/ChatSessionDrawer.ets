@@ -2,6 +2,7 @@
 import { ChatSession } from '../common/LlmModels';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { GlassStyle, GlassLevel } from './GlassEffect';
+import { LazyListDataSource } from '../common/LazyDataSource';
 
 @Component
 export struct ChatSessionDrawer {
@@ -10,7 +11,8 @@ export struct ChatSessionDrawer {
   @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
   @StorageLink('isSm') isSm: boolean = false;
   @StorageLink('navBarHeight') navBarHeight: number = 12;
-  @Prop sessions: ChatSession[] = [];
+  @Prop @Watch('onSessionsChange') sessions: ChatSession[] = [];
+  private sessionSource: LazyListDataSource<ChatSession> = new LazyListDataSource<ChatSession>([]);
   @Prop activeSessionId: string = '';
   @Prop drawerRenameId: string = '';
   @Prop drawerRenameText: string = '';
@@ -30,6 +32,14 @@ export struct ChatSessionDrawer {
   onImportFile: () => void = () => {};
   onSearchChange: (value: string) => void = () => {};
   @State searchText: string = '';
+
+  aboutToAppear(): void {
+    this.sessionSource.replace(this.sessions);
+  }
+
+  private onSessionsChange(): void {
+    this.sessionSource.replace(this.sessions);
+  }
 
   // 会话时间标签：当天显示 HH:mm，否则显示 M月D日
   private sessionTimeLabel(time: number): string {
@@ -97,9 +107,9 @@ export struct ChatSessionDrawer {
           .onClick(() => { this.onNewSession(); })
 
           // 会话列表
-          Scroll() {
-            Column({ space: 6 }) {
-              ForEach(this.sessions, (s: ChatSession) => {
+          List({ space: 6 }) {
+            LazyForEach(this.sessionSource, (s: ChatSession) => {
+              ListItem() {
                 Column({ space: 4 }) {
                   Row({ space: 8 }) {
                     if (s.id === this.drawerRenameId) {
@@ -181,9 +191,8 @@ export struct ChatSessionDrawer {
                   })
                 }
                 .width('100%')
-              }, (s: ChatSession) => s.id)
-            }
-            .width('100%')
+              }
+            }, (s: ChatSession) => s.id)
           }
           .scrollBar(BarState.Off)
           .layoutWeight(1)

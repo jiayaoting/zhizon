@@ -157,6 +157,15 @@ export struct ProfilePage {
         this.groupRow('AI 模型', '', true, () => {
           AppNavigator.push('pages/AiModelPage');
         })
+        this.groupRow('成就', '', true, () => {
+          AppNavigator.push('pages/Achievements');
+        })
+        this.groupRow('对局回放', '', true, () => {
+          AppNavigator.push('pages/ReplayList');
+        })
+        this.groupRow('排行榜', '', true, () => {
+          AppNavigator.push('pages/Leaderboard');
+        })
       }
       .width('100%')
     }

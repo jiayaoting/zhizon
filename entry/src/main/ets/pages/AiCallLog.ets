@@ -5,6 +5,7 @@ import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { AiCallLogger } from '../service/AiCallLogger';
 import { AiCallLogEntry, AiTokenStats } from '../service/DatabaseHelper';
+import { LazyListDataSource } from '../common/LazyDataSource';
 
 // 场景标签与配色
 function typeInfo(type: string): [string, string] {
@@ -61,6 +62,7 @@ export struct AiCallLogPage {
   @Local loading: boolean = true;
   @Local expandedId: string = '';
   @Local clearing: boolean = false;
+  private logSource: LazyListDataSource<AiCallLogEntry> = new LazyListDataSource<AiCallLogEntry>([]);
         
   aboutToAppear(): void {
     this.refresh();
@@ -69,6 +71,7 @@ export struct AiCallLogPage {
   private async refresh(): Promise<void> {
     this.loading = true;
     this.logs = await AiCallLogger.loadLogs(500);
+    this.logSource.replace(this.logs);
     this.stats = await AiCallLogger.getTokenStats();
     this.loading = false;
   }
@@ -78,6 +81,7 @@ export struct AiCallLogPage {
     this.clearing = true;
     await AiCallLogger.clearLogs();
     this.logs = [];
+    this.logSource.replace(this.logs);
     this.expandedId = '';
     this.clearing = false;
     promptAction.showToast({ message: '已清空全部调用记录' });
@@ -332,7 +336,7 @@ export struct AiCallLogPage {
         .padding({ left: 32, right: 32 })
       } else {
         List({ space: 10 }) {
-          ForEach(this.logs, (entry: AiCallLogEntry) => {
+          LazyForEach(this.logSource, (entry: AiCallLogEntry) => {
             ListItem() {
               this.logCard(entry)
             }

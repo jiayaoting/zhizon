@@ -1,5 +1,6 @@
 // 智子 - 数据仓库（基于数据库持久化）
 import { DatabaseHelper, ScoreEntry } from './DatabaseHelper';
+import { AchievementService } from './AchievementService';
 import { ThemePreference, ThemeMode, GlobalBackgroundPreference } from '../common/ThemeContracts';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { DefectRecord, DefectStateHistory, FixEvidence, RecoverableResult, AppErrorCategory, RecoveryAction, AppFailure, ValidationResult, PreferenceSnapshot, PreferencePersistenceResult } from '../model/GovernanceModels';
@@ -106,6 +107,8 @@ export class DataRepository {
   static async addGameScore(game: string, score: number, level: number, difficulty: string,
     model: string = '', duration: number = 0, aiThinkTime: number = 0): Promise<void> {
     await DatabaseHelper.addGameScore(game, score, level, difficulty, model, duration, aiThinkTime);
+    // 成就触发（在战绩落库后调用，确保计数包含本局）
+    await AchievementService.onGameScore(game, score);
   }
 
   static async getGameScores(game: string, limit?: number): Promise<ScoreEntry[]> {

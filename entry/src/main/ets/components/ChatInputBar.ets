@@ -18,12 +18,14 @@ export struct ChatInputBar {
   @Prop attachmentName: string = '';
   @Prop recognizing: boolean = false;
   @Prop webSearchBusy: boolean = false;
+  @Prop ocrBusy: boolean = false;
   onChangeText: (value: string) => void = () => {};
   onSend: () => void = () => {};
   onStop: () => void = () => {};
   onPickImage: () => void = () => {};
   onRemoveImage: () => void = () => {};
   onMicTap: () => void = () => {};
+  onOcrTap: () => void = () => {};
 
   // 上下文预算百分比（0-100）
   private budgetPercent(): number {
@@ -90,6 +92,25 @@ export struct ChatInputBar {
           .enterKeyType(EnterKeyType.Send)
           .onChange((value: string) => { this.onChangeText(value); })
           .onSubmit(() => { this.onSend(); })
+        // 端侧 OCR 文字识别按钮
+        if (!this.streaming && !this.sending) {
+          Row() {
+            if (this.ocrBusy) {
+              LoadingProgress().width(14).height(14).color(this.palette.primary)
+            } else {
+              Text('📷')
+                .fontSize(16)
+                .fontFamily(this.palette.fontSans)
+            }
+          }
+          .width(40)
+          .height(this.inputHeight)
+          .borderRadius(10)
+          .backgroundColor(this.palette.bgSurface)
+          .border({ width: 1, color: this.palette.borderSubtle })
+          .justifyContent(FlexAlign.Center)
+          .onClick(() => { this.onOcrTap(); })
+        }
         // 语音输入按钮：空闲时显示麦克风；听写中显示停止
         if (!this.streaming && !this.sending) {
           if (this.recognizing) {

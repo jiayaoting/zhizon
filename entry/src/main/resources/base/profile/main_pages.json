@@ -12,6 +12,10 @@
     "pages/Gomoku",
     "pages/ChatConfig",
     "pages/AiCallLog",
-    "pages/AiModelPage"
+    "pages/AiModelPage",
+    "pages/Achievements",
+    "pages/ReplayList",
+    "pages/GameStats",
+    "pages/Leaderboard"
   ]
 }

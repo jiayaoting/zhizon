@@ -14,6 +14,8 @@ import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS, SnakePoint } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/ReplayService';
+import { SoundService } from '../service/SoundService';
 
 const COLS: number = 16;
 const ROWS: number = 16;
@@ -82,6 +84,17 @@ export struct SnakePage {
   private gameStartTime: number = 0;
   private scoreSaved: boolean = false;
   private lastLevel: number = 1;
+
+  // ---- 对局回放 ----
+  @State replayMode: boolean = false;
+  @State replaySpeed: number = 1;
+  private recorder: ReplayRecorder = new ReplayRecorder();
+  private replayEvents: ReplayEvent[] = [];
+  private replayIndex: number = 0;
+  private replayElapsed: number = 0;
+  private replayTimer: number = -1;
+  private replayApplying: boolean = false;
+  private replayStopped: boolean = false;
 
   // ---- 触觉反馈 ----
   private vibrate(duration: number): void {
@@ -181,6 +194,7 @@ export struct SnakePage {
   }
 
   private generateFood(): void {
+    if (this.replayMode) return;
     const available: Point[] = [];
     for (let r: number = 0; r < ROWS; r++) {
       for (let c: number = 0; c < COLS; c++) {
@@ -208,11 +222,14 @@ export struct SnakePage {
     const idx: number = Math.floor(Math.random() * available.length);
     this.food = available[idx];
     this.foodBonus = Math.random() < 0.2;
+    this.recorder.record('food', this.food.x.toString() + ',' + this.food.y.toString() + ',' +
+      (this.foodBonus ? '1' : '0'));
   }
 
   // ---- 移动逻辑 ----
   private moveSnake(): void {
     if (this.isGameOver || this.isPaused || !this.isStarted) return;
+    if (!this.replayMode) this.recorder.record('tick', '');
 
     this.snakeDirection = this.nextDirection;
     const head: Point = this.snake[0];
@@ -274,14 +291,16 @@ export struct SnakePage {
       this.level = Math.floor(this.score / 100) + 1;
       // 保持尾部，蛇变长
       this.snake = newSnake;
-      this.generateFood();
-      // 调整速度
-      this.restartTimer();
-      // 触觉反馈 + 飘字
-      this.vibrate(15);
-      this.showScoreFloat('+' + gained.toString());
+      if (!this.replayMode) {
+        this.generateFood();
+        // 调整速度
+        this.restartTimer();
+        // 触觉反馈 + 飘字
+        this.vibrate(15);
+        this.showScoreFloat('+' + gained.toString());
+      }
       // 等级提升提示
-      if (this.level > this.lastLevel) {
+      if (this.level > this.lastLevel && !this.replayMode) {
         promptAction.showToast({ message: `等级提升 → Level ${this.level}` });
         this.lastLevel = this.level;
       }
@@ -336,6 +355,12 @@ export struct SnakePage {
 
   // ---- 游戏结束收尾（新纪录/用时/保存） ----
   private finishGame(): void {
+    if (this.replayMode) {
+      this.replayStopped = true;
+      this.stopReplayTimer();
+      return;
+    }
+    SoundService.play('gameover');
     this.newRecord = this.score > this.bestScore;
     if (this.newRecord) this.bestScore = this.score;
     this.playSeconds = Math.max(0, Math.floor((Date.now() - this.gameStartTime) / 1000));
@@ -345,9 +370,11 @@ export struct SnakePage {
   // ---- 方向变更（防止反向） ----
   private changeDirection(dir: Direction): void {
     if (this.isGameOver || this.isPaused) return;
+    if (this.replayMode && !this.replayApplying) return;
+    if (!this.replayMode) this.recorder.record('dir', dir.toString());
     if (!this.isStarted) {
       this.isStarted = true;
-      this.startTimer();
+      if (!this.replayMode) this.startTimer();
     }
 
     // 不能反向
@@ -361,6 +388,7 @@ export struct SnakePage {
 
   // ---- 定时器 ----
   private startTimer(): void {
+    if (this.replayMode) return;
     this.stopTimer();
     const interval: number = this.dropInterval();
     this.timerId = setInterval(() => { this.moveSnake(); }, interval);
@@ -381,6 +409,10 @@ export struct SnakePage {
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.difficulty = level;
+    this.replayMode = false;
+    this.titleText = '贪吃蛇';
+    this.stopReplayTimer();
+    this.recorder.start();
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
     this.aiThinkTimeMs = 0;
@@ -397,7 +429,10 @@ export struct SnakePage {
   }
 
   restartGame(): void {
+    if (this.replayMode) return;
     this.stopAi();
+    this.stopReplayTimer();
+    this.recorder.start();
     this.aiHosted = false;
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
@@ -415,10 +450,16 @@ export struct SnakePage {
   }
 
   private saveScore(): void {
-    if (this.scoreSaved) return;
+    if (this.replayMode || this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('Snake', this.score, this.level, difficultyLabel(this.difficulty),
       this.currentAiModelName(), this.playSeconds, Math.floor(this.aiThinkTotalMs / 1000));
+    const meta: Record<string, Object> = {};
+    meta['difficulty'] = difficultyLabel(this.difficulty);
+    meta['wrap'] = this.wrapEnabled;
+    meta['obstacleEnabled'] = this.obstacleEnabled;
+    meta['obstacles'] = this.obstacles;
+    this.recorder.finish('Snake', this.level, this.score, JSON.stringify(meta));
   }
 
   togglePause(): void {
@@ -1308,7 +1349,7 @@ export struct SnakePage {
   }
 
   // ---- 生命周期 ----
-  aboutToAppear(): void {
+  async aboutToAppear(): Promise<void> {
     const params: GameRouteParams | null = AppNavigator.getParam('pages/Snake') as GameRouteParams | null;
     const result: GameLaunchResult = GameLaunchFacade.parse(params, GameId.SNAKE);
     if (!result.success || result.request === null) {
@@ -1316,15 +1357,121 @@ export struct SnakePage {
       AppNavigator.pop();
       return;
     }
+    if (params !== null && params !== undefined && params.replayId.length > 0) {
+      const record: ReplayRecord | null = await ReplayService.get(params.replayId);
+      if (record !== null) {
+        this.startReplay(record);
+        return;
+      }
+    }
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
     ScreenKeepAlive.enable(getContext(this));
   }
 
+  // ---- 对局回放 ----
+  private startReplay(record: ReplayRecord): void {
+    this.replayMode = true;
+    this.titleText = '贪吃蛇 · 回放';
+    this.stopReplayTimer();
+    this.replayStopped = false;
+    this.difficulty = DifficultyLevel.MEDIUM;
+    this.obstacles = [];
+    this.wrapEnabled = false;
+    this.obstacleEnabled = false;
+    try {
+      const meta: Record<string, Object> = JSON.parse(record.metaJson) as Record<string, Object>;
+      this.wrapEnabled = meta['wrap'] === true;
+      this.obstacleEnabled = meta['obstacleEnabled'] === true;
+      if (meta['obstacles'] !== undefined && Array.isArray(meta['obstacles'])) {
+        const arr: Object[] = meta['obstacles'] as Object[];
+        for (let i: number = 0; i < arr.length; i++) {
+          const p: Record<string, Object> = arr[i] as Record<string, Object>;
+          this.obstacles.push({ x: Number(p['x']), y: Number(p['y']) } as Point);
+        }
+      }
+    } catch (e) {
+    }
+    const startX: number = Math.floor(COLS / 2);
+    const startY: number = Math.floor(ROWS / 2);
+    this.snake = [
+      { x: startX, y: startY },
+      { x: startX - 1, y: startY },
+      { x: startX - 2, y: startY }
+    ];
+    this.snakeDirection = Direction.RIGHT;
+    this.nextDirection = Direction.RIGHT;
+    this.food = { x: 0, y: 0 };
+    this.foodBonus = false;
+    this.score = 0;
+    this.level = 1;
+    this.isGameOver = false;
+    this.isPaused = false;
+    this.isStarted = true;
+    this.gameStarted = true;
+    this.replayEvents = ReplayService.parseEvents(record.eventsJson);
+    this.replayIndex = 0;
+    this.replayElapsed = 0;
+    this.replaySpeed = 1;
+    this.startReplayTimer();
+  }
+
+  private startReplayTimer(): void {
+    this.stopReplayTimer();
+    this.replayTimer = setInterval(() => { this.replayTick(); }, 16);
+  }
+
+  private stopReplayTimer(): void {
+    if (this.replayTimer !== -1) {
+      clearInterval(this.replayTimer);
+      this.replayTimer = -1;
+    }
+  }
+
+  private replayTick(): void {
+    this.replayElapsed += 16 * this.replaySpeed;
+    let guard: number = 0;
+    while (this.replayIndex < this.replayEvents.length &&
+      this.replayEvents[this.replayIndex].t <= this.replayElapsed && guard < 200 && !this.replayStopped) {
+      this.replayApplying = true;
+      const ev: ReplayEvent = this.replayEvents[this.replayIndex];
+      if (ev.type === 'tick') {
+        this.moveSnake();
+      } else if (ev.type === 'dir') {
+        this.changeDirection(Number(ev.data) as Direction);
+      } else if (ev.type === 'food') {
+        const parts: string[] = ev.data.split(',');
+        if (parts.length === 3) {
+          this.food = { x: Number(parts[0]), y: Number(parts[1]) } as Point;
+          this.foodBonus = parts[2] === '1';
+        }
+      }
+      this.replayApplying = false;
+      this.replayIndex += 1;
+      guard += 1;
+    }
+    if (this.replayStopped || this.replayIndex >= this.replayEvents.length) {
+      this.stopReplayTimer();
+    }
+  }
+
+  private exitReplay(): void {
+    this.stopReplayTimer();
+    this.replayMode = false;
+    AppNavigator.pop();
+  }
+
+  private cycleReplaySpeed(): void {
+    if (this.replaySpeed === 1) this.replaySpeed = 2;
+    else if (this.replaySpeed === 2) this.replaySpeed = 4;
+    else this.replaySpeed = 1;
+  }
+
   aboutToDisappear(): void {
     this.stopAi();
     this.stopTimer();
+    this.stopReplayTimer();
     ScreenKeepAlive.disable(getContext(this));
     // 中途退出时保存当前分数
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
@@ -1396,6 +1543,30 @@ export struct SnakePage {
           showBack: true
         }) {
           this.actionsBuilder()
+        }
+
+        if (this.replayMode) {
+          Row({ space: 10 }) {
+            Text('🎬 回放中 · 速度 x' + this.replaySpeed.toString())
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .layoutWeight(1)
+            Button('速度')
+              .fontSize(this.palette.fsSm)
+              .height(30)
+              .backgroundColor(this.palette.bgSurface)
+              .fontColor(this.palette.textPrimary)
+              .onClick(() => { this.cycleReplaySpeed(); })
+            Button('退出')
+              .fontSize(this.palette.fsSm)
+              .height(30)
+              .backgroundColor(this.palette.danger)
+              .fontColor('#FFFFFF')
+              .onClick(() => { this.exitReplay(); })
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
         }
 
       if (this.isSm) {

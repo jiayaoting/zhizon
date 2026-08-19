@@ -3,6 +3,7 @@ import { http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult, LlmTokenUsage } from '../common/LlmModels';
+import { ToolDefinition, ToolCall, LlmAgentResult } from '../common/AgentModels';
 import { AiCallLogger, AiCallContext } from './AiCallLogger';
 // 连接超时（网络握手）与读取超时（响应传输）分开设置：
 // 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
@@ -210,6 +211,192 @@ export class LlmClient {
       return LlmClient.postAnthropic(config, messages, false);
     }
     return LlmClient.postOpenAI(config, messages, false);
+  }
+
+  // ========== Agent 工具调用（非流式，返回文本或 tool_calls） ==========
+
+  static async postCompletionAgent(config: LlmConfig, messages: ChatMessage[], tools: ToolDefinition[],
+    systemExtra: string): Promise<LlmAgentResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAgentAnthropic(config, messages, tools, systemExtra);
+    }
+    return LlmClient.postAgentOpenAI(config, messages, tools, systemExtra);
+  }
+
+  private static async postAgentOpenAI(config: LlmConfig, messages: ChatMessage[],
+    tools: ToolDefinition[], systemExtra: string): Promise<LlmAgentResult> {
+    const httpRequest: http.HttpRequest = http.createHttp();
+    try {
+      const url: string = LlmClient.openAIUrl(config);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Connection': 'close'
+      };
+      if (config.needsKey) {
+        header['Authorization'] = 'Bearer ' + config.apiKey.trim();
+      }
+      const system: string = config.systemPrompt.trim().length > 0
+        ? config.systemPrompt.trim() + '\n' + systemExtra : systemExtra;
+      const requestMessages: ChatRequestMessage[] = LlmClient.buildRequestMessages(messages, system);
+      const toolsPayload: Object[] = [];
+      for (let i: number = 0; i < tools.length; i++) {
+        const t: ToolDefinition = tools[i];
+        let schemaObj: Record<string, Object> = {};
+        try { schemaObj = JSON.parse(t.parametersJson) as Record<string, Object>; } catch (e) {}
+        const fn: Record<string, Object> = {
+          'name': t.name,
+          'description': t.description,
+          'parameters': schemaObj
+        };
+        const toolObj: Record<string, Object> = { 'type': 'function', 'function': fn };
+        toolsPayload.push(toolObj);
+      }
+      const payload: Record<string, Object> = {
+        'model': config.model.trim(),
+        'messages': LlmClient.openAIMessagesPayload(requestMessages),
+        'temperature': config.temperature,
+        'stream': false,
+        'enable_thinking': false,
+        'tools': toolsPayload,
+        'tool_choice': 'auto'
+      };
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(payload),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
+        expectDataType: http.HttpDataType.STRING,
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmAgentResult(false, '', '', [], 'HTTP_' + code.toString(),
+          LlmClient.errorMessageFromBody(response.result, code), new LlmTokenUsage());
+      }
+      const text: string = LlmClient.resultToString(response.result);
+      const parsed: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
+      const choices: Object = parsed['choices'];
+      let content: string = '';
+      const toolCalls: ToolCall[] = [];
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const msg: Object = first['message'];
+        if (msg !== undefined) {
+          const msgObj: Record<string, Object> = msg as Record<string, Object>;
+          content = typeof msgObj['content'] === 'string' ? msgObj['content'] as string : '';
+          const rawCalls: Object = msgObj['tool_calls'];
+          if (rawCalls !== undefined && Array.isArray(rawCalls)) {
+            const arr: Object[] = rawCalls as Object[];
+            for (let i: number = 0; i < arr.length; i++) {
+              const item: Record<string, Object> = arr[i] as Record<string, Object>;
+              const fnObj: Object = item['function'];
+              const fn: Record<string, Object> = fnObj !== undefined ? fnObj as Record<string, Object> : {};
+              toolCalls.push(new ToolCall(
+                typeof item['id'] === 'string' ? item['id'] as string : '',
+                typeof fn['name'] === 'string' ? fn['name'] as string : '',
+                typeof fn['arguments'] === 'string' ? fn['arguments'] as string : '{}'));
+            }
+          }
+        }
+      }
+      const reasoning: string = LlmClient.openAIReasoning(text);
+      const usage: LlmTokenUsage | null = LlmClient.openAIUsage(text);
+      return new LlmAgentResult(true, content, reasoning, toolCalls, '', '',
+        usage !== null ? usage : new LlmTokenUsage());
+    } catch (e) {
+      return new LlmAgentResult(false, '', '', [], 'ERROR', LlmClient.agentErrorMessage(e), new LlmTokenUsage());
+    } finally {
+      httpRequest.destroy();
+    }
+  }
+
+  private static async postAgentAnthropic(config: LlmConfig, messages: ChatMessage[],
+    tools: ToolDefinition[], systemExtra: string): Promise<LlmAgentResult> {
+    const httpRequest: http.HttpRequest = http.createHttp();
+    try {
+      const url: string = LlmClient.anthropicUrl(config);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'Connection': 'close'
+      };
+      if (config.needsKey) {
+        header['x-api-key'] = config.apiKey.trim();
+      }
+      const system: string = config.systemPrompt.trim().length > 0
+        ? config.systemPrompt.trim() + '\n' + systemExtra : systemExtra;
+      const requestMessages: ChatRequestMessage[] = LlmClient.copyRequestMessages(messages);
+      const toolsPayload: Object[] = [];
+      for (let i: number = 0; i < tools.length; i++) {
+        const t: ToolDefinition = tools[i];
+        let schemaObj: Record<string, Object> = {};
+        try { schemaObj = JSON.parse(t.parametersJson) as Record<string, Object>; } catch (e) {}
+        const toolObj: Record<string, Object> = {
+          'name': t.name,
+          'description': t.description,
+          'input_schema': schemaObj
+        };
+        toolsPayload.push(toolObj);
+      }
+      const payload: Record<string, Object> = {
+        'model': config.model.trim(),
+        'max_tokens': config.maxTokens,
+        'messages': LlmClient.anthropicMessagesPayload(requestMessages),
+        'stream': false,
+        'system': system,
+        'tools': toolsPayload
+      };
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(payload),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
+        expectDataType: http.HttpDataType.STRING,
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmAgentResult(false, '', '', [], 'HTTP_' + code.toString(),
+          LlmClient.anthropicErrorMessage(response.result, code), new LlmTokenUsage());
+      }
+      const text: string = LlmClient.resultToString(response.result);
+      const parsed: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
+      const contentArr: Object = parsed['content'];
+      let content: string = '';
+      const toolCalls: ToolCall[] = [];
+      if (contentArr !== undefined && Array.isArray(contentArr)) {
+        const arr: Object[] = contentArr as Object[];
+        for (let i: number = 0; i < arr.length; i++) {
+          const block: Record<string, Object> = arr[i] as Record<string, Object>;
+          const type: string = typeof block['type'] === 'string' ? block['type'] as string : '';
+          if (type === 'text') {
+            content = content + (typeof block['text'] === 'string' ? block['text'] as string : '');
+          } else if (type === 'tool_use') {
+            const input: Object = block['input'];
+            toolCalls.push(new ToolCall(
+              typeof block['id'] === 'string' ? block['id'] as string : '',
+              typeof block['name'] === 'string' ? block['name'] as string : '',
+              input !== undefined ? JSON.stringify(input) : '{}'));
+          }
+        }
+      }
+      const reasoning: string = LlmClient.anthropicReasoning(text);
+      return new LlmAgentResult(true, content, reasoning, toolCalls, '', '', new LlmTokenUsage());
+    } catch (e) {
+      return new LlmAgentResult(false, '', '', [], 'ERROR', LlmClient.agentErrorMessage(e), new LlmTokenUsage());
+    } finally {
+      httpRequest.destroy();
+    }
+  }
+
+  private static agentErrorMessage(e: Object): string {
+    const err = e as Error;
+    if (err.message !== undefined && err.message.length > 0) return err.message;
+    return 'Agent 请求失败';
   }
 
   // 可取消的非流式请求：返回结果 Promise + 取消函数（decide 超时时主动中断底层请求）

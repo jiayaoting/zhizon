@@ -14,6 +14,8 @@ import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/ReplayService';
+import { SoundService } from '../service/SoundService';
 
 
 interface TileStyle {
@@ -111,6 +113,16 @@ export struct Game2048Page {
   private titleText: string = '2048';
   private gameStartTime: number = 0;
   private scoreSaved: boolean = false;
+
+  // ---- 对局回放 ----
+  @State replayMode: boolean = false;
+  @State replaySpeed: number = 1;
+  private recorder: ReplayRecorder = new ReplayRecorder();
+  private replayEvents: ReplayEvent[] = [];
+  private replayIndex: number = 0;
+  private replayElapsed: number = 0;
+  private replayTimer: number = -1;
+  private replayApplying: boolean = false;
 
   // ---- 触觉反馈 ----
   private vibrate(duration: number): void {
@@ -213,6 +225,8 @@ export struct Game2048Page {
     const pos: [number, number] = empty[idx];
     const config = this.difficultyConfig(this.difficulty);
     const value: number = Math.random() < config.prob4 ? 4 : 2;
+    if (this.replayMode) return;
+    this.recorder.record('spawn', pos[0].toString() + ',' + pos[1].toString() + ',' + value.toString());
 
     const newBoard: number[][] = [];
     for (let r: number = 0; r < this.boardSize; r++) {
@@ -277,6 +291,8 @@ export struct Game2048Page {
 
   private move(direction: string): void {
     if (this.isGameOver || this.moveAnimating || this.isPaused) return;
+    if (this.replayMode && !this.replayApplying) return;
+    if (!this.replayMode) this.recorder.record('dir', direction);
 
     const prevScore: number = this.score;
     const oldBoard: number[][] = this.copyBoard();
@@ -333,13 +349,14 @@ export struct Game2048Page {
     if (!this.boardEquals(oldBoard, newBoard)) {
       this.board = newBoard;
       const gained: number = this.score - prevScore;
-      if (gained > 0) {
+      if (gained > 0 && !this.replayMode) {
         // 合并反馈：振动 + 飘字 + 棋盘脉冲动画
         this.vibrate(gained >= 512 ? 40 : 12);
         this.showScoreFloat('+' + gained.toString());
         this.mergePulse = true;
         setTimeout(() => { this.mergePulse = false; }, 180);
       }
+      if (this.replayMode) return;
       this.addRandomTile();
       this.checkGameOver();
     }
@@ -359,6 +376,7 @@ export struct Game2048Page {
         if (this.board[r][c] >= this.targetValue && !this.hasWonBefore) {
           this.isWin = true;
           this.hasWonBefore = true;
+          SoundService.play('win');
           return;
         }
       }
@@ -385,6 +403,7 @@ export struct Game2048Page {
 
     this.isGameOver = true;
     this.vibrate(80);
+    SoundService.play('gameover');
     this.newRecord = this.score > this.bestScore;
     if (this.newRecord) this.bestScore = this.score;
     this.playSeconds = Math.max(0, Math.floor((Date.now() - this.gameStartTime) / 1000));
@@ -392,15 +411,19 @@ export struct Game2048Page {
   }
 
   private saveScore(): void {
-    if (this.scoreSaved) return;
+    if (this.replayMode || this.scoreSaved) return;
     this.scoreSaved = true;
     DataRepository.addGameScore('2048', this.score, this.currentLevel, difficultyLabel(this.difficulty),
       this.currentAiModelName(), this.playSeconds, Math.floor(this.aiThinkTotalMs / 1000));
+    this.recorder.finish('2048', this.currentLevel, this.score, difficultyLabel(this.difficulty));
   }
 
   // ---- 游戏控制 ----
   private startWithDifficulty(level: DifficultyLevel): void {
     this.difficulty = level;
+    this.replayMode = false;
+    this.titleText = '2048';
+    this.recorder.start();
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
     this.aiThinkTimeMs = 0;
@@ -427,7 +450,9 @@ export struct Game2048Page {
   }
 
   restartGame(): void {
+    if (this.replayMode) return;
     this.stopAi();
+    this.recorder.start();
     this.aiHosted = false;
     this.aiFailCount = 0;
     this.aiThinkCount = 0;
@@ -1161,11 +1186,104 @@ export struct Game2048Page {
       AppNavigator.pop();
       return;
     }
+    if (params !== null && params !== undefined && params.replayId.length > 0) {
+      const record: ReplayRecord | null = await ReplayService.get(params.replayId);
+      if (record !== null) {
+        this.startReplay(record);
+        return;
+      }
+    }
     await this.loadLevelProgress();
     this.loadBestScore();
     this.startWithDifficulty(result.request.difficulty);
     this.initAiPanel();
     ScreenKeepAlive.enable(getContext(this));
+  }
+
+  // ---- 对局回放 ----
+  private startReplay(record: ReplayRecord): void {
+    this.replayMode = true;
+    this.titleText = '2048 · 回放';
+    this.difficulty = DifficultyLevel.MEDIUM;
+    this.currentLevel = record.level > 0 ? record.level : 1;
+    const lc = this.levelConfig(this.currentLevel);
+    this.boardSize = lc.boardSize;
+    this.targetValue = lc.targetValue;
+    this.initBoard();
+    this.score = 0;
+    this.isGameOver = false;
+    this.isWin = false;
+    this.isPaused = false;
+    this.gameStarted = true;
+    this.replayEvents = ReplayService.parseEvents(record.eventsJson);
+    this.replayIndex = 0;
+    this.replayElapsed = 0;
+    this.replaySpeed = 1;
+    this.startReplayTimer();
+  }
+
+  private startReplayTimer(): void {
+    this.stopReplayTimer();
+    this.replayTimer = setInterval(() => { this.replayTick(); }, 16);
+  }
+
+  private stopReplayTimer(): void {
+    if (this.replayTimer !== -1) {
+      clearInterval(this.replayTimer);
+      this.replayTimer = -1;
+    }
+  }
+
+  private replayTick(): void {
+    this.replayElapsed += 16 * this.replaySpeed;
+    let guard: number = 0;
+    while (this.replayIndex < this.replayEvents.length &&
+      this.replayEvents[this.replayIndex].t <= this.replayElapsed && guard < 200) {
+      this.replayApplying = true;
+      this.applyReplayEvent(this.replayEvents[this.replayIndex]);
+      this.replayApplying = false;
+      this.replayIndex += 1;
+      guard += 1;
+    }
+    if (this.replayIndex >= this.replayEvents.length) {
+      this.stopReplayTimer();
+    }
+  }
+
+  private applyReplayEvent(ev: ReplayEvent): void {
+    if (ev.type === 'dir') {
+      this.move(ev.data);
+    } else if (ev.type === 'spawn') {
+      const parts: string[] = ev.data.split(',');
+      if (parts.length === 3) {
+        this.applyReplaySpawn(Number(parts[0]), Number(parts[1]), Number(parts[2]));
+      }
+    }
+  }
+
+  private applyReplaySpawn(r: number, c: number, v: number): void {
+    const nb: number[][] = [];
+    for (let i: number = 0; i < this.boardSize; i++) {
+      const row: number[] = [];
+      for (let j: number = 0; j < this.boardSize; j++) row.push(this.board[i][j]);
+      nb.push(row);
+    }
+    if (r >= 0 && r < this.boardSize && c >= 0 && c < this.boardSize) {
+      nb[r][c] = v;
+    }
+    this.board = nb;
+  }
+
+  private exitReplay(): void {
+    this.stopReplayTimer();
+    this.replayMode = false;
+    AppNavigator.pop();
+  }
+
+  private cycleReplaySpeed(): void {
+    if (this.replaySpeed === 1) this.replaySpeed = 2;
+    else if (this.replaySpeed === 2) this.replaySpeed = 4;
+    else this.replaySpeed = 1;
   }
 
   // ---- 页面隐藏时自动暂停 ----
@@ -1189,6 +1307,7 @@ export struct Game2048Page {
   aboutToDisappear(): void {
     // 中途退出时保存当前分数
     this.stopAi();
+    this.stopReplayTimer();
     ScreenKeepAlive.disable(getContext(this));
     if (this.gameStarted && this.score > 0 && !this.scoreSaved) {
       this.saveScore();
@@ -1259,6 +1378,30 @@ export struct Game2048Page {
           showBack: true
         }) {
           this.actionsBuilder()
+        }
+
+        if (this.replayMode) {
+          Row({ space: 10 }) {
+            Text('🎬 回放中 · 速度 x' + this.replaySpeed.toString())
+              .fontSize(this.palette.fsSm)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .layoutWeight(1)
+            Button('速度')
+              .fontSize(this.palette.fsSm)
+              .height(30)
+              .backgroundColor(this.palette.bgSurface)
+              .fontColor(this.palette.textPrimary)
+              .onClick(() => { this.cycleReplaySpeed(); })
+            Button('退出')
+              .fontSize(this.palette.fsSm)
+              .height(30)
+              .backgroundColor(this.palette.danger)
+              .fontColor('#FFFFFF')
+              .onClick(() => { this.exitReplay(); })
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
         }
 
         if (this.isSm) {

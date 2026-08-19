@@ -6,6 +6,7 @@ import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { GameHistoryRouteParams } from '../common/Navigation';
+import { LazyListDataSource } from '../common/LazyDataSource';
 
 function isGameHistoryKey(key: string): boolean {
   return key === '2048' || key === 'Snake' || key === 'Tetris' || key === 'Minesweeper' ||
@@ -80,6 +81,7 @@ export struct GameHistoryPage {
   @Local loading: boolean = true;
     
   private gameKeys: string[] = ['2048', 'Snake', 'Tetris', 'Minesweeper', 'Breakout', 'SUDOKU', 'ChineseChess', 'Gomoku'];
+  private scoreSource: LazyListDataSource<ScoreEntry> = new LazyListDataSource<ScoreEntry>([]);
 
   aboutToAppear(): void {
     const params: GameHistoryRouteParams | null = AppNavigator.getParam('pages/GameHistory') as GameHistoryRouteParams | null;
@@ -96,12 +98,14 @@ export struct GameHistoryPage {
   async loadScores(): Promise<void> {
     this.loading = true;
     this.scores = await DataRepository.getGameScores(this.gameKey);
+    this.scoreSource.replace(this.scores);
     this.loading = false;
   }
 
   async clearScores(): Promise<void> {
     await DataRepository.clearGameScores(this.gameKey);
     this.scores = [];
+    this.scoreSource.replace(this.scores);
   }
 
   build() {
@@ -160,7 +164,7 @@ export struct GameHistoryPage {
         .justifyContent(FlexAlign.Center)
       } else {
         List({ space: 6 }) {
-          ForEach(this.scores, (entry: ScoreEntry, idx: number) => {
+          LazyForEach(this.scoreSource, (entry: ScoreEntry, idx: number) => {
             ListItem() {
               Row({ space: 10 }) {
                 // 排名

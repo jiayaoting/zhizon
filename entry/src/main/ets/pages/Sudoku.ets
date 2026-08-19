@@ -15,6 +15,7 @@ import { GameAIPanel } from '../components/GameAIPanel';
 import { GameAIService, GameAction, AI_SPEED_DELAYS, SudokuCellInfo } from '../service/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { SoundService } from '../service/SoundService';
 
 // ============================================================
 // 页面组件
@@ -328,6 +329,7 @@ export struct SudokuPage {
     }
     this.isWin = true;
     this.stopTimer();
+    SoundService.play('win');
     this.flashWin = true;
     setTimeout(() => { this.flashWin = false; }, 900);
     this.saveScore();

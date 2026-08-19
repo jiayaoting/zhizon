@@ -10,6 +10,9 @@ import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffec
 import { AvatarOption, AVATAR_OPTIONS, CUSTOM_AVATAR_ID, avatarLabel } from '../common/AvatarOptions';
 import { SecurityService, autoLockLabel, AUTO_LOCK_OPTIONS } from '../service/SecurityService';
 import { BiometricHelper } from '../service/BiometricHelper';
+import { SoundService } from '../service/SoundService';
+import { HuaweiAccountService } from '../service/HuaweiAccountService';
+import { CloudSyncService } from '../service/CloudSyncService';
 
 import { TopBar } from '../components/TopBar';
 
@@ -102,6 +105,14 @@ export struct SettingsPage {
   @State showAutoLockSheet: boolean = false;
   // 数据
   @State autoBackup: boolean = false;
+  // 游戏
+  @State soundEnabled: boolean = true;
+  // 云同步
+  @State huaweiNick: string = '';
+  @State cloudSyncLast: string = '从未同步';
+  @State syncBusy: boolean = false;
+  // Agent
+  @State agentEnabled: boolean = false;
 
   // 字号/字体选项
   private fontSizeOptions: FontSizeOption[] = [
@@ -152,6 +163,11 @@ export struct SettingsPage {
       this.biometricUnlock = await SecurityService.isBiometricEnabled();
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
+      this.soundEnabled = SoundService.isEnabled();
+      this.agentEnabled = await DataRepository.getSetting('agentEnabled', 'false') === 'true';
+      const profile = await HuaweiAccountService.getStoredProfile();
+      this.huaweiNick = profile !== null ? profile.nickName : '';
+      this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
       this.hasMasterPassword = await SecurityService.hasPassword();
       this.autoLock = autoLockLabel(await SecurityService.getAutoLockValue());
 
@@ -186,6 +202,74 @@ export struct SettingsPage {
 
   private toast(msg: string) {
     promptAction.showToast({ message: msg });
+  }
+
+  // ==================== 游戏音效 ====================
+  private async onSoundToggle(v: boolean): Promise<void> {
+    this.soundEnabled = v;
+    await SoundService.setEnabled(v);
+    this.toast(v ? '游戏音效已开启' : '游戏音效已关闭');
+  }
+
+  // ==================== 云同步 ====================
+  private async onHuaweiSignIn(): Promise<void> {
+    const ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined) {
+      this.toast('无法获取应用上下文');
+      return;
+    }
+    try {
+      const profile = await HuaweiAccountService.signIn(ctx);
+      this.huaweiNick = profile.nickName.length > 0 ? profile.nickName : profile.openId;
+      this.toast('已登录华为账号：' + this.huaweiNick);
+    } catch (e) {
+      this.toast('登录失败或已取消');
+    }
+  }
+
+  private async onHuaweiSignOut(): Promise<void> {
+    const ctx = this.getUIContext().getHostContext();
+    if (ctx === undefined) {
+      this.toast('无法获取应用上下文');
+      return;
+    }
+    await HuaweiAccountService.signOut(ctx);
+    this.huaweiNick = '';
+    this.toast('已退出华为账号');
+  }
+
+  private async onCloudBackup(): Promise<void> {
+    if (this.syncBusy) return;
+    this.syncBusy = true;
+    try {
+      const ctx = this.getUIContext().getHostContext();
+      if (ctx === undefined) {
+        this.toast('无法获取应用上下文');
+        return;
+      }
+      const result = await CloudSyncService.backupNow(ctx);
+      this.toast(result.message);
+      this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
+    } finally {
+      this.syncBusy = false;
+    }
+  }
+
+  private async onCloudRestore(): Promise<void> {
+    if (this.syncBusy) return;
+    this.syncBusy = true;
+    try {
+      const ctx = this.getUIContext().getHostContext();
+      if (ctx === undefined) {
+        this.toast('无法获取应用上下文');
+        return;
+      }
+      const result = await CloudSyncService.restoreNow(ctx);
+      this.toast(result.message);
+      this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
+    } finally {
+      this.syncBusy = false;
+    }
   }
 
   // ==================== 安全 ====================
@@ -1541,6 +1625,40 @@ export struct SettingsPage {
               .width('100%')
             }
 
+            // 游戏
+            GroupCard({ title: '游戏' }) {
+              Column({ space: 8 }) {
+                this.toggleRow('游戏音效', this.soundEnabled, (v: boolean) => {
+                  this.onSoundToggle(v);
+                })
+                Text('开启后，消除/吃食物/胜利/失败等场景播放短音效（可随时关闭）。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
+              }
+              .width('100%')
+            }
+
+            // Agent
+            GroupCard({ title: 'Agent' }) {
+              Column({ space: 8 }) {
+                this.toggleRow('Agent 模式', this.agentEnabled, (v: boolean) => {
+                  this.agentEnabled = v;
+                  DataRepository.setSetting('agentEnabled', v ? 'true' : 'false');
+                  this.toast(v ? '已开启 Agent 模式（对话中可调用计算器/时间/联网搜索）' : '已关闭 Agent 模式');
+                })
+                Text('开启后，AI 可主动调用工具分步完成任务；关闭后为纯文本对话。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
+              }
+              .width('100%')
+            }
+
             // 安全
             GroupCard({ title: '安全' }) {
               Column({ space: 8 }) {
@@ -1560,6 +1678,19 @@ export struct SettingsPage {
             // 数据
             GroupCard({ title: '数据' }) {
               Column({ space: 8 }) {
+                this.valueRow('华为账号', this.huaweiNick.length > 0 ? this.huaweiNick : '未登录', () => {
+                  if (this.huaweiNick.length > 0) {
+                    this.onHuaweiSignOut();
+                  } else {
+                    this.onHuaweiSignIn();
+                  }
+                })
+                this.valueRow('立即备份', this.cloudSyncLast, () => {
+                  this.onCloudBackup();
+                })
+                this.valueRow('立即恢复', '', () => {
+                  this.onCloudRestore();
+                })
                 this.valueRow('导出配置', '')
                 this.valueRow('导入配置', '')
                 this.valueRow('清除缓存', '')

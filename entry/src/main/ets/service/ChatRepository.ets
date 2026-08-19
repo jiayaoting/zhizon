@@ -2,7 +2,9 @@
 import { relationalStore } from '@kit.ArkData';
 import { DatabaseHelper } from './DatabaseHelper';
 import { DataRepository } from './DataRepository';
+import { AchievementService } from './AchievementService';
 import { CryptoHelper } from '../common/CryptoHelper';
+import { ChatExporter, ImportedChat } from './ChatExporter';
 import { ApiFormat, ChatMessage, ChatSession, LlmConfig, LlmModelEntry, StoredLlmConfig,
   entryToConfig } from '../common/LlmModels';
 
@@ -310,10 +312,25 @@ export class ChatRepository {
         await store.insert('chat_messages', ChatRepository.messageBucket(sessionId, m));
       }
       await store.commit();
+      // 成就触发：按累计用户消息条数更新对话类成就
+      const userCount: number = await DatabaseHelper.getChatMessageCount();
+      await AchievementService.onChatMessages(userCount);
     } catch (e) {
       await store.rollBack();
       throw new Error('PERSISTENCE_FAILED');
     }
+  }
+
+  // 从备份 JSON 恢复全部会话（云同步用），返回导入会话数
+  static async importBackupAll(json: string): Promise<number> {
+    const importedList: ImportedChat[] = ChatExporter.parseImportAll(json);
+    if (importedList.length === 0) return 0;
+    for (let i: number = 0; i < importedList.length; i++) {
+      const imported: ImportedChat = importedList[i];
+      const session: ChatSession = await ChatRepository.createSession(imported.title);
+      await ChatRepository.appendMessages(session.id, imported.messages);
+    }
+    return importedList.length;
   }
 
   // 更新单条消息（内容/思考/状态/错误/用量）

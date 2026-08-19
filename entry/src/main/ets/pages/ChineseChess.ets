@@ -15,6 +15,7 @@ import { DataRepository } from '../service/DataRepository';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
+import { SoundService } from '../service/SoundService';
 
 // 对弈方类型
 type PlayerMode = 'human' | 'engine' | 'llm';
@@ -69,9 +70,9 @@ export struct ChineseChessPage {
   @State showModelPicker: boolean = false;
   private pickSide: ModelSide = 'ai';
   private aiModels: LlmModelEntry[] = [];
-  private redModelIndex: number = 0;
-  private blackModelIndex: number = 0;
-  private aiModelIndex: number = 0;
+  @State redModelIndex: number = 0;
+  @State blackModelIndex: number = 0;
+  @State aiModelIndex: number = 0;
   private redConfig: LlmConfig | null = null;
   private blackConfig: LlmConfig | null = null;
   private aiConfig: LlmConfig | null = null;
@@ -601,6 +602,7 @@ export struct ChineseChessPage {
   }
 
   private finishGame(msg: string): void {
+    SoundService.play(msg.indexOf('胜') >= 0 ? 'win' : 'gameover');
     this.gameOver = true;
     this.running = false;
     this.thinkingSide = '';
