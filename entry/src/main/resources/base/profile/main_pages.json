@@ -20,6 +20,8 @@
     "pages/NewsDetail",
     "pages/NewsDigest",
     "pages/NewsFavorites",
-    "pages/NewsRecommend"
+    "pages/NewsRecommend",
+    "pages/NewsSearch",
+    "pages/NewsStats"
   ]
 }

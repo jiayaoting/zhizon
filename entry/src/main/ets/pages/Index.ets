@@ -10,6 +10,7 @@ import { NewsService } from '../service/NewsService';
 import { NewsRepository } from '../service/NewsRepository';
 import { LazyListDataSource } from '../common/LazyDataSource';
 import { NewsCard } from '../components/NewsCard';
+import { NewsDetailPane } from '../components/NewsDetailPane';
 import { DataRepository } from '../service/DataRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 
@@ -28,6 +29,8 @@ export struct IndexPage {
   @Local loadingMore: boolean = false;
   @Local hasDigestToday: boolean = false;
   @Local readUrls: string[] = [];
+  // 平板双栏：右侧当前阅读的文章（手机模式不使用）
+  @Local selectedItem: NewsItem | null = null;
   @Event onNavigate: (key: string) => void = () => {};
 
   private source: LazyListDataSource<NewsItem> = new LazyListDataSource<NewsItem>([]);
@@ -110,7 +113,12 @@ export struct IndexPage {
     }
     NewsRepository.markRead(item.url).catch(() => {
     });
-    AppNavigator.push('pages/NewsDetail', new NewsDetailRouteParams(item));
+    if (this.themeState.isLg) {
+      // 平板/2in1：右侧内嵌阅读（真·双栏）
+      this.selectedItem = item;
+    } else {
+      AppNavigator.push('pages/NewsDetail', new NewsDetailRouteParams(item));
+    }
   }
 
   private getGreeting(): string {
@@ -148,6 +156,23 @@ export struct IndexPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+
+      // 搜索入口
+      Row() {
+        Text('🔍')
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .margin({ right: 10 })
+      .onClick(() => {
+        AppNavigator.push('pages/NewsSearch');
+      })
 
       // 收藏入口
       Row() {
@@ -271,141 +296,189 @@ export struct IndexPage {
     .justifyContent(FlexAlign.Center)
   }
 
+  // ==================== 频道栏 ====================
+  @Builder
+  channelBar() {
+    Scroll() {
+      Row({ space: 8 }) {
+        ForEach(NEWS_CHANNELS, (channel: NewsChannel) => {
+          Row({ space: 4 }) {
+            Text(channel.icon)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+            Text(channel.name)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.channelId === channel.id ? this.themeState.palette.textPrimary :
+                this.themeState.palette.textSecondary)
+              .fontWeight(this.channelId === channel.id ? FontWeight.Bold : FontWeight.Normal)
+          }
+          .height(34)
+          .padding({ left: 14, right: 14 })
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(17)
+          .backgroundColor(this.channelId === channel.id ? this.themeState.palette.primary + '2A' :
+            this.themeState.palette.bgSurface2)
+          .border({ width: this.channelId === channel.id ? 1.5 : 0,
+            color: this.channelId === channel.id ? this.themeState.palette.primary : Color.Transparent })
+          .onClick(() => {
+            if (this.channelId === channel.id) return;
+            this.channelId = channel.id;
+            this.loadFeed(false);
+          })
+        }, (channel: NewsChannel) => channel.id)
+      }
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
+    }
+    .width('100%')
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.None)
+  }
+
+  // ==================== 资讯列表区（useGrid=true 双列；false 单列） ====================
+  @Builder
+  newsBody(useGrid: boolean) {
+    if (this.loading && this.items.length === 0) {
+      Column({ space: 12 }) {
+        LoadingProgress()
+          .width(32)
+          .height(32)
+        Text('正在加载资讯…')
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+    } else if (this.error && this.items.length === 0) {
+      Column({ space: 12 }) {
+        Text('📡')
+          .fontSize(44)
+          .fontFamily(this.themeState.palette.fontSans)
+        Text('资讯加载失败')
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+        Text('请检查网络后重试')
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+        Button('重新加载')
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(Color.White)
+          .backgroundColor(this.themeState.palette.primary)
+          .borderRadius(16)
+          .height(32)
+          .margin({ top: 4 })
+          .onClick(() => {
+            this.loadFeed(true);
+          })
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+    } else {
+      Refresh({ refreshing: this.refreshing }) {
+        if (useGrid) {
+          // 双列网格（平板竖屏 / 手机横屏）
+          Grid() {
+            LazyForEach(this.source, (item: NewsItem) => {
+              GridItem() {
+                NewsCard({
+                  item: item,
+                  read: this.isRead(item),
+                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
+                })
+              }
+            }, (item: NewsItem) => item.id)
+          }
+          .columnsTemplate('1fr 1fr')
+          .columnsGap(10)
+          .rowsGap(10)
+          .width('100%')
+          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
+          .onReachEnd(() => {
+            this.loadMore();
+          })
+        } else {
+          // 单列列表（手机竖屏 / 双栏左列）
+          List({ space: 10 }) {
+            LazyForEach(this.source, (item: NewsItem) => {
+              ListItem() {
+                NewsCard({
+                  item: item,
+                  read: this.isRead(item),
+                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
+                })
+              }
+            }, (item: NewsItem) => item.id)
+            ListItem() {
+              this.listFooter()
+            }
+          }
+          .width('100%')
+          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
+          .onReachEnd(() => {
+            this.loadMore();
+          })
+        }
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .onRefreshing(() => {
+        this.doRefresh();
+      })
+    }
+  }
+
   build() {
     Column() {
       this.header()
 
-      // AI 今日要闻入口卡：固定显示在频道栏（推荐/科技…）上方，不随资讯列表刷新消失
-      this.digestCard()
-
-      Scroll() {
-        Row({ space: 8 }) {
-          ForEach(NEWS_CHANNELS, (channel: NewsChannel) => {
-            Row({ space: 4 }) {
-              Text(channel.icon)
-                .fontSize(this.themeState.palette.fsSm)
-                .fontFamily(this.themeState.palette.fontSans)
-              Text(channel.name)
-                .fontSize(this.themeState.palette.fsSm)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.channelId === channel.id ? this.themeState.palette.textPrimary :
-                  this.themeState.palette.textSecondary)
-                .fontWeight(this.channelId === channel.id ? FontWeight.Bold : FontWeight.Normal)
-            }
-            .height(34)
-            .padding({ left: 14, right: 14 })
-            .justifyContent(FlexAlign.Center)
-            .borderRadius(17)
-            .backgroundColor(this.channelId === channel.id ? this.themeState.palette.primary + '2A' :
-              this.themeState.palette.bgSurface2)
-            .border({ width: this.channelId === channel.id ? 1.5 : 0,
-              color: this.channelId === channel.id ? this.themeState.palette.primary : Color.Transparent })
-            .onClick(() => {
-              if (this.channelId === channel.id) return;
-              this.channelId = channel.id;
-              this.loadFeed(false);
-            })
-          }, (channel: NewsChannel) => channel.id)
-        }
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
-      }
-      .width('100%')
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.None)
-
-      if (this.loading && this.items.length === 0) {
-        Column({ space: 12 }) {
-          LoadingProgress()
-            .width(32)
-            .height(32)
-          Text('正在加载资讯…')
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textTertiary)
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-      } else if (this.error && this.items.length === 0) {
-        Column({ space: 12 }) {
-          Text('📡')
-            .fontSize(44)
-            .fontFamily(this.themeState.palette.fontSans)
-          Text('资讯加载失败')
-            .fontSize(this.themeState.palette.fsLg)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textPrimary)
-          Text('请检查网络后重试')
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textTertiary)
-          Button('重新加载')
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(Color.White)
-            .backgroundColor(this.themeState.palette.primary)
-            .borderRadius(16)
-            .height(32)
-            .margin({ top: 4 })
-            .onClick(() => {
-              this.loadFeed(true);
-            })
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-      } else {
-        Refresh({ refreshing: this.refreshing }) {
-          if (this.themeState.isLg || this.themeState.isMd) {
-            // 平板/大屏（含折叠屏展开、手机横屏）：双列网格
-            Grid() {
-              LazyForEach(this.source, (item: NewsItem) => {
-                GridItem() {
-                  NewsCard({
-                    item: item,
-                    read: this.isRead(item),
-                    onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
-                  })
-                }
-              }, (item: NewsItem) => item.id)
-            }
-            .columnsTemplate('1fr 1fr')
-            .columnsGap(10)
-            .rowsGap(10)
-            .width('100%')
-            .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
-            .onReachEnd(() => {
-              this.loadMore();
-            })
-          } else {
-            // 手机：单列列表
-            List({ space: 10 }) {
-              LazyForEach(this.source, (item: NewsItem) => {
-                ListItem() {
-                  NewsCard({
-                    item: item,
-                    read: this.isRead(item),
-                    onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
-                  })
-                }
-              }, (item: NewsItem) => item.id)
-              ListItem() {
-                this.listFooter()
-              }
-            }
-            .width('100%')
-            .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
-            .onReachEnd(() => {
-              this.loadMore();
-            })
+      if (this.themeState.isLg) {
+        // 平板 / 2in1：左侧列表 + 右侧详情（真·双栏）
+        Row() {
+          Column() {
+            this.digestCard()
+            this.channelBar()
+            this.newsBody(false)
           }
+          .width('38%')
+          .height('100%')
+
+          Column() {
+            if (this.selectedItem !== null) {
+              // key 变化强制重建面板，确保文章切换时内容刷新
+              ForEach([this.selectedItem], (item: NewsItem) => {
+                NewsDetailPane({ item: item })
+              }, (item: NewsItem) => item.id + '|' + item.url)
+            } else {
+              Column({ space: 10 }) {
+                Text('📰')
+                  .fontSize(40)
+                  .fontFamily(this.themeState.palette.fontSans)
+                Text('在左侧选择一篇新闻阅读详情')
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
+              }
+              .width('100%')
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
+            }
+          }
+          .layoutWeight(1)
+          .height('100%')
         }
-        .layoutWeight(1)
         .width('100%')
-        .onRefreshing(() => {
-          this.doRefresh();
-        })
+        .layoutWeight(1)
+      } else {
+        this.digestCard()
+        this.channelBar()
+        this.newsBody(this.themeState.isMd)
       }
     }
     .width('100%')

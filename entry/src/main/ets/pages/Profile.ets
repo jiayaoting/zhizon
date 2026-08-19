@@ -172,6 +172,9 @@ export struct ProfilePage {
         this.groupRow('为你推荐', '', true, () => {
           AppNavigator.push('pages/NewsRecommend');
         })
+        this.groupRow('资讯统计', '', true, () => {
+          AppNavigator.push('pages/NewsStats');
+        })
       }
       .width('100%')
     }

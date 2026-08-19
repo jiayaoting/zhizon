@@ -32,6 +32,8 @@ import { NewsDetailPage } from './NewsDetail';
 import { NewsDigestPage } from './NewsDigest';
 import { NewsFavoritesPage } from './NewsFavorites';
 import { NewsRecommendPage } from './NewsRecommend';
+import { NewsSearchPage } from './NewsSearch';
+import { NewsStatsPage } from './NewsStats';
 
 const DOMAIN = 0x9201;
 
@@ -219,6 +221,10 @@ struct AppShell {
       NewsFavoritesPage()
     } else if (name === 'pages/NewsRecommend') {
       NewsRecommendPage()
+    } else if (name === 'pages/NewsSearch') {
+      NewsSearchPage()
+    } else if (name === 'pages/NewsStats') {
+      NewsStatsPage()
     }
   }
 

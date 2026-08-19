@@ -16,6 +16,8 @@ import { CloudSyncService } from '../service/CloudSyncService';
 import { AppNavigator } from '../common/AppNavigator';
 import { NEWS_SOURCES } from '../common/NewsChannels';
 import { NewsSourceDef } from '../common/NewsModels';
+import { NewsRepository } from '../service/NewsRepository';
+import { NewsService } from '../service/NewsService';
 
 import { TopBar } from '../components/TopBar';
 
@@ -1839,6 +1841,19 @@ export struct SettingsPage {
                     .fontColor(this.palette.textTertiary)
                     .width('100%')
                 }
+                this.valueRow('清空阅读记录', '', () => {
+                  NewsRepository.clearRead().then(() => {
+                    this.toast('已清空阅读记录');
+                  });
+                })
+                this.valueRow('清空资讯缓存', '', () => {
+                  NewsRepository.clearChannelCache().then(() => {
+                    NewsRepository.clearArticleCache().then(() => {
+                      NewsService.clearCache();
+                      this.toast('已清空资讯缓存（频道快照与离线正文）');
+                    });
+                  });
+                })
               }
               .width('100%')
             }

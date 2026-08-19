@@ -72,6 +72,12 @@ export interface NewsFavoriteEntry {
   addedAt: number;
 }
 
+// 新闻正文缓存条目（news_article_cache 行）
+export interface NewsArticleCacheEntry {
+  title: string;
+  html: string;
+}
+
 const DB_NAME = 'zhizon.db';
 const DB_VERSION = 14;
 const DB_DOMAIN = 0x9201;
@@ -190,6 +196,10 @@ const SQL_CREATE_NEWS_DIGESTS = `CREATE TABLE IF NOT EXISTS news_digests (
 const SQL_CREATE_NEWS_CACHE = `CREATE TABLE IF NOT EXISTS news_cache (
   channel_id TEXT PRIMARY KEY, items_json TEXT NOT NULL, cached_at INTEGER NOT NULL
 )`;
+// 新闻正文缓存（离线全文阅读，v14）
+const SQL_CREATE_NEWS_ARTICLE_CACHE = `CREATE TABLE IF NOT EXISTS news_article_cache (
+  url TEXT PRIMARY KEY, title TEXT NOT NULL, html TEXT NOT NULL, cached_at INTEGER NOT NULL
+)`;
 
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
@@ -259,6 +269,7 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_READ);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_DIGESTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_CACHE);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_ARTICLE_CACHE);
     if (DatabaseHelper.store.version < 10) {
       // 旧库升级：为 chat_messages 补齐图片附件列（新库建表已含，重复列错误被忽略）
       try {
@@ -1180,5 +1191,120 @@ export class DatabaseHelper {
     } catch (e) {
     }
     return null;
+  }
+
+  // ========== 新闻资讯：正文缓存（离线全文阅读） ==========
+
+  static async saveNewsArticleCache(url: string, title: string, html: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const del = new relationalStore.RdbPredicates('news_article_cache');
+      del.equalTo('url', url);
+      await store.delete(del);
+      const valueBucket: relationalStore.ValuesBucket = {
+        url: url,
+        title: title,
+        html: html,
+        cached_at: Date.now()
+      };
+      await store.insert('news_article_cache', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  static async getNewsArticleCache(url: string): Promise<NewsArticleCacheEntry | null> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_article_cache');
+      predicates.equalTo('url', url);
+      const resultSet = await store.query(predicates);
+      try {
+        if (resultSet.goToNextRow()) {
+          return {
+            title: resultSet.getString(resultSet.getColumnIndex('title')),
+            html: resultSet.getString(resultSet.getColumnIndex('html'))
+          };
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    return null;
+  }
+
+  static async clearNewsArticleCache(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_article_cache');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  // ========== 新闻资讯：清理与统计 ==========
+
+  static async clearNewsRead(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_read');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  static async clearNewsChannelCache(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_cache');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  static async countNewsFavorites(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM news_favorites');
+      let count: number = 0;
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  static async countNewsRead(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM news_read');
+      let count: number = 0;
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // 统计 AI 调用日志中资讯场景（game 以 news: 开头）的条数
+  static async countNewsAiCalls(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const resultSet = await store.querySql("SELECT COUNT(*) AS cnt FROM ai_call_logs WHERE game LIKE 'news:%'");
+      let count: number = 0;
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
   }
 }

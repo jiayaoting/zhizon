@@ -94,6 +94,38 @@ export class NewsService {
     return result;
   }
 
+  // 跨源关键词搜索：Hacker News Algolia 搜索 + 本地各源标题/摘要过滤，合并去重
+  static async search(keyword: string, limit: number = 30): Promise<NewsItem[]> {
+    const q: string = keyword.trim();
+    if (q.length === 0) return [];
+    const arrays: NewsItem[][] = [];
+    // 1) HN 全文搜索（免费无 key）
+    try {
+      const url: string = 'https://hn.algolia.com/api/v1/search?query=' + encodeURIComponent(q) +
+        '&hitsPerPage=30';
+      const text: string = await NewsService.httpGet(url);
+      const hits: NewsItem[] = NewsService.parseHn(text);
+      if (hits.length > 0) arrays.push(hits);
+    } catch (e) {
+    }
+    // 2) 本地各源当前 feed 过滤（标题/摘要包含关键词）
+    try {
+      const feeds: NewsItem[] = await NewsService.fetchChannel('recommend', 60, false);
+      const lower: string = q.toLowerCase();
+      const local: NewsItem[] = [];
+      for (let i: number = 0; i < feeds.length; i++) {
+        const hay: string = (feeds[i].title + ' ' + feeds[i].summary).toLowerCase();
+        if (hay.indexOf(lower) >= 0) {
+          local.push(feeds[i]);
+        }
+      }
+      if (local.length > 0) arrays.push(local);
+    } catch (e) {
+    }
+    if (arrays.length === 0) return [];
+    return NewsService.merge(arrays, limit);
+  }
+
   // 读取用户自定义 RSS 订阅（settings.newsCustomRss：JSON 数组 [{name, url}]）
   static async customSources(): Promise<NewsSourceDef[]> {
     const sources: NewsSourceDef[] = [];

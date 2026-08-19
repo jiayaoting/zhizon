@@ -596,8 +596,14 @@ AppShell (主框架)
 | 为你推荐 | 基于收藏历史 + AI 排序候选新闻 |
 | 收藏/稍后读 | news_favorites 表，列表页/详情页管理 |
 | 设置 | 「资讯」分组：6 个内置源独立开关 + 自定义 RSS 订阅管理（settings.newsCustomRss） |
-| 离线缓存 | 频道快照（news_cache 表）：网络失败自动回退本地快照，离线可浏览标题/摘要 |
-| 平板适配 | isLg 宽屏下资讯首页切换为双列网格 |
+| 离线缓存 | 频道快照（news_cache 表）网络失败自动回退；正文缓存（news_article_cache 表）ArkWeb 加载成功后抓取，离线全文回退 |
+| 平板适配 | isLg 宽屏：真·双栏阅读（左列表 + 右详情 NewsDetailPane）；isMd：双列网格 |
+| 新闻搜索 | NewsService.search（HN Algolia + 本地源过滤）+ 搜索页 + AI 汇总 |
+| 资讯分享 | NewsDetail TopBar 📤（Share Kit 系统分享） |
+| Agent 工具 | ToolRegistry 新增 news_top（AI 对话中获取今日热点新闻） |
+| 资讯统计 | NewsStats 页（收藏/已读/AI 调用数 + 清空阅读记录） |
+| 热点速递增强 | 配置联网搜索接口时自动注入搜索补充信息 |
+| 设置 | 资讯分组新增：清空阅读记录、清空资讯缓存 |
 
 ### 10.1.2 数据表（DatabaseHelper v14）
 

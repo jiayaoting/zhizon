@@ -5,6 +5,7 @@ import { LlmClient } from './LlmClient';
 import { LlmConfig, LlmModelEntry, ChatMessage, LlmResult, entryToConfig } from '../common/LlmModels';
 import { AiCallContext } from './AiCallLogger';
 import { DataRepository } from './DataRepository';
+import { WebSearchService, WebSearchResult } from './WebSearchService';
 import { NewsItem } from '../common/NewsModels';
 
 // 文章正文入上下文的字符上限（约 2000~3000 token）
@@ -118,6 +119,25 @@ export class NewsAiService {
       NewsAiService.newsContext('qa'));
   }
 
+  // ==================== AI 搜索结果汇总（流式） ====================
+  static async generateSearchSummary(config: LlmConfig, items: NewsItem[], keyword: string,
+    onDelta: (delta: string) => void): Promise<LlmResult> {
+    let list: string = '';
+    const count: number = items.length > 20 ? 20 : items.length;
+    for (let i: number = 0; i < count; i++) {
+      list = list + (i + 1).toString() + '. [' + items[i].sourceName + '] ' + items[i].title +
+        (items[i].summary.length > 0 ? ' —— ' + items[i].summary.trim().substring(0, 100) : '') + '\n';
+    }
+    const system: string = '你是一位新闻分析助手。请基于搜索结果，围绕关键词输出结构化摘要，只使用给定信息，不编造。';
+    const user: string = '搜索关键词：' + keyword + '\n搜索结果：\n' + list + '\n\n请输出：\n' +
+      '1. 一句话概述该主题当前动态；\n' +
+      '2. 按 3~5 条要点梳理（每条 - 开头，含来源）；\n' +
+      '3. 若结果与关键词相关性弱，请说明。\n使用 Markdown。';
+    const messages: ChatMessage[] = [ChatMessage.create('system', system), ChatMessage.create('user', user)];
+    return await LlmClient.postCompletionStream(config, messages, onDelta, undefined,
+      NewsAiService.newsContext('search'));
+  }
+
   // ==================== AI 热点速递（流式生成分类热点梳理） ====================
   // 输出风格：🌍国际要闻 / 🇨🇳国内热点 / 💡财经科技 / 📌今日看点，每条含标题 + 2~3 句描述
   static async generateHotspot(config: LlmConfig, items: NewsItem[], dateLabel: string,
@@ -130,6 +150,25 @@ export class NewsAiService {
         (items[i].title + '（' + items[i].sourceName + '）');
       list = list + (i + 1).toString() + '. ' + s + '\n';
     }
+    // 可选：联网搜索补充热点信息（「设置 → AI对话 → 联网搜索」配置了接口时生效）
+    let webExtra: string = '';
+    try {
+      const searchBase: string = await DataRepository.getSetting('webSearchBaseUrl', '');
+      if (searchBase.trim().length > 0) {
+        const searchKey: string = await DataRepository.getSetting('webSearchApiKey', '');
+        const results: WebSearchResult[] = await WebSearchService.search('今日热点新闻 国际 国内 科技 财经', searchBase, searchKey);
+        if (results.length > 0) {
+          let block: string = '';
+          const wCount: number = results.length > 12 ? 12 : results.length;
+          for (let i: number = 0; i < wCount; i++) {
+            block = block + '- ' + results[i].title +
+              (results[i].snippet.trim().length > 0 ? '：' + results[i].snippet.trim() : '') + '\n';
+          }
+          webExtra = '\n\n【联网搜索补充信息（可参考，注意甄别时效性）】\n' + block;
+        }
+      }
+    } catch (e) {
+    }
     const system: string = '你是一位资深新闻主编。请基于用户提供的当天新闻标题与摘要，梳理一份详实的「热点速递」。' +
       '要求：只基于给定信息组织内容，不要编造具体细节、数字或人名；信息不足时写明「据现有信息」。';
     const user: string = '今天是' + dateLabel + '。以下是聚合的当天新闻（含来源）：\n' + list + '\n\n' +
@@ -140,7 +179,7 @@ export class NewsAiService {
       '## 🇨🇳 国内热点\n同上\n' +
       '## 💡 财经科技\n同上\n' +
       '## 📌 今日看点\n结尾一段话总结当日核心焦点（3~4 句）\n' +
-      '分类中没有合适内容的可省略该分类。使用 Markdown 输出，每条新闻尽量给足信息量。';
+      '分类中没有合适内容的可省略该分类。使用 Markdown 输出，每条新闻尽量给足信息量。' + webExtra;
     const messages: ChatMessage[] = [ChatMessage.create('system', system), ChatMessage.create('user', user)];
     return await LlmClient.postCompletionStream(config, messages, onDelta, undefined,
       NewsAiService.newsContext('hotspot'));

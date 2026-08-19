@@ -2,10 +2,13 @@
 import { ToolDefinition, ToolResult, ToolLevel } from '../common/AgentModels';
 import { WebSearchService, WebSearchResult } from './WebSearchService';
 import { DataRepository } from './DataRepository';
+import { NewsService } from './NewsService';
+import { NewsItem } from '../common/NewsModels';
 
 const CALC_SCHEMA = '{"type":"object","properties":{"expression":{"type":"string","description":"数学表达式，如 123*45+7"}},"required":["expression"]}';
 const NOW_SCHEMA = '{"type":"object","properties":{}}';
 const SEARCH_SCHEMA = '{"type":"object","properties":{"query":{"type":"string","description":"搜索关键词"}},"required":["query"]}';
+const NEWS_SCHEMA = '{"type":"object","properties":{}}';
 
 export class ToolRegistry {
   // 当前支持的 SAFe 工具列表
@@ -13,7 +16,8 @@ export class ToolRegistry {
     return [
       new ToolDefinition('calculator', '计算数学表达式，支持 + - * / 与括号', CALC_SCHEMA, 'SAFE'),
       new ToolDefinition('now', '获取当前日期与时间', NOW_SCHEMA, 'SAFE'),
-      new ToolDefinition('web_search', '联网搜索，返回相关结果摘要', SEARCH_SCHEMA, 'SAFE')
+      new ToolDefinition('web_search', '联网搜索，返回相关结果摘要', SEARCH_SCHEMA, 'SAFE'),
+      new ToolDefinition('news_top', '获取今日热点新闻标题列表（含来源），供回答近期热点问题', NEWS_SCHEMA, 'SAFE')
     ];
   }
 
@@ -21,7 +25,25 @@ export class ToolRegistry {
     if (name === 'calculator') return ToolRegistry.runCalculator(argsJson);
     if (name === 'now') return new ToolResult('', true, ToolRegistry.nowText(), '');
     if (name === 'web_search') return await ToolRegistry.runSearch(argsJson);
+    if (name === 'news_top') return await ToolRegistry.runNewsTop();
     return new ToolResult('', false, '', '未知工具：' + name);
+  }
+
+  // ---- 今日热点新闻（资讯功能数据） ----
+  private static async runNewsTop(): Promise<ToolResult> {
+    try {
+      const items: NewsItem[] = await NewsService.fetchChannel('recommend', 10, false);
+      if (items.length === 0) {
+        return new ToolResult('', false, '', '暂无新闻数据，请检查网络');
+      }
+      let text: string = '今日热点新闻（共 ' + items.length.toString() + ' 条）：\n';
+      for (let i: number = 0; i < items.length; i++) {
+        text = text + (i + 1).toString() + '. [' + items[i].sourceName + '] ' + items[i].title + '\n';
+      }
+      return new ToolResult('', true, text, '');
+    } catch (e) {
+      return new ToolResult('', false, '', '获取新闻失败');
+    }
   }
 
   // ---- 计算器（递归下降，仅支持 + - * / 括号与小数，无 eval） ----

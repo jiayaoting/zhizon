@@ -1,6 +1,9 @@
 // 智子 - 新闻详情页（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI）
 import { webview } from '@kit.ArkWeb';
-import { pasteboard } from '@kit.BasicServicesKit';
+import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
+import { systemShare } from '@kit.ShareKit';
+import { uniformTypeDescriptor as utd } from '@kit.ArkData';
+import { common } from '@kit.AbilityKit';
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
@@ -9,6 +12,7 @@ import { NewsModelSelector } from '../components/NewsModelSelector';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { NewsItem, NewsDetailRouteParams } from '../common/NewsModels';
 import { NewsRepository } from '../service/NewsRepository';
+import { NewsArticleCacheEntry } from '../service/DatabaseHelper';
 import { NewsAiService } from '../service/NewsAiService';
 import { SpeechService } from '../service/SpeechService';
 import { LlmConfig, ChatMessage, LlmResult } from '../common/LlmModels';
@@ -167,6 +171,70 @@ export struct NewsDetailPage {
       if (this.askHistory.length > 8) {
         this.askHistory = this.askHistory.slice(this.askHistory.length - 8);
       }
+    }
+  }
+
+  // ==================== 离线正文缓存 ====================
+
+  // 页面加载完成：抓取当前页面 HTML 存入缓存（供离线/弱网时回退阅读）
+  private cacheArticleHtml(): void {
+    if (this.item.url.length === 0) return;
+    try {
+      this.controller.runJavaScript('document.documentElement.outerHTML',
+        (error: BusinessError, result: string): void => {
+          if (error !== null && error !== undefined) return;
+          const html: string = result === undefined ? '' : result;
+          // 空页/过小页面不缓存；过大页面截断，避免数据库膨胀
+          if (html.length < 500 || html.length > 800 * 1024) return;
+          NewsRepository.saveArticleCache(this.item.url, this.item.title, html).catch(() => {
+          });
+        });
+    } catch (e) {
+    }
+  }
+
+  // 加载失败：尝试用缓存 HTML 回退（离线阅读）
+  private useCachedArticle(): void {
+    if (this.item.url.length === 0) {
+      this.webFailed = true;
+      return;
+    }
+    NewsRepository.getArticleCache(this.item.url).then((cached: NewsArticleCacheEntry | null) => {
+      if (cached !== null && cached.html.length > 0) {
+        try {
+          this.controller.loadData(cached.html, 'text/html', 'UTF-8', this.item.url);
+        } catch (e) {
+          this.webFailed = true;
+        }
+      } else {
+        this.webFailed = true;
+      }
+    }).catch(() => {
+      this.webFailed = true;
+    });
+  }
+
+  // ==================== 分享 ====================
+
+  private shareNews(): void {
+    const text: string = '【' + this.item.sourceName + '】' + this.item.title + '\n' +
+      (this.item.summary.length > 0 ? this.item.summary + '\n' : '') +
+      '原文：' + this.item.url + '\n—— 来自 智子 AI 资讯';
+    try {
+      const data: systemShare.SharedData = new systemShare.SharedData({
+        utd: utd.UniformDataType.PLAIN_TEXT,
+        content: text
+      });
+      const controller: systemShare.ShareController = new systemShare.ShareController(data);
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      const options: systemShare.ShareControllerOptions = {
+        previewMode: systemShare.SharePreviewMode.DETAIL,
+        selectionMode: systemShare.SelectionMode.SINGLE
+      };
+      controller.show(context, options).catch((e: Object) => {
+      });
+    } catch (e) {
+      promptAction.showToast({ message: '分享失败' });
     }
   }
 
@@ -380,7 +448,15 @@ export struct NewsDetailPage {
   build() {
     Stack() {
       Column() {
-        TopBar({ title: '新闻详情', showBack: true })
+        TopBar({ title: '新闻详情', showBack: true }) {
+          Row() {
+            Text('📤')
+              .fontSize(this.themeState.palette.fsLg)
+              .fontFamily(this.themeState.palette.fontSans)
+              .padding(6)
+              .onClick(() => { this.shareNews(); })
+          }
+        }
 
         if (this.item.url.length === 0) {
           Column({ space: 12 }) {
@@ -480,14 +556,17 @@ export struct NewsDetailPage {
             .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
             .borderRadius(12)
 
-            // 正文（ArkWeb 加载原文）
+            // 正文（ArkWeb 加载原文；成功时缓存正文供离线阅读，失败时回退缓存）
             Column() {
               if (!this.webFailed) {
                 Web({ src: this.item.url, controller: this.controller })
                   .width('100%')
                   .layoutWeight(1)
+                  .onPageEnd(() => {
+                    this.cacheArticleHtml();
+                  })
                   .onErrorReceive(() => {
-                    this.webFailed = true;
+                    this.useCachedArticle();
                   })
               } else {
                 this.fallbackContent()

@@ -1,6 +1,13 @@
 // 智子 - 新闻数据仓库门面（收藏 / 已读 / AI 今日要闻缓存）
-import { DatabaseHelper } from './DatabaseHelper';
+import { DatabaseHelper, NewsArticleCacheEntry } from './DatabaseHelper';
 import { NewsItem, NewsDigestEntry } from '../common/NewsModels';
+
+// 资讯统计
+export interface NewsStats {
+  favoriteCount: number;
+  readCount: number;
+  aiCallCount: number;
+}
 
 // 频道快照缓存行结构（显式 interface，满足 arkts-no-untyped-obj-literals）
 interface NewsCacheRow {
@@ -105,6 +112,40 @@ export class NewsRepository {
 
   static async deleteTodayDigest(): Promise<void> {
     await DatabaseHelper.deleteNewsDigest(NewsRepository.todayKey());
+  }
+
+  // ==================== 正文缓存（离线全文阅读） ====================
+
+  static async saveArticleCache(url: string, title: string, html: string): Promise<void> {
+    if (url.trim().length === 0 || html.trim().length === 0) return;
+    await DatabaseHelper.saveNewsArticleCache(url.trim(), title, html);
+  }
+
+  static async getArticleCache(url: string): Promise<NewsArticleCacheEntry | null> {
+    return await DatabaseHelper.getNewsArticleCache(url);
+  }
+
+  // ==================== 统计与清理 ====================
+
+  static async stats(): Promise<NewsStats> {
+    const stats: NewsStats = {
+      favoriteCount: await DatabaseHelper.countNewsFavorites(),
+      readCount: await DatabaseHelper.countNewsRead(),
+      aiCallCount: await DatabaseHelper.countNewsAiCalls()
+    };
+    return stats;
+  }
+
+  static async clearRead(): Promise<void> {
+    await DatabaseHelper.clearNewsRead();
+  }
+
+  static async clearChannelCache(): Promise<void> {
+    await DatabaseHelper.clearNewsChannelCache();
+  }
+
+  static async clearArticleCache(): Promise<void> {
+    await DatabaseHelper.clearNewsArticleCache();
   }
 
   // ==================== 频道快照缓存（离线阅读） ====================
