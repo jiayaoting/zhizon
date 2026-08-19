@@ -35,6 +35,17 @@ export class GomokuEngine {
     return board[r][c] === 0;
   }
 
+  // 深拷贝棋盘（悔棋快照 / 引擎搜索用，避免修改 @State）
+  static cloneBoard(board: number[][]): number[][] {
+    const out: number[][] = [];
+    for (let r: number = 0; r < board.length; r++) {
+      const row: number[] = [];
+      for (let c: number = 0; c < board[r].length; c++) row.push(board[r][c]);
+      out.push(row);
+    }
+    return out;
+  }
+
   // 落子（调用方保证合法）
   static place(board: number[][], r: number, c: number, player: number): void {
     board[r][c] = player;

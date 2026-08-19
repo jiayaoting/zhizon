@@ -18,6 +18,11 @@ export const CHESS_KIND_RED: string = 'ChineseChess_red';
 export const CHESS_KIND_BLACK: string = 'ChineseChess_black';
 export const CHESS_KIND_AI: string = 'ChineseChess_ai';
 
+// 五子棋各侧别的模型记忆子键（黑方 / 白方 / AI 方分别独立记忆）
+export const GOMOKU_KIND_BLACK: string = 'Gomoku_black';
+export const GOMOKU_KIND_WHITE: string = 'Gomoku_white';
+export const GOMOKU_KIND_AI: string = 'Gomoku_ai';
+
 // 组装当前游戏的模型记忆键；非游戏场景（聊天/AI 默认）使用默认键
 export function aiModelKeyFor(kind: string): string {
   if (kind.length === 0) return AI_MODEL_KEY_PREFIX;
@@ -157,7 +162,7 @@ export class GameAIService {
 
   // ---- Prompt 构建 ----
 
-  static systemPrompt(kind: GameKind, difficulty: DifficultyLevel): string {
+  static systemPrompt(kind: GameKind, difficulty: DifficultyLevel, side: string = ''): string {
     const diff: string = difficultyLabel(difficulty);
     if (kind === '2048') {
       return '你正在玩 2048 闯关模式。数字表示方块值，0 表示空格。\n' +
@@ -209,7 +214,8 @@ export class GameAIService {
         '输出格式（严格）：MOVE 序号（例如 MOVE 1），不要输出任何其他文字、解释或坐标。';
     }
     if (kind === 'Gomoku') {
-      return '你在下五子棋。棋盘 15 行 × 15 列，你是黑方（先手）。\n' +
+      const me: string = side === 'white' ? '白方（后手）' : '黑方（先手）';
+      return '你在下五子棋。棋盘 15 行 × 15 列，你是' + me + '。\n' +
         '当前难度：' + diff + '。\n' +
         '规则：黑白双方轮流在交叉点落子，率先形成横向、纵向或斜向连续 5 子（含 5 子以上）的一方获胜。\n' +
         '用户消息中会列出当前棋盘和你所有可选的落子位置（每条带【序号】和坐标 (行,列)，均从 0 开始）。\n' +
@@ -231,6 +237,14 @@ export class GameAIService {
   static buildMessages(kind: GameKind, difficulty: DifficultyLevel, stateText: string): ChatMessage[] {
     return [
       ChatMessage.create('system', GameAIService.systemPrompt(kind, difficulty)),
+      ChatMessage.create('user', stateText)
+    ];
+  }
+
+  // 五子棋专用：按执子方（黑/白）构建请求消息，让模型知道自己执黑还是执白
+  static buildGomokuMessages(side: string, difficulty: DifficultyLevel, stateText: string): ChatMessage[] {
+    return [
+      ChatMessage.create('system', GameAIService.systemPrompt('Gomoku', difficulty, side)),
       ChatMessage.create('user', stateText)
     ];
   }
@@ -754,11 +768,13 @@ export class GameAIService {
     return out;
   }
 
-  // 五子棋棋盘序列化：棋盘 + 当前轮到黑方（LLM 托管时黑方由 LLM 执子）+ 可选落子序号列表
-  static serializeGomoku(board: number[][], legalMoves: number[][]): string {
+  // 五子棋棋盘序列化：棋盘 + 当前执子方（'black' | 'white'）+ 可选落子序号列表
+  static serializeGomoku(board: number[][], legalMoves: number[][], side: string = 'black'): string {
+    const me: string = side === 'white' ? '白方（你）' : '黑方（你）';
+    const enc: string = side === 'white' ? '1=黑子（对手），2=白子（你）' : '1=黑子（你），2=白子（对手）';
     let out: string = '五子棋棋盘，15行 × 15列。行号row和列号col都从0开始。\n';
-    out = out + '棋子编码：1=黑子（你），2=白子（对手），0=空位。\n';
-    out = out + '当前轮到：黑方（你）落子。\n';
+    out = out + '棋子编码：' + enc + '，0=空位。\n';
+    out = out + '当前轮到：' + me + '落子。\n';
     out = out + '     col:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14\n';
     for (let r: number = 0; r < board.length; r++) {
       let line: string = 'row' + r.toString().padStart(2, ' ') + '  ';
@@ -767,7 +783,7 @@ export class GameAIService {
       }
       out = out + line + '\n';
     }
-    out = out + '\n【当前你（黑方）可选的全部落子位置】\n';
+    out = out + '\n【当前你（' + (side === 'white' ? '白方' : '黑方') + '）可选的全部落子位置】\n';
     out = out + '你必须从下面' + legalMoves.length.toString() + '个位置里选一个，禁止输出表中不存在的坐标。\n';
     out = out + '每条格式：序号 | (行,列)\n';
     for (let i: number = 0; i < legalMoves.length; i++) {
