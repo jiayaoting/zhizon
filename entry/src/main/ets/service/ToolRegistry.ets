@@ -9,6 +9,7 @@ const CALC_SCHEMA = '{"type":"object","properties":{"expression":{"type":"string
 const NOW_SCHEMA = '{"type":"object","properties":{}}';
 const SEARCH_SCHEMA = '{"type":"object","properties":{"query":{"type":"string","description":"搜索关键词"}},"required":["query"]}';
 const NEWS_SCHEMA = '{"type":"object","properties":{}}';
+const NEWS_SEARCH_SCHEMA = '{"type":"object","properties":{"query":{"type":"string","description":"新闻搜索关键词"}},"required":["query"]}';
 
 export class ToolRegistry {
   // 当前支持的 SAFe 工具列表
@@ -17,7 +18,8 @@ export class ToolRegistry {
       new ToolDefinition('calculator', '计算数学表达式，支持 + - * / 与括号', CALC_SCHEMA, 'SAFE'),
       new ToolDefinition('now', '获取当前日期与时间', NOW_SCHEMA, 'SAFE'),
       new ToolDefinition('web_search', '联网搜索，返回相关结果摘要', SEARCH_SCHEMA, 'SAFE'),
-      new ToolDefinition('news_top', '获取今日热点新闻标题列表（含来源），供回答近期热点问题', NEWS_SCHEMA, 'SAFE')
+      new ToolDefinition('news_top', '获取今日热点新闻标题列表（含来源），供回答近期热点问题', NEWS_SCHEMA, 'SAFE'),
+      new ToolDefinition('news_search', '按关键词搜索新闻，返回标题与摘要', NEWS_SEARCH_SCHEMA, 'SAFE')
     ];
   }
 
@@ -26,7 +28,27 @@ export class ToolRegistry {
     if (name === 'now') return new ToolResult('', true, ToolRegistry.nowText(), '');
     if (name === 'web_search') return await ToolRegistry.runSearch(argsJson);
     if (name === 'news_top') return await ToolRegistry.runNewsTop();
+    if (name === 'news_search') return await ToolRegistry.runNewsSearch(argsJson);
     return new ToolResult('', false, '', '未知工具：' + name);
+  }
+
+  // ---- 新闻搜索 ----
+  private static async runNewsSearch(argsJson: string): Promise<ToolResult> {
+    try {
+      const args: Record<string, Object> = JSON.parse(argsJson) as Record<string, Object>;
+      const query: string = typeof args['query'] === 'string' ? args['query'] as string : '';
+      if (query.trim().length === 0) return new ToolResult('', false, '', '搜索关键词为空');
+      const items: NewsItem[] = await NewsService.search(query.trim(), 10);
+      if (items.length === 0) return new ToolResult('', false, '', '未找到相关新闻');
+      let text: string = '搜索「' + query.trim() + '」结果（' + items.length.toString() + ' 条）：\n';
+      for (let i: number = 0; i < items.length; i++) {
+        text = text + (i + 1).toString() + '. [' + items[i].sourceName + '] ' + items[i].title +
+          (items[i].summary.length > 0 ? ' —— ' + items[i].summary.trim().substring(0, 60) : '') + '\n';
+      }
+      return new ToolResult('', true, text, '');
+    } catch (e) {
+      return new ToolResult('', false, '', '搜索新闻失败');
+    }
   }
 
   // ---- 今日热点新闻（资讯功能数据） ----

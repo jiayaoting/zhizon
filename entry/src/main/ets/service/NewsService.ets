@@ -94,6 +94,33 @@ export class NewsService {
     return result;
   }
 
+  // 知乎日报文章 id（'zhihu:123' → '123'；非 zhihu 源返回空）
+  static zhihuStoryId(itemId: string): string {
+    if (itemId.indexOf('zhihu:') === 0) {
+      return itemId.substring('zhihu:'.length);
+    }
+    return '';
+  }
+
+  // 抓取知乎日报正文 HTML（/api/4/news/{id}），补全相对图片协议；失败返回空串
+  static async fetchZhihuStory(storyId: string): Promise<string> {
+    if (storyId.length === 0) return '';
+    try {
+      const url: string = 'https://news-at.zhihu.com/api/4/news/' + storyId;
+      const text: string = await NewsService.httpGet(url);
+      if (text.trim().length === 0) return '';
+      const parsed: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
+      const body: Object = parsed['body'];
+      if (typeof body !== 'string') return '';
+      let html: string = body as string;
+      html = html.replace(/src="\/\//g, 'src="https://');
+      html = html.replace(/src="http:\/\//g, 'src="https://');
+      return html;
+    } catch (e) {
+      return '';
+    }
+  }
+
   // 跨源关键词搜索：Hacker News Algolia 搜索 + 本地各源标题/摘要过滤，合并去重
   static async search(keyword: string, limit: number = 30): Promise<NewsItem[]> {
     const q: string = keyword.trim();
@@ -124,6 +151,76 @@ export class NewsService {
     }
     if (arrays.length === 0) return [];
     return NewsService.merge(arrays, limit);
+  }
+
+  // 解析 OPML 订阅列表（<outline text="名称" xmlUrl="RSS地址"/>，支持嵌套分组）
+  static parseOpml(xml: string): NewsSourceDef[] {
+    const sources: NewsSourceDef[] = [];
+    if (xml.trim().length === 0) return sources;
+    try {
+      const conv: convertxml.ConvertXML = new convertxml.ConvertXML();
+      const options: XmlConvertOptions = {
+        trim: false,
+        declarationKey: '_declaration',
+        instructionKey: '_instruction',
+        attributesKey: '_attributes',
+        textKey: '_text',
+        cdataKey: '_cdata',
+        doctypeKey: '_doctype',
+        commentKey: '_comment',
+        parentKey: '_parent',
+        typeKey: '_type',
+        nameKey: '_name',
+        elementsKey: '_elements'
+      };
+      const root: Record<string, Object> = conv.convertToJSObject(xml, options) as Record<string, Object>;
+      const opml: Object | undefined = root['opml'];
+      if (opml !== undefined) {
+        const opmlObj: Record<string, Object> = opml as Record<string, Object>;
+        const body: Object | undefined = opmlObj['body'];
+        if (body !== undefined) {
+          const bodyObj: Record<string, Object> = body as Record<string, Object>;
+          const outline: Object | undefined = bodyObj['outline'];
+          if (outline !== undefined) {
+            NewsService.collectOpmlOutlines(outline, sources);
+          }
+        }
+      }
+    } catch (e) {
+    }
+    return sources;
+  }
+
+  // 递归收集 OPML outline（支持嵌套分组）
+  private static collectOpmlOutlines(outline: Object, sources: NewsSourceDef[]): void {
+    if (Array.isArray(outline)) {
+      const arr: Object[] = outline as Object[];
+      for (let i: number = 0; i < arr.length; i++) {
+        NewsService.collectOpmlOutlines(arr[i], sources);
+      }
+      return;
+    }
+    const node: Record<string, Object> = outline as Record<string, Object>;
+    const attrs: Object | undefined = node['_attributes'];
+    let title: string = '';
+    let xmlUrl: string = '';
+    if (attrs !== undefined) {
+      const attrObj: Record<string, Object> = attrs as Record<string, Object>;
+      const t: Object | undefined = attrObj['title'] !== undefined ? attrObj['title'] : attrObj['text'];
+      if (typeof t === 'string') title = (t as string).trim();
+      const u: Object | undefined = attrObj['xmlUrl'] !== undefined ? attrObj['xmlUrl'] : attrObj['url'];
+      if (typeof u === 'string') xmlUrl = (u as string).trim();
+    }
+    if (xmlUrl.length > 0 && (xmlUrl.indexOf('http://') === 0 || xmlUrl.indexOf('https://') === 0)) {
+      const name: string = title.length > 0 ? title : xmlUrl;
+      sources.push(new NewsSourceDef('custom:' + NewsService.simpleHash(xmlUrl), name,
+        'recommend', 'rss', xmlUrl));
+    }
+    // 嵌套 outline
+    const nested: Object | undefined = node['outline'];
+    if (nested !== undefined) {
+      NewsService.collectOpmlOutlines(nested, sources);
+    }
   }
 
   // 读取用户自定义 RSS 订阅（settings.newsCustomRss：JSON 数组 [{name, url}]）
@@ -263,6 +360,10 @@ export class NewsService {
               const first: Object = (images as Object[])[0];
               if (typeof first === 'string') image = first as string;
             }
+          }
+          // 缩略图参数：减小列表流量
+          if (image.length > 0 && image.indexOf('?') < 0) {
+            image = image + '?imageView2/0/w/480';
           }
           items.push(new NewsItem('zhihu:' + id, title, hint, url, image, 'zhihu', '知乎日报',
             'recommend', now - i * 60000));

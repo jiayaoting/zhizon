@@ -41,7 +41,7 @@ zhizon/
 
 | Type | Count | Description |
 |------|-------|-------------|
-| ArkTS source | 57 | 1 entryability + 11 common + 2 model + 15 service + 12 components + 16 pages |
+| ArkTS source | 75 | 1 entryability + 13 common + 2 model + 18 service + 15 components + 22 pages（新增新闻资讯模块） |
 | Test files | 6 | DefectClassifier, DefectWorkflow, GameLaunchFacade, NavigationFacade, WindowEnvironmentProvider, WindowEnvironmentSnapshot |
 | Config | 8 | build-profile, oh-package, module.json5, etc. |
 | Resources | 3 | color.json, string.json, main_pages.json |
@@ -93,6 +93,15 @@ Source: README.md > 运行
 - `entry/oh-package.json5` has no external dependencies.
 
 ## 6. Key Modules
+
+### 6.0 News Center（新闻资讯 · 主功能）
+
+- **首页即资讯流**：频道（推荐/科技/AI专题/财经/国际）+ 下拉刷新/上拉加载 + 平板双列/双栏
+- **多源聚合**：知乎日报 / Hacker News / 少数派 / IT之家 / 36氪 / BBC中文（RSS 经 convertxml）+ 自定义 RSS（含 OPML 导入）+ 源开关
+- **AI 能力（手动触发）**：摘要 / 翻译 / 文章问AI / 今日要闻 / 热点速递（联网搜索增强）/ 为你推荐；资讯专属模型切换与记忆
+- **阅读配套**：收藏/稍后读、已读标记、离线频道快照与正文缓存、TTS 朗读、ArkWeb 原文、系统分享、Agent 工具 news_top / news_search
+- **数据表（RDB v14）**：news_favorites / news_read / news_digests / news_cache / news_article_cache
+- **服务层**：NewsService / NewsRepository / NewsAiService
 
 ### 6.1 Game Center
 

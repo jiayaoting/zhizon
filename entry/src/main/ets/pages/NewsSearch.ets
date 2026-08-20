@@ -1,5 +1,6 @@
 // 智子 - 新闻搜索（跨源关键词搜索 + AI 汇总）
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
@@ -47,6 +48,21 @@ export struct NewsSearchPage {
 
   private openDetail(item: NewsItem): void {
     AppNavigator.push('pages/NewsDetail', new NewsDetailRouteParams(item));
+  }
+
+  private openUrl(url: string): void {
+    try {
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      context.startAbility({
+        action: 'ohos.want.action.viewData',
+        entities: ['entity.system.browsable'],
+        uri: url
+      }).catch((e: Object) => {
+        promptAction.showToast({ message: '无法打开链接' });
+      });
+    } catch (e) {
+      promptAction.showToast({ message: '无法打开链接' });
+    }
   }
 
   private async summarize(): Promise<void> {
@@ -157,7 +173,7 @@ export struct NewsSearchPage {
                 .width('100%')
                 .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, bottom: 8 })
             } else {
-              ChatMarkdownText({ content: this.summaryText })
+              ChatMarkdownText({ content: this.summaryText, onLinkTap: (url: string): void => { this.openUrl(url); } })
                 .width('100%')
                 .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, bottom: 8 })
             }

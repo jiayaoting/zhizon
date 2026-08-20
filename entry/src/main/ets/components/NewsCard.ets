@@ -25,6 +25,7 @@ export struct NewsCard {
   @Param read: boolean = false;
   @Event onOpen: (item: NewsItem) => void = () => {};
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local imgFailed: boolean = false;
 
   build() {
     Row({ space: 12 }) {
@@ -55,12 +56,32 @@ export struct NewsCard {
       .layoutWeight(1)
 
       if (this.item.imageUrl.length > 0) {
-        Image(this.item.imageUrl)
-          .width(96)
-          .height(72)
-          .borderRadius(8)
-          .objectFit(ImageFit.Cover)
-          .backgroundColor(this.themeState.palette.bgSurface2)
+        if (this.imgFailed) {
+          // 图片加载失败占位
+          Stack() {
+            Column()
+              .width(96)
+              .height(72)
+              .borderRadius(8)
+              .linearGradient({
+                angle: 135,
+                colors: [[this.themeState.palette.bgSurface2, 0.0], [this.themeState.palette.bgHover, 1.0]]
+              })
+            Text('📰')
+              .fontSize(22)
+              .fontFamily(this.themeState.palette.fontSans)
+          }
+        } else {
+          Image(this.item.imageUrl)
+            .width(96)
+            .height(72)
+            .borderRadius(8)
+            .objectFit(ImageFit.Cover)
+            .backgroundColor(this.themeState.palette.bgSurface2)
+            .onError(() => {
+              this.imgFailed = true;
+            })
+        }
       }
     }
     .width('100%')

@@ -2,6 +2,7 @@
 // 手动触发生成；结果缓存到 news_digests（按日期），可重新生成
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
@@ -26,6 +27,8 @@ export struct NewsDigestPage {
   @Local errorText: string = '';
   // 本次生成使用的候选新闻（用于渲染原文链接区）
   @Local sourceItems: NewsItem[] = [];
+  // 最近一次生成 token 消耗
+  @Local lastTokens: number = 0;
   // 加载序号：防止快速切换模式时旧查询结果覆盖新结果
   private loadSeq: number = 0;
 
@@ -46,6 +49,20 @@ export struct NewsDigestPage {
         this.digest = null;
       }
     }
+  }
+
+  private modeTitle(): string {
+    if (this.mode === 'morning') return '🌅 早报速递';
+    if (this.mode === 'noon') return '🌤️ 午间速递';
+    if (this.mode === 'evening') return '🌙 晚报速递';
+    return '📰 今日要闻';
+  }
+
+  private modeDesc(): string {
+    if (this.mode === 'morning') return 'AI 梳理今晨重要资讯';
+    if (this.mode === 'noon') return 'AI 汇总当天最新进展';
+    if (this.mode === 'evening') return 'AI 复盘全天重要动态';
+    return '聚合当天各源热点，一键生成 8~10 条要闻';
   }
 
   private switchMode(mode: string): void {
@@ -84,14 +101,14 @@ export struct NewsDigestPage {
       }
       this.sourceItems = items;
       let result: LlmResult;
-      if (this.mode === 'hotspot') {
-        result = await NewsAiService.generateHotspot(config, items,
+      if (this.mode === 'digest') {
+        result = await NewsAiService.generateDigest(config, items,
           NewsRepository.todayLabel(), (d: string): void => {
             this.streamText = this.streamText + d;
           });
       } else {
-        result = await NewsAiService.generateDigest(config, items,
-          NewsRepository.todayLabel(), (d: string): void => {
+        result = await NewsAiService.generateHotspot(config, items,
+          NewsRepository.todayLabel(), this.mode, (d: string): void => {
             this.streamText = this.streamText + d;
           });
       }
@@ -104,7 +121,8 @@ export struct NewsDigestPage {
         config.displayName.length > 0 ? config.displayName : config.model, this.mode);
       this.digest = saved;
       this.streamText = '';
-      promptAction.showToast({ message: this.mode === 'hotspot' ? '热点速递已生成' : '今日要闻已生成' });
+      this.lastTokens = result.tokenUsage.totalTokens;
+      promptAction.showToast({ message: this.modeTitle() + '已生成' });
     } catch (e) {
       this.generating = false;
       this.errorText = '生成失败，请重试';
@@ -114,6 +132,22 @@ export struct NewsDigestPage {
   private digestText(): string {
     if (this.digest === null) return '';
     return this.digest.content;
+  }
+
+  // 用系统浏览器打开链接（Markdown 段落链接点击）
+  private openUrl(url: string): void {
+    try {
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      context.startAbility({
+        action: 'ohos.want.action.viewData',
+        entities: ['entity.system.browsable'],
+        uri: url
+      }).catch((e: Object) => {
+        promptAction.showToast({ message: '无法打开链接' });
+      });
+    } catch (e) {
+      promptAction.showToast({ message: '无法打开链接' });
+    }
   }
 
   private digestModel(): string {
@@ -146,17 +180,14 @@ export struct NewsDigestPage {
           // 状态卡
           Row({ space: 10 }) {
             Column({ space: 4 }) {
-              Text(this.mode === 'hotspot' ?
-                (this.digest !== null ? '🔥 热点速递已生成' : '🔥 AI 热点速递') :
-                (this.digest !== null ? '📰 今日简报已生成' : '📰 每天一份 AI 热点简报'))
+              Text(this.digest !== null ? this.modeTitle() + '已生成' : this.modeTitle())
                 .fontSize(this.themeState.palette.fsMd)
                 .fontFamily(this.themeState.palette.fontSans)
                 .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Medium)
               Text(this.digest !== null ?
                 (this.digestModel().length > 0 ? '由 ' + this.digestModel() + ' 生成' : '') :
-                (this.mode === 'hotspot' ? 'AI 梳理国际 / 国内 / 财经科技热点' :
-                  '聚合当天各源热点，一键生成 8~10 条要闻'))
+                this.modeDesc())
                 .fontSize(this.themeState.palette.fsXs)
                 .fontFamily(this.themeState.palette.fontSans)
                 .fontColor(this.themeState.palette.textTertiary)
@@ -179,38 +210,67 @@ export struct NewsDigestPage {
           .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
           .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
 
-          // 模式切换 + 资讯专属模型选择（记忆到 settings.newsModelId）
+          // 模式切换（今日要闻 / 早报 / 午间速递 / 晚报）+ 资讯专属模型选择
           Row({ space: 8 }) {
-            Row({ space: 6 }) {
-              Text('📰 今日要闻')
-                .fontSize(this.themeState.palette.fsSm)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.mode === 'digest' ? this.themeState.palette.primary :
-                  this.themeState.palette.textSecondary)
-                .fontWeight(this.mode === 'digest' ? FontWeight.Bold : FontWeight.Normal)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .borderRadius(14)
-                .backgroundColor(this.mode === 'digest' ? this.themeState.palette.primary + '2A' :
-                  this.themeState.palette.bgSurface2)
-                .onClick(() => { this.switchMode('digest'); })
-              Text('🔥 热点速递')
-                .fontSize(this.themeState.palette.fsSm)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.mode === 'hotspot' ? this.themeState.palette.primary :
-                  this.themeState.palette.textSecondary)
-                .fontWeight(this.mode === 'hotspot' ? FontWeight.Bold : FontWeight.Normal)
-                .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                .borderRadius(14)
-                .backgroundColor(this.mode === 'hotspot' ? this.themeState.palette.primary + '2A' :
-                  this.themeState.palette.bgSurface2)
-                .onClick(() => { this.switchMode('hotspot'); })
+            Scroll() {
+              Row({ space: 6 }) {
+                Text('📰 今日要闻')
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.mode === 'digest' ? this.themeState.palette.primary :
+                    this.themeState.palette.textSecondary)
+                  .fontWeight(this.mode === 'digest' ? FontWeight.Bold : FontWeight.Normal)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .borderRadius(14)
+                  .backgroundColor(this.mode === 'digest' ? this.themeState.palette.primary + '2A' :
+                    this.themeState.palette.bgSurface2)
+                  .onClick(() => { this.switchMode('digest'); })
+                Text('🌅 早报')
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.mode === 'morning' ? this.themeState.palette.primary :
+                    this.themeState.palette.textSecondary)
+                  .fontWeight(this.mode === 'morning' ? FontWeight.Bold : FontWeight.Normal)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .borderRadius(14)
+                  .backgroundColor(this.mode === 'morning' ? this.themeState.palette.primary + '2A' :
+                    this.themeState.palette.bgSurface2)
+                  .onClick(() => { this.switchMode('morning'); })
+                Text('🌤️ 午间')
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.mode === 'noon' ? this.themeState.palette.primary :
+                    this.themeState.palette.textSecondary)
+                  .fontWeight(this.mode === 'noon' ? FontWeight.Bold : FontWeight.Normal)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .borderRadius(14)
+                  .backgroundColor(this.mode === 'noon' ? this.themeState.palette.primary + '2A' :
+                    this.themeState.palette.bgSurface2)
+                  .onClick(() => { this.switchMode('noon'); })
+                Text('🌙 晚报')
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.mode === 'evening' ? this.themeState.palette.primary :
+                    this.themeState.palette.textSecondary)
+                  .fontWeight(this.mode === 'evening' ? FontWeight.Bold : FontWeight.Normal)
+                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                  .borderRadius(14)
+                  .backgroundColor(this.mode === 'evening' ? this.themeState.palette.primary + '2A' :
+                    this.themeState.palette.bgSurface2)
+                  .onClick(() => { this.switchMode('evening'); })
+              }
+              .padding({ left: 14, right: 14 })
             }
-            Blank()
+            .layoutWeight(1)
+            .scrollable(ScrollDirection.Horizontal)
+            .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.None)
+
             NewsModelSelector()
-              .width(180)
+              .width(150)
           }
           .width('100%')
-          .padding({ left: 14, right: 14, top: 0, bottom: 12 })
+          .padding({ left: 0, right: 14, top: 0, bottom: 12 })
 
           if (this.generating) {
             Row({ space: 8 }) {
@@ -252,7 +312,7 @@ export struct NewsDigestPage {
               // 用 ForEach 单元素 + 唯一 key 强制重建渲染组件：
               // V1 ChatMarkdownText 在 V2 页面中 @Prop 更新可能不触发重解析，key 变化会卸载重建
               ForEach([this.digestText()], (content: string) => {
-                ChatMarkdownText({ content: content })
+                ChatMarkdownText({ content: content, onLinkTap: (url: string): void => { this.openUrl(url); } })
                   .width('100%')
               }, (content: string) => 'md-' + this.mode + '-' +
                 (this.digest !== null ? this.digest.id : 'empty'))
@@ -279,6 +339,15 @@ export struct NewsDigestPage {
               }
               .width('100%')
               .margin({ top: 8 })
+
+              if (this.lastTokens > 0) {
+                Text('本次生成消耗 ' + this.lastTokens.toString() + ' tokens')
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 10 })
+              }
 
               // 原文链接区：来自本次真实源数据，点击打开详情（原文 ArkWeb）
               if (this.sourceItems.length > 0) {
@@ -321,16 +390,14 @@ export struct NewsDigestPage {
               }
             } else {
               Column({ space: 10 }) {
-                Text(this.mode === 'hotspot' ? '🔥' : '🤖')
+                Text(this.mode === 'digest' ? '🤖' : '🌤️')
                   .fontSize(46)
                   .fontFamily(this.themeState.palette.fontSans)
-                Text(this.mode === 'hotspot' ? '今天还没有生成热点速递' : '今天还没有生成简报')
+                Text('今天还没有生成' + (this.mode === 'digest' ? '简报' : '速递'))
                   .fontSize(this.themeState.palette.fsLg)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.textPrimary)
-                Text(this.mode === 'hotspot' ?
-                  '点击上方「生成」按钮，AI 将梳理国际 / 国内 / 财经科技热点' :
-                  '点击上方「生成」按钮，AI 将聚合当天新闻热点并生成简报')
+                Text('点击上方「生成」按钮，' + this.modeDesc())
                   .fontSize(this.themeState.palette.fsSm)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.textTertiary)

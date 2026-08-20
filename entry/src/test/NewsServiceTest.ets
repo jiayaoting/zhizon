@@ -54,6 +54,23 @@ export default function NewsServiceTest() {
       expect(items[0].url).assertEqual('https://example.com/atom/1');
     });
 
+    it('parses opml subscriptions', 0, () => {
+      const xml = '<?xml version="1.0" encoding="UTF-8"?><opml version="2.0"><body><outline text="科技组"><outline text="少数派" xmlUrl="https://sspai.com/feed"/><outline text="IT之家" xmlUrl="https://www.ithome.com/rss/"/></outline><outline text="无链接分组"><outline text="空源"/></outline></body></opml>';
+      const sources: NewsSourceDef[] = NewsService.parseOpml(xml);
+      expect(sources.length).assertEqual(2);
+      expect(sources[0].name).assertEqual('少数派');
+      expect(sources[0].url).assertEqual('https://sspai.com/feed');
+      expect(sources[0].type).assertEqual('rss');
+      expect(sources[1].name).assertEqual('IT之家');
+    });
+
+    it('tolerates malformed opml', 0, () => {
+      const sources: NewsSourceDef[] = NewsService.parseOpml('not xml');
+      expect(sources.length).assertEqual(0);
+      const empty: NewsSourceDef[] = NewsService.parseOpml('');
+      expect(empty.length).assertEqual(0);
+    });
+
     it('merges and dedupes by url', 0, () => {
       const a: NewsItem = new NewsItem('a1', 'A', '', 'https://x.com/a', '', 's1', 'S1', 'tech', 1000);
       const aDup: NewsItem = new NewsItem('a2', 'A 重复', '', 'https://x.com/a', '', 's2', 'S2', 'tech', 2000);

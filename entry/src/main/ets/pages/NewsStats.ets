@@ -4,6 +4,8 @@ import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { NewsRepository, NewsStats } from '../service/NewsRepository';
+import { NewsService } from '../service/NewsService';
+import { NewsItem } from '../common/NewsModels';
 
 @ComponentV2
 @Entry
@@ -28,6 +30,20 @@ export struct NewsStatsPage {
     await NewsRepository.clearRead();
     this.loadStats();
     promptAction.showToast({ message: '已清空阅读记录' });
+  }
+
+  // 把当前资讯流（推荐频道前 50 条）全部标记为已读
+  private async markAllRead(): Promise<void> {
+    try {
+      const items: NewsItem[] = await NewsService.fetchChannel('recommend', 50, false);
+      for (let i: number = 0; i < items.length; i++) {
+        await NewsRepository.markRead(items[i].url);
+      }
+      this.loadStats();
+      promptAction.showToast({ message: '已将 ' + items.length.toString() + ' 篇资讯标记为已读' });
+    } catch (e) {
+      promptAction.showToast({ message: '操作失败，请重试' });
+    }
   }
 
   @Builder
@@ -89,6 +105,36 @@ export struct NewsStatsPage {
               .borderRadius(14)
               .height(32)
               .onClick(() => { this.clearRead(); })
+          }
+          .width('100%')
+          .padding(14)
+          .borderRadius(12)
+          .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+          .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+          .alignItems(VerticalAlign.Center)
+
+          Row() {
+            Column({ space: 4 }) {
+              Text('标记全部已读')
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+              Text('将当前资讯流（推荐频道）全部标记为已读')
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            Button('标记')
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(Color.White)
+              .backgroundColor(this.themeState.palette.primary)
+              .borderRadius(14)
+              .height(32)
+              .onClick(() => { this.markAllRead(); })
           }
           .width('100%')
           .padding(14)

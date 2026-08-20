@@ -141,7 +141,7 @@ export class NewsAiService {
   // ==================== AI 热点速递（流式生成分类热点梳理） ====================
   // 输出风格：🌍国际要闻 / 🇨🇳国内热点 / 💡财经科技 / 📌今日看点，每条含标题 + 2~3 句描述
   static async generateHotspot(config: LlmConfig, items: NewsItem[], dateLabel: string,
-    onDelta: (delta: string) => void): Promise<LlmResult> {
+    period: string, onDelta: (delta: string) => void): Promise<LlmResult> {
     let list: string = '';
     const count: number = items.length > 60 ? 60 : items.length;
     for (let i: number = 0; i < count; i++) {
@@ -171,9 +171,12 @@ export class NewsAiService {
     }
     const system: string = '你是一位资深新闻主编。请基于用户提供的当天新闻标题与摘要，梳理一份详实的「热点速递」。' +
       '要求：只基于给定信息组织内容，不要编造具体细节、数字或人名；信息不足时写明「据现有信息」。';
+    const periodTitle: string = period === 'morning' ? '早报速递' : (period === 'evening' ? '晚报速递' : '午间速递');
+    const periodDesc: string = period === 'morning' ? '梳理今晨重要资讯' :
+      (period === 'evening' ? '复盘全天重要动态' : '汇总当天最新进展');
     const user: string = '今天是' + dateLabel + '。以下是聚合的当天新闻（含来源）：\n' + list + '\n\n' +
-      '请输出「热点速递」，格式如下（严格按此结构）：\n' +
-      '顶部一行：🌤️ 时段速递 · ' + dateLabel + '\n' +
+      '请输出「' + periodTitle + '」（' + periodDesc + '），格式如下（严格按此结构）：\n' +
+      '顶部一行：🌤️ ' + periodTitle + ' · ' + dateLabel + '\n' +
       '---\n' +
       '## 🌍 国际要闻\n每条：**① 标题** + 3~4 句详细描述（事件本身、背景、各方反应与影响，编号 ①②…）\n' +
       '## 🇨🇳 国内热点\n同上\n' +

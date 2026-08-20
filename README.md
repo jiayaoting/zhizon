@@ -148,9 +148,12 @@ zhizon/
 | ChineseChess | 中国象棋（人机 / 人对AI / AI对AI + 悔棋 + 记谱） |
 | Gomoku | 五子棋（人机 / 人对AI / AI对AI + 模型可选 + 悔棋 + AI 提示） |
 | AiCallLog | AI 调用记录（场景/模型/耗时/成败列表 + 详情展开 + 清空） |
-| NewsDetail | 新闻详情（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI 面板） |
-| NewsDigest | AI 今日要闻（手动生成当天热点简报，可重新生成/复制） |
+| NewsDetail | 新闻详情（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI/朗读 + 离线正文缓存 + 分享） |
+| NewsDigest | AI 今日要闻 / 热点速递（手动生成，Markdown 渲染 + 原文链接 + 模型切换） |
 | NewsFavorites | 收藏 / 稍后读列表 |
+| NewsRecommend | 为你推荐（基于收藏历史 + AI 排序） |
+| NewsSearch | 新闻搜索（跨源关键词 + AI 汇总） |
+| NewsStats | 资讯统计（收藏/已读/AI 调用数 + 清空阅读记录） |
 
 ## AI 对话功能
 

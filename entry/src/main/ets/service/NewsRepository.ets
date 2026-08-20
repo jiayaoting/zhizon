@@ -93,10 +93,14 @@ export class NewsRepository {
     return (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 星期' + week[d.getDay()];
   }
 
-  // 当日简报 id：mode = 'digest'（今日要闻）或 'hotspot'（热点速递）
+  // 当日简报 id：mode = digest（今日要闻）/ morning（早报）/ noon（午间速递）/ evening（晚报）
+  // 'hotspot' 兼容旧版热点速递（映射到 noon）
   static digestId(mode: string): string {
     const key: string = NewsRepository.todayKey();
-    return mode === 'hotspot' ? 'digest-' + key + '-hotspot' : 'digest-' + key;
+    if (mode === 'digest') return 'digest-' + key;
+    if (mode === 'morning') return 'digest-' + key + '-morning';
+    if (mode === 'evening') return 'digest-' + key + '-evening';
+    return 'digest-' + key + '-noon';
   }
 
   static async todayDigest(mode: string = 'digest'): Promise<NewsDigestEntry | null> {

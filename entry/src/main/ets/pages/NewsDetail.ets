@@ -12,6 +12,7 @@ import { NewsModelSelector } from '../components/NewsModelSelector';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { NewsItem, NewsDetailRouteParams } from '../common/NewsModels';
 import { NewsRepository } from '../service/NewsRepository';
+import { NewsService } from '../service/NewsService';
 import { NewsArticleCacheEntry } from '../service/DatabaseHelper';
 import { NewsAiService } from '../service/NewsAiService';
 import { SpeechService } from '../service/SpeechService';
@@ -38,6 +39,7 @@ export struct NewsDetailPage {
   @Local item: NewsItem = new NewsItem('', '', '', '', '', '', '', '', 0);
   @Local favorited: boolean = false;
   @Local webFailed: boolean = false;
+  @Local offlineMode: boolean = false;
   // AI 面板状态
   @Local aiPanel: AiPanelKind = AiPanelKind.NONE;
   @Local aiText: string = '';
@@ -48,6 +50,13 @@ export struct NewsDetailPage {
   @Local askHistory: ChatMessage[] = [];
   // 朗读状态
   @Local speaking: boolean = false;
+  // 知乎日报正文（API 渲染，替代网页）
+  @Local zhihuHtml: string = '';
+  @Local zhihuInjected: boolean = false;
+  // 阅读缩放
+  @Local zoomFactor: number = 1.0;
+  // 最近一次 AI 调用 token 消耗
+  @Local lastTokens: number = 0;
 
   private controller: webview.WebviewController = new webview.WebviewController();
 
@@ -59,10 +68,55 @@ export struct NewsDetailPage {
         params.imageUrl, params.sourceId, params.sourceName, params.category, params.publishedAt);
     }
     this.loadState();
+    this.prefetchZhihu();
   }
 
   aboutToDisappear(): void {
     // Web 组件随页面销毁，AI 请求由 LlmClient 内部管理
+  }
+
+  // 知乎日报：预取正文 HTML（更轻量、图片协议补全），就绪后注入 Web
+  private async prefetchZhihu(): Promise<void> {
+    const sid: string = NewsService.zhihuStoryId(this.item.id);
+    if (sid.length === 0) return;
+    const html: string = await NewsService.fetchZhihuStory(sid);
+    if (html.length > 0) {
+      this.zhihuHtml = html;
+      this.maybeInjectZhihu();
+    }
+  }
+
+  private maybeInjectZhihu(): void {
+    if (this.zhihuHtml.length === 0 || this.zhihuInjected) return;
+    try {
+      this.controller.loadData(this.zhihuHtml, 'text/html', 'UTF-8', this.item.url);
+      this.zhihuInjected = true;
+    } catch (e) {
+    }
+  }
+
+  // 阅读字号缩放（ArkWeb zoom）
+  private adjustZoom(delta: number): void {
+    let next: number = this.zoomFactor + delta;
+    if (next < 0.6) next = 0.6;
+    if (next > 1.8) next = 1.8;
+    this.zoomFactor = next;
+    try {
+      this.controller.zoom(this.zoomFactor);
+    } catch (e) {
+    }
+  }
+
+  // 深色模式：向原文注入反色 CSS
+  private injectDarkCss(): void {
+    if (!this.themeState.isDark) return;
+    const css: string = 'html{filter:invert(0.9) hue-rotate(180deg)!important;background:#0a0e1a}img,video{filter:invert(1) hue-rotate(180deg)!important}';
+    const script: string = '(function(){var s=document.createElement("style");s.id="zhizon-dark";s.textContent="' + css + '";document.head.appendChild(s);})()';
+    try {
+      this.controller.runJavaScript(script, (err: BusinessError, result: string): void => {
+      });
+    } catch (e) {
+    }
   }
 
   private async loadState(): Promise<void> {
@@ -121,6 +175,9 @@ export struct NewsDetailPage {
       this.aiText = this.aiText + d;
     });
     this.aiBusy = false;
+    if (result.success) {
+      this.lastTokens = result.tokenUsage.totalTokens;
+    }
     if (!result.success) {
       this.aiError = result.errorMessage.length > 0 ? result.errorMessage : 'AI 调用失败，请重试';
     }
@@ -163,6 +220,9 @@ export struct NewsDetailPage {
         this.aiText = this.aiText + d;
       });
     this.aiBusy = false;
+    if (result.success) {
+      this.lastTokens = result.tokenUsage.totalTokens;
+    }
     if (!result.success) {
       this.aiError = result.errorMessage.length > 0 ? result.errorMessage : 'AI 调用失败，请重试';
     } else {
@@ -202,6 +262,7 @@ export struct NewsDetailPage {
     NewsRepository.getArticleCache(this.item.url).then((cached: NewsArticleCacheEntry | null) => {
       if (cached !== null && cached.html.length > 0) {
         try {
+          this.offlineMode = true;
           this.controller.loadData(cached.html, 'text/html', 'UTF-8', this.item.url);
         } catch (e) {
           this.webFailed = true;
@@ -385,6 +446,15 @@ export struct NewsDetailPage {
       }
       .width('100%')
       .margin({ top: 8 })
+
+      if (this.lastTokens > 0) {
+        Text('本次调用消耗 ' + this.lastTokens.toString() + ' tokens')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .width('100%')
+          .margin({ top: 6 })
+      }
     }
     .width('100%')
     .padding(16)
@@ -449,7 +519,19 @@ export struct NewsDetailPage {
     Stack() {
       Column() {
         TopBar({ title: '新闻详情', showBack: true }) {
-          Row() {
+          Row({ space: 10 }) {
+            Text('A-')
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primary)
+              .fontWeight(FontWeight.Medium)
+              .onClick(() => { this.adjustZoom(-0.15); })
+            Text('A+')
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primary)
+              .fontWeight(FontWeight.Medium)
+              .onClick(() => { this.adjustZoom(0.15); })
             Text('📤')
               .fontSize(this.themeState.palette.fsLg)
               .fontFamily(this.themeState.palette.fontSans)
@@ -497,6 +579,12 @@ export struct NewsDetailPage {
                       .fontSize(this.themeState.palette.fsSm)
                       .fontFamily(this.themeState.palette.fontSans)
                       .fontColor(this.themeState.palette.textTertiary)
+                    if (this.offlineMode) {
+                      Text('· 离线缓存')
+                        .fontSize(this.themeState.palette.fsXs)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.warning)
+                    }
                   }
                   .width('100%')
                 }
@@ -531,6 +619,12 @@ export struct NewsDetailPage {
                     .fontSize(this.themeState.palette.fsSm)
                     .fontFamily(this.themeState.palette.fontSans)
                     .fontColor(this.themeState.palette.textTertiary)
+                  if (this.offlineMode) {
+                    Text('· 离线缓存')
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.warning)
+                  }
                 }
                 .width('100%')
               }
@@ -564,6 +658,8 @@ export struct NewsDetailPage {
                   .layoutWeight(1)
                   .onPageEnd(() => {
                     this.cacheArticleHtml();
+                    this.maybeInjectZhihu();
+                    this.injectDarkCss();
                   })
                   .onErrorReceive(() => {
                     this.useCachedArticle();

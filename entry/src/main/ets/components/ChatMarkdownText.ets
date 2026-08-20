@@ -8,6 +8,8 @@ export struct ChatMarkdownText {
   @Prop @Watch('onContentChange') content: string = '';
   // 普通字段回调（ArkUI V1 @Prop 不支持函数类型，沿用消息气泡的回调传参方式）
   onCopyCode: (lang: string, code: string) => void = () => {};
+  // 链接点击回调：段落内含链接时整段可点击（ArkUI Span 不支持独立点击事件，采用段落级简化方案）
+  onLinkTap: (url: string) => void = () => {};
   @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
   @StorageLink('isDarkMode') isDark: boolean = false;
 
@@ -133,7 +135,7 @@ export struct ChatMarkdownText {
     }, (sp: InlineSpan, index: number) => index.toString())
   }
 
-  // 段落/列表项（带行内格式）
+  // 段落/列表项（带行内格式；段落含链接时整段可点击打开第一个链接）
   @Builder
   para(text: string) {
     Text() {
@@ -143,6 +145,23 @@ export struct ChatMarkdownText {
     .fontFamily(this.palette.fontSans)
     .lineHeight(20)
     .width('100%')
+    .onClick(() => {
+      const link: string = this.paraFirstLink(text);
+      if (link.length > 0) {
+        this.onLinkTap(link);
+      }
+    })
+  }
+
+  // 段落中第一个链接 URL（无则空串）
+  private paraFirstLink(text: string): string {
+    const spans: InlineSpan[] = this.spansOf(text);
+    for (let i: number = 0; i < spans.length; i++) {
+      if (spans[i].link.length > 0) {
+        return spans[i].link;
+      }
+    }
+    return '';
   }
 
   build() {

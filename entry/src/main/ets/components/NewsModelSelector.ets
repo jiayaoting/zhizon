@@ -10,7 +10,7 @@ import { DataRepository } from '../service/DataRepository';
 @ComponentV2
 export struct NewsModelSelector {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
-  @Local modelName: string = '跟随全局模型';
+  @Local modelName: string = '跟随全局';
   @Local selectedId: string = '';
   @Local showSheet: boolean = false;
   @Local models: LlmModelEntry[] = [];
@@ -27,13 +27,18 @@ export struct NewsModelSelector {
     try {
       this.models = await NewsAiService.listModels();
       this.selectedId = await DataRepository.getSetting('newsModelId', '');
-      this.modelName = await NewsAiService.getActiveModelName();
+      if (this.selectedId.length === 0) {
+        this.modelName = '跟随全局';
+      } else {
+        this.modelName = await NewsAiService.getActiveModelName();
+      }
     } catch (e) {
       this.modelName = '未配置模型';
     }
   }
 
   private async pick(id: string): Promise<void> {
+    // id 为空 = 恢复「跟随全局模型」（清空资讯专属记忆）
     await NewsAiService.selectModel(id);
     this.showSheet = false;
     await this.refresh();
@@ -73,6 +78,39 @@ export struct NewsModelSelector {
       if (this.models.length > 0) {
         Scroll() {
           Column({ space: 4 }) {
+            // 「跟随全局」选项：清空资讯专属记忆
+            Row({ space: 10 }) {
+              Column({ space: 2 }) {
+                Text('跟随全局模型')
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.selectedId.length === 0 ? this.themeState.palette.primary :
+                    this.themeState.palette.textPrimary)
+                  .fontWeight(this.selectedId.length === 0 ? FontWeight.Bold : FontWeight.Medium)
+                Text('使用「我的 → AI 模型」中的默认模型')
+                  .fontSize(10)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+              if (this.selectedId.length === 0) {
+                Text('✓')
+                  .fontSize(16)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.primary)
+                  .fontWeight(FontWeight.Bold)
+              }
+            }
+            .width('100%')
+            .padding(12)
+            .borderRadius(8)
+            .backgroundColor(this.selectedId.length === 0 ? this.themeState.palette.primaryDim :
+              this.themeState.palette.bgSurface)
+            .border({ width: this.selectedId.length === 0 ? 1 : 0,
+              color: this.selectedId.length === 0 ? this.themeState.palette.primary : Color.Transparent })
+            .onClick(() => { this.pick(''); })
+
             ForEach(this.models, (m: LlmModelEntry) => {
               Row({ space: 10 }) {
                 Column({ space: 2 }) {

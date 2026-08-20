@@ -19,5 +19,11 @@ export default function NewsRepositoryTest() {
       expect(label.indexOf('月')).assertGreaterThan(-1);
       expect(label.indexOf('日')).assertGreaterThan(-1);
     });
+
+    it('digestId distinguishes digest and hotspot modes', 0, () => {
+      const key: string = NewsRepository.todayKey();
+      expect(NewsRepository.digestId('digest')).assertEqual('digest-' + key);
+      expect(NewsRepository.digestId('hotspot')).assertEqual('digest-' + key + '-hotspot');
+    });
   });
 }

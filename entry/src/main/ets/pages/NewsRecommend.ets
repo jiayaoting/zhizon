@@ -1,6 +1,7 @@
 // 智子 - 为你推荐（基于收藏/阅读历史，AI 排序候选新闻）
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { ChatMarkdownText } from '../components/ChatMarkdownText';
@@ -75,6 +76,21 @@ export struct NewsRecommendPage {
     } catch (e) {
       this.generating = false;
       this.errorText = '生成失败，请重试';
+    }
+  }
+
+  private openUrl(url: string): void {
+    try {
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      context.startAbility({
+        action: 'ohos.want.action.viewData',
+        entities: ['entity.system.browsable'],
+        uri: url
+      }).catch((e: Object) => {
+        promptAction.showToast({ message: '无法打开链接' });
+      });
+    } catch (e) {
+      promptAction.showToast({ message: '无法打开链接' });
     }
   }
 
@@ -157,7 +173,7 @@ export struct NewsRecommendPage {
                 .lineHeight(24)
                 .width('100%')
             } else {
-              ChatMarkdownText({ content: this.output })
+              ChatMarkdownText({ content: this.output, onLinkTap: (url: string): void => { this.openUrl(url); } })
                 .width('100%')
             }
           }

@@ -129,6 +129,10 @@ export struct SettingsPage {
   @State customRssName: string = '';
   @State customRssUrl: string = '';
   @State customSources: NewsSourceDef[] = [];
+  // OPML 导入
+  @State showOpmlSheet: boolean = false;
+  @State opmlText: string = '';
+  @State opmlResult: string = '';
 
   // 字号/字体选项
   private fontSizeOptions: FontSizeOption[] = [
@@ -333,6 +337,108 @@ export struct SettingsPage {
     this.customSources = next;
     await this.persistCustomRss();
     this.toast('已删除订阅');
+  }
+
+  // 解析并导入 OPML（按 URL 去重合并到自定义订阅）
+  private async importOpml(): Promise<void> {
+    const sources: NewsSourceDef[] = NewsService.parseOpml(this.opmlText);
+    if (sources.length === 0) {
+      this.opmlResult = '未解析到有效订阅，请检查 OPML 内容';
+      return;
+    }
+    let added: number = 0;
+    let skipped: number = 0;
+    for (let i: number = 0; i < sources.length; i++) {
+      let exists: boolean = false;
+      for (let j: number = 0; j < this.customSources.length; j++) {
+        if (this.customSources[j].url === sources[i].url) {
+          exists = true;
+          break;
+        }
+      }
+      if (exists) {
+        skipped = skipped + 1;
+      } else {
+        this.customSources = this.customSources.concat([sources[i]]);
+        added = added + 1;
+      }
+    }
+    await this.persistCustomRss();
+    this.opmlResult = '导入完成：新增 ' + added.toString() + ' 个，跳过重复 ' + skipped.toString() + ' 个';
+    this.opmlText = '';
+    this.toast('已导入 ' + added.toString() + ' 个订阅');
+  }
+
+  // OPML 导入弹层
+  @Builder
+  opmlSheet() {
+    Stack() {
+      Column() {
+        Blank()
+        Column({ space: 12 }) {
+          Row() {
+            Text('导入 OPML 订阅')
+              .fontSize(this.palette.fsLg)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textPrimary)
+              .fontWeight(FontWeight.Bold)
+            Blank()
+            Text('✕')
+              .fontSize(this.palette.fsLg)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.textTertiary)
+              .padding(8)
+              .onClick(() => {
+                this.showOpmlSheet = false;
+                this.opmlText = '';
+                this.opmlResult = '';
+              })
+          }
+          .width('100%')
+
+          TextArea({ placeholder: '粘贴 OPML XML 内容（含 <outline xmlUrl=…/> 的订阅）', text: this.opmlText })
+            .width('100%')
+            .height(150)
+            .fontSize(this.palette.fsSm)
+            .fontFamily(this.palette.fontSans)
+            .onChange((v: string) => { this.opmlText = v; })
+
+          if (this.opmlResult.length > 0) {
+            Text(this.opmlResult)
+              .fontSize(this.palette.fsXs)
+              .fontFamily(this.palette.fontSans)
+              .fontColor(this.palette.primary)
+              .width('100%')
+          }
+
+          Button('解析并导入')
+            .fontSize(this.palette.fsMd)
+            .fontFamily(this.palette.fontSans)
+            .fontColor(Color.White)
+            .backgroundColor(this.palette.primary)
+            .width('100%')
+            .height(42)
+            .borderRadius(10)
+            .onClick(() => { this.importOpml(); })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: Math.max(16, this.navBarHeight) })
+        .backgroundColor(this.palette.bgBase)
+        .borderRadius({ topLeft: 16, topRight: 16 })
+        .onClick(() => {})
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('rgba(0,0,0,0.35)')
+    .onClick(() => {
+      this.showOpmlSheet = false;
+      this.opmlText = '';
+      this.opmlResult = '';
+    })
   }
 
   // ==================== 游戏音效 ====================
@@ -1841,6 +1947,9 @@ export struct SettingsPage {
                     .fontColor(this.palette.textTertiary)
                     .width('100%')
                 }
+                this.valueRow('导入 OPML 订阅', '批量导入', () => {
+                  this.showOpmlSheet = true;
+                })
                 this.valueRow('清空阅读记录', '', () => {
                   NewsRepository.clearRead().then(() => {
                     this.toast('已清空阅读记录');
@@ -1966,6 +2075,10 @@ export struct SettingsPage {
       }
       if (this.showAutoLockSheet) {
         this.autoLockSheet()
+      }
+      // 资讯 OPML 导入弹层
+      if (this.showOpmlSheet) {
+        this.opmlSheet()
       }
     }
     .width('100%')

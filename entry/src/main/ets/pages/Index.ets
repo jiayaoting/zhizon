@@ -296,6 +296,64 @@ export struct IndexPage {
     .justifyContent(FlexAlign.Center)
   }
 
+  // ==================== 头条轮播（推荐频道） ====================
+  @Builder
+  headlineSwiper() {
+    Swiper() {
+      ForEach(this.items.slice(0, 4), (item: NewsItem) => {
+        Row({ space: 12 }) {
+          Stack() {
+            Column()
+              .width(72)
+              .height(72)
+              .borderRadius(14)
+              .linearGradient({
+                angle: 135,
+                colors: [[this.themeState.palette.primary, 0.0], [this.themeState.palette.purple, 1.0]]
+              })
+            Text('📰')
+              .fontSize(28)
+              .fontFamily(this.themeState.palette.fontSans)
+          }
+          .width(72)
+          .height(72)
+
+          Column({ space: 4 }) {
+            Text(item.title)
+              .fontSize(this.themeState.palette.fsMd + 1)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
+              .fontWeight(FontWeight.Medium)
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(item.sourceName + ' · ' + (item.summary.length > 0 ? item.summary.substring(0, 30) : '头条'))
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+        }
+        .width('100%')
+        .padding(14)
+        .borderRadius(12)
+        .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
+        .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+        .onClick(() => { this.openDetail(item); })
+      }, (item: NewsItem) => item.id)
+    }
+    .width('100%')
+    .height(100)
+    .indicator(new DotIndicator().bottom(6).color(this.themeState.palette.bgSurface2)
+      .selectedColor(this.themeState.palette.primary))
+    .autoPlay(true)
+    .loop(true)
+    .interval(5000)
+    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
+  }
+
   // ==================== 频道栏 ====================
   @Builder
   channelBar() {
@@ -443,6 +501,9 @@ export struct IndexPage {
         Row() {
           Column() {
             this.digestCard()
+            if (this.channelId === 'recommend' && this.items.length > 0) {
+              this.headlineSwiper()
+            }
             this.channelBar()
             this.newsBody(false)
           }
@@ -477,6 +538,9 @@ export struct IndexPage {
         .layoutWeight(1)
       } else {
         this.digestCard()
+        if (this.channelId === 'recommend' && this.items.length > 0) {
+          this.headlineSwiper()
+        }
         this.channelBar()
         this.newsBody(this.themeState.isMd)
       }
