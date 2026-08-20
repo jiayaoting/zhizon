@@ -27,6 +27,8 @@
     "pages/NewsProfile",
     "pages/NewsSourceSettings",
     "pages/NewsChannelSettings",
-    "pages/GameSettings"
+    "pages/GameSettings",
+    "pages/AppearanceSettings",
+    "pages/NewsSettings"
   ]
 }
