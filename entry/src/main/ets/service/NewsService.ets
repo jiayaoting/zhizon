@@ -1,10 +1,14 @@
 // 智子 - 新闻数据服务（多源拉取 / 归一化 / 合并 / 内存缓存 / RSS 解析）
 import { http } from '@kit.NetworkKit';
 import { convertxml } from '@kit.ArkTS';
-import { NewsItem, NewsSourceDef } from '../common/NewsModels';
-import { NEWS_SOURCES, AI_KEYWORDS } from '../common/NewsChannels';
-import { DatabaseHelper } from './DatabaseHelper';
+import { NewsItem, NewsSourceDef, NewsChannel } from '../common/NewsModels';
+import { NEWS_SOURCES, AI_KEYWORDS, TAG_KEYWORDS, SOURCE_LANGUAGES, channelById } from '../common/NewsChannels';
+import { DatabaseHelper, NewsTagEntry } from './DatabaseHelper';
 import { NewsRepository } from './NewsRepository';
+import { NewsRanker } from './NewsRanker';
+import { NewsAiService } from './NewsAiService';
+import { DataRepository } from './DataRepository';
+import { LlmConfig, LlmResult } from '../common/LlmModels';
 
 // convertxml 选项结构（SDK 的 ConvertOptions 为 type 别名，字面量需先落到本地 interface）
 interface XmlConvertOptions {
@@ -26,6 +30,10 @@ interface XmlConvertOptions {
 const CACHE_TTL_MS: number = 10 * 60 * 1000;
 // 单请求超时（毫秒）
 const REQUEST_TIMEOUT: number = 8000;
+// L1 规则标签上限
+const TAG_MAX: number = 8;
+// CJK 字符区间（语言检测）
+const CJK_RE: RegExp = /[\u4e00-\u9fff\u3400-\u4dbf]/g;
 
 interface FeedCacheEntry {
   items: NewsItem[];
@@ -57,10 +65,12 @@ export class NewsService {
 
     let result: NewsItem[] = [];
     if (channelId === 'recommend') {
-      const arrays: NewsItem[][] = [];
+      // 多源并发抓取（源多时避免串行等待；fetchSource 内部有 inFlight 去重）
+      const tasks: Promise<NewsItem[]>[] = [];
       for (let i: number = 0; i < active.length; i++) {
-        arrays.push(await NewsService.fetchSource(active[i], force));
+        tasks.push(NewsService.fetchSource(active[i], force));
       }
+      const arrays: NewsItem[][] = await Promise.all(tasks);
       result = NewsService.merge(arrays, limit);
     } else if (channelId === 'ai') {
       const tech: NewsItem[] = await NewsService.fetchChannel('tech', limit * 2, force);
@@ -75,23 +85,193 @@ export class NewsService {
       }
       result = filtered;
     } else {
-      const arrays: NewsItem[][] = [];
+      const tasks: Promise<NewsItem[]>[] = [];
       for (let i: number = 0; i < active.length; i++) {
         if (active[i].category === channelId) {
-          arrays.push(await NewsService.fetchSource(active[i], force));
+          tasks.push(NewsService.fetchSource(active[i], force));
         }
       }
+      const arrays: NewsItem[][] = await Promise.all(tasks);
       result = NewsService.merge(arrays, limit);
+    }
+
+    // 标签/语言增强（点踩未勾选标签的单篇不再硬排除，改由排序软降权）
+    NewsService.enrich(result);
+
+    // M4：LLM 智能标签增强（默认关闭；开启后用所选模型生成更细标签，失败自动保留 L1）
+    result = await NewsService.enhanceWithLlm(result);
+
+    // M2 + 个性化模式 + 单篇软降权（v0.8）
+    if (result.length > 0) {
+      const excludedUrls: string[] = await NewsRepository.listExcludedUrls();
+      const mode: string = await DataRepository.getSetting('newsPersonalizedMode', 'standard');
+      if (mode === 'hot') {
+        // 仅热点：纯时间排序（单篇仍软降权到最后）
+        result = NewsService.moveExcludedTail(result, excludedUrls).slice(0, limit);
+      } else if (await NewsRepository.isChannelPersonalized(channelId)) {
+        // 个性化排序：按模式参数打分，排除单篇扣分但不移除
+        result = await NewsRanker.rank(result, limit, mode, excludedUrls);
+      } else {
+        // 频道已关闭个性化：恢复纯时间排序，单篇软降权到最后
+        result = NewsService.moveExcludedTail(result, excludedUrls).slice(0, limit);
+      }
     }
 
     // 离线回退 / 快照更新
     if (result.length === 0) {
       const cached: NewsItem[] | null = await NewsRepository.loadChannelCache(channelId);
-      if (cached !== null) return cached;
+      if (cached !== null) {
+        NewsService.enrich(cached);
+        return cached;
+      }
     } else {
       NewsRepository.saveChannelCache(channelId, result);
     }
     return result;
+  }
+
+  // ==================== L1 标签与语言识别 ====================
+
+  // 为一批条目补齐 tags / language（幂等：已有 tags 的不重复打）
+  static enrich(items: NewsItem[]): NewsItem[] {
+    for (let i: number = 0; i < items.length; i++) {
+      const item: NewsItem = items[i];
+      if (item.tags === undefined || item.tags.length === 0) {
+        item.tags = NewsService.tagItem(item);
+      }
+      if (item.language === undefined || item.language.length === 0) {
+        item.language = NewsService.detectLanguage(item);
+      }
+    }
+    return items;
+  }
+
+  // 单篇打标签：频道标签 + 词典关键词命中，去重后最多 TAG_MAX 个
+  private static tagItem(item: NewsItem): string[] {
+    const tags: string[] = [];
+    const ch: NewsChannel | null = channelById(item.category);
+    if (ch !== null && tags.indexOf(ch.name) < 0) {
+      tags.push(ch.name);
+    }
+    const hay: string = (item.title + ' ' + item.summary);
+    const keys: string[] = Object.keys(TAG_KEYWORDS);
+    for (let i: number = 0; i < keys.length; i++) {
+      const tag: string = keys[i];
+      const words: string[] = TAG_KEYWORDS[tag];
+      for (let j: number = 0; j < words.length; j++) {
+        if (hay.indexOf(words[j]) >= 0) {
+          if (tags.indexOf(tag) < 0) tags.push(tag);
+          break;
+        }
+      }
+      if (tags.length >= TAG_MAX) break;
+    }
+    return tags;
+  }
+
+  // 语言检测：内置源预置优先，否则按 CJK 字符占比（<5% 视为外文）
+  private static detectLanguage(item: NewsItem): string {
+    const preset: string | undefined = SOURCE_LANGUAGES[item.sourceId];
+    if (preset !== undefined && preset.length > 0) return preset;
+    const text: string = item.title + ' ' + item.summary;
+    if (text.trim().length === 0) return 'zh';
+    const cjkMatches: RegExpMatchArray | null = text.match(CJK_RE);
+    const cjkCount: number = cjkMatches === null ? 0 : cjkMatches.length;
+    return (cjkCount / text.length) < 0.05 ? 'en' : 'zh';
+  }
+
+  // ==================== LLM 智能标签（M4） ====================
+
+  // L2 增强：开启且模型可用时为候选前 20 条生成 LLM 标签（并发 3，24h 缓存）
+  static async enhanceWithLlm(items: NewsItem[]): Promise<NewsItem[]> {
+    try {
+      if (items.length === 0) return items;
+      const config: LlmConfig | null = await NewsAiService.getTagConfig();
+      if (config === null) return items;
+      const cap: number = items.length > 20 ? 20 : items.length;
+      const BATCH: number = 3;
+      for (let i: number = 0; i < cap; i += BATCH) {
+        const tasks: Promise<void>[] = [];
+        const end: number = i + BATCH < cap ? i + BATCH : cap;
+        for (let j: number = i; j < end; j++) {
+          tasks.push(NewsService.llmTagOne(items[j], config));
+        }
+        await Promise.all(tasks);
+      }
+    } catch (e) {
+    }
+    return items;
+  }
+
+  // 单篇 LLM 打标签：缓存优先（24h）；成功写 news_tags，失败静默保留 L1 标签
+  private static async llmTagOne(item: NewsItem, config: LlmConfig): Promise<void> {
+    try {
+      if (item.url.length === 0) return;
+      const cached: NewsTagEntry | null = await NewsRepository.getTags(item.url);
+      if (cached !== null && cached.sourceType === 'llm' &&
+        Date.now() - cached.updatedAt < 24 * 3600 * 1000) {
+        const cachedTags: string[] = NewsAiService.parseTagsJson(cached.tagsJson);
+        if (cachedTags.length > 0) {
+          item.tags = cachedTags;
+        }
+        return;
+      }
+      const result: LlmResult = await NewsAiService.generateTags(config, item);
+      if (result.success) {
+        const tags: string[] = NewsAiService.parseTagsJson(result.content);
+        if (tags.length > 0) {
+          item.tags = tags;
+          await NewsRepository.saveTags(item.url, tags, 'llm', config.displayName);
+        }
+      }
+    } catch (e) {
+    }
+  }
+
+  // 单篇软降权：把排除的 url 移到列表尾部（保持各自内部时间顺序，不硬删除）
+  static moveExcludedTail(items: NewsItem[], excluded: string[]): NewsItem[] {
+    if (excluded.length === 0) return items;
+    const normal: NewsItem[] = [];
+    const tail: NewsItem[] = [];
+    for (let i: number = 0; i < items.length; i++) {
+      if (excluded.indexOf(items[i].url) >= 0) {
+        tail.push(items[i]);
+      } else {
+        normal.push(items[i]);
+      }
+    }
+    return normal.concat(tail);
+  }
+
+  // 单篇排除过滤（仅 search 使用：查询结果中直接不出现已排除单篇）
+  private static excludedUrls: Map<string, number> = new Map<string, number>();
+  private static async filterExcluded(items: NewsItem[]): Promise<NewsItem[]> {
+    try {
+      const now: number = Date.now();
+      let urls: string[] = [];
+      if (NewsService.excludedUrls.size === 0 || now - NewsService.excludedUrls.get('_ts')! > 30000) {
+        urls = await NewsRepository.listExcludedUrls();
+        NewsService.excludedUrls.clear();
+        NewsService.excludedUrls.set('_ts', now);
+        for (let i: number = 0; i < urls.length; i++) {
+          NewsService.excludedUrls.set(urls[i], now);
+        }
+      } else {
+        const keys: string[] = [];
+        NewsService.excludedUrls.forEach((v: number, k: string) => {
+          if (k !== '_ts') keys.push(k);
+        });
+        urls = keys;
+      }
+      if (urls.length === 0) return items;
+      const out: NewsItem[] = [];
+      for (let i: number = 0; i < items.length; i++) {
+        if (urls.indexOf(items[i].url) < 0) out.push(items[i]);
+      }
+      return out;
+    } catch (e) {
+      return items;
+    }
   }
 
   // 知乎日报文章 id（'zhihu:123' → '123'；非 zhihu 源返回空）
@@ -150,7 +330,9 @@ export class NewsService {
     } catch (e) {
     }
     if (arrays.length === 0) return [];
-    return NewsService.merge(arrays, limit);
+    const merged: NewsItem[] = NewsService.merge(arrays, limit);
+    NewsService.enrich(merged);
+    return await NewsService.filterExcluded(merged);
   }
 
   // 解析 OPML 订阅列表（<outline text="名称" xmlUrl="RSS地址"/>，支持嵌套分组）
@@ -269,6 +451,11 @@ export class NewsService {
   // 清理全部缓存（下拉刷新强刷前可调用；fetchChannel(force=true) 已内部处理）
   static clearCache(): void {
     NewsService.cache.clear();
+  }
+
+  // 清空单篇排除的内存缓存（撤销点踩后调用，避免 30s 内仍被过滤）
+  static clearExclusionCache(): void {
+    NewsService.excludedUrls.clear();
   }
 
   // ==================== 单源拉取（带缓存与并发去重） ====================

@@ -79,5 +79,30 @@ export default function NewsServiceTest() {
       expect(merged.length).assertEqual(2);
       expect(merged[0].title).assertEqual('A 重复');
     });
+
+    it('enrich adds L1 tags for zh news', 0, () => {
+      const zh: NewsItem = new NewsItem('t1', 'OpenAI 发布新大模型，芯片算力提升', '摘要', 'https://x.com/t1', '', 'custom', '自定义', 'tech', Date.now());
+      const out: NewsItem[] = NewsService.enrich([zh]);
+      expect(out.length).assertEqual(1);
+      expect(out[0].tags.length).assertGreaterThan(0);
+      expect(out[0].tags.indexOf('AI')).assertGreaterThan(-1);
+      expect(out[0].tags.indexOf('科技')).assertGreaterThan(-1);
+      expect(out[0].language).assertEqual('zh');
+    });
+
+    it('enrich detects foreign language by preset source', 0, () => {
+      const en: NewsItem = new NewsItem('t2', 'Breaking: stock market rallies', 'Summary', 'https://x.com/t2', '', 'hn', 'Hacker News', 'finance', Date.now());
+      const out: NewsItem[] = NewsService.enrich([en]);
+      expect(out[0].language).assertEqual('en');
+      // 频道标签仍会打上
+      expect(out[0].tags.indexOf('财经')).assertGreaterThan(-1);
+    });
+
+    it('enrich keeps existing tags unchanged', 0, () => {
+      const tagged: NewsItem = new NewsItem('t3', 'OpenAI 发布新大模型', '', 'https://x.com/t3', '', 'custom', '自定义', 'tech', Date.now(), ['AI'], 'zh');
+      const out: NewsItem[] = NewsService.enrich([tagged]);
+      expect(out[0].tags.length).assertEqual(1);
+      expect(out[0].tags[0]).assertEqual('AI');
+    });
   });
 }

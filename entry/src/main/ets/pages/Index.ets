@@ -8,9 +8,11 @@ import { NewsItem, NewsChannel, NewsDetailRouteParams } from '../common/NewsMode
 import { NEWS_CHANNELS } from '../common/NewsChannels';
 import { NewsService } from '../service/NewsService';
 import { NewsRepository } from '../service/NewsRepository';
+import { NewsAiService } from '../service/NewsAiService';
 import { LazyListDataSource } from '../common/LazyDataSource';
 import { NewsCard } from '../components/NewsCard';
 import { NewsDetailPane } from '../components/NewsDetailPane';
+import { NewsDislikePanel } from '../components/NewsDislikePanel';
 import { DataRepository } from '../service/DataRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 
@@ -29,6 +31,19 @@ export struct IndexPage {
   @Local loadingMore: boolean = false;
   @Local hasDigestToday: boolean = false;
   @Local readUrls: string[] = [];
+  // 个性化反馈（v0.7）
+  @Local likedUrls: string[] = [];
+  @Local dislikedUrls: string[] = [];
+  @Local dislikeTarget: NewsItem | null = null;
+  @Local undoVisible: boolean = false;
+  @Local undoItem: NewsItem | null = null;
+  @Local undoIndex: number = -1;
+  @Local undoTags: string[] = [];
+  @Local undoExcluded: boolean = false;
+  private undoTimer: number = -1;
+  // 外文翻译（M3）：卡片轻量译结果缓存（内存态）
+  @Local translations: Record<string, string> = {};
+  @Local translatingUrls: string[] = [];
   // 平板双栏：右侧当前阅读的文章（手机模式不使用）
   @Local selectedItem: NewsItem | null = null;
   @Event onNavigate: (key: string) => void = () => {};
@@ -40,6 +55,7 @@ export struct IndexPage {
     this.greeting = this.getGreeting();
     this.loadAvatar();
     this.loadReadUrls();
+    this.loadRatingStates();
     this.checkDigest();
     this.loadFeed(false);
   }
@@ -71,6 +87,171 @@ export struct IndexPage {
 
   private isRead(item: NewsItem): boolean {
     return this.readUrls.indexOf(item.url) >= 0;
+  }
+
+  // ==================== 点赞 / 点踩（v0.7） ====================
+
+  private async loadRatingStates(): Promise<void> {
+    try {
+      const ratings = await NewsRepository.listRatings();
+      const likes: string[] = [];
+      const dislikes: string[] = [];
+      for (let i: number = 0; i < ratings.length; i++) {
+        if (ratings[i].rating === 1) likes.push(ratings[i].url);
+        else if (ratings[i].rating === -1) dislikes.push(ratings[i].url);
+      }
+      this.likedUrls = likes;
+      this.dislikedUrls = dislikes;
+    } catch (e) {
+    }
+  }
+
+  private isLiked(item: NewsItem): boolean {
+    return this.likedUrls.indexOf(item.url) >= 0;
+  }
+
+  private isDisliked(item: NewsItem): boolean {
+    return this.dislikedUrls.indexOf(item.url) >= 0;
+  }
+
+  private async toggleLike(item: NewsItem): Promise<void> {
+    try {
+      const liked: boolean = this.likedUrls.indexOf(item.url) >= 0;
+      if (liked) {
+        await NewsRepository.removeRating(item.url);
+        await NewsRepository.recordEvent('undo', item, 0, '');
+        this.likedUrls = this.likedUrls.filter((u: string) => u !== item.url);
+        promptAction.showToast({ message: '已取消点赞' });
+      } else {
+        await NewsRepository.setRating(item, 1, item.tags === undefined ? [] : item.tags);
+        this.likedUrls = this.likedUrls.concat([item.url]);
+        this.dislikedUrls = this.dislikedUrls.filter((u: string) => u !== item.url);
+        promptAction.showToast({ message: '已点赞，之后会多推同类内容' });
+      }
+    } catch (e) {
+    }
+  }
+
+  private openDislike(item: NewsItem): void {
+    this.dislikeTarget = item;
+  }
+
+  private async confirmDislike(item: NewsItem, tags: string[]): Promise<void> {
+    this.dislikeTarget = null;
+    try {
+      await NewsRepository.setRating(item, -1, tags);
+      const excluded: boolean = tags.length === 0;
+      if (excluded) {
+        await NewsRepository.excludeUrl(item.url, 'dislike-no-tag');
+      }
+      this.likedUrls = this.likedUrls.filter((u: string) => u !== item.url);
+      if (this.dislikedUrls.indexOf(item.url) < 0) {
+        this.dislikedUrls = this.dislikedUrls.concat([item.url]);
+      }
+      // 从当前流移除
+      let idx: number = -1;
+      for (let i: number = 0; i < this.items.length; i++) {
+        if (this.items[i].url === item.url) {
+          idx = i;
+          break;
+        }
+      }
+      this.undoItem = item;
+      this.undoIndex = idx;
+      this.undoTags = tags.slice();
+      this.undoExcluded = excluded;
+      const next: NewsItem[] = [];
+      for (let i: number = 0; i < this.items.length; i++) {
+        if (this.items[i].url !== item.url) next.push(this.items[i]);
+      }
+      this.items = next;
+      this.source.replace(next);
+      this.showUndo();
+    } catch (e) {
+    }
+  }
+
+  private showUndo(): void {
+    this.undoVisible = true;
+    if (this.undoTimer >= 0) {
+      clearTimeout(this.undoTimer);
+    }
+    this.undoTimer = setTimeout(() => {
+      this.undoVisible = false;
+      this.undoItem = null;
+      this.undoTimer = -1;
+    }, 5000);
+  }
+
+  private async undoDislike(): Promise<void> {
+    if (this.undoItem === null) return;
+    const item: NewsItem = this.undoItem;
+    try {
+      await NewsRepository.removeRating(item.url);
+      if (this.undoExcluded) {
+        await NewsRepository.unexcludeUrl(item.url);
+      }
+      NewsService.clearExclusionCache();
+      this.dislikedUrls = this.dislikedUrls.filter((u: string) => u !== item.url);
+      // 恢复文章到原位置附近
+      const restored: NewsItem[] = this.items.slice();
+      const pos: number = this.undoIndex >= 0 && this.undoIndex < restored.length ? this.undoIndex : 0;
+      restored.splice(pos, 0, item);
+      this.items = restored;
+      this.source.replace(restored);
+      this.undoVisible = false;
+      this.undoItem = null;
+      if (this.undoTimer >= 0) {
+        clearTimeout(this.undoTimer);
+        this.undoTimer = -1;
+      }
+      promptAction.showToast({ message: '已撤销' });
+    } catch (e) {
+    }
+  }
+
+  private dismissUndo(): void {
+    this.undoVisible = false;
+    this.undoItem = null;
+    if (this.undoTimer >= 0) {
+      clearTimeout(this.undoTimer);
+      this.undoTimer = -1;
+    }
+  }
+
+  // ==================== 外文翻译（M3） ====================
+
+  private async onTranslateItem(item: NewsItem): Promise<void> {
+    if (this.translatingUrls.indexOf(item.url) >= 0) return;
+    // 缓存优先（news_translations，30 天有效）
+    const cached: string = await NewsRepository.getTitleTranslation(item.url);
+    if (cached.length > 0) {
+      this.translations[item.url] = cached;
+      return;
+    }
+    const config = await NewsAiService.getTranslateConfig();
+    if (config === null) {
+      promptAction.showToast({ message: '请先在「我的 → AI 模型」配置模型' });
+      return;
+    }
+    this.translatingUrls = this.translatingUrls.concat([item.url]);
+    try {
+      const result = await NewsAiService.translateTitle(config, item);
+      if (result.success && result.content.length > 0) {
+        this.translations[item.url] = result.content;
+        NewsRepository.saveTitleTranslation(item, result.content, config.displayName).catch(() => {
+        });
+      } else {
+        promptAction.showToast({ message: '翻译失败，请重试' });
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '翻译失败，请重试' });
+    }
+    this.translatingUrls = this.translatingUrls.filter((u: string) => u !== item.url);
+  }
+
+  private translationOf(item: NewsItem): string {
+    return this.translations[item.url] === undefined ? '' : this.translations[item.url];
   }
 
   private async loadFeed(force: boolean): Promise<void> {
@@ -112,6 +293,9 @@ export struct IndexPage {
       this.readUrls = this.readUrls.concat([item.url]);
     }
     NewsRepository.markRead(item.url).catch(() => {
+    });
+    // 隐式信号：点击 +1（阅读事件在详情页加载时记录）
+    NewsRepository.recordEvent('click', item, 1, '').catch(() => {
     });
     if (this.themeState.isLg) {
       // 平板/2in1：右侧内嵌阅读（真·双栏）
@@ -189,6 +373,23 @@ export struct IndexPage {
       .margin({ right: 10 })
       .onClick(() => {
         AppNavigator.push('pages/NewsFavorites');
+      })
+
+      // 我的点赞入口
+      Row() {
+        Text('👍')
+          .fontSize(this.themeState.palette.fsMd + 2)
+          .fontFamily(this.themeState.palette.fontSans)
+      }
+      .width(40)
+      .height(40)
+      .borderRadius(20)
+      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .margin({ right: 10 })
+      .onClick(() => {
+        AppNavigator.push('pages/NewsLikes');
       })
 
       // 用户头像（点击进入设置）
@@ -448,7 +649,14 @@ export struct IndexPage {
                 NewsCard({
                   item: item,
                   read: this.isRead(item),
-                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
+                  liked: this.isLiked(item),
+                  disliked: this.isDisliked(item),
+                  translationText: this.translationOf(item),
+                  translating: this.translatingUrls.indexOf(item.url) >= 0,
+                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); },
+                  onLike: (likedItem: NewsItem): void => { this.toggleLike(likedItem); },
+                  onDislike: (dislikedItem: NewsItem): void => { this.openDislike(dislikedItem); },
+                  onTranslate: (trItem: NewsItem): void => { this.onTranslateItem(trItem); }
                 })
               }
             }, (item: NewsItem) => item.id)
@@ -469,7 +677,14 @@ export struct IndexPage {
                 NewsCard({
                   item: item,
                   read: this.isRead(item),
-                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
+                  liked: this.isLiked(item),
+                  disliked: this.isDisliked(item),
+                  translationText: this.translationOf(item),
+                  translating: this.translatingUrls.indexOf(item.url) >= 0,
+                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); },
+                  onLike: (likedItem: NewsItem): void => { this.toggleLike(likedItem); },
+                  onDislike: (dislikedItem: NewsItem): void => { this.openDislike(dislikedItem); },
+                  onTranslate: (trItem: NewsItem): void => { this.onTranslateItem(trItem); }
                 })
               }
             }, (item: NewsItem) => item.id)
@@ -492,8 +707,63 @@ export struct IndexPage {
     }
   }
 
+  @Builder
+  dislikeOverlay() {
+    if (this.dislikeTarget !== null) {
+      ForEach([this.dislikeTarget], (target: NewsItem) => {
+        NewsDislikePanel({
+          item: target,
+          onConfirm: (item: NewsItem, tags: string[]): void => { this.confirmDislike(item, tags); },
+          onCancel: (): void => { this.dislikeTarget = null; }
+        })
+      }, (target: NewsItem) => target.url)
+    }
+  }
+
+  @Builder
+  undoBar() {
+    if (this.undoVisible && this.undoItem !== null) {
+      Column() {
+        Row({ space: 10 }) {
+          Text(this.undoTags.length > 0 ?
+            '已减少「' + this.undoTags.join('、') + '」类推送' : '已减少本篇推荐')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text('撤销')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
+            .fontWeight(FontWeight.Medium)
+            .padding(6)
+            .onClick(() => { this.undoDislike(); })
+          Text('✕')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+            .padding(6)
+            .onClick(() => { this.dismissUndo(); })
+        }
+        .width('100%')
+        .padding(12)
+        .borderRadius(12)
+        .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
+        .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+      }
+      .width('100%')
+      .height('100%')
+      .justifyContent(FlexAlign.End)
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
+        bottom: this.themeState.isLg ? 20 : 78 })
+    }
+  }
+
   build() {
-    Column() {
+    Stack() {
+      Column() {
       this.header()
 
       if (this.themeState.isLg) {
@@ -544,9 +814,15 @@ export struct IndexPage {
         this.channelBar()
         this.newsBody(this.themeState.isMd)
       }
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(Color.Transparent)
+
+      this.dislikeOverlay()
+      this.undoBar()
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
   }
 }

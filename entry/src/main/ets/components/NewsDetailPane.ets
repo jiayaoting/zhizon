@@ -7,6 +7,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { ThemeState } from '../common/ThemeState';
 import { GlassStyle, GlassLevel } from './GlassEffect';
 import { NewsItem } from '../common/NewsModels';
+import { NewsDislikePanel } from './NewsDislikePanel';
 import { NewsRepository } from '../service/NewsRepository';
 import { NewsService } from '../service/NewsService';
 import { NewsAiService } from '../service/NewsAiService';
@@ -25,6 +26,9 @@ export struct NewsDetailPane {
   @Param item: NewsItem = new NewsItem('', '', '', '', '', '', '', '', 0);
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Local favorited: boolean = false;
+  @Local liked: boolean = false;
+  @Local disliked: boolean = false;
+  @Local dislikeTarget: NewsItem | null = null;
   @Local webFailed: boolean = false;
   @Local offlineMode: boolean = false;
   // AI 面板
@@ -95,7 +99,51 @@ export struct NewsDetailPane {
     if (this.item.url.length === 0) return;
     try {
       this.favorited = await NewsRepository.isFavorite(this.item.url);
+      const rating = await NewsRepository.getRating(this.item.url);
+      this.liked = rating !== null && rating.rating === 1;
+      this.disliked = rating !== null && rating.rating === -1;
       await NewsRepository.markRead(this.item.url);
+      // 隐式信号：深度阅读 +2
+      await NewsRepository.recordEvent('read', this.item, 2, '');
+    } catch (e) {
+    }
+  }
+
+  // ==================== 点赞 / 点踩（v0.7） ====================
+
+  private async toggleLike(): Promise<void> {
+    try {
+      if (this.liked) {
+        await NewsRepository.removeRating(this.item.url);
+        await NewsRepository.recordEvent('undo', this.item, 0, '');
+        this.liked = false;
+        promptAction.showToast({ message: '已取消点赞' });
+      } else {
+        await NewsRepository.setRating(this.item, 1, this.item.tags === undefined ? [] : this.item.tags);
+        this.liked = true;
+        this.disliked = false;
+        promptAction.showToast({ message: '已点赞，之后会多推同类内容' });
+      }
+    } catch (e) {
+    }
+  }
+
+  private openDislike(): void {
+    this.dislikeTarget = this.item;
+  }
+
+  private async confirmDislike(item: NewsItem, tags: string[]): Promise<void> {
+    this.dislikeTarget = null;
+    try {
+      await NewsRepository.setRating(item, -1, tags);
+      if (tags.length === 0) {
+        await NewsRepository.excludeUrl(item.url, 'dislike-no-tag');
+      }
+      this.liked = false;
+      this.disliked = true;
+      NewsService.clearExclusionCache();
+      promptAction.showToast({ message: tags.length > 0 ?
+        '已减少「' + tags.join('、') + '」类推送' : '已减少本篇推荐' });
     } catch (e) {
     }
   }
@@ -195,10 +243,38 @@ export struct NewsDetailPane {
     });
   }
 
-  private onTranslate(): void {
-    this.runAi('translate', (config: LlmConfig, onDelta: (d: string) => void): Promise<LlmResult> => {
-      return NewsAiService.translate(config, this.item, this.item.summary, true, onDelta);
-    });
+  // 外文翻译：缓存优先 + 方向自动 + 翻译模型（可单独记忆）
+  private async onTranslate(): Promise<void> {
+    const cached: string = await NewsRepository.getBodyTranslation(this.item.url);
+    if (cached.length > 0) {
+      this.aiPanel = 'translate';
+      this.aiText = cached;
+      this.aiBusy = false;
+      return;
+    }
+    const config: LlmConfig | null = await NewsAiService.getTranslateConfig();
+    if (config === null) {
+      promptAction.showToast({ message: '请先在「我的 → AI 模型」配置模型' });
+      return;
+    }
+    this.aiPanel = 'translate';
+    this.aiText = '';
+    this.aiBusy = true;
+    const targetZh: boolean = this.item.language === 'zh';
+    const result: LlmResult = await NewsAiService.translate(config, this.item, this.item.summary,
+      !targetZh, (d: string): void => {
+        this.aiText = this.aiText + d;
+      });
+    this.aiBusy = false;
+    if (result.success) {
+      this.lastTokens = result.tokenUsage.totalTokens;
+      if (this.aiText.length > 0) {
+        NewsRepository.saveBodyTranslation(this.item, this.aiText, config.displayName).catch(() => {
+        });
+      }
+    } else {
+      this.aiText = result.errorMessage.length > 0 ? result.errorMessage : '翻译失败，请重试';
+    }
   }
 
   private async onAskSend(): Promise<void> {
@@ -459,8 +535,10 @@ export struct NewsDetailPane {
               .width('100%')
           }
 
-          // 操作条：收藏 / 摘要 / 翻译 / 问AI / 朗读
+          // 操作条：赞/踩 / 收藏 / 摘要 / 翻译 / 问AI / 朗读
           Row() {
+            this.actionButton(this.liked ? '👍' : '👍🏻', this.liked ? '已赞' : '点赞', this.liked, () => { this.toggleLike(); })
+            this.actionButton(this.disliked ? '👎' : '👎🏻', this.disliked ? '已踩' : '点踩', this.disliked, () => { this.openDislike(); })
             this.actionButton(this.favorited ? '⭐' : '☆', this.favorited ? '已收藏' : '收藏', this.favorited, () => { this.toggleFavorite(); })
             this.actionButton('🤖', '摘要', false, () => { this.onSummary(); })
             this.actionButton('🌐', '翻译', false, () => { this.onTranslate(); })
@@ -513,6 +591,16 @@ export struct NewsDetailPane {
       .height('100%')
 
       this.aiOverlay()
+
+      if (this.dislikeTarget !== null) {
+        ForEach([this.dislikeTarget], (target: NewsItem) => {
+          NewsDislikePanel({
+            item: target,
+            onConfirm: (item: NewsItem, tags: string[]): void => { this.confirmDislike(item, tags); },
+            onCancel: (): void => { this.dislikeTarget = null; }
+          })
+        }, (target: NewsItem) => target.url)
+      }
     }
     .width('100%')
     .height('100%')

@@ -22,6 +22,8 @@
     "pages/NewsFavorites",
     "pages/NewsRecommend",
     "pages/NewsSearch",
-    "pages/NewsStats"
+    "pages/NewsStats",
+    "pages/NewsLikes",
+    "pages/NewsProfile"
   ]
 }

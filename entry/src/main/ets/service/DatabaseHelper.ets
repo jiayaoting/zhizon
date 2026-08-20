@@ -3,7 +3,7 @@ import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AffectedFeature, DefectInput, DefectRecord, DefectSeverity, DefectStateHistory, DefectStatus, EvidenceConclusion, EvidenceType, FixEvidence, FixResult } from '../model/GovernanceModels';
-import { NewsItem, NewsDigestEntry } from '../common/NewsModels';
+import { NewsItem, NewsDigestEntry, NewsRating } from '../common/NewsModels';
 
 export interface GameScoreRecord {
   game: string;
@@ -78,8 +78,42 @@ export interface NewsArticleCacheEntry {
   html: string;
 }
 
+// 赞/踩状态行（news_ratings 行）
+export interface NewsRatingEntry {
+  url: string;
+  rating: number;
+  itemId: string;
+  title: string;
+  summary: string;
+  imageUrl: string;
+  sourceName: string;
+  category: string;
+  publishedAt: number;
+  tagsJson: string;
+  updatedAt: number;
+}
+
+// 标签缓存行（news_tags 行）
+export interface NewsTagEntry {
+  url: string;
+  tagsJson: string;
+  sourceType: string;
+  model: string;
+  updatedAt: number;
+}
+
+// 翻译缓存行（news_translations 行）
+export interface NewsTranslationEntry {
+  url: string;
+  kind: string;      // title / body
+  langPair: string;  // en->zh / zh->en
+  text: string;
+  model: string;
+  updatedAt: number;
+}
+
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -200,6 +234,35 @@ const SQL_CREATE_NEWS_CACHE = `CREATE TABLE IF NOT EXISTS news_cache (
 const SQL_CREATE_NEWS_ARTICLE_CACHE = `CREATE TABLE IF NOT EXISTS news_article_cache (
   url TEXT PRIMARY KEY, title TEXT NOT NULL, html TEXT NOT NULL, cached_at INTEGER NOT NULL
 )`;
+// 个性化推荐（v15）：标签缓存 / 赞踩状态 / 行为流水 / 单篇排除 / 画像快照 / 翻译缓存
+const SQL_CREATE_NEWS_TAGS = `CREATE TABLE IF NOT EXISTS news_tags (
+  url TEXT PRIMARY KEY, tags_json TEXT NOT NULL, source_type TEXT DEFAULT 'rule',
+  model TEXT DEFAULT '', updated_at INTEGER NOT NULL
+)`;
+const SQL_CREATE_NEWS_RATINGS = `CREATE TABLE IF NOT EXISTS news_ratings (
+  url TEXT PRIMARY KEY, rating INTEGER NOT NULL, item_id TEXT DEFAULT '',
+  title TEXT NOT NULL, summary TEXT DEFAULT '', image_url TEXT DEFAULT '',
+  source_name TEXT DEFAULT '', category TEXT DEFAULT '', published_at INTEGER DEFAULT 0,
+  tags_json TEXT DEFAULT '', updated_at INTEGER NOT NULL
+)`;
+const SQL_CREATE_NEWS_EVENTS = `CREATE TABLE IF NOT EXISTS news_events (
+  id TEXT PRIMARY KEY, url TEXT NOT NULL, item_id TEXT DEFAULT '',
+  event_type TEXT NOT NULL, weight REAL DEFAULT 0, extra_json TEXT DEFAULT '',
+  occurred_at INTEGER NOT NULL
+)`;
+const SQL_CREATE_NEWS_EVENTS_URL_IDX = 'CREATE INDEX IF NOT EXISTS idx_news_events_url ON news_events(url)';
+const SQL_CREATE_NEWS_EVENTS_TIME_IDX = 'CREATE INDEX IF NOT EXISTS idx_news_events_time ON news_events(occurred_at)';
+const SQL_CREATE_NEWS_EXCLUSIONS = `CREATE TABLE IF NOT EXISTS news_exclusions (
+  type TEXT NOT NULL, value TEXT NOT NULL, reason TEXT DEFAULT '',
+  created_at INTEGER NOT NULL, PRIMARY KEY (type, value)
+)`;
+const SQL_CREATE_NEWS_PROFILE = `CREATE TABLE IF NOT EXISTS news_profile (
+  key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL
+)`;
+const SQL_CREATE_NEWS_TRANSLATIONS = `CREATE TABLE IF NOT EXISTS news_translations (
+  url TEXT PRIMARY KEY, kind TEXT NOT NULL, lang_pair TEXT NOT NULL,
+  text TEXT NOT NULL, model TEXT DEFAULT '', updated_at INTEGER NOT NULL
+)`;
 
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
@@ -270,6 +333,21 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_DIGESTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_CACHE);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_ARTICLE_CACHE);
+    // 个性化推荐（v15）
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_TAGS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_RATINGS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS_URL_IDX);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS_TIME_IDX);
+    // 行为流水 90 天自动清理（画像已落快照，事件仅用于审计/重算）
+    try {
+      const cutoff: number = Date.now() - 90 * 24 * 3600 * 1000;
+      await DatabaseHelper.store.executeSql('DELETE FROM news_events WHERE occurred_at < ' + cutoff.toString());
+    } catch (e) {
+    }
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EXCLUSIONS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_PROFILE);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_TRANSLATIONS);
     if (DatabaseHelper.store.version < 10) {
       // 旧库升级：为 chat_messages 补齐图片附件列（新库建表已含，重复列错误被忽略）
       try {
@@ -1240,6 +1318,349 @@ export class DatabaseHelper {
       await store.delete(predicates);
     } catch (e) {
     }
+  }
+
+  // ========== 新闻资讯：赞/踩状态（v15） ==========
+
+  static async setNewsRating(rating: NewsRating): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const del = new relationalStore.RdbPredicates('news_ratings');
+      del.equalTo('url', rating.url);
+      await store.delete(del);
+      const valueBucket: relationalStore.ValuesBucket = {
+        url: rating.url,
+        rating: rating.rating,
+        item_id: rating.url,
+        title: rating.title,
+        summary: rating.summary,
+        image_url: rating.imageUrl,
+        source_name: rating.sourceName,
+        category: rating.category,
+        published_at: rating.publishedAt,
+        tags_json: JSON.stringify(rating.tags),
+        updated_at: rating.updatedAt
+      };
+      await store.insert('news_ratings', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  static async getNewsRating(url: string): Promise<NewsRating | null> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_ratings');
+      predicates.equalTo('url', url);
+      const resultSet = await store.query(predicates);
+      try {
+        if (resultSet.goToNextRow()) {
+          return DatabaseHelper.ratingFromRow(resultSet);
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    return null;
+  }
+
+  static async listNewsRatings(): Promise<NewsRating[]> {
+    const store = DatabaseHelper.getStore();
+    const results: NewsRating[] = [];
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_ratings');
+      predicates.orderByDesc('updated_at');
+      const resultSet = await store.query(predicates);
+      while (resultSet.goToNextRow()) {
+        results.push(DatabaseHelper.ratingFromRow(resultSet));
+      }
+      resultSet.close();
+    } catch (e) {
+    }
+    return results;
+  }
+
+  static async deleteNewsRating(url: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_ratings');
+      predicates.equalTo('url', url);
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  private static ratingFromRow(resultSet: relationalStore.ResultSet): NewsRating {
+    const tagsRaw: string = resultSet.getString(resultSet.getColumnIndex('tags_json'));
+    let tags: string[] = [];
+    if (tagsRaw.trim().length > 0) {
+      try {
+        const parsed: Object = JSON.parse(tagsRaw) as Object;
+        if (Array.isArray(parsed)) {
+          tags = (parsed as Object[]).map((v: Object) => typeof v === 'string' ? v as string : '')
+            .filter((s: string) => s.length > 0);
+        }
+      } catch (e) {
+        tags = [];
+      }
+    }
+    return new NewsRating(
+      resultSet.getString(resultSet.getColumnIndex('url')),
+      resultSet.getLong(resultSet.getColumnIndex('rating')),
+      resultSet.getString(resultSet.getColumnIndex('title')),
+      resultSet.getString(resultSet.getColumnIndex('summary')),
+      resultSet.getString(resultSet.getColumnIndex('image_url')),
+      resultSet.getString(resultSet.getColumnIndex('source_name')),
+      resultSet.getString(resultSet.getColumnIndex('category')),
+      resultSet.getLong(resultSet.getColumnIndex('published_at')),
+      tags,
+      resultSet.getLong(resultSet.getColumnIndex('updated_at'))
+    );
+  }
+
+  // ========== 新闻资讯：行为流水（v15） ==========
+
+  static async recordNewsEvent(eventType: string, url: string, itemId: string = '',
+    weight: number = 0, extraJson: string = ''): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const id: string = 'evt-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+      const valueBucket: relationalStore.ValuesBucket = {
+        id: id,
+        url: url,
+        item_id: itemId,
+        event_type: eventType,
+        weight: weight,
+        extra_json: extraJson,
+        occurred_at: Date.now()
+      };
+      await store.insert('news_events', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  // ========== 新闻资讯：单篇排除（v15） ==========
+
+  static async addNewsExclusion(url: string, reason: string = ''): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const valueBucket: relationalStore.ValuesBucket = {
+        type: 'url',
+        value: url,
+        reason: reason,
+        created_at: Date.now()
+      };
+      await store.insert('news_exclusions', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  static async isNewsExcluded(url: string): Promise<boolean> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_exclusions');
+      predicates.equalTo('type', 'url');
+      predicates.equalTo('value', url);
+      const resultSet = await store.query(predicates);
+      try {
+        return resultSet.goToNextRow();
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static async removeNewsExclusion(url: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_exclusions');
+      predicates.equalTo('type', 'url');
+      predicates.equalTo('value', url);
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  static async listNewsExcludedUrls(): Promise<string[]> {
+    const store = DatabaseHelper.getStore();
+    const urls: string[] = [];
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_exclusions');
+      predicates.equalTo('type', 'url');
+      const resultSet = await store.query(predicates);
+      while (resultSet.goToNextRow()) {
+        urls.push(resultSet.getString(resultSet.getColumnIndex('value')));
+      }
+      resultSet.close();
+    } catch (e) {
+    }
+    return urls;
+  }
+
+  // ========== 新闻资讯：标签缓存（v15） ==========
+
+  static async saveNewsTags(url: string, tagsJson: string, sourceType: string = 'rule',
+    model: string = ''): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const del = new relationalStore.RdbPredicates('news_tags');
+      del.equalTo('url', url);
+      await store.delete(del);
+      const valueBucket: relationalStore.ValuesBucket = {
+        url: url,
+        tags_json: tagsJson,
+        source_type: sourceType,
+        model: model,
+        updated_at: Date.now()
+      };
+      await store.insert('news_tags', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  static async saveNewsProfile(valueJson: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const del = new relationalStore.RdbPredicates('news_profile');
+      del.equalTo('key', 'main');
+      await store.delete(del);
+      const valueBucket: relationalStore.ValuesBucket = {
+        key: 'main',
+        value_json: valueJson,
+        updated_at: Date.now()
+      };
+      await store.insert('news_profile', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  static async getNewsProfile(): Promise<string | null> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_profile');
+      predicates.equalTo('key', 'main');
+      const resultSet = await store.query(predicates);
+      try {
+        if (resultSet.goToNextRow()) {
+          return resultSet.getString(resultSet.getColumnIndex('value_json'));
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    return null;
+  }
+
+  static async clearNewsTags(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_tags');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  static async clearNewsProfile(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_profile');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  static async clearNewsExclusions(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_exclusions');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  // ========== 新闻资讯：翻译缓存（v15） ==========
+
+  static async saveNewsTranslation(url: string, kind: string, langPair: string, text: string,
+    model: string = ''): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const del = new relationalStore.RdbPredicates('news_translations');
+      del.equalTo('url', url);
+      del.equalTo('kind', kind);
+      await store.delete(del);
+      const valueBucket: relationalStore.ValuesBucket = {
+        url: url,
+        kind: kind,
+        lang_pair: langPair,
+        text: text,
+        model: model,
+        updated_at: Date.now()
+      };
+      await store.insert('news_translations', valueBucket);
+    } catch (e) {
+    }
+  }
+
+  static async getNewsTranslation(url: string, kind: string): Promise<NewsTranslationEntry | null> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_translations');
+      predicates.equalTo('url', url);
+      predicates.equalTo('kind', kind);
+      const resultSet = await store.query(predicates);
+      try {
+        if (resultSet.goToNextRow()) {
+          return {
+            url: url,
+            kind: kind,
+            langPair: resultSet.getString(resultSet.getColumnIndex('lang_pair')),
+            text: resultSet.getString(resultSet.getColumnIndex('text')),
+            model: resultSet.getString(resultSet.getColumnIndex('model')),
+            updatedAt: resultSet.getLong(resultSet.getColumnIndex('updated_at'))
+          } as NewsTranslationEntry;
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    return null;
+  }
+
+  static async clearNewsTranslations(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_translations');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
+
+  static async getNewsTags(url: string): Promise<NewsTagEntry | null> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('news_tags');
+      predicates.equalTo('url', url);
+      const resultSet = await store.query(predicates);
+      try {
+        if (resultSet.goToNextRow()) {
+          return {
+            url: url,
+            tagsJson: resultSet.getString(resultSet.getColumnIndex('tags_json')),
+            sourceType: resultSet.getString(resultSet.getColumnIndex('source_type')),
+            model: resultSet.getString(resultSet.getColumnIndex('model')),
+            updatedAt: resultSet.getLong(resultSet.getColumnIndex('updated_at'))
+          } as NewsTagEntry;
+        }
+      } finally {
+        resultSet.close();
+      }
+    } catch (e) {
+    }
+    return null;
   }
 
   // ========== 新闻资讯：清理与统计 ==========

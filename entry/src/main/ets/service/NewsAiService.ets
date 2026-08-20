@@ -47,6 +47,59 @@ export class NewsAiService {
     await DataRepository.setSetting('newsModelId', id);
   }
 
+  // ==================== 翻译模型（单独记忆，M3） ====================
+
+  // 翻译模型：优先 newsTranslateModelId（单独记忆），否则跟随资讯功能模型
+  static async getTranslateConfig(): Promise<LlmConfig | null> {
+    const rememberedId: string = await DataRepository.getSetting('newsTranslateModelId', '');
+    if (rememberedId.trim().length > 0) {
+      const models: LlmModelEntry[] = await ChatRepository.loadModels();
+      for (let i: number = 0; i < models.length; i++) {
+        const m: LlmModelEntry = models[i];
+        if (m.id === rememberedId && m.enabled && m.configured) {
+          return entryToConfig(m);
+        }
+      }
+    }
+    return await NewsAiService.getActiveConfig();
+  }
+
+
+  // 选择并记忆翻译模型（空 = 跟随资讯功能模型）
+  static async selectTranslateModel(id: string): Promise<void> {
+    await DataRepository.setSetting('newsTranslateModelId', id);
+  }
+
+  // ==================== 智能标签模型（单独记忆，M4） ====================
+
+  // 智能标签总开关（默认关闭）
+  static async isTagLlmEnabled(): Promise<boolean> {
+    const raw: string = await DataRepository.getSetting('newsTagLlmEnabled', 'false');
+    return raw === 'true';
+  }
+
+  static async setTagLlmEnabled(on: boolean): Promise<void> {
+    await DataRepository.setSetting('newsTagLlmEnabled', on ? 'true' : 'false');
+  }
+
+  // 智能标签模型：优先 newsTagModelId（单独记忆），否则跟随资讯功能模型；开关关闭时返回 null
+  static async getTagConfig(): Promise<LlmConfig | null> {
+    const enabled: boolean = await NewsAiService.isTagLlmEnabled();
+    if (!enabled) return null;
+    const rememberedId: string = await DataRepository.getSetting('newsTagModelId', '');
+    if (rememberedId.trim().length > 0) {
+      const models: LlmModelEntry[] = await ChatRepository.loadModels();
+      for (let i: number = 0; i < models.length; i++) {
+        const m: LlmModelEntry = models[i];
+        if (m.id === rememberedId && m.enabled && m.configured) {
+          return entryToConfig(m);
+        }
+      }
+    }
+    return await NewsAiService.getActiveConfig();
+  }
+
+
   // 当前模型显示名（供选择器展示）
   static async getActiveModelName(): Promise<string> {
     const config: LlmConfig | null = await NewsAiService.getActiveConfig();
@@ -104,6 +157,57 @@ export class NewsAiService {
     return await LlmClient.postCompletionStream(config, messages, onDelta, undefined,
       NewsAiService.newsContext('translate'));
   }
+
+  // 卡片轻量译：标题+摘要 → 简体中文（非流式，结果缓存，手动触发）
+  static async translateTitle(config: LlmConfig, article: NewsItem): Promise<LlmResult> {
+    const system: string = '你是一位专业新闻翻译。把以下新闻标题与摘要翻译成简体中文，保持术语准确、表达自然，只输出译文。';
+    const user: string = '标题：' + article.title +
+      (article.summary.trim().length > 0 ? '\n摘要：' + article.summary.trim() : '') +
+      '\n\n请翻译成简体中文。';
+    const messages: ChatMessage[] = [ChatMessage.create('system', system), ChatMessage.create('user', user)];
+    return await LlmClient.postCompletion(config, messages, NewsAiService.newsContext('translate'));
+  }
+
+  // ==================== LLM 智能标签（M4，默认关闭，失败降级 L1） ====================
+
+  // 生成 3~8 个中文标签（JSON 数组，非流式）
+  static async generateTags(config: LlmConfig, article: NewsItem): Promise<LlmResult> {
+    const system: string = '你是新闻标签专家。根据新闻的标题与摘要，输出 3~8 个中文标签，覆盖主题、领域、实体。' +
+      '只输出 JSON 数组，例如 ["AI","芯片","科技"]，不要输出其他内容。';
+    const user: string = '标题：' + article.title +
+      (article.summary.trim().length > 0 ? '\n摘要：' + article.summary.trim() : '') +
+      '\n\n请输出标签 JSON 数组。';
+    const messages: ChatMessage[] = [ChatMessage.create('system', system), ChatMessage.create('user', user)];
+    return await LlmClient.postCompletion(config, messages, NewsAiService.newsContext('tags'));
+  }
+
+  // 解析模型返回的 JSON 标签数组（容错：截取首个 [ 到末尾 ]；解析失败返回空数组）
+  static parseTagsJson(content: string): string[] {
+    const tags: string[] = [];
+    if (content === undefined || content.trim().length === 0) return tags;
+    let text: string = content.trim();
+    const start: number = text.indexOf('[');
+    const end: number = text.lastIndexOf(']');
+    if (start >= 0 && end > start) {
+      text = text.substring(start, end + 1);
+    }
+    try {
+      const parsed: Object = JSON.parse(text) as Object;
+      if (Array.isArray(parsed)) {
+        const arr: Object[] = parsed as Object[];
+        for (let i: number = 0; i < arr.length; i++) {
+          if (typeof arr[i] === 'string') {
+            const tag: string = (arr[i] as string).trim();
+            if (tag.length > 0 && tags.indexOf(tag) < 0) tags.push(tag);
+          }
+        }
+      }
+    } catch (e) {
+      return [];
+    }
+    return tags;
+  }
+
 
   // ==================== 文章追问（流式，可多轮） ====================
   static async ask(config: LlmConfig, article: NewsItem, bodyText: string, history: ChatMessage[],
@@ -186,6 +290,32 @@ export class NewsAiService {
     const messages: ChatMessage[] = [ChatMessage.create('system', system), ChatMessage.create('user', user)];
     return await LlmClient.postCompletionStream(config, messages, onDelta, undefined,
       NewsAiService.newsContext('hotspot'));
+  }
+
+
+  // ==================== 个性化早报（M5，基于画像权重的候选精选） ====================
+  // items 已由 NewsRanker 按用户画像排序；prompt 强调按兴趣优先级组织
+  static async generatePersonalizedDigest(config: LlmConfig, items: NewsItem[], dateLabel: string,
+    onDelta: (delta: string) => void): Promise<LlmResult> {
+    let list: string = '';
+    const count: number = items.length > 20 ? 20 : items.length;
+    for (let i: number = 0; i < count; i++) {
+      const tags: string = items[i].tags !== undefined && items[i].tags.length > 0 ?
+        '【' + items[i].tags.slice(0, 3).join('/') + '】' : '';
+      const s: string = items[i].summary.length > 0 ?
+        items[i].summary.trim().substring(0, 120) : '';
+      list = list + (i + 1).toString() + '. ' + tags + '[' + items[i].sourceName + '] ' + items[i].title +
+        (s.length > 0 ? ' —— ' + s : '') + '\n';
+    }
+    const system: string = '你是一位个性化新闻编辑。候选新闻已按用户兴趣权重排序。请基于给定信息生成一份「为你精选」简报，' +
+      '不要编造具体数字、人名或细节；信息不足时写明「据现有信息」。';
+    const user: string = '今天是' + dateLabel + '。以下候选新闻按兴趣权重从高到低排列（含标签）：\n' + list + '\n\n请输出：\n' +
+      '1. 开头用 2~3 句话总结今天与你兴趣最相关的内容；\n' +
+      '2. 按兴趣优先级选 8~10 条，每条：【标签】标题（来源）—— 2~3 句描述；\n' +
+      '3. 结尾给出 1~2 句阅读建议。\n使用 Markdown，适当详细但不要冗长。';
+    const messages: ChatMessage[] = [ChatMessage.create('system', system), ChatMessage.create('user', user)];
+    return await LlmClient.postCompletionStream(config, messages, onDelta, undefined,
+      NewsAiService.newsContext('personal_digest'));
   }
 
   // ==================== AI 今日要闻（流式生成简报） ====================

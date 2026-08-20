@@ -14,8 +14,10 @@ import { SoundService } from '../service/SoundService';
 import { HuaweiAccountService } from '../service/HuaweiAccountService';
 import { CloudSyncService } from '../service/CloudSyncService';
 import { AppNavigator } from '../common/AppNavigator';
-import { NEWS_SOURCES } from '../common/NewsChannels';
-import { NewsSourceDef } from '../common/NewsModels';
+import { NEWS_SOURCES, NEWS_CHANNELS } from '../common/NewsChannels';
+import { NewsSourceDef, NewsChannel } from '../common/NewsModels';
+import { NewsModelSelector } from '../components/NewsModelSelector';
+import { NewsAiService } from '../service/NewsAiService';
 import { NewsRepository } from '../service/NewsRepository';
 import { NewsService } from '../service/NewsService';
 
@@ -129,6 +131,12 @@ export struct SettingsPage {
   @State customRssName: string = '';
   @State customRssUrl: string = '';
   @State customSources: NewsSourceDef[] = [];
+  // 关闭个性化的频道 id 列表（默认空 = 全部频道个性化；动态适配频道增减）
+  @State newsPersonalizedOff: string[] = [];
+  // LLM 智能标签开关（默认关闭，M4）
+  @State newsTagLlmEnabled: boolean = false;
+  // 个性化模式（M2 增强）：standard / aggressive / hot / explore
+  @State newsPersonalizedMode: string = 'standard';
   // OPML 导入
   @State showOpmlSheet: boolean = false;
   @State opmlText: string = '';
@@ -186,6 +194,9 @@ export struct SettingsPage {
       this.soundEnabled = SoundService.isEnabled();
       this.agentEnabled = await DataRepository.getSetting('agentEnabled', 'false') === 'true';
       this.loadNewsSourceSettings();
+      this.loadNewsPersonalized();
+      this.loadTagLlmState();
+      this.loadNewsMode();
       const profile = await HuaweiAccountService.getStoredProfile();
       this.huaweiNick = profile !== null ? profile.nickName : '';
       this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
@@ -226,6 +237,84 @@ export struct SettingsPage {
   }
 
   // ==================== 资讯 ====================
+
+  private async loadNewsPersonalized(): Promise<void> {
+    try {
+      const raw: string = await DataRepository.getSetting('newsPersonalizedChannels', '');
+      if (raw.trim().length === 0) {
+        this.newsPersonalizedOff = [];
+        return;
+      }
+      const parsed: Object = JSON.parse(raw) as Object;
+      if (Array.isArray(parsed)) {
+        const ids: string[] = [];
+        const arr: Object[] = parsed as Object[];
+        for (let i: number = 0; i < arr.length; i++) {
+          if (typeof arr[i] === 'string') ids.push(arr[i] as string);
+        }
+        this.newsPersonalizedOff = ids;
+      }
+    } catch (e) {
+      this.newsPersonalizedOff = [];
+    }
+  }
+
+  private channelPersonalized(id: string): boolean {
+    return this.newsPersonalizedOff.indexOf(id) < 0;
+  }
+
+  // ==================== LLM 智能标签（M4） ====================
+
+  private async loadTagLlmState(): Promise<void> {
+    this.newsTagLlmEnabled = await NewsAiService.isTagLlmEnabled();
+  }
+
+  private async onTagLlmToggle(on: boolean): Promise<void> {
+    await NewsAiService.setTagLlmEnabled(on);
+    this.newsTagLlmEnabled = on;
+    this.toast(on ? '已开启智能标签（将把新闻标题/摘要发送至所选模型）' : '已关闭智能标签');
+  }
+
+  // ==================== 个性化模式（M2 增强） ====================
+
+  private async loadNewsMode(): Promise<void> {
+    this.newsPersonalizedMode = await DataRepository.getSetting('newsPersonalizedMode', 'standard');
+  }
+
+  private modeLabel(mode: string): string {
+    if (mode === 'aggressive') return '高个性化';
+    if (mode === 'explore') return '探索';
+    if (mode === 'hot') return '仅热点';
+    return '标准';
+  }
+
+  private async onNewsModePick(): Promise<void> {
+    promptAction.showActionMenu({
+      title: '个性化模式',
+      buttons: [
+        { text: '标准（推荐）', color: '#666666' },
+        { text: '高个性化', color: '#666666' },
+        { text: '仅热点', color: '#666666' },
+        { text: '探索', color: '#666666' }
+      ]
+    }).then((result: promptAction.ActionMenuSuccessResponse) => {
+      const modes: string[] = ['standard', 'aggressive', 'hot', 'explore'];
+      if (result.index >= 0 && result.index < modes.length) {
+        const mode: string = modes[result.index];
+        this.newsPersonalizedMode = mode;
+        DataRepository.setSetting('newsPersonalizedMode', mode).then(() => {
+          this.toast('个性化模式：' + this.modeLabel(mode));
+        });
+      }
+    }).catch(() => {
+    });
+  }
+
+  private async onChannelPersonalizedToggle(id: string, on: boolean): Promise<void> {
+    await NewsRepository.setChannelPersonalized(id, on);
+    this.loadNewsPersonalized();
+  }
+
   private async loadNewsSourceSettings(): Promise<void> {
     try {
       const raw: string = await DataRepository.getSetting('newsEnabledSources', '');
@@ -1882,6 +1971,96 @@ export struct SettingsPage {
                   .fontColor(this.palette.textTertiary)
                   .width('100%')
                   .margin({ top: 2 })
+
+                Text('个性化频道')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .width('100%')
+                  .margin({ top: 8 })
+                ForEach(NEWS_CHANNELS, (channel: NewsChannel) => {
+                  this.toggleRow(channel.icon + ' ' + channel.name + ' 个性化',
+                    this.channelPersonalized(channel.id), (v: boolean) => {
+                      this.onChannelPersonalizedToggle(channel.id, v);
+                    })
+                }, (channel: NewsChannel) => channel.id)
+                Text('默认全部频道启用个性化（按标签权重排序）；关闭的频道恢复纯时间排序。新增频道自动默认启用。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
+                this.valueRow('个性化模式', this.modeLabel(this.newsPersonalizedMode), () => {
+                  this.onNewsModePick();
+                })
+                Text('标准=混合排序｜高个性化=反馈权重更高｜仅热点=纯时间排序｜探索=更多新内容')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                this.valueRow('个性化画像（兴趣/厌恶管理）', '查看与调整', () => {
+                  AppNavigator.push('pages/NewsProfile');
+                })
+                this.valueRow('重置推荐画像', '清空全部权重', () => {
+                  NewsRepository.resetProfile().then(() => {
+                    this.toast('已重置推荐画像');
+                  });
+                })
+
+                Text('翻译模型')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .width('100%')
+                  .margin({ top: 8 })
+                Text('翻译默认使用资讯功能模型；可单独选择并记忆翻译模型。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                NewsModelSelector({
+                  settingKey: 'newsTranslateModelId',
+                  followLabel: '跟随资讯模型',
+                  followDesc: '翻译默认使用资讯功能模型，可单独选择并记忆'
+                })
+                  .width(220)
+                  .margin({ top: 4 })
+                this.valueRow('清除翻译缓存', '', () => {
+                  NewsRepository.clearTranslations().then(() => {
+                    this.toast('已清除翻译缓存');
+                  });
+                })
+
+                Text('AI 智能标签')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .width('100%')
+                  .margin({ top: 8 })
+                this.toggleRow('智能标签（LLM 精标）', this.newsTagLlmEnabled, (v: boolean) => {
+                  this.onTagLlmToggle(v);
+                })
+                Text('开启后：将把新闻标题/摘要发送至你选择的模型服务商，用于生成更细标签；失败自动回退本地规则。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                NewsModelSelector({
+                  settingKey: 'newsTagModelId',
+                  followLabel: '跟随资讯模型',
+                  followDesc: '智能标签默认使用资讯功能模型，可单独选择并记忆'
+                })
+                  .width(220)
+                  .margin({ top: 4 })
+                this.valueRow('清除标签缓存', '', () => {
+                  NewsRepository.clearTags().then(() => {
+                    this.toast('已清除标签缓存');
+                  });
+                })
+
                 this.valueRow('AI 摘要 / 翻译 / 问 AI', '手动触发', () => {
                   this.toast('在新闻详情页手动触发，使用「我的 → AI 模型」配置的模型');
                 })

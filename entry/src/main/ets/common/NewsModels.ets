@@ -12,9 +12,12 @@ export class NewsItem {
   sourceName: string;  // 展示名（知乎日报 / Hacker News / 少数派 …）
   category: string;    // 频道 id（recommend/tech/ai/finance/world）
   publishedAt: number; // 时间戳（毫秒）
+  tags: string[];      // 内容标签（L1 规则生成，3~8 个；点踩面板可多选）
+  language: string;    // 语言：zh / en / other（外文翻译用）
 
   constructor(id: string, title: string, summary: string, url: string, imageUrl: string,
-    sourceId: string, sourceName: string, category: string, publishedAt: number) {
+    sourceId: string, sourceName: string, category: string, publishedAt: number,
+    tags: string[] = [], language: string = 'zh') {
     this.id = id;
     this.title = title;
     this.summary = summary;
@@ -24,6 +27,36 @@ export class NewsItem {
     this.sourceName = sourceName;
     this.category = category;
     this.publishedAt = publishedAt;
+    this.tags = tags;
+    this.language = language;
+  }
+}
+
+// 赞/踩状态（news_ratings 行；rating: 1=赞 / -1=踩 / 0=取消）
+export class NewsRating {
+  url: string;
+  rating: number;
+  title: string;
+  summary: string;
+  imageUrl: string;
+  sourceName: string;
+  category: string;
+  publishedAt: number;
+  tags: string[];      // 点赞=该篇全部标签；点踩=用户勾选的标签（可为空）
+  updatedAt: number;
+
+  constructor(url: string, rating: number, title: string, summary: string, imageUrl: string,
+    sourceName: string, category: string, publishedAt: number, tags: string[], updatedAt: number) {
+    this.url = url;
+    this.rating = rating;
+    this.title = title;
+    this.summary = summary;
+    this.imageUrl = imageUrl;
+    this.sourceName = sourceName;
+    this.category = category;
+    this.publishedAt = publishedAt;
+    this.tags = tags;
+    this.updatedAt = updatedAt;
   }
 }
 
@@ -85,6 +118,8 @@ export class NewsDetailRouteParams {
   sourceName: string;
   category: string;
   publishedAt: number;
+  tags: string[];
+  language: string;
 
   constructor(item: NewsItem) {
     this.itemId = item.id;
@@ -96,10 +131,13 @@ export class NewsDetailRouteParams {
     this.sourceName = item.sourceName;
     this.category = item.category;
     this.publishedAt = item.publishedAt;
+    this.tags = item.tags === undefined ? [] : item.tags;
+    this.language = item.language === undefined ? 'zh' : item.language;
   }
 
   toItem(): NewsItem {
     return new NewsItem(this.itemId, this.title, this.summary, this.url, this.imageUrl,
-      this.sourceId, this.sourceName, this.category, this.publishedAt);
+      this.sourceId, this.sourceName, this.category, this.publishedAt,
+      this.tags === undefined ? [] : this.tags, this.language);
   }
 }

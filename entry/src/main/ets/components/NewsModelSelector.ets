@@ -9,6 +9,13 @@ import { DataRepository } from '../service/DataRepository';
 
 @ComponentV2
 export struct NewsModelSelector {
+  // 记忆的 settings key：newsModelId（资讯）/ newsTranslateModelId（翻译）/ newsTagModelId（智能标签）
+  @Param settingKey: string = 'newsModelId';
+  // 空选择时的文案：资讯用「跟随全局模型」；翻译/标签用「跟随资讯模型」
+  @Param followLabel: string = '跟随全局模型';
+  @Param followDesc: string = '使用「我的 → AI 模型」中的默认模型';
+  // 紧凑模式：隐藏 🤖 图标、缩小字号与高度（用于空间紧张的页面如 AI 今日要闻）
+  @Param compact: boolean = false;
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Local modelName: string = '跟随全局';
   @Local selectedId: string = '';
@@ -26,11 +33,18 @@ export struct NewsModelSelector {
   private async refresh(): Promise<void> {
     try {
       this.models = await NewsAiService.listModels();
-      this.selectedId = await DataRepository.getSetting('newsModelId', '');
+      this.selectedId = await DataRepository.getSetting(this.settingKey, '');
       if (this.selectedId.length === 0) {
-        this.modelName = '跟随全局';
+        this.modelName = this.followLabel;
       } else {
-        this.modelName = await NewsAiService.getActiveModelName();
+        let found: string = '';
+        for (let i: number = 0; i < this.models.length; i++) {
+          if (this.models[i].id === this.selectedId) {
+            found = this.models[i].displayName.length > 0 ? this.models[i].displayName : this.models[i].model;
+            break;
+          }
+        }
+        this.modelName = found.length > 0 ? found : this.followLabel;
       }
     } catch (e) {
       this.modelName = '未配置模型';
@@ -38,8 +52,14 @@ export struct NewsModelSelector {
   }
 
   private async pick(id: string): Promise<void> {
-    // id 为空 = 恢复「跟随全局模型」（清空资讯专属记忆）
-    await NewsAiService.selectModel(id);
+    // id 为空 = 恢复「跟随」（清空该功能专属记忆）
+    if (this.settingKey === 'newsModelId') {
+      await NewsAiService.selectModel(id);
+    } else if (this.settingKey === 'newsTranslateModelId') {
+      await NewsAiService.selectTranslateModel(id);
+    } else {
+      await DataRepository.setSetting(this.settingKey, id);
+    }
     this.showSheet = false;
     await this.refresh();
   }
@@ -81,13 +101,13 @@ export struct NewsModelSelector {
             // 「跟随全局」选项：清空资讯专属记忆
             Row({ space: 10 }) {
               Column({ space: 2 }) {
-                Text('跟随全局模型')
+                Text(this.followLabel)
                   .fontSize(this.themeState.palette.fsSm)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.selectedId.length === 0 ? this.themeState.palette.primary :
                     this.themeState.palette.textPrimary)
                   .fontWeight(this.selectedId.length === 0 ? FontWeight.Bold : FontWeight.Medium)
-                Text('使用「我的 → AI 模型」中的默认模型')
+                Text(this.followDesc)
                   .fontSize(10)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.textTertiary)
@@ -168,25 +188,27 @@ export struct NewsModelSelector {
 
   build() {
     // 触发按钮：与 AI 对话页「当前模型切换」一致的玻璃卡片样式
-    Row({ space: 6 }) {
-      Text('🤖')
-        .fontSize(12)
-        .fontFamily(this.themeState.palette.fontSans)
+    Row({ space: 4 }) {
+      if (!this.compact) {
+        Text('🤖')
+          .fontSize(12)
+          .fontFamily(this.themeState.palette.fontSans)
+      }
       Text(this.modelName)
-        .fontSize(11)
+        .fontSize(this.compact ? 10 : 11)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textSecondary)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
       Text('▾')
-        .fontSize(10)
+        .fontSize(this.compact ? 9 : 10)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textTertiary)
     }
     .width('100%')
-    .height(34)
-    .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+    .height(this.compact ? 30 : 34)
+    .padding({ left: this.compact ? 8 : 10, right: this.compact ? 8 : 10, top: this.compact ? 4 : 6, bottom: this.compact ? 4 : 6 })
     .borderRadius(8)
     .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })

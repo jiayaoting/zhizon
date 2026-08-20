@@ -29,5 +29,28 @@ export default function NewsAiServiceTest() {
       const ctx: string = NewsAiService.articleContext(item, '');
       expect(ctx.indexOf('文章正文')).assertEqual(-1);
     });
+
+    it('parses llm tag json array', 0, () => {
+      const tags: string[] = NewsAiService.parseTagsJson('["AI","芯片","科技"]');
+      expect(tags.length).assertEqual(3);
+      expect(tags[0]).assertEqual('AI');
+    });
+
+    it('parses llm tag json embedded in text', 0, () => {
+      const tags: string[] = NewsAiService.parseTagsJson('模型返回：["AI","芯片"] 完成');
+      expect(tags.length).assertEqual(2);
+      expect(tags[1]).assertEqual('芯片');
+    });
+
+    it('parses llm tag json dedupes and trims', 0, () => {
+      const tags: string[] = NewsAiService.parseTagsJson('[" AI ", "AI", 123, " 芯片 "]\n');
+      expect(tags.length).assertEqual(2);
+      expect(tags[0]).assertEqual('AI');
+    });
+
+    it('returns empty on malformed llm output', 0, () => {
+      expect(NewsAiService.parseTagsJson('模型返回了文本')).assertEqual(0);
+      expect(NewsAiService.parseTagsJson('')).assertEqual(0);
+    });
   });
 }

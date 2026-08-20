@@ -13,6 +13,7 @@ import { NewsItem, NewsDigestEntry, NewsDetailRouteParams } from '../common/News
 import { NewsService } from '../service/NewsService';
 import { NewsRepository } from '../service/NewsRepository';
 import { NewsAiService } from '../service/NewsAiService';
+import { NewsRanker } from '../service/NewsRanker';
 import { LlmConfig, LlmResult } from '../common/LlmModels';
 
 @ComponentV2
@@ -55,6 +56,7 @@ export struct NewsDigestPage {
     if (this.mode === 'morning') return '🌅 早报速递';
     if (this.mode === 'noon') return '🌤️ 午间速递';
     if (this.mode === 'evening') return '🌙 晚报速递';
+    if (this.mode === 'personal') return '🎯 为你精选';
     return '📰 今日要闻';
   }
 
@@ -62,7 +64,49 @@ export struct NewsDigestPage {
     if (this.mode === 'morning') return 'AI 梳理今晨重要资讯';
     if (this.mode === 'noon') return 'AI 汇总当天最新进展';
     if (this.mode === 'evening') return 'AI 复盘全天重要动态';
+    if (this.mode === 'personal') return '基于你的点赞/点踩画像，AI 精选最相关内容';
     return '聚合当天各源热点，一键生成 8~10 条要闻';
+  }
+
+  // ==================== 模式顺序与展示（分段标签 + 左右滑动） ====================
+
+  private modeOrder(): string[] {
+    return ['digest', 'morning', 'noon', 'evening', 'personal'];
+  }
+
+  private modeIndex(mode: string): number {
+    const order: string[] = this.modeOrder();
+    for (let i: number = 0; i < order.length; i++) {
+      if (order[i] === mode) return i;
+    }
+    return 0;
+  }
+
+  private modeIcon(mode: string): string {
+    if (mode === 'morning') return '🌅';
+    if (mode === 'noon') return '🌤️';
+    if (mode === 'evening') return '🌙';
+    if (mode === 'personal') return '🎯';
+    return '📰';
+  }
+
+  private modeName(mode: string): string {
+    if (mode === 'morning') return '早报';
+    if (mode === 'noon') return '午间';
+    if (mode === 'evening') return '晚报';
+    if (mode === 'personal') return '为你';
+    return '今日要闻';
+  }
+
+  // 左右滑动切换模式（左滑下一个，右滑上一个）
+  private onSwipeMode(offsetX: number): void {
+    const modes: string[] = this.modeOrder();
+    const idx: number = this.modeIndex(this.mode);
+    if (offsetX < 0 && idx < modes.length - 1) {
+      this.switchMode(modes[idx + 1]);
+    } else if (offsetX > 0 && idx > 0) {
+      this.switchMode(modes[idx - 1]);
+    }
   }
 
   private switchMode(mode: string): void {
@@ -101,7 +145,15 @@ export struct NewsDigestPage {
       }
       this.sourceItems = items;
       let result: LlmResult;
-      if (this.mode === 'digest') {
+      if (this.mode === 'personal') {
+        // 个性化：先按画像权重精选候选（NewsRanker），再生成
+        const ranked: NewsItem[] = await NewsRanker.rank(items, 20);
+        this.sourceItems = ranked;
+        result = await NewsAiService.generatePersonalizedDigest(config, ranked,
+          NewsRepository.todayLabel(), (d: string): void => {
+            this.streamText = this.streamText + d;
+          });
+      } else if (this.mode === 'digest') {
         result = await NewsAiService.generateDigest(config, items,
           NewsRepository.todayLabel(), (d: string): void => {
             this.streamText = this.streamText + d;
@@ -194,6 +246,8 @@ export struct NewsDigestPage {
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
+            NewsModelSelector({ compact: true })
+              .width(104)
             Button(this.digest !== null ? '重新生成' : '生成')
               .fontSize(this.themeState.palette.fsSm)
               .fontFamily(this.themeState.palette.fontSans)
@@ -210,67 +264,48 @@ export struct NewsDigestPage {
           .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
           .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
 
-          // 模式切换（今日要闻 / 早报 / 午间速递 / 晚报）+ 资讯专属模型选择
-          Row({ space: 8 }) {
-            Scroll() {
-              Row({ space: 6 }) {
-                Text('📰 今日要闻')
-                  .fontSize(this.themeState.palette.fsSm)
+          // 模式切换：主体分段标签（5 个模式均分，选中高亮）+ 左右滑动切换
+          Row({ space: 4 }) {
+            ForEach(this.modeOrder(), (m: string) => {
+              Column({ space: 2 }) {
+                Text(this.modeIcon(m))
+                  .fontSize(this.themeState.palette.fsMd + 2)
                   .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.mode === 'digest' ? this.themeState.palette.primary :
-                    this.themeState.palette.textSecondary)
-                  .fontWeight(this.mode === 'digest' ? FontWeight.Bold : FontWeight.Normal)
-                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                  .borderRadius(14)
-                  .backgroundColor(this.mode === 'digest' ? this.themeState.palette.primary + '2A' :
-                    this.themeState.palette.bgSurface2)
-                  .onClick(() => { this.switchMode('digest'); })
-                Text('🌅 早报')
-                  .fontSize(this.themeState.palette.fsSm)
+                Text(this.modeName(m))
+                  .fontSize(this.themeState.palette.fsXs)
                   .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.mode === 'morning' ? this.themeState.palette.primary :
-                    this.themeState.palette.textSecondary)
-                  .fontWeight(this.mode === 'morning' ? FontWeight.Bold : FontWeight.Normal)
-                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                  .borderRadius(14)
-                  .backgroundColor(this.mode === 'morning' ? this.themeState.palette.primary + '2A' :
-                    this.themeState.palette.bgSurface2)
-                  .onClick(() => { this.switchMode('morning'); })
-                Text('🌤️ 午间')
-                  .fontSize(this.themeState.palette.fsSm)
-                  .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.mode === 'noon' ? this.themeState.palette.primary :
-                    this.themeState.palette.textSecondary)
-                  .fontWeight(this.mode === 'noon' ? FontWeight.Bold : FontWeight.Normal)
-                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                  .borderRadius(14)
-                  .backgroundColor(this.mode === 'noon' ? this.themeState.palette.primary + '2A' :
-                    this.themeState.palette.bgSurface2)
-                  .onClick(() => { this.switchMode('noon'); })
-                Text('🌙 晚报')
-                  .fontSize(this.themeState.palette.fsSm)
-                  .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.mode === 'evening' ? this.themeState.palette.primary :
-                    this.themeState.palette.textSecondary)
-                  .fontWeight(this.mode === 'evening' ? FontWeight.Bold : FontWeight.Normal)
-                  .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                  .borderRadius(14)
-                  .backgroundColor(this.mode === 'evening' ? this.themeState.palette.primary + '2A' :
-                    this.themeState.palette.bgSurface2)
-                  .onClick(() => { this.switchMode('evening'); })
+                  .fontColor(this.mode === m ? Color.White : this.themeState.palette.textSecondary)
+                  .fontWeight(this.mode === m ? FontWeight.Bold : FontWeight.Normal)
               }
-              .padding({ left: 14, right: 14 })
-            }
-            .layoutWeight(1)
-            .scrollable(ScrollDirection.Horizontal)
-            .scrollBar(BarState.Off)
-            .edgeEffect(EdgeEffect.None)
-
-            NewsModelSelector()
-              .width(150)
+              .layoutWeight(1)
+              .height(54)
+              .borderRadius(12)
+              .justifyContent(FlexAlign.Center)
+              .backgroundColor(this.mode === m ? this.themeState.palette.primary :
+                GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+              .border({ width: this.mode === m ? 0 : 1,
+                color: this.mode === m ? Color.Transparent :
+                  GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+              .onClick(() => { this.switchMode(m); })
+            }, (m: string) => m)
           }
           .width('100%')
-          .padding({ left: 0, right: 14, top: 0, bottom: 12 })
+
+          // 位置指示点 + 滑动提示
+          Row({ space: 6 }) {
+            ForEach(this.modeOrder(), (m: string) => {
+              Circle({ width: this.mode === m ? 8 : 6, height: this.mode === m ? 8 : 6 })
+                .fill(this.mode === m ? this.themeState.palette.primary : this.themeState.palette.borderSubtle)
+            }, (m: string) => m + '-dot')
+            Text('左右滑动切换')
+              .fontSize(this.themeState.palette.fsXs - 1)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
+              .margin({ left: 4 })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .padding({ top: 2, bottom: 8 })
 
           if (this.generating) {
             Row({ space: 8 }) {
@@ -413,6 +448,15 @@ export struct NewsDigestPage {
         .width('100%')
         .constraintSize({ maxWidth: 720 })
         .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 12 })
+        .gesture(
+          PanGesture({ direction: PanDirection.Horizontal, distance: 40 })
+            .onActionEnd((event: GestureEvent) => {
+              // PanGesture 在结束时提供可靠的 offsetX：左滑 <0 → 下一个，右滑 >0 → 上一个
+              const dx: number = event.offsetX;
+              if (Math.abs(dx) < 30) return;
+              this.onSwipeMode(dx);
+            })
+        )
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
