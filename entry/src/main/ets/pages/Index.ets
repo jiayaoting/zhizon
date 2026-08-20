@@ -326,9 +326,10 @@ export struct IndexPage {
   @Builder
   header() {
     Row() {
-      Column() {
+      // 单行问候：问候 + 日期（紧凑，省垂直空间）
+      Row({ space: 8 }) {
         Text(this.greeting)
-          .fontSize(this.themeState.palette.fsXl + 4)
+          .fontSize(this.themeState.palette.fsXl + 2)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
@@ -336,9 +337,8 @@ export struct IndexPage {
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
-          .margin({ top: 4 })
       }
-      .alignItems(HorizontalAlign.Start)
+      .alignItems(VerticalAlign.Center)
       .layoutWeight(1)
 
       // 搜索入口
@@ -358,41 +358,7 @@ export struct IndexPage {
         AppNavigator.push('pages/NewsSearch');
       })
 
-      // 收藏入口
-      Row() {
-        Text('⭐')
-          .fontSize(this.themeState.palette.fsXl)
-          .fontFamily(this.themeState.palette.fontSans)
-      }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .margin({ right: 10 })
-      .onClick(() => {
-        AppNavigator.push('pages/NewsFavorites');
-      })
-
-      // 我的点赞入口
-      Row() {
-        Text('👍')
-          .fontSize(this.themeState.palette.fsMd + 2)
-          .fontFamily(this.themeState.palette.fontSans)
-      }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .margin({ right: 10 })
-      .onClick(() => {
-        AppNavigator.push('pages/NewsLikes');
-      })
-
-      // 用户头像（点击进入设置）
+      // 用户头像（点击进入我的/设置；收藏/点赞入口已移入「我的」页）
       Stack() {
         if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
           Image(this.avatarUri)
@@ -424,54 +390,37 @@ export struct IndexPage {
     }
     .width('100%')
     .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-      top: this.themeState.statusBarHeight + 8 })
+      top: Math.max(this.themeState.statusBarHeight, 44) + 8 })
     .alignItems(VerticalAlign.Center)
   }
 
   // ==================== AI 今日要闻入口卡 ====================
   @Builder
   digestCard() {
-    Row({ space: 12 }) {
-      Column() {
-        Text('📰')
-          .fontSize(30)
-          .fontFamily(this.themeState.palette.fontSans)
-      }
-      .width(52)
-      .height(52)
-      .borderRadius(14)
-      .backgroundColor(this.themeState.palette.primary + '1A')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-
-      Column({ space: 4 }) {
-        Text('AI 今日要闻')
-          .fontSize(this.themeState.palette.fsLg)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
-        Text(this.hasDigestToday ? '今日简报已生成，点击查看' : '一键生成当天热点简报（大模型）')
-          .fontSize(this.themeState.palette.fsSm)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textTertiary)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-
-      Text('›')
+    // 紧凑横条：一行入口（省垂直空间，主题更聚焦新闻列表）
+    Row({ space: 10 }) {
+      Text('📰')
+        .fontSize(20)
+        .fontFamily(this.themeState.palette.fontSans)
+      Text('AI 今日要闻')
         .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+      Blank()
+      Text(this.hasDigestToday ? '已生成 ›' : '生成今日简报 ›')
+        .fontSize(this.themeState.palette.fsXs)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textTertiary)
     }
     .width('100%')
-    .padding(14)
+    .height(44)
+    .padding({ left: 14, right: 14 })
     .borderRadius(12)
     .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
     .alignItems(VerticalAlign.Center)
-    .margin({ top: 16, bottom: 4 })
+    .margin({ top: 8, bottom: 4 })
     .onClick(() => {
       AppNavigator.push('pages/NewsDigest');
     })
@@ -505,19 +454,19 @@ export struct IndexPage {
         Row({ space: 12 }) {
           Stack() {
             Column()
-              .width(72)
-              .height(72)
-              .borderRadius(14)
+              .width(60)
+              .height(60)
+              .borderRadius(12)
               .linearGradient({
                 angle: 135,
                 colors: [[this.themeState.palette.primary, 0.0], [this.themeState.palette.purple, 1.0]]
               })
             Text('📰')
-              .fontSize(28)
+              .fontSize(24)
               .fontFamily(this.themeState.palette.fontSans)
           }
-          .width(72)
-          .height(72)
+          .width(60)
+          .height(60)
 
           Column({ space: 4 }) {
             Text(item.title)
@@ -538,7 +487,7 @@ export struct IndexPage {
           .layoutWeight(1)
         }
         .width('100%')
-        .padding(14)
+        .padding(12)
         .borderRadius(12)
         .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
         .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
@@ -546,8 +495,8 @@ export struct IndexPage {
       }, (item: NewsItem) => item.id)
     }
     .width('100%')
-    .height(100)
-    .indicator(new DotIndicator().bottom(6).color(this.themeState.palette.bgSurface2)
+    .height(84)
+    .indicator(new DotIndicator().bottom(4).color(this.themeState.palette.bgSurface2)
       .selectedColor(this.themeState.palette.primary))
     .autoPlay(true)
     .loop(true)
@@ -572,10 +521,10 @@ export struct IndexPage {
                 this.themeState.palette.textSecondary)
               .fontWeight(this.channelId === channel.id ? FontWeight.Bold : FontWeight.Normal)
           }
-          .height(34)
-          .padding({ left: 14, right: 14 })
+          .height(40)
+          .padding({ left: 16, right: 16 })
           .justifyContent(FlexAlign.Center)
-          .borderRadius(17)
+          .borderRadius(20)
           .backgroundColor(this.channelId === channel.id ? this.themeState.palette.primary + '2A' :
             this.themeState.palette.bgSurface2)
           .border({ width: this.channelId === channel.id ? 1.5 : 0,
@@ -587,7 +536,7 @@ export struct IndexPage {
           })
         }, (channel: NewsChannel) => channel.id)
       }
-      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 8 })
     }
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)

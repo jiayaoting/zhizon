@@ -1,12 +1,13 @@
-// 智子 - 我的页（用户信息 + 设置入口 + 关于）
+// 智子 - 我的页（用户信息 + 按业务分组入口：资讯/游戏/系统 + 关于）
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { DataRepository } from '../service/DataRepository';
+import { NewsRepository, NewsStats } from '../service/NewsRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 import { AppConstants } from '../common/Constants';
-import { PageKey, LegalDocRouteParams } from '../common/Navigation';
+import { LegalDocRouteParams } from '../common/Navigation';
 
 interface AboutRow {
   label: string;
@@ -16,8 +17,9 @@ interface AboutRow {
 
 @ComponentV2
 export struct ProfilePage {
-          @Local avatarId: string = 'liquid';
+  @Local avatarId: string = 'liquid';
   @Local avatarUri: string = '';
+  @Local stats: NewsStats = { favoriteCount: 0, readCount: 0, aiCallCount: 0 };
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Event onNavigate: (key: string) => void = () => {};
 
@@ -32,11 +34,19 @@ export struct ProfilePage {
 
   aboutToAppear(): void {
     this.loadAvatar();
+    this.loadStats();
   }
 
   private async loadAvatar(): Promise<void> {
     this.avatarId = await DataRepository.getSetting('avatarId', 'liquid');
     this.avatarUri = await DataRepository.getSetting('avatarUri', '');
+  }
+
+  private async loadStats(): Promise<void> {
+    try {
+      this.stats = await NewsRepository.stats();
+    } catch (e) {
+    }
   }
 
   private handleAboutRow(row: AboutRow): void {
@@ -51,63 +61,100 @@ export struct ProfilePage {
     } else if (row.action === 5) {
       promptAction.showToast({ message: '反馈功能即将上线' });
     } else if (row.value.length > 0) {
-      promptAction.showToast({ message: `${row.label}：${row.value}` });
+      promptAction.showToast({ message: row.label + '：' + row.value });
     }
   }
 
   @Builder
   headerCard() {
-    Row({ space: 16 }) {
-      // 头像
-      Stack() {
-        if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
-          Image(this.avatarUri)
-            .width(64)
-            .height(64)
-            .borderRadius(32)
-            .objectFit(ImageFit.Cover)
-            .border({ width: 1.5, color: '#80FFFFFF' })
-        } else {
-          Column()
-            .width(64)
-            .height(64)
-            .borderRadius(32)
-            .linearGradient({
-              angle: 135,
-              colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
-            })
-            .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
-          Text('Z')
-            .fontSize(28)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(Color.White)
-            .fontWeight(FontWeight.Bold)
+    Column({ space: 14 }) {
+      Row({ space: 16 }) {
+        // 头像（点击进入设置）
+        Stack() {
+          if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
+            Image(this.avatarUri)
+              .width(64)
+              .height(64)
+              .borderRadius(32)
+              .objectFit(ImageFit.Cover)
+              .border({ width: 1.5, color: '#80FFFFFF' })
+          } else {
+            Column()
+              .width(64)
+              .height(64)
+              .borderRadius(32)
+              .linearGradient({
+                angle: 135,
+                colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
+              })
+              .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
+            Text('Z')
+              .fontSize(28)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(Color.White)
+              .fontWeight(FontWeight.Bold)
+          }
         }
-      }
-      .onClick(() => { this.onNavigate('Settings'); })
+        .onClick(() => { this.onNavigate('Settings'); })
 
-      Column({ space: 4 }) {
-        Text(AppConstants.appName)
-          .fontSize(this.themeState.palette.fsXl)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
-        Row({ space: 6 }) {
+        Column({ space: 4 }) {
+          Text(AppConstants.appName)
+            .fontSize(this.themeState.palette.fsXl)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .fontWeight(FontWeight.Bold)
           Text('AI 资讯 · 智能对话 · 休闲游戏')
             .fontSize(this.themeState.palette.fsXs)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
         }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Text('设置 ›')
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
+          .onClick(() => { this.onNavigate('Settings'); })
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      // 三格数据（收藏 / 已读 / AI 资讯调用）
+      Row() {
+        this.statCell('⭐', this.stats.favoriteCount, '收藏')
+        this.statCell('👁', this.stats.readCount, '已读')
+        this.statCell('🤖', this.stats.aiCallCount, 'AI 调用')
+      }
+      .width('100%')
     }
     .width('100%')
-    .padding(20)
+    .padding(18)
     .borderRadius(16)
     .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
     .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
-    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  statCell(icon: string, value: number, label: string) {
+    Column({ space: 2 }) {
+      Text(icon)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+      Text(value.toString())
+        .fontSize(this.themeState.palette.fsLg)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primary)
+        .fontWeight(FontWeight.Bold)
+      Text(label)
+        .fontSize(this.themeState.palette.fsXs - 1)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+    }
+    .layoutWeight(1)
+    .padding({ top: 8, bottom: 8 })
+    .borderRadius(10)
+    .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
   }
 
   @Builder
@@ -144,9 +191,59 @@ export struct ProfilePage {
   }
 
   @Builder
-  commonGroup() {
+  newsGroup() {
     Column({ space: 10 }) {
-      Text('通用')
+      Text('📰 资讯')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+      Column({ space: 8 }) {
+        this.groupRow('收藏 / 稍后读', '', true, () => { AppNavigator.push('pages/NewsFavorites'); })
+        this.groupRow('我的点赞', '', true, () => { AppNavigator.push('pages/NewsLikes'); })
+        this.groupRow('为你推荐', '', true, () => { AppNavigator.push('pages/NewsRecommend'); })
+        this.groupRow('个性化画像', '', true, () => { AppNavigator.push('pages/NewsProfile'); })
+        this.groupRow('资讯统计', '', true, () => { AppNavigator.push('pages/NewsStats'); })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(12)
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  gameGroup() {
+    Column({ space: 10 }) {
+      Text('🎮 游戏')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+      Column({ space: 8 }) {
+        this.groupRow('成就', '', true, () => { AppNavigator.push('pages/Achievements'); })
+        this.groupRow('对局回放', '', true, () => { AppNavigator.push('pages/ReplayList'); })
+        this.groupRow('排行榜', '', true, () => { AppNavigator.push('pages/Leaderboard'); })
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(12)
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  systemGroup() {
+    Column({ space: 10 }) {
+      Text('⚙️ 系统')
         .fontSize(this.themeState.palette.fsMd)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
@@ -154,27 +251,7 @@ export struct ProfilePage {
         .width('100%')
       Column({ space: 8 }) {
         this.groupRow('设置', '', true, () => { this.onNavigate('Settings'); })
-        this.groupRow('AI 模型', '', true, () => {
-          AppNavigator.push('pages/AiModelPage');
-        })
-        this.groupRow('成就', '', true, () => {
-          AppNavigator.push('pages/Achievements');
-        })
-        this.groupRow('对局回放', '', true, () => {
-          AppNavigator.push('pages/ReplayList');
-        })
-        this.groupRow('排行榜', '', true, () => {
-          AppNavigator.push('pages/Leaderboard');
-        })
-        this.groupRow('收藏 / 稍后读', '', true, () => {
-          AppNavigator.push('pages/NewsFavorites');
-        })
-        this.groupRow('为你推荐', '', true, () => {
-          AppNavigator.push('pages/NewsRecommend');
-        })
-        this.groupRow('资讯统计', '', true, () => {
-          AppNavigator.push('pages/NewsStats');
-        })
+        this.groupRow('AI 模型', '', true, () => { AppNavigator.push('pages/AiModelPage'); })
       }
       .width('100%')
     }
@@ -189,7 +266,7 @@ export struct ProfilePage {
   @Builder
   aboutGroup() {
     Column({ space: 10 }) {
-      Text('关于')
+      Text('ℹ️ 关于')
         .fontSize(this.themeState.palette.fsMd)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
@@ -212,27 +289,23 @@ export struct ProfilePage {
 
   build() {
     Column() {
-      Text('我的')
-        .fontSize(this.themeState.palette.fsXl)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-          top: this.themeState.statusBarHeight + 16, bottom: 16 })
-
       Scroll() {
-        Column({ space: 16 }) {
-          this.headerCard()
-
-          this.commonGroup()
-
-          this.aboutGroup()
-
-          Column().height(20)
+        Row() {
+          Column({ space: 12 }) {
+            this.headerCard()
+            this.newsGroup()
+            this.gameGroup()
+            this.systemGroup()
+            this.aboutGroup()
+            Column().height(20)
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: 720 })
+          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
+            top: Math.max(this.themeState.statusBarHeight, 44) + 8 })
         }
         .width('100%')
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
+        .justifyContent(FlexAlign.Center)
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
@@ -241,6 +314,6 @@ export struct ProfilePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

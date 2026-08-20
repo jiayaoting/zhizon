@@ -1848,144 +1848,21 @@ export struct SettingsPage {
         }
         Scroll() {
           Column({ space: 16 }) {
-            // 外观（新设计）
-            GroupCard({ title: '外观' }) {
-              Column({ space: 12 }) {
-                // 颜色主题选择器
-                Text('颜色主题')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                this.colorThemeSelector()
-
-                // 深色模式
-                Text('深色模式')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                this.darkModeSettings()
-
-                // 背景图
-                Text('背景图')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                this.backgroundSettings()
-
-                // 毛玻璃效果
-                Text('毛玻璃效果')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .margin({ top: 4 })
-                Row() {
-                  Text('启用毛玻璃效果')
-                    .fontSize(this.palette.fsBase)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
-                    .layoutWeight(1)
-                  Toggle({ type: ToggleType.Switch, isOn: this.glassEnabled })
-                    .selectedColor(this.palette.primary)
-                    .onChange((v: boolean) => {
-                      this.updateGlassEffect(v);
-                    })
-                }
-                .width('100%')
-                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
-                .borderRadius(6)
-                .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
-                Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                  .margin({ top: 2 })
-
-                // 液态玻璃效果
-                Text('液态玻璃效果')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .margin({ top: 12 })
-                Row() {
-                  Text('启用液态玻璃效果')
-                    .fontSize(this.palette.fsBase)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
-                    .layoutWeight(1)
-                  Toggle({ type: ToggleType.Switch, isOn: this.liquidGlassEnabled })
-                    .selectedColor(this.palette.primary)
-                    .onChange((v: boolean) => {
-                      this.updateLiquidGlassEffect(v);
-                    })
-                }
-                .width('100%')
-                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
-                .borderRadius(6)
-                .backgroundColor(GlassStyle.innerBackgroundColor(this.liquidGlassEnabled, this.palette))
-                Text('开启后界面呈现更通透的液态玻璃质感，与毛玻璃互斥。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                  .margin({ top: 2 })
-
-                this.valueRow('字号', this.fontSizeLabel(this.fontSizeScale), () => {
-                  this.openFontSizePicker();
-                })
-                this.valueRow('字体', this.fontFamily, () => {
-                  this.openFontFamilyPicker();
-                })
-                this.valueRow('应用图标', this.appIconLabel(this.appIconId), () => {
-                  this.openAppIconPicker();
-                })
-                this.valueRow('头像', this.avatarLabelText(), () => {
-                  this.openAvatarPicker();
-                })
-              }
-              .width('100%')
-            }
-
-            // 资讯
-            GroupCard({ title: '资讯' }) {
+            GroupCard({ title: '📰 资讯' }) {
               Column({ space: 8 }) {
-                Text('资讯源开关')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .width('100%')
-                ForEach(NEWS_SOURCES, (source: NewsSourceDef) => {
-                  this.toggleRow(source.name, this.newsSourceEnabled(source.id), (v: boolean) => {
-                    this.onNewsSourceToggle(source.id, v);
-                  })
-                }, (source: NewsSourceDef) => source.id)
-                Text('关闭的源不再出现在资讯流中；全部关闭时资讯流为空。')
+                this.valueRow('资讯源开关设置', NEWS_SOURCES.length.toString() + ' 个源', () => {
+                  AppNavigator.push('pages/NewsSourceSettings');
+                })
+                Text('关闭的源不再出现在资讯流中，支持全部打开/关闭。')
                   .fontSize(this.palette.fsXs)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
                   .width('100%')
-                  .margin({ top: 2 })
 
-                Text('个性化频道')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .width('100%')
-                  .margin({ top: 8 })
-                ForEach(NEWS_CHANNELS, (channel: NewsChannel) => {
-                  this.toggleRow(channel.icon + ' ' + channel.name + ' 个性化',
-                    this.channelPersonalized(channel.id), (v: boolean) => {
-                      this.onChannelPersonalizedToggle(channel.id, v);
-                    })
-                }, (channel: NewsChannel) => channel.id)
-                Text('默认全部频道启用个性化（按标签权重排序）；关闭的频道恢复纯时间排序。新增频道自动默认启用。')
+                this.valueRow('个性化频道设置', '', () => {
+                  AppNavigator.push('pages/NewsChannelSettings');
+                })
+                Text('默认全部频道启用个性化；关闭的频道恢复纯时间排序，支持全部打开/关闭。')
                   .fontSize(this.palette.fsXs)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
@@ -2149,15 +2026,112 @@ export struct SettingsPage {
             // 游戏
             GroupCard({ title: '游戏' }) {
               Column({ space: 8 }) {
-                this.toggleRow('游戏音效', this.soundEnabled, (v: boolean) => {
-                  this.onSoundToggle(v);
+                this.valueRow('游戏设置', '音效等', () => {
+                  AppNavigator.push('pages/GameSettings');
                 })
-                Text('开启后，消除/吃食物/胜利/失败等场景播放短音效（可随时关闭）。')
+              }
+              .width('100%')
+            }
+
+            // 外观（新设计）
+            GroupCard({ title: '外观' }) {
+              Column({ space: 12 }) {
+                // 颜色主题选择器
+                Text('颜色主题')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                this.colorThemeSelector()
+
+                // 深色模式
+                Text('深色模式')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                this.darkModeSettings()
+
+                // 背景图
+                Text('背景图')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                this.backgroundSettings()
+
+                // 毛玻璃效果
+                Text('毛玻璃效果')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .margin({ top: 4 })
+                Row() {
+                  Text('启用毛玻璃效果')
+                    .fontSize(this.palette.fsBase)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textPrimary)
+                    .layoutWeight(1)
+                  Toggle({ type: ToggleType.Switch, isOn: this.glassEnabled })
+                    .selectedColor(this.palette.primary)
+                    .onChange((v: boolean) => {
+                      this.updateGlassEffect(v);
+                    })
+                }
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+                .borderRadius(6)
+                .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+                Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
                   .fontSize(this.palette.fsXs)
                   .fontFamily(this.palette.fontSans)
                   .fontColor(this.palette.textTertiary)
                   .width('100%')
                   .margin({ top: 2 })
+
+                // 液态玻璃效果
+                Text('液态玻璃效果')
+                  .fontSize(this.palette.fsBase)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textPrimary)
+                  .fontWeight(FontWeight.Medium)
+                  .margin({ top: 12 })
+                Row() {
+                  Text('启用液态玻璃效果')
+                    .fontSize(this.palette.fsBase)
+                    .fontFamily(this.palette.fontSans)
+                    .fontColor(this.palette.textPrimary)
+                    .layoutWeight(1)
+                  Toggle({ type: ToggleType.Switch, isOn: this.liquidGlassEnabled })
+                    .selectedColor(this.palette.primary)
+                    .onChange((v: boolean) => {
+                      this.updateLiquidGlassEffect(v);
+                    })
+                }
+                .width('100%')
+                .padding({ left: 12, right: 12, top: 11, bottom: 11 })
+                .borderRadius(6)
+                .backgroundColor(GlassStyle.innerBackgroundColor(this.liquidGlassEnabled, this.palette))
+                Text('开启后界面呈现更通透的液态玻璃质感，与毛玻璃互斥。')
+                  .fontSize(this.palette.fsXs)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.textTertiary)
+                  .width('100%')
+                  .margin({ top: 2 })
+
+                this.valueRow('字号', this.fontSizeLabel(this.fontSizeScale), () => {
+                  this.openFontSizePicker();
+                })
+                this.valueRow('字体', this.fontFamily, () => {
+                  this.openFontFamilyPicker();
+                })
+                this.valueRow('应用图标', this.appIconLabel(this.appIconId), () => {
+                  this.openAppIconPicker();
+                })
+                this.valueRow('头像', this.avatarLabelText(), () => {
+                  this.openAvatarPicker();
+                })
               }
               .width('100%')
             }

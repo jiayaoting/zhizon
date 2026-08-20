@@ -24,6 +24,9 @@
     "pages/NewsSearch",
     "pages/NewsStats",
     "pages/NewsLikes",
-    "pages/NewsProfile"
+    "pages/NewsProfile",
+    "pages/NewsSourceSettings",
+    "pages/NewsChannelSettings",
+    "pages/GameSettings"
   ]
 }

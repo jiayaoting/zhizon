@@ -20,7 +20,10 @@ export enum PageKey {
   NewsSearch = 'NewsSearch',
   NewsStats = 'NewsStats',
   NewsLikes = 'NewsLikes',
-  NewsProfile = 'NewsProfile'
+  NewsProfile = 'NewsProfile',
+  NewsSourceSettings = 'NewsSourceSettings',
+  NewsChannelSettings = 'NewsChannelSettings',
+  GameSettings = 'GameSettings'
 }
 
 export enum NavigationSource {
@@ -181,6 +184,9 @@ export function pageFromString(key: string): PageKey | null {
   if (key === PageKey.NewsStats) return PageKey.NewsStats;
   if (key === PageKey.NewsLikes) return PageKey.NewsLikes;
   if (key === PageKey.NewsProfile) return PageKey.NewsProfile;
+  if (key === PageKey.NewsSourceSettings) return PageKey.NewsSourceSettings;
+  if (key === PageKey.NewsChannelSettings) return PageKey.NewsChannelSettings;
+  if (key === PageKey.GameSettings) return PageKey.GameSettings;
   return null;
 }
 

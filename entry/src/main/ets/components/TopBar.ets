@@ -77,7 +77,9 @@ export struct TopBar {
       this.actions()
     }
     .width('100%')
-    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: this.themeState.statusBarHeight + 16, bottom: 16 })
+    // 全屏沉浸：状态栏安全区兜底（避免个别设备上报异常导致内容与状态栏重叠），并适当收矮
+    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
+      top: Math.max(this.themeState.statusBarHeight, 44) + 12, bottom: 12 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
     .border({ width: { bottom: 1 }, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
