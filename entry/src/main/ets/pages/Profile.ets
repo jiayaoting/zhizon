@@ -196,6 +196,7 @@ export struct ProfilePage {
         SettingRow({ icon: '🎯', title: '为你推荐', rowClick: () => { AppNavigator.push('pages/NewsRecommend'); } })
         SettingRow({ icon: '🧠', title: '个性化画像', rowClick: () => { AppNavigator.push('pages/NewsProfile'); } })
         SettingRow({ icon: '📊', title: '资讯统计', rowClick: () => { AppNavigator.push('pages/NewsStats'); } })
+        SettingRow({ icon: '📅', title: '阅读周报', rowClick: () => { AppNavigator.push('pages/ReadingReport'); } })
       }
       .width('100%')
     }
@@ -242,6 +243,7 @@ export struct ProfilePage {
         .width('100%')
       Column({ space: 8 }) {
         SettingRow({ icon: '🤖', title: 'AI 模型', rowClick: () => { AppNavigator.push('pages/AiModelPage'); } })
+        SettingRow({ icon: '🎭', title: 'AI 角色模板', rowClick: () => { AppNavigator.push('pages/AiRoleLibrary'); } })
       }
       .width('100%')
     }

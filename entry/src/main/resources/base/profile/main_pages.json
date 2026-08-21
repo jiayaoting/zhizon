@@ -29,6 +29,8 @@
     "pages/NewsChannelSettings",
     "pages/GameSettings",
     "pages/AppearanceSettings",
-    "pages/NewsSettings"
+    "pages/NewsSettings",
+    "pages/ReadingReport",
+    "pages/AiRoleLibrary"
   ]
 }

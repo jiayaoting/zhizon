@@ -31,9 +31,10 @@ import { AgentStep, LlmAgentResult } from '../common/AgentModels';
 import { ChatMessage, ChatSession, entryToConfig, LlmConfig, LlmModelEntry, LlmResult,
   modelDisplayName, modelDisplayNameFromConfig } from '../common/LlmModels';
 import { MarkdownConverter, MdBlock, InlineSpan } from '../common/MarkdownConverter';
-import { ChatMessageBubble } from '../components/ChatMessageBubble';
+import { ChatMessageList } from '../components/ChatMessageList';
 import { ChatInputBar } from '../components/ChatInputBar';
 import { ChatSessionDrawer } from '../components/ChatSessionDrawer';
+import { LazyListDataSource } from '../common/LazyDataSource';
 
 @Component
 export struct ChatTab {
@@ -69,6 +70,19 @@ export struct ChatTab {
   private renderScheduled: boolean = false;
   // 当前待触发的流式刷新定时器（流结束时需取消，防止用清空后的 streamingContent 覆盖最终内容）
   private flushTimer: number = -1;
+  // 消息分页（LazyForEach 渲染窗口）：只渲染最近 MESSAGE_PAGE_SIZE 条，上滑到顶补载更早消息
+  private readonly MESSAGE_PAGE_SIZE: number = 50;
+  @State loadingOlder: boolean = false;
+  // 无痕模式：全局开关（设置页）与会话级标记（会话抽屉）；开启后消息不写入数据库
+  @State incognitoEnabled: boolean = false;
+  @State activeSessionIncognito: boolean = false;
+  // 会话内全文搜索结果（FTS/LIKE 搜索整个会话，而非仅已加载窗口）
+  @State searchResults: ChatMessage[] = [];
+  private searchSeq: number = 0;
+  private sessionTotalCount: number = 0;
+  private hasMoreOlder: boolean = false;
+  // 消息数据源：仅在消息增删/分页/搜索/多选模式变化时 replace，输入等高频状态不触发
+  private messageSource: LazyListDataSource<ChatMessage> = new LazyListDataSource<ChatMessage>([]);
   // 输入区高度（TextArea 动态增高）
   @State inputHeight: number = 44;
   // 图片附件（vision 模型）
@@ -163,21 +177,134 @@ export struct ChatTab {
     this.sessions = await ChatRepository.ensureSessions();
     this.webSearchEnabled = await DataRepository.getSetting('webSearchEnabled', 'false') === 'true';
     this.agentEnabled = await DataRepository.getSetting('agentEnabled', 'false') === 'true';
+    this.incognitoEnabled = await DataRepository.getSetting('incognitoEnabled', 'false') === 'true';
     let activeId: string = await ChatRepository.loadActiveSessionId();
     if (activeId.length === 0 && this.sessions.length > 0) {
       activeId = this.sessions[0].id;
       await ChatRepository.setActiveSessionId(activeId);
     }
     this.activeSessionId = activeId;
-    this.messages = activeId.length > 0 ? await ChatRepository.loadMessages(activeId) : [];
+    this.activeSessionIncognito = this.findSessionIncognito(activeId);
+    // 分页加载最近 MESSAGE_PAGE_SIZE 条，避免长会话一次渲染全部历史
+    this.messages = activeId.length > 0
+      ? await ChatRepository.loadMessagesWindow(activeId, this.MESSAGE_PAGE_SIZE, 0) : [];
     if (this.messages.length === 0) {
       const welcome: ChatMessage = ChatMessage.create('assistant',
         '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
       this.messages = [welcome];
+      this.sessionTotalCount = 0;
+      this.hasMoreOlder = false;
+    } else {
+      this.sessionTotalCount = await ChatRepository.countMessages(activeId);
+      this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
     }
+    this.syncMessageSource();
     await this.refreshModels();
     // 等列表渲染完成后滚动到底部
     setTimeout(() => { this.scrollToBottom(); }, 150);
+  }
+
+  // 同步消息数据源：仅在消息增删/分页/搜索/多选模式变化时调用
+  private syncMessageSource(): void {
+    let list: ChatMessage[] = this.messages;
+    if (!this.selectionMode && this.showSearch) {
+      list = this.displayMessages();
+    }
+    this.messageSource.replace(list);
+  }
+
+  // 上滑到顶部补载更早的消息（保持视觉位置）
+  private async loadOlderMessages(): Promise<void> {
+    if (this.loadingOlder || !this.hasMoreOlder || this.messages.length === 0) return;
+    if (this.showSearch || this.selectionMode) return;
+    this.loadingOlder = true;
+    try {
+      const first: ChatMessage = this.messages[0];
+      if (first.time <= 0) {
+        this.hasMoreOlder = false;
+        return;
+      }
+      const older: ChatMessage[] = await ChatRepository.loadMessagesBefore(this.activeSessionId, first.time,
+        this.MESSAGE_PAGE_SIZE);
+      // 去掉与已加载消息重复的边界项（同一毫秒多条消息的情况）
+      const knownIds: Set<string> = new Set<string>();
+      for (let i: number = 0; i < this.messages.length; i++) {
+        knownIds.add(this.messages[i].id);
+      }
+      const fresh: ChatMessage[] = [];
+      for (let i: number = 0; i < older.length; i++) {
+        if (!knownIds.has(older[i].id)) fresh.push(older[i]);
+      }
+      if (fresh.length === 0) {
+        this.hasMoreOlder = false;
+        return;
+      }
+      const prependCount: number = fresh.length;
+      this.messages = fresh.concat(this.messages);
+      this.syncMessageSource();
+      // 滚动到新补载的第一条旧消息之后，避免列表跳动
+      this.scrollController.scrollToIndex(prependCount, false);
+      await this.refreshSessionCount();
+    } catch (e) {
+    } finally {
+      this.loadingOlder = false;
+    }
+  }
+
+  // 会话是否处于无痕状态（全局开关或会话级标记任一开启）
+  private incognitoActive(): boolean {
+    return this.incognitoEnabled || this.activeSessionIncognito;
+  }
+
+  // 从已加载会话列表查找会话的无痕标记
+  private findSessionIncognito(id: string): boolean {
+    if (id.length === 0) return false;
+    for (let i: number = 0; i < this.sessions.length; i++) {
+      if (this.sessions[i].id === id) return this.sessions[i].incognito;
+    }
+    return false;
+  }
+
+  // 切换当前/指定会话的无痕标记（会话抽屉按钮触发）
+  private async toggleSessionIncognito(id: string): Promise<void> {
+    const target: boolean = !this.findSessionIncognito(id);
+    await ChatRepository.setSessionIncognito(id, target);
+    this.sessions = await ChatRepository.loadSessions();
+    if (id === this.activeSessionId) {
+      this.activeSessionIncognito = target;
+    }
+    // 抽屉打开时同步刷新列表（含无痕标记展示）
+    if (this.showSessionDrawer) {
+      this.drawerSessions = await ChatRepository.loadSessions();
+    }
+    promptAction.showToast({ message: target ? '该会话已开启无痕（消息不保存）' : '该会话已关闭无痕' });
+  }
+
+  // 会话内全文搜索：搜索整个会话历史（FTS 优先，LIKE 兜底）
+  private async loadSearchResults(): Promise<void> {
+    const q: string = this.searchQuery.trim();
+    const seq: number = this.searchSeq + 1;
+    this.searchSeq = seq;
+    if (q.length === 0) {
+      this.searchResults = [];
+      this.syncMessageSource();
+      return;
+    }
+    const results: ChatMessage[] = await ChatRepository.searchSessionMessages(this.activeSessionId, q, 100);
+    // 仅应用最新一次搜索（避免快速输入时旧结果覆盖新结果）
+    if (seq === this.searchSeq) {
+      this.searchResults = results;
+      this.syncMessageSource();
+    }
+  }
+
+  // 刷新会话消息总数（用于判断是否还有更早消息可补载）
+  private async refreshSessionCount(): Promise<void> {
+    try {
+      this.sessionTotalCount = await ChatRepository.countMessages(this.activeSessionId);
+      this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
+    } catch (e) {
+    }
   }
 
   private async refreshModels(): Promise<void> {
@@ -290,8 +417,12 @@ export struct ChatTab {
       return;
     }
     this.activeSessionId = id;
+    this.activeSessionIncognito = this.findSessionIncognito(id);
     await ChatRepository.setActiveSessionId(id);
-    this.messages = await ChatRepository.loadMessages(id);
+    this.messages = await ChatRepository.loadMessagesWindow(id, this.MESSAGE_PAGE_SIZE, 0);
+    this.sessionTotalCount = await ChatRepository.countMessages(id);
+    this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
+    this.syncMessageSource();
     this.showSessionDrawer = false;
     this.exitSearch();
     this.exitSelectionMode();
@@ -314,6 +445,10 @@ export struct ChatTab {
     this.activeSessionId = session.id;
     await ChatRepository.setActiveSessionId(session.id);
     this.messages = [];
+    this.sessionTotalCount = 0;
+    this.hasMoreOlder = false;
+    this.activeSessionIncognito = false;
+    this.syncMessageSource();
     this.showSessionDrawer = false;
     this.editTargetIndex = -1;
     this.inputText = '';
@@ -388,7 +523,10 @@ export struct ChatTab {
             }
             this.activeSessionId = next;
             await ChatRepository.setActiveSessionId(next);
-            this.messages = await ChatRepository.loadMessages(next);
+            this.messages = await ChatRepository.loadMessagesWindow(next, this.MESSAGE_PAGE_SIZE, 0);
+            this.sessionTotalCount = await ChatRepository.countMessages(next);
+            this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
+            this.syncMessageSource();
             this.editTargetIndex = -1;
             this.inputText = '';
           }
@@ -455,11 +593,16 @@ export struct ChatTab {
           this.streamingContent = '';
           this.showSearch = false;
           this.searchQuery = '';
+          this.sessionTotalCount = 0;
+          this.hasMoreOlder = false;
           await ChatRepository.clearSessionMessages(this.activeSessionId);
           // 清空后恢复欢迎语，保持一致体验
           const welcome: ChatMessage = ChatMessage.create('assistant',
             '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
           this.messages = [welcome];
+          this.sessionTotalCount = 0;
+          this.hasMoreOlder = false;
+          this.syncMessageSource();
         }
       }
     });
@@ -711,6 +854,7 @@ export struct ChatTab {
     const assistantMessage: ChatMessage = ChatMessage.create('assistant', '');
     const newMessages: ChatMessage[] = base.concat([userMessage, assistantMessage]);
     this.messages = newMessages;
+    this.syncMessageSource();
     if (this.agentEnabled) {
       await this.runAgent(config, newMessages.slice(0, newMessages.length - 1), userMessage,
         assistantMessage, removedIds);
@@ -762,11 +906,15 @@ export struct ChatTab {
       this.stopRequested = false;
       if (this.streamingContent.length === 0 && this.streamingReasoning.length === 0) {
         this.messages = this.messages.filter((m: ChatMessage): boolean => m.id !== assistantMessage.id);
+        this.syncMessageSource();
         this.streamingContent = '';
         this.streamingReasoning = '';
-        await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
-        await ChatRepository.appendMessages(this.activeSessionId, [userMessage]);
-        await ChatRepository.touchSession(this.activeSessionId);
+        if (!this.incognitoActive()) {
+          await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+          await ChatRepository.appendMessages(this.activeSessionId, [userMessage]);
+          await ChatRepository.touchSession(this.activeSessionId);
+          await this.refreshSessionCount();
+        }
         this.sessions = await ChatRepository.loadSessions();
         this.chatVm.finish();
         this.finishChatLiveView();
@@ -788,13 +936,16 @@ export struct ChatTab {
       this.streamingContent = '';
       this.streamingReasoning = '';
     }
-    // 持久化：编辑重发时先删除被替换的消息，再追加新消息
+    // 持久化：编辑重发时先删除被替换的消息，再追加新消息；无痕模式跳过写库
     try {
-      if (removedIds.length > 0) {
-        await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+      if (!this.incognitoActive()) {
+        if (removedIds.length > 0) {
+          await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+        }
+        await ChatRepository.appendMessages(this.activeSessionId, [userMessage, assistantMessage]);
+        await ChatRepository.touchSession(this.activeSessionId);
+        await this.refreshSessionCount();
       }
-      await ChatRepository.appendMessages(this.activeSessionId, [userMessage, assistantMessage]);
-      await ChatRepository.touchSession(this.activeSessionId);
       this.sessions = await ChatRepository.loadSessions();
     } catch (e) {
       promptAction.showToast({ message: '消息保存失败' });
@@ -817,8 +968,11 @@ export struct ChatTab {
     const result: LlmAgentResult = await AgentOrchestrator.run(config, history, this.agentMaxSteps,
       (step: AgentStep): void => {
         this.agentSteps = this.agentSteps.concat([step]);
-        DatabaseHelper.addAgentStep(this.activeSessionId, assistantMessage.id, step.stepIndex,
-          step.status, step.toolName, step.args, step.result, step.startedAt, step.endedAt);
+        // 无痕模式不记录 Agent 执行步骤
+        if (!this.incognitoActive()) {
+          DatabaseHelper.addAgentStep(this.activeSessionId, assistantMessage.id, step.stepIndex,
+            step.status, step.toolName, step.args, step.result, step.startedAt, step.endedAt);
+        }
         this.scrollToBottom();
       },
       (): boolean => this.stopRequested);
@@ -848,13 +1002,17 @@ export struct ChatTab {
       toSave.push(assistantMessage);
     } else {
       this.messages = this.messages.filter((m: ChatMessage): boolean => m.id !== assistantMessage.id);
+      this.syncMessageSource();
     }
     try {
-      if (removedIds.length > 0) {
-        await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+      if (!this.incognitoActive()) {
+        if (removedIds.length > 0) {
+          await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+        }
+        await ChatRepository.appendMessages(this.activeSessionId, toSave);
+        await ChatRepository.touchSession(this.activeSessionId);
+        await this.refreshSessionCount();
       }
-      await ChatRepository.appendMessages(this.activeSessionId, toSave);
-      await ChatRepository.touchSession(this.activeSessionId);
       this.sessions = await ChatRepository.loadSessions();
     } catch (e) {
       promptAction.showToast({ message: '消息保存失败' });
@@ -929,6 +1087,7 @@ export struct ChatTab {
         const last: ChatMessage = this.messages[this.messages.length - 1];
         if (last.role === 'assistant' && last.content.length === 0 && last.reasoning.length === 0) {
           this.messages = this.messages.slice(0, this.messages.length - 1);
+          this.syncMessageSource();
         }
       }
     } else {
@@ -959,7 +1118,11 @@ export struct ChatTab {
       const last: ChatMessage = this.messages[this.messages.length - 1];
       if (last.role === 'assistant' && last.content.indexOf('⚠️ 请求失败') === 0) {
         this.messages = this.messages.slice(0, this.messages.length - 1);
-        await ChatRepository.deleteMessages(this.activeSessionId, [last.id]);
+        this.syncMessageSource();
+        if (!this.incognitoActive()) {
+          await ChatRepository.deleteMessages(this.activeSessionId, [last.id]);
+          await this.refreshSessionCount();
+        }
       }
     }
     this.inputText = text;
@@ -998,8 +1161,12 @@ export struct ChatTab {
       removedIds.push(this.messages[i].id);
     }
     this.messages = this.messages.slice(0, realIndex);
-    if (removedIds.length > 0) {
-      await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+    this.syncMessageSource();
+    if (!this.incognitoActive()) {
+      if (removedIds.length > 0) {
+        await ChatRepository.deleteMessages(this.activeSessionId, removedIds);
+      }
+      await this.refreshSessionCount();
     }
     this.closeActionSheet();
     this.inputText = userText;
@@ -1163,7 +1330,10 @@ export struct ChatTab {
           // 最后导入的会话作为当前会话
           this.activeSessionId = session.id;
           await ChatRepository.setActiveSessionId(session.id);
-          this.messages = await ChatRepository.loadMessages(session.id);
+          this.messages = await ChatRepository.loadMessagesWindow(session.id, this.MESSAGE_PAGE_SIZE, 0);
+          this.sessionTotalCount = await ChatRepository.countMessages(session.id);
+          this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
+          this.syncMessageSource();
         }
       }
       this.sessions = await ChatRepository.loadSessions();
@@ -1208,7 +1378,10 @@ export struct ChatTab {
       this.sessions = await ChatRepository.loadSessions();
       this.activeSessionId = session.id;
       await ChatRepository.setActiveSessionId(session.id);
-      this.messages = await ChatRepository.loadMessages(session.id);
+      this.messages = await ChatRepository.loadMessagesWindow(session.id, this.MESSAGE_PAGE_SIZE, 0);
+      this.sessionTotalCount = await ChatRepository.countMessages(session.id);
+      this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
+      this.syncMessageSource();
       this.closeSessionDrawer();
       promptAction.showToast({ message: '已导入 ' + imported.messages.length.toString() + ' 条消息' });
     } catch (e) {
@@ -1395,6 +1568,7 @@ export struct ChatTab {
   private exitSelectionMode(): void {
     this.selectionMode = false;
     this.selectedIds = [];
+    this.syncMessageSource();
   }
 
   // 删除选中的消息
@@ -1415,14 +1589,19 @@ export struct ChatTab {
         value: '删除',
         fontColor: Color.Red,
         action: async () => {
-          const remaining: ChatMessage[] = await ChatRepository.deleteMessages(this.activeSessionId, this.selectedIds);
-          this.messages = remaining.length > 0 ? remaining : [];
+          await ChatRepository.deleteMessages(this.activeSessionId, this.selectedIds);
+          this.messages = await ChatRepository.loadMessagesWindow(this.activeSessionId, this.MESSAGE_PAGE_SIZE, 0);
+          this.sessionTotalCount = await ChatRepository.countMessages(this.activeSessionId);
+          this.hasMoreOlder = this.messages.length < this.sessionTotalCount;
           this.exitSelectionMode();
           if (this.messages.length === 0) {
             const welcome: ChatMessage = ChatMessage.create('assistant',
               '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
             this.messages = [welcome];
+            this.sessionTotalCount = 0;
+            this.hasMoreOlder = false;
           }
+          this.syncMessageSource();
           promptAction.showToast({ message: '已删除 ' + count.toString() + ' 条消息' });
         }
       }
@@ -1452,17 +1631,17 @@ export struct ChatTab {
     this.showSearch = false;
     this.searchQuery = '';
     this.searchRole = 'all';
+    this.searchResults = [];
+    this.searchSeq = 0;
+    this.syncMessageSource();
   }
 
   private displayMessages(): ChatMessage[] {
     if (!this.showSearch) return this.messages;
-    let result: ChatMessage[] = this.messages;
+    // 搜索词非空时使用会话内全文搜索结果（FTS/LIKE 覆盖整个会话历史）
+    let result: ChatMessage[] = this.searchQuery.trim().length > 0 ? this.searchResults : this.messages;
     if (this.searchRole !== 'all') {
       result = result.filter((m: ChatMessage): boolean => m.role === this.searchRole);
-    }
-    const q: string = this.searchQuery.trim().toLowerCase();
-    if (q.length > 0) {
-      result = result.filter((m: ChatMessage): boolean => m.content.toLowerCase().indexOf(q) >= 0);
     }
     return result;
   }
@@ -1486,7 +1665,7 @@ export struct ChatTab {
     .borderRadius(14)
     .backgroundColor(this.searchRole === role ? this.palette.primary : this.palette.bgSurface2)
     .border({ width: 1, color: this.searchRole === role ? this.palette.primary : this.palette.borderSubtle })
-    .onClick(() => { this.searchRole = role; })
+    .onClick(() => { this.searchRole = role; this.syncMessageSource(); })
   }
 
   @Builder
@@ -1504,7 +1683,10 @@ export struct ChatTab {
           .backgroundColor(Color.Transparent)
           .height(40)
           .layoutWeight(1)
-          .onChange((value: string) => { this.searchQuery = value; })
+          .onChange((value: string) => {
+            this.searchQuery = value;
+            this.loadSearchResults();
+          })
         Text('✕')
           .fontSize(16)
           .fontFamily(this.palette.fontSans)
@@ -1716,6 +1898,7 @@ export struct ChatTab {
                       this.searchQuery = '';
                       this.searchRole = 'all';
                     }
+                    this.syncMessageSource();
                   } else {
                     promptAction.showToast({ message: '暂无对话记录可搜索' });
                   }
@@ -1748,34 +1931,23 @@ export struct ChatTab {
         } else if (this.showSearch && !this.selectionMode && this.searchResultCount() === 0) {
           this.searchEmpty()
         } else {
-          List({ space: 12, scroller: this.scrollController }) {
-            ForEach(this.selectionMode ? this.messages : (this.showSearch ? this.displayMessages() : this.messages),
-              (message: ChatMessage, index: number) => {
-              ListItem() {
-                // 使用子组件，通过 @ObjectLink 监听 @Observed ChatMessage 的变化
-                ChatMessageBubble({ message: message, index: index,
-                  selectionMode: this.selectionMode,
-                  selected: this.isSelected(message.id),
-                  isStreaming: this.streaming,
-                  speaking: this.speakingMessageId === message.id,
-                  onRetry: (i: number): void => { this.retryLast(); },
-                  onLongPressMessage: (i: number): void => { this.showActionSheet(i); },
-                  onToggleSelect: (i: number): void => { this.toggleSelect(i); },
-                  onExpandReasoning: (i: number): void => { this.expandReasoning(i); },
-                  onFullscreen: (i: number): void => { this.openFullscreen(i); },
-                  onCopyCode: (lang: string, code: string): void => { this.copyCode(lang, code); },
-                  onSpeak: (i: number): void => {
-                    const displayed: ChatMessage[] = this.displayMessages();
-                    if (i >= 0 && i < displayed.length) this.toggleSpeak(displayed[i]);
-                  } })
-              }
-            }, (message: ChatMessage) => message.id)
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .scrollBar(BarState.Off)
-          .edgeEffect(EdgeEffect.Spring)
-          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12 })
+          // 渲染隔离：列表作为独立组件由数据源驱动，输入框按键等高频父组件状态变化不再重建整条消息列表
+          ChatMessageList({ source: this.messageSource, scroller: this.scrollController,
+            isStreaming: this.streaming,
+            selectionMode: this.selectionMode,
+            speakingId: this.speakingMessageId,
+            onReachStart: (): void => { this.loadOlderMessages(); },
+            onRetry: (): void => { this.retryLast(); },
+            onLongPressMessage: (i: number): void => { this.showActionSheet(i); },
+            onToggleSelect: (i: number): void => { this.toggleSelect(i); },
+            onExpandReasoning: (i: number): void => { this.expandReasoning(i); },
+            onFullscreen: (i: number): void => { this.openFullscreen(i); },
+            onCopyCode: (lang: string, code: string): void => { this.copyCode(lang, code); },
+            onSpeak: (i: number): void => {
+              const displayed: ChatMessage[] = this.displayMessages();
+              if (i >= 0 && i < displayed.length) this.toggleSpeak(displayed[i]);
+            },
+            isSelected: (id: string): boolean => { return this.isSelected(id); } })
         }
 
         // 底部区域
@@ -1921,6 +2093,20 @@ export struct ChatTab {
               }
             })
             this.presetPanel()
+            // 无痕模式提示条：全局开关或会话级标记任一开启时显示
+            if (this.incognitoActive()) {
+              Row({ space: 6 }) {
+                Text('🕶️')
+                  .fontSize(11)
+                  .fontFamily(this.palette.fontSans)
+                Text('无痕模式：本次对话内容不会保存到本地')
+                  .fontSize(10)
+                  .fontFamily(this.palette.fontSans)
+                  .fontColor(this.palette.warning)
+              }
+              .width('100%')
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            }
             ChatInputBar({
               inputText: this.inputText,
               inputHeight: this.inputHeight,
@@ -1969,6 +2155,8 @@ export struct ChatTab {
           onConfirmRename: (): void => { this.confirmRenameSession(); },
           onCancelRename: (): void => { this.drawerRenameId = ''; },
           onTogglePin: (id: string): void => { this.toggleSessionPin(id); },
+          onToggleIncognito: (id: string): void => { this.toggleSessionIncognito(id); },
+          onOpenRoles: (): void => { AppNavigator.push('pages/AiRoleLibrary'); },
           onDeleteSession: (id: string): void => { this.deleteSessionFromDrawer(id); },
           onExport: (): void => { this.exportCurrentSession(); },
           onImport: (): void => { this.importSessionFromClipboard(); },

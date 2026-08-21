@@ -1,12 +1,26 @@
 // 智子 - 毛玻璃效果工具组件
 // 用法：作为属性方法调用，根据开关状态自动切换玻璃/纯色
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { batteryInfo } from '@kit.BasicServicesKit';
 
 // 玻璃效果级别：P0(顶栏/底栏)、P1(指标卡)、P2(列表卡)
 export enum GlassLevel {
   P0_BAR = 'P0_BAR',
   P1_CARD = 'P1_CARD',
   P2_LIST = 'P2_LIST'
+}
+
+// 视觉特效性能预算：低电量时由各视觉组件自动降级（batterySOC 为静态常量，无需权限）
+export class FxBudget {
+  // 电量低于 20% 视为低电量；个别设备/模拟器不可用时返回 false（不降级）
+  static isLowBattery(): boolean {
+    try {
+      return batteryInfo.batterySOC < 20;
+    } catch (err) {
+      console.error('FxBudget.isLowBattery failed: ' + JSON.stringify(err));
+      return false;
+    }
+  }
 }
 
 // 封装：对组件根容器有条件地应用玻璃 blur 样式

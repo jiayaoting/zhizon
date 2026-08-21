@@ -7,6 +7,7 @@ import { TopBar } from '../components/TopBar';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { NewsItem, NewsDetailRouteParams } from '../common/NewsModels';
 import { NewsService } from '../service/NewsService';
+import { NewsRepository } from '../service/NewsRepository';
 import { NewsAiService } from '../service/NewsAiService';
 import { ChatMarkdownText } from '../components/ChatMarkdownText';
 import { NewsCard } from '../components/NewsCard';
@@ -17,6 +18,8 @@ import { LlmConfig, LlmResult } from '../common/LlmModels';
 export struct NewsSearchPage {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Local keyword: string = '';
+  // 搜索模式：web=全网跨源 / local=本地收藏与离线缓存全文搜索（FTS5 优先）
+  @Local mode: string = 'web';
   @Local items: NewsItem[] = [];
   @Local searching: boolean = false;
   @Local searched: boolean = false;
@@ -38,11 +41,16 @@ export struct NewsSearchPage {
     this.searching = true;
     this.errorText = '';
     this.summaryText = '';
-    this.items = await NewsService.search(q, 30);
+    if (this.mode === 'local') {
+      // 本地全文搜索：收藏（标题/摘要）+ 离线正文缓存（标题/正文）
+      this.items = await NewsRepository.searchLocal(q, 30);
+    } else {
+      this.items = await NewsService.search(q, 30);
+    }
     this.searching = false;
     this.searched = true;
     if (this.items.length === 0) {
-      this.errorText = '没有找到相关新闻，换个关键词试试';
+      this.errorText = this.mode === 'local' ? '本地收藏与缓存中没有找到相关内容' : '没有找到相关新闻，换个关键词试试';
     }
   }
 
@@ -92,6 +100,39 @@ export struct NewsSearchPage {
   build() {
     Column() {
       TopBar({ title: '新闻搜索', subtitle: '跨源关键词搜索', showBack: true })
+
+      // 搜索模式切换：全网跨源 / 本地收藏·缓存全文
+      Row({ space: 8 }) {
+        Row() {
+          Text('🌐 全网搜索')
+            .fontSize(12)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.mode === 'web' ? '#FFFFFF' : this.themeState.palette.textSecondary)
+            .fontWeight(FontWeight.Medium)
+        }
+        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+        .borderRadius(14)
+        .backgroundColor(this.mode === 'web' ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
+        .onClick(() => { this.mode = 'web'; this.items = []; this.searched = false; this.errorText = ''; })
+        Row() {
+          Text('🗂 本地收藏·缓存')
+            .fontSize(12)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.mode === 'local' ? '#FFFFFF' : this.themeState.palette.textSecondary)
+            .fontWeight(FontWeight.Medium)
+        }
+        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+        .borderRadius(14)
+        .backgroundColor(this.mode === 'local' ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
+        .onClick(() => { this.mode = 'local'; this.items = []; this.searched = false; this.errorText = ''; })
+        Blank()
+        Text(this.mode === 'local' ? '🔒 本地搜索（不出网）' : '多源 RSS 聚合')
+          .fontSize(10)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+      }
+      .width('100%')
+      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 10 })
 
       // 搜索输入
       Row({ space: 8 }) {

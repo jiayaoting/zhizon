@@ -39,6 +39,8 @@ import { NewsProfilePage } from './NewsProfile';
 import { NewsSourceSettingsPage } from './NewsSourceSettings';
 import { NewsChannelSettingsPage } from './NewsChannelSettings';
 import { GameSettingsPage } from './GameSettings';
+import { ReadingReportPage } from './ReadingReport';
+import { AiRoleLibraryPage } from './AiRoleLibrary';
 
 const DOMAIN = 0x9201;
 
@@ -240,6 +242,10 @@ struct AppShell {
       NewsChannelSettingsPage()
     } else if (name === 'pages/GameSettings') {
       GameSettingsPage()
+    } else if (name === 'pages/ReadingReport') {
+      ReadingReportPage()
+    } else if (name === 'pages/AiRoleLibrary') {
+      AiRoleLibraryPage()
     }
   }
 

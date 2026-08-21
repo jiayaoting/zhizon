@@ -1,7 +1,7 @@
 // 智子 - 聊天气泡组件（用户/助手消息、思考折叠、流式 Markdown、Token 用量、失败重试）
 import { ChatMessage } from '../common/LlmModels';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
-import { GlassStyle, GlassLevel } from './GlassEffect';
+import { GlassStyle, GlassLevel, FxBudget } from './GlassEffect';
 import { ChatMarkdownText } from './ChatMarkdownText';
 
 @Component
@@ -191,7 +191,7 @@ export struct ChatMessageBubble {
             .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
             .border({ width: 1,
               color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-            .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+            .backgroundBlurStyle(this.glassEnabled && !FxBudget.isLowBattery() ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
             .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
             .gesture(TapGesture({ count: 2 }).onAction(() => { this.onFullscreen(this.index); }))
           } else {
@@ -205,7 +205,7 @@ export struct ChatMessageBubble {
               .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
               .border({ width: 1,
                 color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-              .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+              .backgroundBlurStyle(this.glassEnabled && !FxBudget.isLowBattery() ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
               .constraintSize({ maxWidth: this.isSm ? 280 : 440 })
           }
           // 流式状态指示 / 完成后 Token 用量 / 失败错误码

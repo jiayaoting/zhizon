@@ -1,14 +1,21 @@
 // 智子 - AI 会话导出 / 导入（Markdown / JSON / 文件备份）
 import { ChatMessage, ChatSession } from '../common/LlmModels';
 
-// 导入解析结果
+// 导入解析结果（v3 起携带会话 id/时间，旧格式缺失时给默认值）
 export class ImportedChat {
   title: string;
   messages: ChatMessage[];
+  sessionId: string = '';
+  createdAt: number = 0;
+  updatedAt: number = 0;
 
-  constructor(title: string, messages: ChatMessage[]) {
+  constructor(title: string, messages: ChatMessage[], sessionId: string = '',
+    createdAt: number = 0, updatedAt: number = 0) {
     this.title = title;
     this.messages = messages;
+    this.sessionId = sessionId;
+    this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
   }
 }
 
@@ -16,11 +23,16 @@ export class ImportedChat {
 class BackupSessionItem {
   title: string;
   createdAt: number;
+  updatedAt: number;
+  id: string;
   messages: Record<string, Object>[];
 
-  constructor(title: string, createdAt: number, messages: Record<string, Object>[]) {
+  constructor(title: string, createdAt: number, messages: Record<string, Object>[],
+    id: string = '', updatedAt: number = 0) {
     this.title = title;
     this.createdAt = createdAt;
+    this.updatedAt = updatedAt;
+    this.id = id;
     this.messages = messages;
   }
 }
@@ -70,7 +82,7 @@ export class ChatExporter {
     return JSON.stringify(payload);
   }
 
-  // 导出全部会话为备份 JSON（app/version:2/sessions[{title,createdAt,messages}]）
+  // 导出全部会话为备份 JSON（v3：app/version:3/sessions[{id,title,createdAt,updatedAt,messages[]}]）
   // messagesBySession：会话 id → 消息数组（调用方负责加载）
   static toJsonAll(sessions: ChatSession[],
     messagesBySession: (sessionId: string) => ChatMessage[]): string {
@@ -82,23 +94,24 @@ export class ChatExporter {
       for (let j: number = 0; j < msgs.length; j++) {
         const m: ChatMessage = msgs[j];
         const item: Record<string, Object> = {};
+        item['id'] = m.id;
         item['role'] = m.role;
         item['content'] = m.content;
         item['reasoning'] = m.reasoning;
         item['time'] = m.time;
         msgList.push(item);
       }
-      sessionList.push(new BackupSessionItem(s.title, s.createdAt, msgList));
+      sessionList.push(new BackupSessionItem(s.title, s.createdAt, msgList, s.id, s.updatedAt));
     }
     const payload: Record<string, Object> = {};
     payload['app'] = 'zhizon';
-    payload['version'] = 2;
+    payload['version'] = 3;
     payload['exportedAt'] = Date.now();
     payload['sessions'] = sessionList;
     return JSON.stringify(payload);
   }
 
-  // 解析文件备份 JSON（version 2 多会话 / version 1 单会话均支持）；格式非法返回空数组
+  // 解析文件备份 JSON（version 3/2 多会话 / version 1 单会话均支持）；格式非法返回空数组
   static parseImportAll(json: string): ImportedChat[] {
     const result: ImportedChat[] = [];
     try {
@@ -114,7 +127,10 @@ export class ChatExporter {
           const messages: ChatMessage[] = ChatExporter.parseMessages(msgs as Object[]);
           if (messages.length === 0) continue;
           const title: string = typeof item['title'] === 'string' ? item['title'] as string : '导入的对话';
-          result.push(new ImportedChat(title, messages));
+          const sessionId: string = typeof item['id'] === 'string' ? item['id'] as string : '';
+          const createdAt: number = typeof item['createdAt'] === 'number' ? item['createdAt'] as number : 0;
+          const updatedAt: number = typeof item['updatedAt'] === 'number' ? item['updatedAt'] as number : createdAt;
+          result.push(new ImportedChat(title, messages, sessionId, createdAt, updatedAt));
         }
         return result;
       }
@@ -136,7 +152,9 @@ export class ChatExporter {
       if ((role === 'user' || role === 'assistant') && content.length > 0) {
         const time: number = typeof item.time === 'number' ? item.time as number : 0;
         const reasoning: string = typeof item.reasoning === 'string' ? item.reasoning as string : '';
-        messages.push(new ChatMessage(ChatMessage.newId(), role, content, time, reasoning));
+        const id: string = typeof item.id === 'string' && (item.id as string).length > 0
+          ? item.id as string : ChatMessage.newId();
+        messages.push(new ChatMessage(id, role, content, time, reasoning));
       }
     }
     return messages;
@@ -149,18 +167,7 @@ export class ChatExporter {
       if (typeof parsed.app !== 'string' || parsed.app !== 'zhizon') return null;
       const msgs: Object = parsed.messages;
       if (msgs === undefined || !Array.isArray(msgs)) return null;
-      const arr: Object[] = msgs as Object[];
-      const messages: ChatMessage[] = [];
-      for (let i: number = 0; i < arr.length; i++) {
-        const item: Record<string, Object> = arr[i] as Record<string, Object>;
-        const role: string = typeof item.role === 'string' ? item.role as string : '';
-        const content: string = typeof item.content === 'string' ? item.content as string : '';
-        if ((role === 'user' || role === 'assistant') && content.length > 0) {
-          const time: number = typeof item.time === 'number' ? item.time as number : 0;
-          const reasoning: string = typeof item.reasoning === 'string' ? item.reasoning as string : '';
-          messages.push(new ChatMessage(ChatMessage.newId(), role, content, time, reasoning));
-        }
-      }
+      const messages: ChatMessage[] = ChatExporter.parseMessages(msgs as Object[]);
       if (messages.length === 0) return null;
       const title: string = typeof parsed.title === 'string' ? parsed.title as string : '导入的对话';
       return new ImportedChat(title, messages);

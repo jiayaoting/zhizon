@@ -1,6 +1,7 @@
 import { BackgroundDisplayState, ThemeManager } from '../common/Theme';
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
+import { FxBudget } from './GlassEffect';
 
 @ComponentV2
 export struct GlobalBackgroundLayer {
@@ -43,7 +44,7 @@ export struct GlobalBackgroundLayer {
           .height('100%')
           .backgroundColor(this.themeState.palette.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.20)')
           .border({ width: 1, color: this.themeState.palette.isDark ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.60)' })
-          .backdropBlur(24)
+          .backdropBlur(FxBudget.isLowBattery() ? 0 : 12)
       }
     }
     .width('100%')

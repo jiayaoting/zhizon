@@ -182,15 +182,21 @@ export class ChatSession {
   updatedAt: number;
   pinned: boolean;
   activeModelId: string;
+  // v16：无痕会话（消息不落库）与会话级系统提示词（AI 角色模板应用）
+  incognito: boolean;
+  systemPrompt: string;
 
   constructor(id: string = '', title: string = '', createdAt: number = 0, updatedAt: number = 0,
-    pinned: boolean = false, activeModelId: string = '') {
+    pinned: boolean = false, activeModelId: string = '', incognito: boolean = false,
+    systemPrompt: string = '') {
     this.id = id;
     this.title = title;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.pinned = pinned;
     this.activeModelId = activeModelId;
+    this.incognito = incognito;
+    this.systemPrompt = systemPrompt;
   }
 
   static create(title: string, activeModelId: string = ''): ChatSession {

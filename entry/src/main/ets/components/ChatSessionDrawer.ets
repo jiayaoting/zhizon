@@ -24,6 +24,8 @@ export struct ChatSessionDrawer {
   onConfirmRename: () => void = () => {};
   onCancelRename: () => void = () => {};
   onTogglePin: (id: string) => void = () => {};
+  onToggleIncognito: (id: string) => void = () => {};
+  onOpenRoles: () => void = () => {};
   onDeleteSession: (id: string) => void = () => {};
   onExport: () => void = () => {};
   onImport: () => void = () => {};
@@ -65,6 +67,12 @@ export struct ChatSessionDrawer {
               .fontColor(this.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
               .layoutWeight(1)
+            Text('🎭')
+              .fontSize(15)
+              .fontFamily(this.palette.fontSans)
+              .padding(6)
+              .accessibilityText('AI 角色模板')
+              .onClick(() => { this.onOpenRoles(); })
             Text('✕')
               .fontSize(16)
               .fontFamily(this.palette.fontSans)
@@ -136,7 +144,7 @@ export struct ChatSessionDrawer {
                         .padding(6)
                         .onClick(() => { this.onCancelRename(); })
                     } else {
-                      Text(s.pinned ? '📌' : '💬')
+                      Text(s.pinned ? '📌' : (s.incognito ? '🕶️' : '💬'))
                         .fontSize(13)
                         .fontFamily(this.palette.fontSans)
                       Column({ space: 2 }) {
@@ -146,10 +154,10 @@ export struct ChatSessionDrawer {
                           .fontColor(this.palette.textPrimary)
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        Text(this.sessionTimeLabel(s.updatedAt))
+                        Text((s.incognito ? '🕶️ 无痕 · ' : '') + this.sessionTimeLabel(s.updatedAt))
                           .fontSize(10)
                           .fontFamily(this.palette.fontSans)
-                          .fontColor(this.palette.textTertiary)
+                          .fontColor(s.incognito ? this.palette.warning : this.palette.textTertiary)
                       }
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
@@ -165,6 +173,13 @@ export struct ChatSessionDrawer {
                         .fontFamily(this.palette.fontSans)
                         .padding(4)
                         .onClick(() => { this.onBeginRename(s.id); })
+                      Text(s.incognito ? '🔒' : '🔓')
+                        .fontSize(11)
+                        .fontFamily(this.palette.fontSans)
+                        .opacity(s.incognito ? 1 : 0.45)
+                        .padding(4)
+                        .accessibilityText(s.incognito ? '关闭无痕' : '开启无痕')
+                        .onClick(() => { this.onToggleIncognito(s.id); })
                       Text('📌')
                         .fontSize(12)
                         .fontFamily(this.palette.fontSans)

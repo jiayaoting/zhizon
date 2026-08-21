@@ -41,6 +41,7 @@ export struct SnakePage {
   @State wrapEnabled: boolean = false;
   @State obstacleEnabled: boolean = false;
   @State obstacles: Point[] = [];
+  @State boardDisplay: number[][] = [];
   @State snakeDirection: Direction = Direction.RIGHT;
   @State nextDirection: Direction = Direction.RIGHT;
   @State score: number = 0;
@@ -168,6 +169,7 @@ export struct SnakePage {
       this.generateObstacles();
     }
     this.generateFood();
+    this.syncBoardDisplay();
   }
 
   private generateObstacles(): void {
@@ -309,6 +311,7 @@ export struct SnakePage {
       newSnake.pop();
       this.snake = newSnake;
     }
+    this.syncBoardDisplay();
   }
 
   // AI 安全走一步：优先按当前方向，若会立即碰撞则尝试其他安全方向
@@ -840,7 +843,7 @@ export struct SnakePage {
   gameBoard() {
     Stack() {
       Column() {
-        ForEach(this.getDisplayGrid(), (row: number[], rowIdx: number) => {
+        ForEach(this.boardDisplay, (row: number[], rowIdx: number) => {
           Row() {
             ForEach(row, (cell: number, colIdx: number) => {
               Row()
@@ -848,10 +851,6 @@ export struct SnakePage {
                 .aspectRatio(1)
                 .borderRadius(2)
                 .backgroundColor(this.cellColor(cell, colIdx, rowIdx))
-                .scale(cell === 3 ? { x: 1.12, y: 1.12 } : { x: 1, y: 1 })
-                .animation(cell === 3 ?
-                  { duration: 600, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate } :
-                  { duration: 0 })
             }, (colIdx: number) => colIdx.toString())
           }
           .layoutWeight(1)
@@ -870,6 +869,17 @@ export struct SnakePage {
           .position({ x: seg.x * this.boardCellSize(), y: seg.y * this.boardCellSize() })
           .animation({ duration: 120, curve: Curve.EaseInOut })
       }, (seg: Point, index: number) => index.toString())
+
+      if (this.food) {
+        Row()
+          .width(this.boardCellSize())
+          .height(this.boardCellSize())
+          .borderRadius(2)
+          .backgroundColor(this.foodBonus ? '#FBBF24' : this.palette.danger)
+          .position({ x: this.food.x * this.boardCellSize(), y: this.food.y * this.boardCellSize() })
+          .scale({ x: 1.12, y: 1.12 })
+          .animation({ duration: 600, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate })
+      }
     }
     .width('100%')
     .aspectRatio(1)
@@ -897,6 +907,10 @@ export struct SnakePage {
       return this.palette.textTertiary;
     }
     return this.palette.bgSurface2;
+  }
+
+  private syncBoardDisplay(): void {
+    this.boardDisplay = this.getDisplayGrid();
   }
 
   private getDisplayGrid(): number[][] {
@@ -1414,6 +1428,7 @@ export struct SnakePage {
     this.replayIndex = 0;
     this.replayElapsed = 0;
     this.replaySpeed = 1;
+    this.syncBoardDisplay();
     this.startReplayTimer();
   }
 
@@ -1445,6 +1460,7 @@ export struct SnakePage {
         if (parts.length === 3) {
           this.food = { x: Number(parts[0]), y: Number(parts[1]) } as Point;
           this.foodBonus = parts[2] === '1';
+          this.syncBoardDisplay();
         }
       }
       this.replayApplying = false;

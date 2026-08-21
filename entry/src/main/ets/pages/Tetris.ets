@@ -94,6 +94,7 @@ interface Piece {
 @Entry
 export struct TetrisPage {
   @State board: number[][] = [];
+  @State boardDisplay: number[][] = [];
   @State currentPiece: Piece | null = null;
   @State nextType: number = 0;
   private bag: number[] = [];
@@ -200,6 +201,7 @@ export struct TetrisPage {
       b.push(row);
     }
     this.board = b;
+    this.syncBoardDisplay();
   }
 
   private nextFromBag(): number {
@@ -225,6 +227,7 @@ export struct TetrisPage {
     const shape: number[][] = SHAPES[t][0];
     const pieceX: number = Math.floor((COLS - this.pieceWidth(shape)) / 2);
     this.currentPiece = { type: t, rotation: 0, x: pieceX, y: 0 };
+    this.syncBoardDisplay();
   }
 
   private pieceWidth(shape: number[][]): number {
@@ -254,6 +257,7 @@ export struct TetrisPage {
     if (!this.collides(p.type, p.rotation, p.x + dx, p.y + dy)) {
       this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x + dx, y: p.y + dy };
       this.lastAction = 'move';
+      this.syncBoardDisplay();
       return true;
     }
     return false;
@@ -270,6 +274,7 @@ export struct TetrisPage {
     if (!this.collides(p.type, newRot, p.x, p.y)) {
       this.currentPiece = { type: p.type, rotation: newRot, x: p.x, y: p.y };
       this.lastAction = 'rotate';
+      this.syncBoardDisplay();
       this.vibrate(10);
       return;
     }
@@ -282,6 +287,7 @@ export struct TetrisPage {
       if (!this.collides(p.type, newRot, p.x + dx, p.y + dy)) {
         this.currentPiece = { type: p.type, rotation: newRot, x: p.x + dx, y: p.y + dy };
         this.lastAction = 'rotate';
+        this.syncBoardDisplay();
         this.vibrate(10);
         return;
       }
@@ -296,6 +302,7 @@ export struct TetrisPage {
       this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x, y: p.y + 1 };
       this.lastAction = 'drop';
       this.score += 1;
+      this.syncBoardDisplay();
     } else {
       this.lockPiece();
     }
@@ -329,6 +336,7 @@ export struct TetrisPage {
       const pieceX: number = Math.floor((COLS - this.pieceWidth(shape)) / 2);
       this.currentPiece = { type: swapType, rotation: 0, x: pieceX, y: 0 };
       this.holdUsed = true;
+      this.syncBoardDisplay();
     }
     this.vibrate(10);
   }
@@ -391,7 +399,6 @@ export struct TetrisPage {
     }
 
     if (fullRows.length > 0) {
-      this.clearedRows = fullRows;
       // 消除行
       const afterBoard: number[][] = [];
       for (let r: number = ROWS - 1; r >= 0; r--) {
@@ -408,7 +415,11 @@ export struct TetrisPage {
         for (let c: number = 0; c < COLS; c++) emptyRow.push(0);
         afterBoard.unshift(emptyRow);
       }
-      this.board = afterBoard;
+      this.getUIContext().animateTo({ duration: 110, curve: Curve.EaseOut }, () => {
+        this.clearedRows = fullRows;
+        this.board = afterBoard;
+        this.syncBoardDisplay();
+      });
 
       const cleared: number = fullRows.length;
       this.lines += cleared;
@@ -428,7 +439,11 @@ export struct TetrisPage {
       }
 
       // 清除动画标记
-      setTimeout(() => { this.clearedRows = []; }, 220);
+      setTimeout(() => {
+        this.getUIContext().animateTo({ duration: 110, curve: Curve.EaseOut }, () => {
+          this.clearedRows = [];
+        });
+      }, 220);
     } else {
       this.combo = -1;
     }
@@ -451,6 +466,7 @@ export struct TetrisPage {
       this.playSeconds = Math.floor((Date.now() - this.gameStartTime) / 1000);
       this.saveScore();
     }
+    this.syncBoardDisplay();
   }
 
   // ---- 下落 ----
@@ -459,6 +475,7 @@ export struct TetrisPage {
     const p: Piece = this.currentPiece;
     if (!this.collides(p.type, p.rotation, p.x, p.y + 1)) {
       this.currentPiece = { type: p.type, rotation: p.rotation, x: p.x, y: p.y + 1 };
+      this.syncBoardDisplay();
     } else {
       this.lockPiece();
     }
@@ -855,10 +872,14 @@ export struct TetrisPage {
   }
 
   // ---- 棋盘渲染 ----
+  private syncBoardDisplay(): void {
+    this.boardDisplay = this.getDisplayBoard();
+  }
+
   @Builder
   gameBoard() {
     Column() {
-      ForEach(this.getDisplayBoard(), (row: number[], rowIdx: number) => {
+      ForEach(this.boardDisplay, (row: number[], rowIdx: number) => {
         Row() {
           ForEach(row, (cell: number, colIdx: number) => {
             Row()
@@ -869,7 +890,6 @@ export struct TetrisPage {
                 (cell > 0 ? PIECE_COLORS[cell - 1] : this.palette.bgSurface2))
               .opacity(cell >= 100 ? 0.35 : 1)
               .scale(this.clearedRows.indexOf(rowIdx) !== -1 ? { x: 1.15, y: 1.15 } : { x: 1, y: 1 })
-              .animation({ duration: 110, curve: Curve.EaseOut })
               .border({ width: cell > 0 && cell < 100 ? 0.5 : 0, color: 'rgba(255,255,255,0.1)' })
           }, (colIdx: number) => colIdx.toString())
         }

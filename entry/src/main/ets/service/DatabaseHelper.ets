@@ -112,8 +112,35 @@ export interface NewsTranslationEntry {
   updatedAt: number;
 }
 
+// 阅读周报统计结果（日期标签按时间升序，旧 → 新）
+export class WeeklyReadingStats {
+  dates: string[];
+  reads: number[];
+  favorites: number[];
+  aiCalls: number[];
+  totalReads: number;
+  totalFavorites: number;
+  totalAiCalls: number;
+  activeDays: number;
+  bestDayIndex: number;
+
+  constructor(dates: string[], reads: number[], favorites: number[], aiCalls: number[],
+    totalReads: number, totalFavorites: number, totalAiCalls: number,
+    activeDays: number, bestDayIndex: number) {
+    this.dates = dates;
+    this.reads = reads;
+    this.favorites = favorites;
+    this.aiCalls = aiCalls;
+    this.totalReads = totalReads;
+    this.totalFavorites = totalFavorites;
+    this.totalAiCalls = totalAiCalls;
+    this.activeDays = activeDays;
+    this.bestDayIndex = bestDayIndex;
+  }
+}
+
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 15;
+const DB_VERSION = 16;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -163,12 +190,33 @@ const SQL_CREATE_AI_CALL_LOGS = `CREATE TABLE IF NOT EXISTS ai_call_logs (
   input_tokens INTEGER DEFAULT 0, cached_tokens INTEGER DEFAULT 0,
   output_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0
 )`;
-// 旧版本升级：为 ai_call_logs 补充 token 消耗列（列已存在时忽略错误）
-const SQL_ALTER_AI_CALL_LOGS = [
-  'ALTER TABLE ai_call_logs ADD COLUMN input_tokens INTEGER DEFAULT 0',
-  'ALTER TABLE ai_call_logs ADD COLUMN cached_tokens INTEGER DEFAULT 0',
-  'ALTER TABLE ai_call_logs ADD COLUMN output_tokens INTEGER DEFAULT 0',
-  'ALTER TABLE ai_call_logs ADD COLUMN total_tokens INTEGER DEFAULT 0'
+// 版本门控迁移步骤定义：minVersion 为引入该列的最低数据库版本号（version < minVersion 才需要补列）
+interface SchemaAlterStep {
+  table: string;
+  column: string;
+  minVersion: number;
+  sql: string;
+}
+
+// 旧库升级 ALTER 步骤：新库建表已含全部列，迁移时会先检查列是否存在，重复列自动跳过
+const SQL_ALTER_STEPS: SchemaAlterStep[] = [
+  { table: 'ai_call_logs', column: 'input_tokens', minVersion: 5, sql: 'ALTER TABLE ai_call_logs ADD COLUMN input_tokens INTEGER DEFAULT 0' },
+  { table: 'ai_call_logs', column: 'cached_tokens', minVersion: 5, sql: 'ALTER TABLE ai_call_logs ADD COLUMN cached_tokens INTEGER DEFAULT 0' },
+  { table: 'ai_call_logs', column: 'output_tokens', minVersion: 5, sql: 'ALTER TABLE ai_call_logs ADD COLUMN output_tokens INTEGER DEFAULT 0' },
+  { table: 'ai_call_logs', column: 'total_tokens', minVersion: 5, sql: 'ALTER TABLE ai_call_logs ADD COLUMN total_tokens INTEGER DEFAULT 0' },
+  { table: 'game_scores', column: 'model', minVersion: 7, sql: "ALTER TABLE game_scores ADD COLUMN model TEXT DEFAULT ''" },
+  { table: 'game_scores', column: 'duration', minVersion: 8, sql: 'ALTER TABLE game_scores ADD COLUMN duration INTEGER DEFAULT 0' },
+  { table: 'game_scores', column: 'ai_think_time', minVersion: 11, sql: 'ALTER TABLE game_scores ADD COLUMN ai_think_time INTEGER DEFAULT 0' },
+  { table: 'chat_messages', column: 'image_data', minVersion: 10, sql: "ALTER TABLE chat_messages ADD COLUMN image_data TEXT DEFAULT ''" },
+  // ai_token_stats 无明确引入版本：只要未达 DB_VERSION 就检查补列（保持旧行为）
+  { table: 'ai_token_stats', column: 'call_count', minVersion: 15, sql: 'ALTER TABLE ai_token_stats ADD COLUMN call_count INTEGER DEFAULT 0' },
+  { table: 'ai_token_stats', column: 'input_tokens', minVersion: 15, sql: 'ALTER TABLE ai_token_stats ADD COLUMN input_tokens INTEGER DEFAULT 0' },
+  { table: 'ai_token_stats', column: 'cached_tokens', minVersion: 15, sql: 'ALTER TABLE ai_token_stats ADD COLUMN cached_tokens INTEGER DEFAULT 0' },
+  { table: 'ai_token_stats', column: 'output_tokens', minVersion: 15, sql: 'ALTER TABLE ai_token_stats ADD COLUMN output_tokens INTEGER DEFAULT 0' },
+  { table: 'ai_token_stats', column: 'total_tokens', minVersion: 15, sql: 'ALTER TABLE ai_token_stats ADD COLUMN total_tokens INTEGER DEFAULT 0' },
+  // v16：会话无痕标记 + 会话级系统提示词（AI 角色模板库）
+  { table: 'chat_sessions', column: 'incognito', minVersion: 16, sql: 'ALTER TABLE chat_sessions ADD COLUMN incognito INTEGER DEFAULT 0' },
+  { table: 'chat_sessions', column: 'system_prompt', minVersion: 16, sql: "ALTER TABLE chat_sessions ADD COLUMN system_prompt TEXT DEFAULT ''" }
 ];
 // 累计统计表：仅一行（id='all'），删除模型/清空调用记录时不清理，只增不减
 const SQL_CREATE_AI_TOKEN_STATS = `CREATE TABLE IF NOT EXISTS ai_token_stats (
@@ -178,7 +226,8 @@ const SQL_CREATE_AI_TOKEN_STATS = `CREATE TABLE IF NOT EXISTS ai_token_stats (
 // AI 对话多会话：会话表 + 消息表（v9）
 const SQL_CREATE_CHAT_SESSIONS = `CREATE TABLE IF NOT EXISTS chat_sessions (
   id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL, pinned INTEGER DEFAULT 0, active_model_id TEXT DEFAULT ''
+  updated_at INTEGER NOT NULL, pinned INTEGER DEFAULT 0, active_model_id TEXT DEFAULT '',
+  incognito INTEGER DEFAULT 0, system_prompt TEXT DEFAULT ''
 )`;
 const SQL_CREATE_CHAT_MESSAGES = `CREATE TABLE IF NOT EXISTS chat_messages (
   id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
@@ -264,8 +313,41 @@ const SQL_CREATE_NEWS_TRANSLATIONS = `CREATE TABLE IF NOT EXISTS news_translatio
   text TEXT NOT NULL, model TEXT DEFAULT '', updated_at INTEGER NOT NULL
 )`;
 
+// 查询/清理用索引（CREATE INDEX IF NOT EXISTS，幂等）
+const SQL_CREATE_IDX_GAME_SCORES = 'CREATE INDEX IF NOT EXISTS idx_game_scores_game_score ON game_scores(game, score)';
+const SQL_CREATE_IDX_AI_CALL_LOGS_START_TIME = 'CREATE INDEX IF NOT EXISTS idx_ai_call_logs_start_time ON ai_call_logs(start_time)';
+const SQL_CREATE_IDX_NEWS_READ_READ_AT = 'CREATE INDEX IF NOT EXISTS idx_news_read_read_at ON news_read(read_at)';
+const SQL_CREATE_IDX_NEWS_FAVORITES_ADDED_AT = 'CREATE INDEX IF NOT EXISTS idx_news_favorites_added_at ON news_favorites(added_at)';
+
+// 已读标记 upsert（url 为主键，一次写完成）
+const SQL_UPSERT_NEWS_READ = 'INSERT OR REPLACE INTO news_read (url, read_at) VALUES (?, ?)';
+
+// 保留策略：过期数据清理（executeSql + bindArgs 参数化，禁止字符串拼值）
+const SQL_RETENTION_CHAT_AGENT_STEPS = 'DELETE FROM chat_agent_steps WHERE started_at < ?';
+const SQL_RETENTION_AI_CALL_LOGS = 'DELETE FROM ai_call_logs WHERE start_time < ?';
+const SQL_RETENTION_NEWS_READ = 'DELETE FROM news_read WHERE read_at < ?';
+const SQL_RETENTION_NEWS_ARTICLE_CACHE = 'DELETE FROM news_article_cache WHERE cached_at < ?';
+const SQL_RETENTION_GAME_REPLAYS = 'DELETE FROM game_replays WHERE created_at < ?';
+const SQL_RETENTION_CHAT_MESSAGES = 'DELETE FROM chat_messages WHERE time < ?';
+// 行为流水 90 天自动清理（画像已落快照，事件仅用于审计/重算）
+const SQL_RETENTION_NEWS_EVENTS = 'DELETE FROM news_events WHERE occurred_at < ?';
+
+// ========== SQLite FTS5 全文索引（设备支持时启用，不支持自动回退 LIKE） ==========
+// 优先 trigram 分词（中英文子串匹配），失败再退回默认分词；均失败则 ftsReady=false
+const SQL_CREATE_CHAT_FTS_TRIGRAM = "CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts " +
+  "USING fts5(session_id UNINDEXED, role UNINDEXED, content, reasoning, tokenize='trigram')";
+const SQL_CREATE_CHAT_FTS_PLAIN = 'CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts ' +
+  'USING fts5(session_id UNINDEXED, role UNINDEXED, content, reasoning)';
+const SQL_CREATE_NEWS_FTS_TRIGRAM = "CREATE VIRTUAL TABLE IF NOT EXISTS news_articles_fts " +
+  "USING fts5(kind UNINDEXED, url UNINDEXED, title, body, tokenize='trigram')";
+const SQL_CREATE_NEWS_FTS_PLAIN = 'CREATE VIRTUAL TABLE IF NOT EXISTS news_articles_fts ' +
+  'USING fts5(kind UNINDEXED, url UNINDEXED, title, body)';
+
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
+  // FTS5 虚拟表可用标记（init 时探测；不可用时搜索自动回退 LIKE）
+  private static chatFtsReady: boolean = false;
+  private static newsFtsReady: boolean = false;
 
   // 初始化数据库
   static async init(context: common.Context): Promise<void> {
@@ -278,44 +360,16 @@ export class DatabaseHelper {
 
     DatabaseHelper.store = await relationalStore.getRdbStore(context, config);
 
-    // 创建表
+    // 创建表（CREATE TABLE IF NOT EXISTS，幂等）
     await DatabaseHelper.store.executeSql(SQL_CREATE_SETTINGS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_GAME_SCORES);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_GAME_SCORES);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_EVIDENCE);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_HISTORY);
     await DatabaseHelper.store.executeSql(SQL_CREATE_DEFECT_FIX_RESULTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_AI_CALL_LOGS);
-    if (DatabaseHelper.store.version < 5) {
-      // 旧库升级：为 ai_call_logs 补齐 token 消耗列（新库建表已含，会命中重复列错误并忽略）
-      for (let i: number = 0; i < SQL_ALTER_AI_CALL_LOGS.length; i++) {
-        try {
-          await DatabaseHelper.store.executeSql(SQL_ALTER_AI_CALL_LOGS[i]);
-        } catch (e) {
-        }
-      }
-    }
-    if (DatabaseHelper.store.version < 7) {
-      // 旧库升级：为 game_scores 补齐 model 列（新库建表已含，会命中重复列错误并忽略）
-      try {
-        await DatabaseHelper.store.executeSql("ALTER TABLE game_scores ADD COLUMN model TEXT DEFAULT ''");
-      } catch (e) {
-      }
-    }
-    if (DatabaseHelper.store.version < 8) {
-      // 旧库升级：为 game_scores 补齐 duration 列（新库建表已含，会命中重复列错误并忽略）
-      try {
-        await DatabaseHelper.store.executeSql("ALTER TABLE game_scores ADD COLUMN duration INTEGER DEFAULT 0");
-      } catch (e) {
-      }
-    }
-    if (DatabaseHelper.store.version < 11) {
-      // 旧库升级：为 game_scores 补齐 AI 思考总时长列（新库建表已含，会命中重复列错误并忽略）
-      try {
-        await DatabaseHelper.store.executeSql("ALTER TABLE game_scores ADD COLUMN ai_think_time INTEGER DEFAULT 0");
-      } catch (e) {
-      }
-    }
+    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_AI_CALL_LOGS_START_TIME);
     // 累计统计表：独立于 ai_call_logs，清空调用记录不影响
     await DatabaseHelper.store.executeSql(SQL_CREATE_AI_TOKEN_STATS);
     // AI 对话多会话表（v9/v10）
@@ -329,7 +383,9 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_AGENT_STEPS);
     // 新闻资讯（v14）
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_FAVORITES);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_NEWS_FAVORITES_ADDED_AT);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_READ);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_NEWS_READ_READ_AT);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_DIGESTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_CACHE);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_ARTICLE_CACHE);
@@ -339,39 +395,124 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS_URL_IDX);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS_TIME_IDX);
-    // 行为流水 90 天自动清理（画像已落快照，事件仅用于审计/重算）
-    try {
-      const cutoff: number = Date.now() - 90 * 24 * 3600 * 1000;
-      await DatabaseHelper.store.executeSql('DELETE FROM news_events WHERE occurred_at < ' + cutoff.toString());
-    } catch (e) {
-    }
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EXCLUSIONS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_PROFILE);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_TRANSLATIONS);
-    if (DatabaseHelper.store.version < 10) {
-      // 旧库升级：为 chat_messages 补齐图片附件列（新库建表已含，重复列错误被忽略）
-      try {
-        await DatabaseHelper.store.executeSql("ALTER TABLE chat_messages ADD COLUMN image_data TEXT DEFAULT ''");
-      } catch (e) {
-      }
-    }
-    // 旧库升级：为 ai_token_stats 补齐可能缺失的列（新库建表已含，会命中重复列错误并忽略）
-    const tokenStatAlters: string[] = [
-      'ALTER TABLE ai_token_stats ADD COLUMN call_count INTEGER DEFAULT 0',
-      'ALTER TABLE ai_token_stats ADD COLUMN input_tokens INTEGER DEFAULT 0',
-      'ALTER TABLE ai_token_stats ADD COLUMN cached_tokens INTEGER DEFAULT 0',
-      'ALTER TABLE ai_token_stats ADD COLUMN output_tokens INTEGER DEFAULT 0',
-      'ALTER TABLE ai_token_stats ADD COLUMN total_tokens INTEGER DEFAULT 0'
-    ];
-    for (let i: number = 0; i < tokenStatAlters.length; i++) {
-      try {
-        await DatabaseHelper.store.executeSql(tokenStatAlters[i]);
-      } catch (e) {
-      }
-    }
+
+    // 版本门控迁移：仅对旧库执行 ALTER 补列（事务包裹，失败回滚且 version 不变，下次启动重试）
+    await DatabaseHelper.migrateSchema();
     await DatabaseHelper.initTokenStats();
-    if (DatabaseHelper.store.version < DB_VERSION) {
-      DatabaseHelper.store.version = DB_VERSION;
+    // 保留策略：启动时清理一次过期数据
+    await DatabaseHelper.applyRetentionPolicy();
+    // FTS5 全文索引（设备/系统支持才启用，失败静默回退 LIKE 搜索）
+    await DatabaseHelper.initFtsTables();
+  }
+
+  // 尝试创建 FTS5 虚拟表：先 trigram 分词（中英文子串），失败退回默认分词；再失败标记不可用
+  private static async initFtsTables(): Promise<void> {
+    DatabaseHelper.chatFtsReady = await DatabaseHelper.tryCreateFtsTable(SQL_CREATE_CHAT_FTS_TRIGRAM,
+      SQL_CREATE_CHAT_FTS_PLAIN, 'chat_messages_fts');
+    DatabaseHelper.newsFtsReady = await DatabaseHelper.tryCreateFtsTable(SQL_CREATE_NEWS_FTS_TRIGRAM,
+      SQL_CREATE_NEWS_FTS_PLAIN, 'news_articles_fts');
+  }
+
+  private static async tryCreateFtsTable(sqlTrigram: string, sqlPlain: string, name: string): Promise<boolean> {
+    const store = DatabaseHelper.getStore();
+    try {
+      await store.executeSql(sqlTrigram);
+      return true;
+    } catch (e1) {
+      try {
+        await store.executeSql(sqlPlain);
+        return true;
+      } catch (e2) {
+        hilog.warn(DB_DOMAIN, 'DatabaseHelper', 'FTS5 虚拟表 %{public}s 创建失败，回退 LIKE 搜索 %{public}s', name,
+          (e2 as Error).message);
+        return false;
+      }
+    }
+  }
+
+  static isChatFtsReady(): boolean {
+    return DatabaseHelper.chatFtsReady;
+  }
+
+  static isNewsFtsReady(): boolean {
+    return DatabaseHelper.newsFtsReady;
+  }
+
+  // 版本门控迁移：读取 store.version，只对 version < 目标版本的步骤执行 ALTER。
+  // 新库（version=0）建表已含全部列，先做列存在性检查避免重复加列报错；
+  // 任一步失败则回滚且不提升 version，下次启动自动重试。
+  private static async migrateSchema(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const current: number = store.version;
+    if (current >= DB_VERSION) return;
+    await store.beginTransaction();
+    try {
+      for (let i: number = 0; i < SQL_ALTER_STEPS.length; i++) {
+        const step: SchemaAlterStep = SQL_ALTER_STEPS[i];
+        if (current >= step.minVersion) continue;
+        // 列已存在（新库或已补过列）则跳过，避免重复加列
+        if (await DatabaseHelper.tableHasColumn(store, step.table, step.column)) continue;
+        await store.executeSql(step.sql);
+      }
+      store.version = DB_VERSION;
+      await store.commit();
+    } catch (e) {
+      await store.rollBack();
+      // 保持 version 不变，下次启动重试
+      hilog.error(DB_DOMAIN, 'DatabaseHelper', '数据库版本迁移失败（version=%{public}d）：%{public}s', current,
+        (e as Error).message);
+    }
+  }
+
+  // 检查表是否已含指定列（SELECT * LIMIT 0 仅取列元数据，无遍历开销）
+  private static async tableHasColumn(store: relationalStore.RdbStore, table: string, column: string): Promise<boolean> {
+    const resultSet: relationalStore.ResultSet = await store.querySql('SELECT * FROM ' + table + ' LIMIT 0');
+    try {
+      const names: string[] = resultSet.getColumnNames();
+      return names.indexOf(column) >= 0;
+    } finally {
+      resultSet.close();
+    }
+  }
+
+  // 保留策略：按各表保留期清理过期数据（executeSql + bindArgs 参数化）
+  static async applyRetentionPolicy(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    const now: number = Date.now();
+    const dayMs: number = 24 * 3600 * 1000;
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_CHAT_AGENT_STEPS, now - 90 * dayMs, 'chat_agent_steps');
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_AI_CALL_LOGS, now - 90 * dayMs, 'ai_call_logs');
+    // 注意：不动 ai_token_stats 累计表（只增不减，独立于调用记录）
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_NEWS_READ, now - 90 * dayMs, 'news_read');
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_NEWS_ARTICLE_CACHE, now - 30 * dayMs, 'news_article_cache');
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_GAME_REPLAYS, now - 180 * dayMs, 'game_replays');
+    // 行为流水 90 天自动清理（保留原启动清理行为）
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_NEWS_EVENTS, now - 90 * dayMs, 'news_events');
+    // 聊天消息保留天数由设置决定：默认 365 天，'0' 表示不清理
+    let retentionDays: number = 365;
+    try {
+      const retentionDaysStr: string = await DatabaseHelper.getSetting('chatRetentionDays', '365');
+      retentionDays = parseInt(retentionDaysStr, 10);
+    } catch (e) {
+      hilog.warn(DB_DOMAIN, 'DatabaseHelper', '读取聊天保留天数失败，使用默认 365 天 %{public}s', (e as Error).message);
+      retentionDays = 365;
+    }
+    if (!Number.isNaN(retentionDays) && retentionDays > 0) {
+      await DatabaseHelper.deleteExpired(store, SQL_RETENTION_CHAT_MESSAGES, now - retentionDays * dayMs, 'chat_messages');
+    }
+  }
+
+  // 按过期时间清理单个表（失败仅告警，不影响其他清理项）
+  private static async deleteExpired(store: relationalStore.RdbStore, sql: string, cutoff: number,
+    tableName: string): Promise<void> {
+    const bindArgs: Array<relationalStore.ValueType> = [cutoff];
+    try {
+      await store.executeSql(sql, bindArgs);
+    } catch (e) {
+      hilog.warn(DB_DOMAIN, 'DatabaseHelper', tableName + ' 过期清理失败 %{public}s', (e as Error).message);
     }
   }
 
@@ -473,13 +614,18 @@ export class DatabaseHelper {
 
   static async getAiHostCount(): Promise<number> {
     const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('game_scores');
-    predicates.notEqualTo('model', '');
     try {
-      const resultSet = await store.query(predicates);
+      // AI 托管对局：model 非空（语义与原 notEqualTo('model','') 一致）
+      const bindArgs: Array<relationalStore.ValueType> = [''];
+      const resultSet = await store.querySql('SELECT COUNT(*) AS c FROM game_scores WHERE model != ?', bindArgs);
       let count: number = 0;
-      while (resultSet.goToNextRow()) count += 1;
-      resultSet.close();
+      try {
+        if (resultSet.goToNextRow()) {
+          count = resultSet.getLong(resultSet.getColumnIndex('c'));
+        }
+      } finally {
+        resultSet.close();
+      }
       return count;
     } catch (e) {
       return 0;
@@ -488,13 +634,18 @@ export class DatabaseHelper {
 
   static async getChatMessageCount(): Promise<number> {
     const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates('chat_messages');
-    predicates.equalTo('role', 'user');
     try {
-      const resultSet = await store.query(predicates);
+      // 用户消息条数（role='user'，语义与原 equalTo 一致）
+      const bindArgs: Array<relationalStore.ValueType> = ['user'];
+      const resultSet = await store.querySql('SELECT COUNT(*) AS c FROM chat_messages WHERE role = ?', bindArgs);
       let count: number = 0;
-      while (resultSet.goToNextRow()) count += 1;
-      resultSet.close();
+      try {
+        if (resultSet.goToNextRow()) {
+          count = resultSet.getLong(resultSet.getColumnIndex('c'));
+        }
+      } finally {
+        resultSet.close();
+      }
       return count;
     } catch (e) {
       return 0;
@@ -503,20 +654,97 @@ export class DatabaseHelper {
 
   private static async countRows(table: string, winGame: string): Promise<number> {
     const store = DatabaseHelper.getStore();
-    const predicates = new relationalStore.RdbPredicates(table);
+    // 无 winGame 时统计全表；有 winGame 时统计 game=winGame 且 score>0
+    let sql: string = 'SELECT COUNT(*) AS c FROM ' + table;
+    const bindArgs: Array<relationalStore.ValueType> = [];
     if (winGame.length > 0) {
-      predicates.equalTo('game', winGame);
-      predicates.greaterThan('score', 0);
+      sql = 'SELECT COUNT(*) AS c FROM ' + table + ' WHERE game = ? AND score > 0';
+      bindArgs.push(winGame);
     }
     try {
-      const resultSet = await store.query(predicates);
+      const resultSet = await store.querySql(sql, bindArgs);
       let count: number = 0;
-      while (resultSet.goToNextRow()) count += 1;
-      resultSet.close();
+      try {
+        if (resultSet.goToNextRow()) {
+          count = resultSet.getLong(resultSet.getColumnIndex('c'));
+        }
+      } finally {
+        resultSet.close();
+      }
       return count;
     } catch (e) {
       return 0;
     }
+  }
+
+  // ========== 阅读周报（近 7 天阅读/收藏/AI 资讯调用） ==========
+
+  // 近 7 天阅读周报（含今天；AI 调用统计 news 场景日志）
+  static async getWeeklyReadingStats(): Promise<WeeklyReadingStats> {
+    const store = DatabaseHelper.getStore();
+    const dates: string[] = [];
+    const reads: number[] = [];
+    const favorites: number[] = [];
+    const aiCalls: number[] = [];
+    const now: Date = new Date();
+    now.setHours(0, 0, 0, 0);
+    const dayMs: number = 24 * 3600 * 1000;
+    for (let i: number = 6; i >= 0; i--) {
+      const dayStart: number = now.getTime() - i * dayMs;
+      const nextStart: number = dayStart + dayMs;
+      dates.push(DatabaseHelper.weekDayLabel(new Date(dayStart)));
+      reads.push(await DatabaseHelper.countBetween(store, 'news_read', 'read_at', dayStart, nextStart, ''));
+      favorites.push(await DatabaseHelper.countBetween(store, 'news_favorites', 'added_at', dayStart, nextStart, ''));
+      aiCalls.push(await DatabaseHelper.countBetween(store, 'ai_call_logs', 'start_time', dayStart, nextStart,
+        " AND type LIKE 'news%'"));
+    }
+    let totalReads: number = 0;
+    let totalFavorites: number = 0;
+    let totalAiCalls: number = 0;
+    let activeDays: number = 0;
+    let bestDayIndex: number = -1;
+    let best: number = 0;
+    for (let i: number = 0; i < reads.length; i++) {
+      totalReads += reads[i];
+      totalFavorites += favorites[i];
+      totalAiCalls += aiCalls[i];
+      if (reads[i] > 0) activeDays += 1;
+      if (reads[i] > best) {
+        best = reads[i];
+        bestDayIndex = i;
+      }
+    }
+    return new WeeklyReadingStats(dates, reads, favorites, aiCalls,
+      totalReads, totalFavorites, totalAiCalls, activeDays, bestDayIndex);
+  }
+
+  // 时间段计数（表名/列名来自内部常量，无注入风险；extraWhere 为固定常量）
+  private static async countBetween(store: relationalStore.RdbStore, table: string, column: string,
+    from: number, to: number, extraWhere: string): Promise<number> {
+    try {
+      const sql: string = 'SELECT COUNT(*) AS c FROM ' + table + ' WHERE ' + column +
+        ' >= ? AND ' + column + ' < ?' + extraWhere;
+      const bindArgs: Array<relationalStore.ValueType> = [from, to];
+      const resultSet = await store.querySql(sql, bindArgs);
+      let count: number = 0;
+      try {
+        if (resultSet.goToNextRow()) {
+          count = resultSet.getLong(resultSet.getColumnIndex('c'));
+        }
+      } finally {
+        resultSet.close();
+      }
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // 日期标签：MM-DD
+  private static weekDayLabel(d: Date): string {
+    const m: string = (d.getMonth() + 1).toString().padStart(2, '0');
+    const day: string = d.getDate().toString().padStart(2, '0');
+    return m + '-' + day;
   }
 
   // ========== 云同步导出/恢复辅助 ==========
@@ -1112,12 +1340,9 @@ export class DatabaseHelper {
   static async markNewsRead(url: string): Promise<void> {
     const store = DatabaseHelper.getStore();
     try {
-      // 幂等：url 为主键，先删后插并刷新 read_at（避免重复打开时 UNIQUE 冲突）
-      const del = new relationalStore.RdbPredicates('news_read');
-      del.equalTo('url', url);
-      await store.delete(del);
-      const valueBucket: relationalStore.ValuesBucket = { url: url, read_at: Date.now() };
-      await store.insert('news_read', valueBucket);
+      // 幂等：url 为主键，INSERT OR REPLACE 覆盖旧行并刷新 read_at（一次写完成）
+      const bindArgs: Array<relationalStore.ValueType> = [url, Date.now()];
+      await store.executeSql(SQL_UPSERT_NEWS_READ, bindArgs);
     } catch (e) {
     }
   }

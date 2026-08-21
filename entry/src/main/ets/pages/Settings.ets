@@ -1,5 +1,6 @@
 // 智子 - 设置页面（分组索引版：账号云同步 / 外观 / 资讯 / 游戏 / Agent / 安全隐私 / 数据存储 / 关于）
 import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
 import { DataRepository } from '../service/DataRepository';
 import { GlassStyle } from '../components/GlassEffect';
@@ -48,6 +49,8 @@ export struct SettingsPage {
   @State syncBusy: boolean = false;
   // Agent
   @State agentEnabled: boolean = false;
+  // 无痕模式（对话消息不落库）
+  @State incognitoEnabled: boolean = false;
   // 设置搜索
   @State searchText: string = '';
 
@@ -58,6 +61,7 @@ export struct SettingsPage {
       const autoBackupVal = await DataRepository.getSetting('autoBackup', 'false');
       this.autoBackup = autoBackupVal === 'true';
       this.agentEnabled = await DataRepository.getSetting('agentEnabled', 'false') === 'true';
+      this.incognitoEnabled = await DataRepository.getSetting('incognitoEnabled', 'false') === 'true';
       const profile = await HuaweiAccountService.getStoredProfile();
       this.huaweiNick = profile !== null ? profile.nickName : '';
       this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
@@ -164,6 +168,48 @@ export struct SettingsPage {
         this.toast('无法获取应用上下文');
         return;
       }
+      const appCtx: common.Context = ctx;
+      // 先预览备份内容并校验，用户确认后才执行恢复
+      const preview = await CloudSyncService.restorePreview(appCtx);
+      if (!preview.ok) {
+        this.toast(preview.message);
+        return;
+      }
+      const checksumLine: string = !preview.hasChecksum ? '校验：旧备份未校验' :
+        (preview.checksumOk ? '校验：通过 ✓' : '校验：失败 ✗');
+      const summary: string =
+        '备份内容（合并式恢复，不清空本地数据）：\n' +
+        '· 会话 ' + preview.sessionCount + ' 个 / 消息 ' + preview.messageCount + ' 条\n' +
+        '· 战绩 ' + preview.scoreCount + ' 条\n' +
+        '· 成就 ' + preview.achievementCount + ' 项\n' +
+        '· 设置 ' + preview.settingsCount + ' 项\n' +
+        checksumLine + '\n\n' +
+        '确认后将备份内容合并到本地，确定恢复？';
+      AlertDialog.show({
+        title: '恢复备份',
+        message: summary,
+        primaryButton: {
+          value: '取消',
+          action: () => {
+          }
+        },
+        secondaryButton: {
+          value: '确认恢复',
+          fontColor: Color.Red,
+          action: () => {
+            this.performRestore(appCtx);
+          }
+        }
+      });
+    } finally {
+      this.syncBusy = false;
+    }
+  }
+
+  // 用户确认后执行合并式恢复
+  private async performRestore(ctx: common.Context): Promise<void> {
+    this.syncBusy = true;
+    try {
       const result = await CloudSyncService.restoreNow(ctx);
       this.toast(result.message);
       this.cloudSyncLast = await CloudSyncService.lastSyncLabel();
@@ -323,7 +369,10 @@ export struct SettingsPage {
     groups.push(new SettingGroup('news', '资讯', [
       new SettingItem('news', '资讯设置', '📰', '源 / 频道 / 个性化 / 模型 / RSS',
         '资讯源开关、频道个性化、推荐画像、翻译与智能标签模型、自定义 RSS。',
-        SettingRowKind.NAV, false, SettingActionId.NEWS)
+        SettingRowKind.NAV, false, SettingActionId.NEWS),
+      new SettingItem('readingReport', '阅读周报', '📅', '近 7 天阅读画像',
+        '本周阅读 / 收藏 / AI 调用统计与可视化图表。',
+        SettingRowKind.NAV, false, SettingActionId.READING_REPORT)
     ]));
     groups.push(new SettingGroup('game', '游戏', [
       new SettingItem('game', '游戏设置', '🎮', '音效等', '',
@@ -332,7 +381,10 @@ export struct SettingsPage {
     groups.push(new SettingGroup('agent', 'Agent', [
       new SettingItem('agent', 'Agent 模式', '🤖', '',
         '开启后，AI 可主动调用工具分步完成任务；关闭后为纯文本对话。',
-        SettingRowKind.SWITCH, false, SettingActionId.AGENT)
+        SettingRowKind.SWITCH, false, SettingActionId.AGENT),
+      new SettingItem('aiRoles', 'AI 角色模板', '🎭', '8+ 角色可选',
+        '内置角色库 + 自定义角色，一键应用到当前模型的系统提示词。',
+        SettingRowKind.NAV, false, SettingActionId.AI_ROLES)
     ]));
     groups.push(new SettingGroup('security', '安全与隐私', [
       new SettingItem('masterPassword', '主密码', '🔒',
@@ -341,7 +393,9 @@ export struct SettingsPage {
       new SettingItem('biometric', '生物识别解锁', '🔐', '',
         '需先设置主密码，使用系统生物识别解锁应用。', SettingRowKind.SWITCH, false, SettingActionId.BIOMETRIC),
       new SettingItem('autoLock', '自动锁定', '🕐', this.autoLock, '',
-        SettingRowKind.NAV, false, SettingActionId.AUTO_LOCK)
+        SettingRowKind.NAV, false, SettingActionId.AUTO_LOCK),
+      new SettingItem('incognito', '无痕模式', '🕶️', '',
+        '开启后，对话消息不会保存到本地数据库（会话仍保留）。', SettingRowKind.SWITCH, false, SettingActionId.NONE)
     ]));
     groups.push(new SettingGroup('storage', '数据与存储', [
       new SettingItem('clearRead', '清空阅读记录', '🗑', '',
@@ -383,6 +437,7 @@ export struct SettingsPage {
     if (key === 'autoBackup') return this.autoBackup;
     if (key === 'agent') return this.agentEnabled;
     if (key === 'biometric') return this.biometricUnlock;
+    if (key === 'incognito') return this.incognitoEnabled;
     return false;
   }
 
@@ -397,6 +452,10 @@ export struct SettingsPage {
       this.toast(v ? '已开启 Agent 模式（对话中可调用计算器/时间/联网搜索）' : '已关闭 Agent 模式');
     } else if (key === 'biometric') {
       this.onBiometricToggle(v);
+    } else if (key === 'incognito') {
+      this.incognitoEnabled = v;
+      DataRepository.setSetting('incognitoEnabled', v ? 'true' : 'false');
+      this.toast(v ? '已开启无痕模式：对话消息不会保存' : '已关闭无痕模式');
     }
   }
 
@@ -439,6 +498,10 @@ export struct SettingsPage {
       AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('license'));
     } else if (action === SettingActionId.ABOUT_FEEDBACK) {
       promptAction.showToast({ message: '反馈功能即将上线' });
+    } else if (action === SettingActionId.READING_REPORT) {
+      AppNavigator.push('pages/ReadingReport');
+    } else if (action === SettingActionId.AI_ROLES) {
+      AppNavigator.push('pages/AiRoleLibrary');
     }
   }
 

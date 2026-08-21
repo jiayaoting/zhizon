@@ -1,6 +1,7 @@
 // 智子 - 星尘粒子背景（基于 HarmonyOS Particle 粒子动画组件）
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
+import { FxBudget } from './GlassEffect';
 
 @ComponentV2
 export struct ParticleBackground {
@@ -8,14 +9,15 @@ export struct ParticleBackground {
 
   build() {
     Stack() {
-      Particle({
+      if (!FxBudget.isLowBattery()) {
+        Particle({
         particles: [
           {
             emitter: {
               particle: {
                 type: ParticleType.POINT,
                 config: { radius: 2 },
-                count: 100,
+                count: 50,
                 lifetime: 8000,
                 lifetimeRange: 4000
               },
@@ -61,7 +63,7 @@ export struct ParticleBackground {
               particle: {
                 type: ParticleType.POINT,
                 config: { radius: 1.2 },
-                count: 60,
+                count: 30,
                 lifetime: 10000,
                 lifetimeRange: 5000
               },
@@ -94,8 +96,9 @@ export struct ParticleBackground {
           }
         ]
       })
-      .width('100%')
-      .height('100%')
+        .width('100%')
+        .height('100%')
+      }
     }
     .width('100%')
     .height('100%')
