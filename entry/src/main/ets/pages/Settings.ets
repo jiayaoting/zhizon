@@ -386,6 +386,14 @@ export struct SettingsPage {
         '内置角色库 + 自定义角色，一键应用到当前模型的系统提示词。',
         SettingRowKind.NAV, false, SettingActionId.AI_ROLES)
     ]));
+    groups.push(new SettingGroup('bettafish', '微舆', [
+      new SettingItem('bettaServer', '服务器配置', '🌐', '',
+        'BettaFish 服务器地址（协议/域名/端口）多套配置管理与测试连接。',
+        SettingRowKind.NAV, false, SettingActionId.BETTA_SERVER),
+      new SettingItem('bettaSystem', '系统管理', '🖥', '',
+        'BettaFish 系统启停、四引擎状态与运行日志。',
+        SettingRowKind.NAV, false, SettingActionId.BETTA_SYSTEM)
+    ]));
     groups.push(new SettingGroup('security', '安全与隐私', [
       new SettingItem('masterPassword', '主密码', '🔒',
         this.hasMasterPassword ? '已设置' : '未设置', '',
@@ -502,6 +510,10 @@ export struct SettingsPage {
       AppNavigator.push('pages/ReadingReport');
     } else if (action === SettingActionId.AI_ROLES) {
       AppNavigator.push('pages/AiRoleLibrary');
+    } else if (action === SettingActionId.BETTA_SERVER) {
+      AppNavigator.push('pages/BettaFishServerConfig');
+    } else if (action === SettingActionId.BETTA_SYSTEM) {
+      AppNavigator.push('pages/BettaFishSystem');
     }
   }
 

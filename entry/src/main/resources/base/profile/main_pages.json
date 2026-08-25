@@ -31,6 +31,10 @@
     "pages/AppearanceSettings",
     "pages/NewsSettings",
     "pages/ReadingReport",
-    "pages/AiRoleLibrary"
+    "pages/AiRoleLibrary",
+    "pages/BettaFishProgress",
+    "pages/BettaFishReportView",
+    "pages/BettaFishServerConfig",
+    "pages/BettaFishSystem"
   ]
 }

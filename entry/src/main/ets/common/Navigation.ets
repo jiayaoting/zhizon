@@ -4,7 +4,8 @@ export enum MainNavKey {
   Index = 'Index',
   Games = 'Games',
   Chat = 'Chat',
-  Profile = 'Profile'
+  Profile = 'Profile',
+  BettaFish = 'BettaFish'
 }
 
 export enum PageKey {
@@ -23,7 +24,12 @@ export enum PageKey {
   NewsProfile = 'NewsProfile',
   NewsSourceSettings = 'NewsSourceSettings',
   NewsChannelSettings = 'NewsChannelSettings',
-  GameSettings = 'GameSettings'
+  GameSettings = 'GameSettings',
+  BettaFish = 'BettaFish',
+  BettaFishProgress = 'BettaFishProgress',
+  BettaFishReportView = 'BettaFishReportView',
+  BettaFishServerConfig = 'BettaFishServerConfig',
+  BettaFishSystem = 'BettaFishSystem'
 }
 
 export enum NavigationSource {
@@ -128,6 +134,34 @@ export class ChatRouteParams {
   constructor(from: string = '') { this.from = from; }
 }
 
+// 微舆：分析进度页路由参数
+export class BettaFishProgressRouteParams {
+  taskId: string;
+  query: string;
+  serverId: string;
+  serverName: string;
+  constructor(taskId: string, query: string = '', serverId: string = '', serverName: string = '') {
+    this.taskId = taskId;
+    this.query = query;
+    this.serverId = serverId;
+    this.serverName = serverName;
+  }
+}
+
+// 微舆：报告查看页路由参数
+export class BettaFishReportRouteParams {
+  taskId: string;
+  serverId: string;
+  serverName: string;
+  query: string;
+  constructor(taskId: string, serverId: string = '', serverName: string = '', query: string = '') {
+    this.taskId = taskId;
+    this.serverId = serverId;
+    this.serverName = serverName;
+    this.query = query;
+  }
+}
+
 export class NavigationRouteOptions {
   url: string;
   params: AppShellRouteParams | GameHistoryRouteParams;
@@ -149,7 +183,8 @@ const PAGE_REGISTRY: PageRegistration[] = [
   new PageRegistration(PageKey.Games, MainNavKey.Games, PageAvailability.EMBEDDED, 'pages/AppShell'),
   new PageRegistration(PageKey.Chat, MainNavKey.Chat, PageAvailability.EMBEDDED, 'pages/AppShell'),
   new PageRegistration(PageKey.Profile, MainNavKey.Profile, PageAvailability.EMBEDDED, 'pages/AppShell'),
-  new PageRegistration(PageKey.Settings, MainNavKey.Profile, PageAvailability.EMBEDDED, 'pages/AppShell')
+  new PageRegistration(PageKey.Settings, MainNavKey.Profile, PageAvailability.EMBEDDED, 'pages/AppShell'),
+  new PageRegistration(PageKey.BettaFish, MainNavKey.BettaFish, PageAvailability.EMBEDDED, 'pages/AppShell')
 ];
 
 function copyState(state: NavigationState): NavigationState {
@@ -162,7 +197,7 @@ function validIdentifier(value: string): boolean {
 
 export function isMainNavKey(key: string): boolean {
   return key === MainNavKey.Index || key === MainNavKey.Games || key === MainNavKey.Chat ||
-    key === MainNavKey.Profile;
+    key === MainNavKey.Profile || key === MainNavKey.BettaFish;
 }
 
 export function pageOwner(page: PageKey): MainNavKey {
@@ -187,6 +222,11 @@ export function pageFromString(key: string): PageKey | null {
   if (key === PageKey.NewsSourceSettings) return PageKey.NewsSourceSettings;
   if (key === PageKey.NewsChannelSettings) return PageKey.NewsChannelSettings;
   if (key === PageKey.GameSettings) return PageKey.GameSettings;
+  if (key === PageKey.BettaFish) return PageKey.BettaFish;
+  if (key === PageKey.BettaFishProgress) return PageKey.BettaFishProgress;
+  if (key === PageKey.BettaFishReportView) return PageKey.BettaFishReportView;
+  if (key === PageKey.BettaFishServerConfig) return PageKey.BettaFishServerConfig;
+  if (key === PageKey.BettaFishSystem) return PageKey.BettaFishSystem;
   return null;
 }
 
@@ -194,6 +234,7 @@ export function mainPage(key: MainNavKey): PageKey {
   if (key === MainNavKey.Index) return PageKey.Index;
   if (key === MainNavKey.Chat) return PageKey.Chat;
   if (key === MainNavKey.Profile) return PageKey.Profile;
+  if (key === MainNavKey.BettaFish) return PageKey.BettaFish;
   return PageKey.Games;
 }
 

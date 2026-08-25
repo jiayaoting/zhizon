@@ -41,6 +41,11 @@ import { NewsChannelSettingsPage } from './NewsChannelSettings';
 import { GameSettingsPage } from './GameSettings';
 import { ReadingReportPage } from './ReadingReport';
 import { AiRoleLibraryPage } from './AiRoleLibrary';
+import { BettaFishPage } from './BettaFishPage';
+import { BettaFishProgressPage } from './BettaFishProgress';
+import { BettaFishReportViewPage } from './BettaFishReportView';
+import { BettaFishServerConfigPage } from './BettaFishServerConfig';
+import { BettaFishSystemPage } from './BettaFishSystem';
 
 const DOMAIN = 0x9201;
 
@@ -67,6 +72,15 @@ struct AppShell {
     if (this.navigation.currentPage === PageKey.Chat) {
       this.bumpChatRefresh();
     }
+    // 微舆 Hub：从服务器配置/系统管理等子页返回时刷新连接状态
+    if (this.navigation.currentPage === PageKey.BettaFish) {
+      this.bumpBettaRefresh();
+    }
+  }
+
+  private bumpBettaRefresh(): void {
+    const current: number = AppStorage.get<number>('bettaRefreshToken') ?? 0;
+    AppStorage.setOrCreate('bettaRefreshToken', current + 1);
   }
 
   // 返回键拦截：子页返回所属 Tab，Tab 首页才退出到桌面
@@ -166,6 +180,14 @@ struct AppShell {
         .height('100%')
         .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
       }
+      if (this.navigation.currentPage === PageKey.BettaFish) {
+        Column() {
+          BettaFishPage()
+        }
+        .width('100%')
+        .height('100%')
+        .transition({ type: TransitionType.All, opacity: 0, scale: { x: 0.97, y: 0.97 } })
+      }
     }
     .width('100%')
     .height('100%')
@@ -246,6 +268,14 @@ struct AppShell {
       ReadingReportPage()
     } else if (name === 'pages/AiRoleLibrary') {
       AiRoleLibraryPage()
+    } else if (name === 'pages/BettaFishProgress') {
+      BettaFishProgressPage()
+    } else if (name === 'pages/BettaFishReportView') {
+      BettaFishReportViewPage()
+    } else if (name === 'pages/BettaFishServerConfig') {
+      BettaFishServerConfigPage()
+    } else if (name === 'pages/BettaFishSystem') {
+      BettaFishSystemPage()
     }
   }
 

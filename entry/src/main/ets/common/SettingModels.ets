@@ -23,7 +23,9 @@ export enum SettingActionId {
   ABOUT_LICENSE = 15,
   ABOUT_FEEDBACK = 16,
   READING_REPORT = 17,
-  AI_ROLES = 18
+  AI_ROLES = 18,
+  BETTA_SERVER = 19,
+  BETTA_SYSTEM = 20
 }
 
 export class SettingItem {

@@ -28,6 +28,7 @@ export class AppConstants {
     new NavItem(MainNavKey.Index, '资讯', '📰'),
     new NavItem(MainNavKey.Chat, 'AI对话', '🗨️'),
     new NavItem(MainNavKey.Games, '游戏', '🎮'),
+    new NavItem(MainNavKey.BettaFish, '微舆', '🐟'),
     new NavItem(MainNavKey.Profile, '我的', '👤')
   ];
 }

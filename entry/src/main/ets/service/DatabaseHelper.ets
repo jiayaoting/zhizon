@@ -140,7 +140,7 @@ export class WeeklyReadingStats {
 }
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 16;
+const DB_VERSION = 17;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -313,6 +313,37 @@ const SQL_CREATE_NEWS_TRANSLATIONS = `CREATE TABLE IF NOT EXISTS news_translatio
   text TEXT NOT NULL, model TEXT DEFAULT '', updated_at INTEGER NOT NULL
 )`;
 
+// 微舆 BettaFish（v17）：服务器配置（多套管理 + 论坛轮询断点）
+const SQL_CREATE_BETTA_SERVERS = `CREATE TABLE IF NOT EXISTS bettafish_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scheme TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL,
+  base_path TEXT DEFAULT '',
+  timeout_sec INTEGER DEFAULT 10,
+  is_current INTEGER DEFAULT 0,
+  forum_position INTEGER DEFAULT 0,
+  created_at INTEGER,
+  updated_at INTEGER
+)`;
+// 微舆 BettaFish（v17）：本地报告历史（服务端仅保留最近 5 个任务，本地兜底回看）
+const SQL_CREATE_BETTA_HISTORY = `CREATE TABLE IF NOT EXISTS bettafish_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  query TEXT,
+  status TEXT,
+  progress INTEGER DEFAULT 0,
+  base_url TEXT,
+  server_id TEXT,
+  created_at INTEGER,
+  updated_at INTEGER,
+  saved_at INTEGER,
+  local_html_path TEXT DEFAULT '',
+  local_md_path TEXT DEFAULT '',
+  local_pdf_path TEXT DEFAULT ''
+)`;
+
 // 查询/清理用索引（CREATE INDEX IF NOT EXISTS，幂等）
 const SQL_CREATE_IDX_GAME_SCORES = 'CREATE INDEX IF NOT EXISTS idx_game_scores_game_score ON game_scores(game, score)';
 const SQL_CREATE_IDX_AI_CALL_LOGS_START_TIME = 'CREATE INDEX IF NOT EXISTS idx_ai_call_logs_start_time ON ai_call_logs(start_time)';
@@ -398,6 +429,9 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EXCLUSIONS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_PROFILE);
     await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_TRANSLATIONS);
+    // 微舆 BettaFish（v17）
+    await DatabaseHelper.store.executeSql(SQL_CREATE_BETTA_SERVERS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_BETTA_HISTORY);
 
     // 版本门控迁移：仅对旧库执行 ALTER 补列（事务包裹，失败回滚且 version 不变，下次启动重试）
     await DatabaseHelper.migrateSchema();
