@@ -8,8 +8,9 @@
 
 - service/HuaweiAccountService.ets：登录 / 获取资料 / 取消授权（scopes: openid + profile）
 - service/CloudSyncService.ets：备份载荷组装（设置 + 战绩 + 成就 + 全部对话）、上传/下载、恢复
-- pages/Settings.ets → 「数据」分组：华为账号、立即备份、立即恢复
+- pages/Settings.ets → 「账号云同步」分组：华为账号（登录/退出）、自动备份开关、立即备份、立即恢复；「数据与存储」分组提供清空阅读记录 / 清空热榜缓存
 - 未配置 AGC 或云侧不可用时，自动降级为**本地备份**（写入应用 cache 目录）
+- **仅本机有效的设置不参与备份**（`CloudSyncService.LOCAL_ONLY_SETTINGS`）：`hot_jwt_enc`（NewsNow 登录凭证，由本机 HUKS 硬件密钥加密，换机无法解密）、`huaweiAccountProfile`（本机账号资料）
 
 ## 2. 上线前需要做的事
 

@@ -4,6 +4,8 @@
 > 目标应用：智子（HarmonyOS NEXT · API 24 · Stage 模型）
 > 依据：《BettaFish_HarmonyOS_设计方案.md》（服务端对接契约以其为准）
 > 状态：已实施（集成落地参考；App 侧见 entry/src/main/ets/pages/BettaFish*.ets）
+>
+> 注：文中的「RDB v16→v17」指本方案落地时的数据库版本（新增 bettafish_servers / bettafish_history 两表）；当前代码数据库版本为 **v18**（v18 重构热榜域，微舆两表不变）。
 
 ---
 
@@ -27,7 +29,7 @@ BettaFish（微舆）是自部署的多 Agent 舆情分析系统（Flask 主端�
 
 1. 在智子内提供完整的「连接配置 → 发起分析 → 论坛实况 → 报告生成 → 报告查看/导出 → 系统管理」闭环；
 2. 最大化复用智子现有工程能力（HTTP/SSE、Web 组件、文件 Picker、RDB、主题、自适应布局、语音、实况窗）；
-3. 与智子既有功能（AI 对话、资讯、我的页、设置）互相打通，而非孤立的新模块；
+3. 与智子既有功能（AI 对话、热榜、我的页、设置）互相打通，而非孤立的新模块；
 4. 一码多端：手机（底部 5 Tab）/ 平板 / 折叠屏 / 2in1 自动适配。
 
 ---
@@ -50,7 +52,7 @@ BettaFish（微舆）是自部署的多 Agent 舆情分析系统（Flask 主端�
 
 差异点（相对独立版设计方案）：
 
-- 智子已有 4 个主 Tab（资讯 / AI对话 / 游戏 / 我的），本方案新增第 5 个 Tab「微舆」；
+- 智子原有的 4 个主 Tab（原「资讯」Tab 已在 v9.0 重构为「热榜」）加上本方案新增的「微舆」Tab，现为 5 个主 Tab（热榜 / AI对话 / 游戏 / 微舆 / 我的）；
 - 智子用 RDB + DataRepository 风格持久化（非 Preferences），服务器配置与历史任务落 RDB 新表；
 - 智子页面以 @ComponentV2 + @Local + 静态 Service 为主，不引入独立 ViewModel 框架，保持一致；
 - 服务端明文 HTTP：需先验证现有 Ollama http 配置是否已放行（见 §10）。
@@ -67,7 +69,7 @@ BettaFish（微舆）是自部署的多 Agent 舆情分析系统（Flask 主端�
 | B. 「我的」页入口 + 路由子页 | Profile 新增分组入口，全部子页 router push | 对现有导航零侵入 | 层级深、无独立空间；分析/论坛实时性页面被折叠在子路由里体验差 |
 | C. 并入「AI对话」Tab | 分析当作一种对话场景 | 交互轻量 | 与论坛实况、报告管理等强状态页面冲突，信息架构混乱 |
 
-**结论：采用方案 A。** 手机底部 Tab 变为 5 个（资讯 / AI对话 / 游戏 / 微舆 / 我的），大屏侧边栏同理；
+**结论：采用方案 A。** 手机底部 Tab 变为 5 个（热榜 / AI对话 / 游戏 / 微舆 / 我的），大屏侧边栏同理；
 「设置 → 微舆」提供服务器配置/系统管理入口，形成双入口（Tab Hub 顶栏状态卡 + 设置分组）。
 
 ### 3.2 信息架构
@@ -377,7 +379,7 @@ POST /api/report/generate {query, custom_template} → task_id
 
 - 断点沿用智子现有 ThemeState.isSm/isMd/isLg/isWideNav，不另建断点体系；
 - Hub：sm 单列 + 顶部内嵌 Tab；md/lg 采用 GridRow/GridCol 双列（左侧论坛/分析，右侧报告）或侧边栏 + 内容区；
-- 手机底部导航 5 Tab（资讯 / AI对话 / 游戏 / 微舆 / 我的），大屏 SideNav 同源 AppConstants.navItems；
+- 手机底部导航 5 Tab（热榜 / AI对话 / 游戏 / 微舆 / 我的），大屏 SideNav 同源 AppConstants.navItems；
 - 报告 WebView 宽度自适应容器，缩放跟随系统。
 
 ---

@@ -1,6 +1,6 @@
 # 智子（Zhizon）AI 对话体验改造方案
 
-> ✅ **已实施（历史设计稿）**：本方案的会话组织 / 流式 Markdown / 多会话管理等改造均已落地（见 [Chat.ets](../entry/src/main/ets/pages/Chat.ets) 与 [DESIGN.md](DESIGN.md) 模块 3），文中「待办 / 待确认」仅记录当时状态。
+> ✅ **已实施（历史设计稿，保留 P2 路线图）**：P0（会话组织 / 流式 Markdown / 多会话管理）与 P1（语音输入、联网搜索、斜杠命令、Token 预算条、会话备份恢复、Agent 工具化）均已落地，见 [DESIGN.md](DESIGN.md) 模块 3 与 [Chat.ets](../entry/src/main/ets/pages/Chat.ets)。**P2（Chat.ets 组件化拆分、性能与无障碍打磨、RAG/工具调用二期）仍未完成**，本文件作为该部分路线图继续保留；以下「状态 / 待办」为当时记录，不再更新。
 
 > 版本：v1.4　|　状态：DevEco 首轮编译 17 个错误已全部修复（未类型化对象字面量 ×4、ClickEvent.stopPropagation 不存在、pasteboard.PasteRecord/getPrimaryRecord 不存在、TopBar 多 @BuilderParam 破坏尾随闭包 ×8、ChatTab 缺 @Component、重复 @Builder）；预检扫描（无类型字面量/可选链/非空断言/@Prop 函数类型）干净；待办：用户在 DevEco 重新编译确认
 > 依据：现有代码走读 + GitHub 开源项目调研（2025-06）

@@ -35,32 +35,34 @@
 ### 2.1 整体架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│              AppShell 自适应主框架                │
-│  3 档断点 (isSm/isMd/isLg) @StorageLink 响应式   │
-├─────────────────────────────────────────────────┤
-│                  ArkUI 表现层                    │
-│   15 Pages + 12 Components + @State 状态管理     │
-│   全异步数据加载 (aboutToAppear + await)         │
-├─────────────────────────────────────────────────┤
-│                  业务逻辑层                      │
-│   DataRepository (CRUD 门面 + 辅助函数)          │
-│   ChatRepository (AI 会话持久化)                 │
-│   LlmClient (大模型 HTTP 通信) / GameAIService   │
-│   BackgroundImporter (沙箱背景图导入)            │
-│   ChineseChessEngine (中国象棋本地引擎)           │
-│   WindowEnvironmentProvider (窗口环境感知)       │
-├─────────────────────────────────────────────────┤
-│                  数据访问层                      │
-│   DatabaseHelper (RDB Store v4) │ 6 张持久化表  │
-│   settings / game_scores /                      │
-│   defects / defect_evidence / defect_history /  │
-│   defect_fix_results / ai_call_logs             │
-├─────────────────────────────────────────────────┤
-│            HarmonyOS 系统能力                    │
-│   CryptoArchitectureKit │ ArkData │ display API │
-│   PromptAction │ BackgroundTaskKit              │
-└─────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                 AppShell 自适应主框架                      │
+│   3 档断点 (isSm/isMd/isLg) + 底部 5 Tab / 侧边栏切换      │
+├───────────────────────────────────────────────────────────┤
+│  ArkUI 表现层（@Component 与 @ComponentV2 混合）           │
+│   38 Pages + 25 Components + 全异步数据加载                │
+├───────────────────────────────────────────────────────────┤
+│  业务逻辑层                                                │
+│   热榜：NewsNowClient / NewsNowAuth / NewsNowSync          │
+│         HotFeedStore（内存态）/ NewsRepository（本地）      │
+│         NewsAiService（摘要/翻译/问AI/要闻/速递）           │
+│   对话：LlmClient / ChatRepository / ToolRegistry          │
+│   游戏：GameAIService / ChineseChessEngine / Achievement   │
+│   微舆：BettaFishApiClient / BettaFishSseClient / Store    │
+│   账号：HuaweiAccountService / CloudSyncService            │
+│   基础：DataRepository（门面）/ SecurityService             │
+├───────────────────────────────────────────────────────────┤
+│  数据访问层                                                │
+│   DatabaseHelper（RDB v18）· 19 张表 + 2 张 FTS5 虚拟表     │
+│   settings / game_scores / chat_* / ai_call_logs /         │
+│   ai_token_stats / achievements / game_replays /           │
+│   hot_favorites / hot_read / hot_digests /                 │
+│   hot_article_cache / bettafish_* / defects*               │
+├───────────────────────────────────────────────────────────┤
+│  HarmonyOS 系统能力                                        │
+│   UniversalKeystoreKit(HUKS) │ ArkData │ ArkWeb │ Network  │
+│   ShareKit │ SpeechKit │ CoreVisionKit │ CloudFoundation   │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 技术选型
@@ -69,17 +71,21 @@
 |------|---------|---------|
 | 开发语言 | ArkTS | ✅ |
 | UI 框架 | ArkUI 声明式 + Stage 模型 | ✅ |
-| 目标 SDK | HarmonyOS 6.1.1 (API 24) | ✅ |
-| 数据存储 | RelationalStore (RDB v4) + 6 表 | ✅ |
-| 凭据加密 | AES-256-GCM (CryptoArchitectureKit) | ✅ |
-| 响应式 | @StorageLink 跨组件状态 + display API | ✅ |
+| 目标 SDK | HarmonyOS 6.1.1 (API 24)（compatible/target 均为 6.1.1(24)） | ✅ |
+| 数据存储 | RelationalStore（RDB v18）+ 19 表 + 2 张 FTS5 虚拟表 | ✅ |
+| 网络后端 | NewsNow 实例（热榜 HTTP API）+ 各家大模型 API（SSE/非流式） | ✅ |
+| 凭据加密 | HUKS 硬件密钥库 AES-256-GCM（API Key 与 NewsNow JWT） | ✅ |
+| 响应式 | @StorageLink / AppStorageV2 + display API | ✅ |
 | 多主题系统 | ThemePalette + 6 配色 + 亮/暗模式 | ✅ |
 | 毛玻璃效果 | GlassEffect 半透明背景 + 边框 | ✅ |
 | 全局字号系统 | palette.fs* 8 级字号，受设置档位控制 | ✅ |
-| 游戏中心 | 6 游戏 + 5 级难度 + 历史记录 + AI 托管 | ✅ |
-| AI 对话 | LlmClient 多供应商 + ChatRepository 持久化 | ✅ |
+| 热榜 | NewsNow 后端 + 52 条源目录 + 视图 Tabs + 源关注同步 | ✅ |
+| 游戏中心 | 7 游戏 + 5 级难度 + 历史记录 + AI 托管 + 对局回放 | ✅ |
+| AI 对话 | LlmClient 多供应商 + ChatRepository 持久化 + Agent 工具化 | ✅ |
 | AI 调用记录 | AiCallLogger 摘要日志 + ai_call_logs 表 + AiCallLog 页 | ✅ |
 | 中国象棋 | 本地引擎 + 人机/人对AI/AI对AI 三模式 | ✅ |
+| 微舆 | BettaFish 自部署服务端 + SSE 进度 + 报告查看 | ✅ |
+| 账号与云同步 | Account Kit + Cloud Foundation Kit（AGC 未配置时降级本地备份） | ✅ |
 | 导航系统 | NavigationFacade + PageRegistry + 类型化路由参数 | ✅ |
 
 ### 2.3 凭据加密设计
@@ -88,11 +94,12 @@
 
 | 特性 | 说明 |
 |------|------|
-| 算法 | AES-256-GCM (CryptoArchitectureKit) |
-| 密钥存储 | preferences 持久化（应用沙箱） |
-| 首次运行 | 自动生成 256 位随机密钥并持久化 |
+| 算法 | AES-256-GCM（HUKS 硬件密钥库 + CryptoArchitectureKit 随机数） |
+| 密钥存储 | HUKS 在 TEE/SE 内生成并持久化，**密钥本体不可导出**，App 仅持有别名 `zhizon_master_v2` |
 | IV | 每次加密生成 12 字节随机 IV |
-| 密文格式 | `v1:<base64IV>:<base64Ciphertext+AuthTag>` |
+| 密文格式 | `v2:<base64IV>:<base64Ciphertext+AuthTag>`（末 16 字节为 GCM authTag） |
+| 保护范围 | LLM API Key、联网搜索 Key、NewsNow 登录 JWT（`hot_jwt_enc`） |
+| 云备份 | 凭证类键（`hot_jwt_enc` / `huaweiAccountProfile`）**排除**在云备份之外（换机无法解密） |
 
 ---
 
@@ -102,102 +109,75 @@
 zhizon/
 ├── .gitignore
 ├── README.md
-├── build-profile.json5                    # 根构建配置
+├── build-profile.json5                    # 根构建配置（本地文件，仓库内为 .example 模板）
 ├── hvigorfile.ts
 ├── oh-package.json5
+├── sync_app_icon.sh                       # 应用图标同步脚本
+├── icon_options/                          # 图标候选素材
 │
 ├── doc/
-│   └── DESIGN.md                          # 本文档
+│   ├── DESIGN.md                          # 本文档
+│   ├── newsnow-redesign.md                # 热榜模块设计（接口契约 / 同步协议 / 验收）
+│   ├── cloud-sync-setup.md                # 华为账号 + 云同步接入说明
+│   ├── BettaFish_HarmonyOS_设计方案.md      # 微舆服务端对接契约
+│   ├── BettaFish-Zhizon-集成设计方案.md     # 微舆集成设计
+│   └── chat-ux-revamp-plan.md             # AI 对话体验改造方案（已实施，历史设计稿）
 │
 ├── AppScope/                              # 应用全局配置
 │   ├── app.json5                          # BundleName + 版本
-│   └── resources/base/element/
-│       └── string.json                    # app_name = "智子"
+│   └── resources/base/element/string.json # app_name = "智子"
 │
 └── entry/                                 # 主模块
     ├── build-profile.json5
     ├── hvigorfile.ts
     ├── oh-package.json5
-    ├── obfuscation-rules.txt
-    └── src/main/
-        ├── module.json5                   # UIAbility 注册
-        ├── resources/
-        │   └── base/
-        │       ├── element/color.json
-        │       ├── element/string.json
-        │       └── profile/main_pages.json  # 路由注册（AppShell + 游戏 + 战绩 + 协议 + AI 配置）
+    └── src/
+        ├── main/
+        │   ├── module.json5               # UIAbility 注册 + 权限声明
+        │   ├── resources/base/            # color/string/media/fonts/sounds + profile/main_pages.json（32 个路由页）
+        │   └── ets/
+        │       ├── entryability/EntryAbility.ets   # 入口：加密/数据库/主题初始化 + 热榜启动同步 + 退后台 flush
+        │       │
+        │       ├── common/（26）           # 主题、导航、模型与工具
+        │       │   ├── Theme.ets / ThemeState.ets / ThemeContracts.ets  # 多主题系统（ThemePalette + 6 配色 + 亮/暗）
+        │       │   ├── Navigation.ets / AppNavigator.ets                # 导航门面 + 页面注册表
+        │       │   ├── Constants.ets                                    # 底部 5 Tab + 全局常量
+        │       │   ├── HotModels.ets / HotSources.ets / HotFormat.ets   # 热榜模型 / 52 条源目录 / 时间格式化
+        │       │   ├── PageRefreshBus.ets                               # 宿主 onPageShow 广播（Tab 嵌入页刷新）
+        │       │   ├── Difficulty.ets / LlmModels.ets / MarkdownConverter.ets / SseFrameParser.ets 等
+        │       │   └── CryptoHelper.ets                                 # HUKS AES-256-GCM
+        │       │
+        │       ├── model/（2）             # GovernanceModels（AppFailure/RecoverableResult/DefectRecord）+ Models
+        │       │
+        │       ├── service/（42）          # 业务服务层
+        │       │   ├── NewsNowClient.ets / NewsNowAuth.ets / NewsNowSync.ets  # 热榜后端 HTTP / 登录凭证 / 关注同步
+        │       │   ├── HotFeedStore.ets                                 # 榜单内存槽位 + 加载编排
+        │       │   ├── NewsRepository.ets / NewsAiService.ets           # 热榜本地数据 / 热榜 AI 能力
+        │       │   ├── DatabaseHelper.ets                               # RDB v18 + 全表 CRUD + 迁移与保留策略
+        │       │   ├── LlmClient.ets / ChatRepository.ets / ToolRegistry.ets / AgentOrchestrator.ets
+        │       │   ├── GameAIService.ets / ChineseChessEngine.ets / GomokuEngine.ets / SudokuSolver.ets / AchievementService.ets / ReplayService.ets / LeaderboardService.ets
+        │       │   ├── BettaFishApiClient.ets / BettaFishSseClient.ets / BettaFishStore.ets
+        │       │   ├── HuaweiAccountService.ets / CloudSyncService.ets   # 账号与云备份
+        │       │   └── SecurityService.ets / DataRepository.ets / SoundService.ets / SpeechService.ets / OnDeviceAiService.ets 等
+        │       │
+        │       ├── components/（25）       # 通用组件
+        │       │   ├── HotSourceCard.ets / HotItemRow.ets / HotSourceBadge.ets   # 热榜卡片 / 条目行 / 源徽标
+        │       │   ├── TopBar.ets / FixedBottomNav.ets / SideNav.ets / SettingGroupCard.ets / SettingRow.ets
+        │       │   └── GlassEffect.ets / GlobalBackgroundLayer.ets / LockOverlay.ets / ChatMessageList.ets / GameAIPanel.ets 等
+        │       │
+        │       └── pages/（38）            # 页面
+        │           ├── AppShell.ets                                     # 自适应主框架
+        │           ├── Index.ets / HotBoard.ets                         # 热榜首页 / 单源榜单
+        │           ├── NewsDetail.ets / NewsDigest.ets / NewsFavorites.ets / NewsSearch.ets / NewsSettings.ets / NewsLogin.ets
+        │           ├── Games.ets / Tetris.ets / Game2048.ets / Snake.ets / Minesweeper.ets / Sudoku.ets / ChineseChess.ets / Gomoku.ets / GameHistory.ets / GameStats.ets / GameSettings.ets / ReplayList.ets / Leaderboard.ets
+        │           ├── Chat.ets / ChatConfig.ets / AiModelPage.ets / AiRoleLibrary.ets / AiCallLog.ets
+        │           ├── Profile.ets / Settings.ets / AppearanceSettings.ets / Achievements.ets / ReadingReport.ets / LegalDoc.ets
+        │           └── BettaFishPage.ets / BettaFishProgress.ets / BettaFishReportView.ets / BettaFishServerConfig.ets / BettaFishSystem.ets
         │
-        └── ets/
-            ├── entryability/
-            │   └── EntryAbility.ets       # 应用入口（延迟初始化加密+数据库）
-            │
-            ├── common/                    # 主题、常量与模型（11 个）
-            │   ├── Theme.ets              # 多主题系统 + ThemePalette + 6 配色 + 亮/暗模式
-            │   ├── ThemeContracts.ets     # 主题契约接口（ThemePalette + PreferenceSnapshot）
-            │   ├── Constants.ets          # 底部导航项 + 全局常量
-            │   ├── Navigation.ets         # 导航系统（PageRegistry + 4 主 Tab + 类型化路由参数）
-            │   ├── Difficulty.ets         # 游戏难度 + GameId + GameLaunchFacade + 游戏注册表
-            │   ├── LlmModels.ets          # 大模型供应商模板 + 模型配置/消息模型
-            │   ├── MarkdownConverter.ets  # Markdown 解析（块/行内）
-            │   ├── AvatarOptions.ets      # 头像配色选项
-            │   ├── CryptoHelper.ets       # AES-256-GCM 加密/解密
-            │   ├── DeviceMetrics.ets      # 设备尺寸度量
-                        │
-            ├── model/                     # 数据模型（2 个）
-            │   ├── GovernanceModels.ets   # 治理模型（AppFailure + RecoverableResult + DefectRecord 等）
-            │   └── Models.ets             # 通用业务模型
-            │
-            ├── service/                   # 业务服务层（15 个）
-            │   ├── DatabaseHelper.ets     # RDB Store v4 + 6 表 CRUD
-            │   ├── DataRepository.ets     # 数据门面 + 偏好持久化
-            │   ├── ChatRepository.ets     # AI 会话/消息持久化
-            │   ├── LlmClient.ets          # 大模型 HTTP 通信（流式/非流式 + 思考控制）
-            │   ├── GameAIService.ets      # 游戏 AI 托管（决策/提示词/动作解析）
-            │   ├── AiCallLogger.ets       # AI 调用日志（摘要记录 + 查询 + 清空）
-            │   ├── ChineseChessEngine.ets # 中国象棋本地引擎（规则 + 搜索）
-            │   ├── SecurityService.ets    # 安全服务
-            │   ├── BiometricHelper.ets    # 生物认证
-            │   ├── BackgroundImporter.ets # 沙箱背景图导入 + 强度调节
-            │   ├── SudokuSolver.ets       # 数独求解器
-            │   ├── PickerAdapter.ets      # 选择器适配器
-            │   └── WindowEnvironmentProvider.ets # 窗口环境感知
-            │
-            ├── components/                # 通用组件 (12 个)
-            │   ├── TopBar.ets             # 顶栏（响应式 padding + 自定义返回回调）
-            │   ├── DifficultyOption.ets   # 难度选择项（图标 + 标签 + 描述 + 选中态）
-            │   ├── FixedBottomNav.ets     # 固定底部导航（4 Tab）
-            │   ├── GlassEffect.ets        # 毛玻璃效果工具（半透明背景 + 边框）
-            │   ├── GlobalBackgroundLayer.ets # 全局背景层（自定义背景图 + 强度调节）
-            │   ├── GameAIPanel.ets        # 游戏 AI 托管控制面板
-                        │   ├── LockOverlay.ets        # 锁定遮罩
-            │   ├── PrivacyDialog.ets      # 隐私协议弹窗
-            │   └── FontRegistry.ets       # 字体注册
-            │
-            ├── pages/                     # 16 个页面
-            │   ├── AppShell.ets           # 自适应主框架（底部Tab / 侧边栏切换）
-            │   ├── Index.ets              # 首页（欢迎区 + 游戏入口大卡 + 最佳战绩）
-            │   ├── Games.ets              # 游戏中心（6 游戏 + 难度选择器 + 长按帮助）
-            │   ├── Chat.ets               # AI 对话（ChatTab，可嵌入 Tab）
-            │   ├── Profile.ets            # 我的（用户信息 + 设置入口 + 关于）
-            │   ├── Settings.ets           # 设置（外观/AI 对话/安全/数据）
-            │   ├── ChatConfig.ets         # AI 模型配置（供应商/模型/API Key）
-            │   ├── GameHistory.ets        # 游戏历史记录（分数 + 难度 + 排行）
-            │   ├── LegalDoc.ets           # 法律文档（用户协议/隐私政策/开源许可）
-            │   ├── AiCallLog.ets          # AI 调用记录（列表 + 详情展开 + 清空）
-            │   ├── Tetris.ets             # 俄罗斯方块
-            │   ├── Game2048.ets           # 2048
-            │   ├── Snake.ets              # 贪吃蛇
-            │   ├── Minesweeper.ets        # 扫雷
-            │   ├── Sudoku.ets             # 数独
-            │   └── ChineseChess.ets       # 中国象棋（三模式对弈）
-            │
-            └── test/                      # 单元测试（6 个）
-                ├── DefectClassifierTest.ets
-                ├── DefectWorkflowTest.ets
-                ├── GameLaunchFacadeTest.ets
-                ├── NavigationFacadeTest.ets
-                ├── WindowEnvironmentProviderTest.ets
-                └── WindowEnvironmentSnapshotTest.ets
+        └── test/（10）                     # 单元测试
+            ├── HotModuleTest.ets / NewsNowAuthTest.ets / NewsRepositoryTest.ets
+            ├── DefectClassifierTest.ets / DefectWorkflowTest.ets / GameLaunchFacadeTest.ets / NavigationFacadeTest.ets
+            ├── SudokuSolverTest.ets / WindowEnvironmentProviderTest.ets / WindowEnvironmentSnapshotTest.ets
 ```
 
 ---
@@ -208,33 +188,51 @@ zhizon/
 
 ```
 智子 (Zhizon)
+├── 0. 全网热榜（主功能，NewsNow 后端，详见「十·一」）
+│   ├── 52 条源目录（微博/知乎/百度/B站/抖音/财联社/华尔街见闻/HN/GitHub …）
+│   ├── 视图 Tabs（关注 / 最热 / 实时 / 国内 / 科技 / 财经 / 国际 / 体育）
+│   ├── 单源榜单页（完整 30 条 + 下拉强制刷新 + 源站入口）
+│   ├── 源关注 ⭐ + GitHub 登录多端同步（与 NewsNow 网页版互通）
+│   ├── 收藏 / 已读 / 离线正文缓存 / 全文搜索（FTS5）
+│   └── AI 摘要 / 翻译 / 文章问AI / 朗读 / 今日要闻 / 热点速递
+│
 ├── 1. 游戏中心
-│   ├── 俄罗斯方块（5 级难度 + 触屏手势 + 按钮双控制 + AI 托管）
-│   ├── 2048（5 级难度 + 滑动操作 + AI 托管）
-│   ├── 贪吃蛇（5 级难度 + 方向控制 + AI 托管）
-│   ├── 扫雷（5 级难度 + 逻辑推理）
-│   ├── 数独（5 级难度 + 数字推理 + AI 托管）
-│   ├── 中国象棋（人机 / 人对AI / AI对AI + 悔棋 + 记谱 + AI 提示）
-│   ├── 游戏难度选择（5 级：超简单/简单/中等/困难/地狱）
+│   ├── 俄罗斯方块 / 2048 / 贪吃蛇 / 扫雷 / 数独 / 中国象棋 / 五子棋
+│   ├── 难度选择（5 级：超简单/简单/中等/困难/地狱）
 │   ├── 游戏 AI 托管（GameAIService 决策，非流式 + 关闭思考）
-│   └── 游戏历史记录（分数 + 难度 + 排行）
+│   ├── 对局回放（2048/贪吃蛇/五子棋，1x/2x/4x）
+│   ├── 成就系统（15 项，达成播报音效）
+│   └── 游戏历史 / 战绩可视化 / 排行榜
 │
 ├── 2. AI 对话
 │   ├── 多供应商大模型（OpenAI/Anthropic/DeepSeek/通义千问/Kimi/智谱/Ollama/自定义）
-│   ├── 模型配置（供应商/模型/API Key，ChatConfig）
-│   ├── 会话与消息本地持久化（ChatRepository）
-│   ├── Markdown 富文本渲染（MarkdownConverter + 原生组件）
-│   └── AI 调用记录（AiCallLogger 摘要日志 + AiCallLog 查看页 + 手动清空）
+│   ├── 多会话管理（抽屉 / 重命名 / 固定 / 删除 / 跨会话搜索）
+│   ├── Markdown 富文本渲染（流式）+ 斜杠命令 + Token 预算条
+│   ├── 语音输入（Speech Kit）/ 朗读回复（TTS）/ 端侧 OCR（Core Vision Kit）
+│   ├── 联网搜索开关 + Agent 工具化（计算器/时间/联网搜索/热榜检索）
+│   ├── 会话备份恢复（JSON 导出/导入）+ 实况窗进度
+│   └── AI 调用记录（AiCallLogger + AiCallLog 页）
 │
-├── 3. 多主题系统
+├── 3. 微舆（BettaFish）
+│   ├── 自部署多 Agent 舆情分析服务端对接（HTTP + SSE）
+│   ├── 服务器配置管理（多套 / 连接测试）
+│   ├── 分析进度（SSE 实时）/ 报告查看（HTML/MD/PDF 本地留档）
+│   └── 系统状态与任务历史
+│
+├── 4. 多主题系统
 │   ├── 6 套配色（终端青绿/海洋蓝/日落橙/极光紫/樱花粉/自然绿）
 │   ├── 亮/暗模式（跟随系统或手动）
 │   ├── 自定义背景图（沙箱导入 + 强度调节）
 │   ├── 毛玻璃效果（开关控制）
 │   └── 字号缩放（小/标准/大，palette.fs* 全局生效）
 │
-└── 4. 导航系统
-    ├── 4 个主 Tab（首页/游戏/AI对话/我的）
+├── 5. 账号与云同步
+│   ├── 华为账号登录（Account Kit，openid + profile）
+│   ├── 云备份/恢复（Cloud Foundation Kit：设置 + 战绩 + 成就 + 全部对话）
+│   └── 未配置 AGC 时自动降级为本地备份
+│
+└── 6. 导航系统
+    ├── 5 个主 Tab（热榜 / AI对话 / 游戏 / 微舆 / 我的）
     ├── NavigationFacade（页面注册表 + 导航验证）
     ├── 类型化路由参数
     └── 页面可用性检查
@@ -250,18 +248,19 @@ zhizon/
 
 | 功能 | 实现状态 |
 |------|---------|
-| 首页游戏入口 | ✅ 6 游戏大卡 + 开始按钮 + 最佳战绩（卡片可点击进历史） |
-| 游戏中心入口 | ✅ 6 游戏 + 难度选择器 + 长按查看帮助 |
+| 游戏中心入口 | ✅ 7 游戏 + 难度选择器 + 长按查看帮助 |
 | 俄罗斯方块 | ✅ 7 种方块 + 旋转/移动/消行 + 5 级难度 + AI 托管 |
-| 2048 | ✅ 4x4 棋盘 + 滑动合并 + 5 级难度 + AI 托管 |
-| 贪吃蛇 | ✅ 方向控制 + 食物 + 碰撞检测 + 5 级难度 + AI 托管 |
-| 扫雷 | ✅ 逻辑推理 + 翻格/标记 + 5 级难度 |
+| 2048 | ✅ 4x4 棋盘 + 滑动合并 + 5 级难度 + AI 托管 + 对局回放 |
+| 贪吃蛇 | ✅ 方向控制 + 食物 + 碰撞检测 + 5 级难度 + AI 托管 + 对局回放 |
+| 扫雷 | ✅ 逻辑推理 + 翻格/标记 + 5 级难度 + AI 托管 |
 | 数独 | ✅ 数字推理 + 求解器 + 5 级难度 + AI 托管 |
 | 中国象棋 | ✅ 人机/人对AI/AI对AI + 悔棋 + 记谱 + AI 提示 |
+| 五子棋 | ✅ 本地引擎（5 级深度搜索）+ 大模型对弈 + 对局回放 |
 | 游戏 AI 托管 | ✅ GameAIService 一次调用批量决策，非流式 + 关闭思考 |
 | 游戏难度 | ✅ 5 级（超简单/简单/中等/困难/地狱） |
 | GameLaunchFacade | ✅ 启动参数验证 + 路由跳转 |
-| 游戏历史 | ✅ 分数记录 + 难度标记 + 排行 |
+| 游戏历史 / 统计 / 排行榜 | ✅ 分数记录 + 难度标记 + 排行 + 趋势图 |
+| 成就与音效 | ✅ 15 项成就 + SoundPool 低时延音效 |
 
 ---
 
@@ -320,8 +319,9 @@ zhizon/
 | 功能 | 实现状态 |
 |------|---------|
 | NavigationFacade | ✅ 页面注册表 + 导航验证 |
-| 主 Tab | ✅ 首页/游戏/AI对话/我的 4 个主 Tab |
-| 类型化路由参数 | ✅ AppShellRouteParams + GameHistoryRouteParams + LegalDocRouteParams |
+| 主 Tab | ✅ 热榜/AI对话/游戏/微舆/我的 5 个主 Tab |
+| Tab 嵌入页刷新 | ✅ PageRefreshBus（AppShell.onPageShow 广播，Index/Chat 各自刷新） |
+| 类型化路由参数 | ✅ AppShellRouteParams / HotDetailRouteParams / HotBoardRouteParams / GameHistoryRouteParams / LegalDocRouteParams 等 |
 | 页面可用性 | ✅ EMBEDDED（内嵌）/ ROUTE（独立路由） |
 | 导航结果 | ✅ NavigationSuccess / NavigationFailure |
 
@@ -356,7 +356,7 @@ zhizon/
 └──────────────────────────────┘
 ```
 
-- 4 个主 Tab：首页 / 游戏 / AI对话 / 我的
+- 5 个主 Tab：热榜 / AI对话 / 游戏 / 微舆 / 我的
 
 ### 5.3 平板布局（isSm = false）
 
@@ -509,15 +509,26 @@ aboutToAppear() {
 
 ## 八、通用组件设计
 
-### 8.1 组件清单（5 个）
+### 8.1 组件清单（25 个，下表为主要复用组件）
 
 | 组件 | 文件 | 说明 |
 |------|------|------|
-| TopBar | [components/TopBar.ets](file:///workspace/zhizon/entry/src/main/ets/components/TopBar.ets) | 顶栏，`@StorageLink('isSm')` 响应式 padding |
-| DifficultyOption | [components/DifficultyOption.ets](file:///workspace/zhizon/entry/src/main/ets/components/DifficultyOption.ets) | 难度选择项（图标 + 标签 + 描述 + 选中态） |
-| FixedBottomNav | [components/FixedBottomNav.ets](file:///workspace/zhizon/entry/src/main/ets/components/FixedBottomNav.ets) | 固定底部导航 |
-| GlassEffect | [components/GlassEffect.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlassEffect.ets) | 毛玻璃效果工具（半透明背景 + 边框 + 开关） |
+| TopBar | [components/TopBar.ets](file:///workspace/zhizon/entry/src/main/ets/components/TopBar.ets) | 顶栏（响应式 padding + 自定义返回/菜单回调 + @BuilderParam 操作区） |
+| FixedBottomNav | [components/FixedBottomNav.ets](file:///workspace/zhizon/entry/src/main/ets/components/FixedBottomNav.ets) | 手机端固定底部导航（5 Tab） |
+| SideNav | [components/SideNav.ets](file:///workspace/zhizon/entry/src/main/ets/components/SideNav.ets) | 平板/2in1 侧边栏导航 |
+| HotSourceCard | [components/HotSourceCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/HotSourceCard.ets) | 热榜源卡片（源徽标 + 更新态 + ⭐关注 + Top5 + 查看全部） |
+| HotItemRow | [components/HotItemRow.ets](file:///workspace/zhizon/entry/src/main/ets/components/HotItemRow.ets) | 榜单条目行（序号配色 + 标题 + 热度/时间 + 已读态） |
+| HotSourceBadge | [components/HotSourceBadge.ets](file:///workspace/zhizon/entry/src/main/ets/components/HotSourceBadge.ets) | 源徽标（首字 + 源配色） |
+| GlassEffect | [components/GlassEffect.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlassEffect.ets) | 毛玻璃效果工具（背景色/边框/模糊级别 + 低电降级） |
 | GlobalBackgroundLayer | [components/GlobalBackgroundLayer.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlobalBackgroundLayer.ets) | 全局背景层（自定义背景图 + 强度调节） |
+| SettingGroupCard / SettingRow | [components/SettingGroupCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/SettingGroupCard.ets) | 设置分组卡与行控件 |
+| ChatSessionDrawer / ChatMessageList / ChatMessageBubble / ChatMarkdownText / ChatInputBar | components/Chat*.ets | 会话抽屉、对话列表、气泡、Markdown 渲染与输入条 |
+| BettaConnectionBar / BettaEngineStatusCard / BettaForumMessageItem | components/Betta*.ets | 微舆连接状态、引擎状态卡、论坛消息项 |
+| GameAIPanel / DifficultyOption | components/ | 游戏 AI 托管控制面板、难度选择项 |
+| LockOverlay / PrivacyDialog / AutoLockSheet / PasswordSheet | components/ | 安全锁定遮罩、隐私协议、自动锁定时长、应用密码 |
+| FontRegistry | [components/FontRegistry.ets](file:///workspace/zhizon/entry/src/main/ets/components/FontRegistry.ets) | 自定义字体注册 |
+
+> 本轮清理删除了无引用的 `ParticleBackground.ets`（粒子背景组件）。
 
 ---
 
@@ -532,28 +543,43 @@ aboutToAppear() {
 
 ### 9.2 导航结构
 
-**主导航（4 项）**：
-- 首页（Index）
-- 游戏（Games）→ 6 款游戏入口
-- AI对话（Chat）
-- 我的（Profile）→ 设置 / 关于
+**主导航（5 项）**：
+- 热榜（Index）→ 单源榜单（HotBoard）/ 热榜设置（NewsSettings）/ 登录（NewsLogin）
+- AI对话（Chat）→ 模型配置（ChatConfig）
+- 游戏（Games）→ 7 款游戏入口 / 战绩 / 回放 / 排行榜
+- 微舆（BettaFish）→ 进度 / 报告 / 服务器配置 / 系统状态
+- 我的（Profile）→ 设置 / 成就 / 阅读周报 / 收藏 / AI 调用记录
 
 ### 9.3 页面跳转关系
 
 ```
 AppShell (主框架)
-├── Index (首页)
-│   └──> GameHistory (战绩)
+├── Index (热榜首页：视图 Tabs + 源卡片流)
+│   ├──> HotBoard (单源榜单)
+│   ├──> NewsDetail (条目详情：ArkWeb + AI 面板)
+│   ├──> NewsDigest (AI 今日要闻 / 热点速递)
+│   ├──> NewsSearch (榜单 + 收藏 + 正文缓存检索)
+│   ├──> NewsFavorites (收藏)
+│   ├──> NewsSettings (服务器 / 账号 / 关注 / 数据)
+│   └──> NewsLogin (GitHub 登录，ArkWeb 拦截回跳)
 ├── Games (游戏中心)
-│   ├──> Tetris / Game2048 / Snake / Minesweeper / Sudoku / ChineseChess
-│   └──> GameHistory
+│   ├──> Tetris / Game2048 / Snake / Minesweeper / Sudoku / ChineseChess / Gomoku
+│   ├──> GameHistory / GameStats / Leaderboard / ReplayList / GameSettings
+│   └──> Achievements
 ├── Chat (AI对话)
-│   └──> ChatConfig (模型配置)
+│   ├──> ChatConfig (模型配置)
+│   ├──> AiModelPage / AiRoleLibrary
+│   └──> AiCallLog (AI 调用记录)
+├── BettaFish (微舆)
+│   ├──> BettaFishProgress (分析进度)
+│   ├──> BettaFishReportView (报告查看)
+│   ├──> BettaFishServerConfig (服务器配置)
+│   └──> BettaFishSystem (系统状态)
 └── Profile (我的)
-    ├──> Settings (设置)
+    ├──> Settings / AppearanceSettings
     ├──> LegalDoc (用户协议/隐私政策/开源许可)
-    ├──> AiCallLog (AI 调用记录)
-    └──> GameHistory
+    ├──> ReadingReport (阅读周报)
+    └──> NewsFavorites / NewsSettings / NewsSearch
 ```
 
 ### 9.4 子页面跳转
@@ -650,6 +676,10 @@ AppShell (主框架)
 | **M6** | 移除 SSH/PVE 相关代码，清理孤儿组件，重新设计首页布局，聚焦游戏中心 | ✅ |
 | **M7** | 重构导航为 4 Tab（首页/游戏/AI对话/我的），新增扫雷/数独/中国象棋，AI 对话、AI 托管，统一字号 | ✅ |
 | **M8** | AI 调用记录（摘要日志 + ai_call_logs 表 + 查看/清空页 + 我的页入口） | ✅ |
+| **M9** | 新闻资讯主功能（多源聚合 + 收藏/已读 + AI 摘要/翻译/问AI/今日要闻，RDB v14） | ✅ |
+| **M10** | 微舆（BettaFish）集成（服务器配置 + SSE 进度 + 报告查看 + 任务历史，RDB v17） | ✅ |
+| **M11** | 华为账号 + 云同步、对局回放、成就系统、游戏音效、端侧 OCR、战绩可视化、排行榜、Agent 工具化 | ✅ |
+| **M12** | 资讯域重构为 NewsNow 后端热榜（源目录/视图 Tabs/单源榜页/关注多端同步；RDB v18 丢弃旧新闻域） | ✅ |
 
 ### 11.2 关键修复记录
 
@@ -686,7 +716,9 @@ AppShell (主框架)
 - HarmonyOS 开发文档：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/
 - ArkUI 组件参考：https://developer.huawei.com/consumer/cn/doc/harmonyos-references/
 - ArkTS 严格模式：https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-syntax-rules
-- CryptoArchitectureKit：HarmonyOS 加密框架
+- UniversalKeystoreKit（HUKS）：硬件密钥库，凭据加解密
+- ArkWeb：内嵌网页与 OAuth 回跳拦截（NewsNow 登录、条目详情）
+- NewsNow 项目：https://github.com/newsnext/newsnow （热榜后端，MIT）
 
 ### 12.2 文档版本
 

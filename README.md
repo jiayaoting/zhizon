@@ -38,9 +38,13 @@
 ```
 zhizon/
 ├── AppScope/                  # 应用全局配置（BundleName + 版本 + 图标）
-├── doc/
-│   ├── DESIGN.md              # 详细设计文档
-│   └── newsnow-redesign.md    # 热榜模块设计（接口契约/同步协议/验收清单）
+├── doc/                       # 项目文档
+│   ├── DESIGN.md              # 详细设计文档（架构/数据模型/UI 规范/开发历史）
+│   ├── newsnow-redesign.md    # 热榜模块设计（接口契约/同步协议/实施记录）
+│   ├── cloud-sync-setup.md    # 华为账号 + 云同步接入说明
+│   ├── BettaFish_HarmonyOS_设计方案.md      # 微舆服务端对接契约
+│   ├── BettaFish-Zhizon-集成设计方案.md     # 微舆集成设计
+│   └── chat-ux-revamp-plan.md # AI 对话体验改造方案（P0/P1 已实施，P2 路线图）
 │
 ├── entry/                     # 主模块
 │   └── src/main/
@@ -173,18 +177,19 @@ zhizon/
 
 | 权限 | 用途 |
 |------|------|
-| ohos.permission.INTERNET | AI 对话功能连接大模型 API |
-| ohos.permission.READ_MEDIA | 选择自定义背景图 |
-| ohos.permission.WRITE_MEDIA | 保存自定义背景图 |
+| ohos.permission.INTERNET | 热榜访问 NewsNow 服务端、AI 对话连接大模型 API、微舆连接自部署服务端 |
 | ohos.permission.VIBRATE | 游戏触觉反馈 |
 | ohos.permission.MICROPHONE | 语音输入（语音转文字） |
 | ohos.permission.ACCESS_BIOMETRIC | 生物识别解锁 |
 
+> 自定义背景图通过系统 Picker 选择（沙箱授权 URI），无需读写媒体库权限。
+
 ## 开发环境
 
-- DevEco Studio 6.0+
-- HarmonyOS SDK 6.1+ (API 24)
-- ohpm 5.0+
+- DevEco Studio 6.1.1+（API 24 Release）
+- HarmonyOS SDK 6.1.1（API 24）；`compatibleSdkVersion` / `targetSdkVersion` 均为 `6.1.1(24)`
+- ohpm 6.1+、Node.js 18+
+- 命令行构建：`build_temp.bat`（等价于 `hvigorw assembleHap --mode module -p module=entry`）
 
 ## 运行
 
@@ -195,7 +200,7 @@ zhizon/
 
 ## 新增能力（本轮迭代）
 
-- 🔥 **热榜模块重构（v9.0）**：资讯域从「客户端直连 RSS/多源抓取 + 本地推荐画像」整体替换为 [NewsNow](https://github.com/newsnext/newsnow) 后端驱动的全网热榜；新增 52 条源目录、视图 Tabs、单源榜单页、源关注、NewsNow GitHub 登录与关注多端同步；**删除**旧抓取/推荐/画像/标签模块共 14 个源码文件与 11 张数据表（DB v18 直接丢弃），净减约 3000 行；设计见 [newsnow-redesign.md](doc/newsnow-redesign.md)
+- 🔥 **热榜模块重构（v9.0）**：资讯域从「客户端直连 RSS/多源抓取 + 本地推荐画像」整体替换为 [NewsNow](https://github.com/newsnext/newsnow) 后端驱动的全网热榜；新增 52 条源目录、视图 Tabs、单源榜单页、源关注、NewsNow GitHub 登录与关注多端同步；**删除**旧抓取/推荐/画像模块 14 个源码文件、4 个失效测试与 7 份过期文档（DB v18 直接丢弃 11 张旧表），`.ets` 净减约 5700 行；设计见 [newsnow-redesign.md](doc/newsnow-redesign.md)
 - ☁️ **华为账号 + 云同步**：接入 Account Kit（华为账号登录，获取昵称/头像）；Cloud Foundation Kit 云存储备份/恢复配置、战绩、成就与全部对话；未配置 AGC 时自动降级为本地备份，配置步骤见 [云同步接入说明](doc/cloud-sync-setup.md)
 - 🎬 **对局回放**：2048、贪吃蛇、五子棋自动录制对局（动作 + 随机格/食物），「我的 → 对局回放」查看、回放（1x/2x/4x）、删除
 - 🚀 **长列表性能**：会话抽屉、游戏战绩、AI 调用记录改用 `LazyForEach` 懒加载（通用 `LazyListDataSource`）
@@ -208,9 +213,14 @@ zhizon/
 
 ## 详细文档
 
-- 架构设计、数据模型、UI 规范：[详细设计文档](doc/DESIGN.md)
-- 热榜模块（接口契约 / 同步协议 / 实施与验收清单）：[热榜模块设计](doc/newsnow-redesign.md)
-- 云同步接入：[云同步接入说明](doc/cloud-sync-setup.md)
+| 文档 | 内容 |
+|------|------|
+| [详细设计文档](doc/DESIGN.md) | 架构分层、目录结构、功能模块、数据模型、UI 规范、开发历史 |
+| [热榜模块设计](doc/newsnow-redesign.md) | NewsNow 接口契约、数据模型、登录与同步协议、实施记录与真机实测结论 |
+| [云同步接入说明](doc/cloud-sync-setup.md) | 华为账号登录 + AGC 云存储桶配置步骤、载荷范围与隐私说明 |
+| [微舆服务端对接契约](doc/BettaFish_HarmonyOS_设计方案.md) | BettaFish 服务端接口、SSE 事件结构、导出接口 |
+| [微舆集成设计](doc/BettaFish-Zhizon-集成设计方案.md) | 微舆在智子中的页面、状态与数据设计 |
+| [AI 对话改造方案](doc/chat-ux-revamp-plan.md) | 对话体验改造（P0/P1 已实施）；含未完成的 P2 组件化路线图 |
 
 ## AI 开发声明
 
