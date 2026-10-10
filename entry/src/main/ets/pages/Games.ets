@@ -2,7 +2,7 @@
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { PAGE_PADDING, CARD_RADIUS } from '../common/Constants';
+import { CARD_RADIUS } from '../common/Constants';
 import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
   GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
 import { DifficultyOption } from '../components/DifficultyOption';

@@ -1,5 +1,5 @@
 // 智子 - AI 模型主页（模型配置 + 调用记录入口）
-import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import { AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';

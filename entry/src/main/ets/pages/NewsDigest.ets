@@ -1,6 +1,7 @@
-// 智子 - AI 今日要闻（独立全屏页）
-// 手动触发生成；结果缓存到 news_digests（按日期），可重新生成
+// 智子 - AI 今日要闻 / 热点速递（独立全屏页）
+// 数据来源：内存热榜（HotFeedStore）；手动触发生成；结果按日期 + 模式缓存
 // Swiper 分页：左右滑动切换模式（原生动画）；空白页也占满高度可滑动
+// 设计文档：doc/newsnow-redesign.md §9.4
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -8,38 +9,49 @@ import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { ChatMarkdownText } from '../components/ChatMarkdownText';
-import { NewsModelSelector } from '../components/NewsModelSelector';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { NewsItem, NewsDigestEntry, NewsDetailRouteParams } from '../common/NewsModels';
-import { NewsService } from '../service/NewsService';
+import { HotEntry, HotDigestEntry, HotViewKey, HotDetailRouteParams } from '../common/HotModels';
+import { HotFeedStore } from '../service/HotFeedStore';
 import { NewsRepository } from '../service/NewsRepository';
 import { NewsAiService } from '../service/NewsAiService';
-import { NewsRanker } from '../service/NewsRanker';
-import { LlmConfig, LlmResult } from '../common/LlmModels';
+import { LlmConfig, LlmModelEntry, LlmResult } from '../common/LlmModels';
+
+// 每个源参与 prompt 的候选条数（跨源均衡，避免单源刷屏）
+const TOP_PER_SOURCE: number = 3;
+// 送入 prompt 的最大条目数
+const DIGEST_MAX_ITEMS: number = 50;
+const HOTSPOT_MAX_ITEMS: number = 60;
 
 @ComponentV2
 @Entry
 export struct NewsDigestPage {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
-  @Local digest: NewsDigestEntry | null = null;
+  @Local digest: HotDigestEntry | null = null;
   // 各模式当日缓存（Swiper 分页：非当前页直接读缓存展示，避免空白页无法滑动）
-  @Local digestMap: Record<string, NewsDigestEntry | null> = {};
-  // 生成模式：digest = 今日要闻；morning/noon/evening = 时段速递；personal = 为你精选
+  @Local digestMap: Record<string, HotDigestEntry | null> = {};
+  // 生成模式：digest = 今日要闻；morning/noon/evening = 时段速递
   @Local mode: string = 'digest';
   // Swiper 当前页（与 mode 同步）
   @Local swiperIndex: number = 0;
   @Local generating: boolean = false;
   @Local streamText: string = '';
   @Local errorText: string = '';
-  // 本次生成使用的候选新闻（用于渲染原文链接区）
-  @Local sourceItems: NewsItem[] = [];
+  // 热榜暂无数据时的引导文案
+  @Local noDataHint: string = '';
+  // 本次生成使用的候选条目（用于渲染原文链接区）
+  @Local sourceItems: HotEntry[] = [];
   // 最近一次生成 token 消耗
   @Local lastTokens: number = 0;
+  // 模型选择（热榜专属模型）
+  @Local modelName: string = '跟随全局';
+  @Local models: LlmModelEntry[] = [];
+  @Local modelSheet: boolean = false;
   // 加载序号：防止快速切换模式时旧查询结果覆盖新结果
   private loadSeq: number = 0;
 
   aboutToAppear(): void {
     this.loadToday();
+    this.loadModelName();
   }
 
   // 一次性加载全部模式的当日缓存（Swiper 各页即时可用）
@@ -48,10 +60,10 @@ export struct NewsDigestPage {
     this.loadSeq = seq;
     try {
       const modes: string[] = this.modeOrder();
-      const map: Record<string, NewsDigestEntry | null> = {};
+      const map: Record<string, HotDigestEntry | null> = {};
       const tasks: Promise<void>[] = [];
       for (let i: number = 0; i < modes.length; i++) {
-        tasks.push(NewsRepository.todayDigest(modes[i]).then((d: NewsDigestEntry | null) => {
+        tasks.push(NewsRepository.todayDigest(modes[i]).then((d: HotDigestEntry | null) => {
           map[modes[i]] = d;
         }));
       }
@@ -72,22 +84,20 @@ export struct NewsDigestPage {
     if (this.mode === 'morning') return '🌅 早报速递';
     if (this.mode === 'noon') return '🌤️ 午间速递';
     if (this.mode === 'evening') return '🌙 晚报速递';
-    if (this.mode === 'personal') return '🎯 为你精选';
     return '📰 今日要闻';
   }
 
   private modeDesc(): string {
-    if (this.mode === 'morning') return 'AI 梳理今晨重要资讯';
-    if (this.mode === 'noon') return 'AI 汇总当天最新进展';
-    if (this.mode === 'evening') return 'AI 复盘全天重要动态';
-    if (this.mode === 'personal') return '基于你的点赞/点踩画像，AI 精选最相关内容';
-    return '聚合当天各源热点，一键生成 8~10 条要闻';
+    if (this.mode === 'morning') return 'AI 梳理今晨热榜重要资讯';
+    if (this.mode === 'noon') return 'AI 汇总当天热榜最新进展';
+    if (this.mode === 'evening') return 'AI 复盘全天热榜重要动态';
+    return '聚合各源热榜条目，一键生成 8~10 条要闻';
   }
 
   // ==================== 模式顺序与展示（分段标签 + Swiper 滑动） ====================
 
   private modeOrder(): string[] {
-    return ['digest', 'morning', 'noon', 'evening', 'personal'];
+    return ['digest', 'morning', 'noon', 'evening'];
   }
 
   private modeIndex(mode: string): number {
@@ -102,7 +112,6 @@ export struct NewsDigestPage {
     if (mode === 'morning') return '🌅';
     if (mode === 'noon') return '🌤️';
     if (mode === 'evening') return '🌙';
-    if (mode === 'personal') return '🎯';
     return '📰';
   }
 
@@ -110,7 +119,6 @@ export struct NewsDigestPage {
     if (mode === 'morning') return '早报';
     if (mode === 'noon') return '午间';
     if (mode === 'evening') return '晚报';
-    if (mode === 'personal') return '为你';
     return '今日要闻';
   }
 
@@ -122,6 +130,7 @@ export struct NewsDigestPage {
     this.digest = this.digestMap[mode] === undefined ? null : this.digestMap[mode];
     this.streamText = '';
     this.errorText = '';
+    this.noDataHint = '';
     this.sourceItems = [];
   }
 
@@ -137,6 +146,32 @@ export struct NewsDigestPage {
     this.switchMode(modes[index]);
   }
 
+  // ==================== 候选数据（内存热榜） ====================
+
+  // 候选条目：各源 Top3 横向混合（确定性顺序），为空时回退全部已加载条目
+  private async pickItems(): Promise<HotEntry[]> {
+    const ids: string[] = await HotFeedStore.sourceIds(HotViewKey.Hottest);
+    const out: HotEntry[] = [];
+    for (let i: number = 0; i < ids.length; i++) {
+      const top: HotEntry[] = HotFeedStore.topEntries(ids[i], TOP_PER_SOURCE);
+      for (let j: number = 0; j < top.length; j++) {
+        out.push(top[j]);
+      }
+    }
+    if (out.length > 0) return out;
+    return HotFeedStore.allLoadedEntries();
+  }
+
+  // 确保内存中至少有数据；仍为空则返回 false（此时不调用 AI）
+  private async ensureItems(): Promise<boolean> {
+    if (HotFeedStore.allLoadedEntries().length > 0) return true;
+    try {
+      await HotFeedStore.ensureView(HotViewKey.Hottest, false);
+    } catch (e) {
+    }
+    return HotFeedStore.allLoadedEntries().length > 0;
+  }
+
   private async generate(): Promise<void> {
     const has: boolean = await NewsAiService.hasModel();
     if (!has) {
@@ -146,6 +181,7 @@ export struct NewsDigestPage {
     this.generating = true;
     this.streamText = '';
     this.errorText = '';
+    this.noDataHint = '';
     const config: LlmConfig | null = await NewsAiService.getActiveConfig();
     if (config === null) {
       this.generating = false;
@@ -153,30 +189,24 @@ export struct NewsDigestPage {
       return;
     }
     try {
-      const items: NewsItem[] = await NewsService.fetchChannel('recommend',
-        this.mode === 'hotspot' ? 60 : 50, true);
-      if (items.length === 0) {
-        this.errorText = '没有获取到新闻数据，请检查网络后重试';
+      const ready: boolean = await this.ensureItems();
+      if (!ready) {
+        this.noDataHint = '暂无热榜数据，请先回到首页加载热榜后再试';
         this.generating = false;
         return;
       }
-      this.sourceItems = items;
+      const picked: HotEntry[] = await this.pickItems();
+      this.sourceItems = picked;
+      const limit: number = this.mode === 'digest' ? DIGEST_MAX_ITEMS : HOTSPOT_MAX_ITEMS;
+      const candidates: HotEntry[] = picked.length > limit ? picked.slice(0, limit) : picked;
       let result: LlmResult;
-      if (this.mode === 'personal') {
-        // 个性化：先按画像权重精选候选（NewsRanker），再生成
-        const ranked: NewsItem[] = await NewsRanker.rank(items, 20);
-        this.sourceItems = ranked;
-        result = await NewsAiService.generatePersonalizedDigest(config, ranked,
-          NewsRepository.todayLabel(), (d: string): void => {
-            this.streamText = this.streamText + d;
-          });
-      } else if (this.mode === 'digest') {
-        result = await NewsAiService.generateDigest(config, items,
+      if (this.mode === 'digest') {
+        result = await NewsAiService.generateDigest(config, candidates,
           NewsRepository.todayLabel(), (d: string): void => {
             this.streamText = this.streamText + d;
           });
       } else {
-        result = await NewsAiService.generateHotspot(config, items,
+        result = await NewsAiService.generateHotspot(config, candidates,
           NewsRepository.todayLabel(), this.mode, (d: string): void => {
             this.streamText = this.streamText + d;
           });
@@ -186,7 +216,7 @@ export struct NewsDigestPage {
         this.errorText = result.errorMessage.length > 0 ? result.errorMessage : 'AI 生成失败，请重试';
         return;
       }
-      const saved: NewsDigestEntry = await NewsRepository.saveDigest(result.content,
+      const saved: HotDigestEntry = await NewsRepository.saveDigest(result.content,
         config.displayName.length > 0 ? config.displayName : config.model, this.mode);
       this.digest = saved;
       this.digestMap[this.mode] = saved;
@@ -205,12 +235,12 @@ export struct NewsDigestPage {
   }
 
   // 指定模式的当日缓存（供 @Builder 内调用，@Builder 中不允许声明局部变量）
-  private digestOf(mode: string): NewsDigestEntry | null {
+  private digestOf(mode: string): HotDigestEntry | null {
     return this.digestMap[mode] === undefined ? null : this.digestMap[mode];
   }
 
   private digestContentOf(mode: string): string {
-    const entry: NewsDigestEntry | null = this.digestOf(mode);
+    const entry: HotDigestEntry | null = this.digestOf(mode);
     return entry === null ? '' : entry.content;
   }
 
@@ -230,6 +260,11 @@ export struct NewsDigestPage {
     }
   }
 
+  private openEntry(entry: HotEntry): void {
+    AppNavigator.push('pages/NewsDetail', new HotDetailRouteParams(entry.key, entry.sourceId,
+      entry.sourceName, entry.item.title, entry.item.url, entry.item.info));
+  }
+
   private digestModel(): string {
     if (this.digest === null) return '';
     return this.digest.modelName;
@@ -245,6 +280,40 @@ export struct NewsDigestPage {
     } catch (e) {
       promptAction.showToast({ message: '复制失败' });
     }
+  }
+
+  // ==================== 模型选择（热榜专属模型） ====================
+
+  private modelLabel(m: LlmModelEntry): string {
+    return m.displayName.length > 0 ? m.displayName : m.model;
+  }
+
+  private async loadModelName(): Promise<void> {
+    try {
+      this.modelName = await NewsAiService.getActiveModelName();
+    } catch (e) {
+      this.modelName = '未配置模型';
+    }
+  }
+
+  private async openModelSheet(): Promise<void> {
+    try {
+      this.models = await NewsAiService.listModels();
+    } catch (e) {
+      this.models = [];
+    }
+    this.modelSheet = true;
+  }
+
+  // id 为空字符串 = 恢复「跟随全局」
+  private async pickModel(id: string): Promise<void> {
+    try {
+      await NewsAiService.selectModel(id);
+    } catch (e) {
+    }
+    this.modelSheet = false;
+    await this.loadModelName();
+    promptAction.showToast({ message: '当前模型：' + this.modelName });
   }
 
   // ==================== Swiper 分页 ====================
@@ -280,7 +349,7 @@ export struct NewsDigestPage {
         LoadingProgress()
           .width(20)
           .height(20)
-        Text('AI 正在整理今日要闻…')
+        Text('AI 正在整理热榜要闻…')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
@@ -352,7 +421,7 @@ export struct NewsDigestPage {
             .margin({ top: 10 })
         }
 
-        // 原文链接区：来自本次真实源数据，点击打开详情（原文 ArkWeb）
+        // 原文链接区：来自本次真实热榜数据，点击打开详情（原文 ArkWeb）
         if (this.sourceItems.length > 0) {
           Text('📎 原文链接')
             .fontSize(this.themeState.palette.fsMd)
@@ -362,19 +431,19 @@ export struct NewsDigestPage {
             .width('100%')
             .margin({ top: 16, bottom: 6 })
           Column({ space: 6 }) {
-            ForEach(this.sourceItems.slice(0, 12), (item: NewsItem) => {
+            ForEach(this.sourceItems.slice(0, 12), (entry: HotEntry) => {
               Row({ space: 8 }) {
                 Text('🔗')
                   .fontSize(this.themeState.palette.fsSm)
                   .fontFamily(this.themeState.palette.fontSans)
-                Text(item.title)
+                Text(entry.item.title)
                   .fontSize(this.themeState.palette.fsSm)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.primary)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .layoutWeight(1)
-                Text(item.sourceName)
+                Text(entry.sourceName)
                   .fontSize(this.themeState.palette.fsXs)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.textTertiary)
@@ -384,13 +453,37 @@ export struct NewsDigestPage {
               .padding(10)
               .borderRadius(8)
               .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-              .onClick(() => {
-                AppNavigator.push('pages/NewsDetail', new NewsDetailRouteParams(item));
-              })
-            }, (item: NewsItem) => item.id)
+              .onClick(() => { this.openEntry(entry); })
+            }, (entry: HotEntry) => entry.key)
           }
           .width('100%')
         }
+      } else if (this.noDataHint.length > 0) {
+        Column({ space: 10 }) {
+          Text('📡')
+            .fontSize(46)
+            .fontFamily(this.themeState.palette.fontSans)
+          Text(this.noDataHint)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+          Text('热榜数据保存在内存中，回到首页浏览任意榜单后即可生成')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+          Button('重试')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(Color.White)
+            .backgroundColor(this.themeState.palette.primary)
+            .borderRadius(16)
+            .height(34)
+            .margin({ top: 6 })
+            .onClick(() => { this.generate(); })
+        }
+        .width('100%')
+        .padding({ top: 40 })
+        .justifyContent(FlexAlign.Center)
       } else {
         Column({ space: 10 }) {
           Text(this.mode === 'digest' ? '🤖' : '🌤️')
@@ -448,110 +541,248 @@ export struct NewsDigestPage {
     }
   }
 
-  build() {
-    Column() {
-      TopBar({
-        title: 'AI 今日要闻',
-        subtitle: NewsRepository.todayLabel()
-      })
+  // 当前模型 chip（点击切换热榜专属模型）
+  @Builder
+  modelChip(chipWidth: number) {
+    Row({ space: 4 }) {
+      Text('🤖')
+        .fontSize(11)
+        .fontFamily(this.themeState.palette.fontSans)
+      Text(this.modelName)
+        .fontSize(10)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      Text('▾')
+        .fontSize(9)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+    }
+    .width(chipWidth)
+    .height(30)
+    .padding({ left: 8, right: 8 })
+    .borderRadius(8)
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { this.openModelSheet(); })
+  }
 
-      // 顶部固定区：状态卡 + 分段标签 + 指示点
-      Column({ space: 12 }) {
-        // 状态卡
-        Row({ space: 10 }) {
+  @Builder
+  modelOverlay() {
+    if (this.modelSheet) {
+      Stack() {
+        Column() {
+          Blank()
           Column({ space: 4 }) {
-            Text(this.digest !== null ? this.modeTitle() + '已生成' : this.modeTitle())
-              .fontSize(this.themeState.palette.fsMd)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.textPrimary)
-              .fontWeight(FontWeight.Medium)
-            Text(this.digest !== null ?
-              (this.digestModel().length > 0 ? '由 ' + this.digestModel() + ' 生成' : '') :
-              this.modeDesc())
-              .fontSize(this.themeState.palette.fsXs)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.textTertiary)
+            Row() {
+              Text('选择模型')
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+              Blank()
+              Text('✕')
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
+                .padding(8)
+                .onClick(() => { this.modelSheet = false; })
+            }
+            .width('100%')
+            .padding({ left: 4, right: 4, bottom: 6 })
+
+            Scroll() {
+              Column({ space: 4 }) {
+                Row({ space: 10 }) {
+                  Column({ space: 2 }) {
+                    Text('跟随全局')
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textPrimary)
+                    Text('使用「我的 → AI 模型」中的默认模型')
+                      .fontSize(10)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textTertiary)
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+                }
+                .width('100%')
+                .padding(12)
+                .borderRadius(8)
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .onClick(() => { this.pickModel(''); })
+
+                ForEach(this.models, (m: LlmModelEntry) => {
+                  Row({ space: 10 }) {
+                    Column({ space: 2 }) {
+                      Text(this.modelLabel(m))
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textPrimary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      Text(m.model)
+                        .fontSize(10)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textTertiary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    }
+                    .alignItems(HorizontalAlign.Start)
+                    .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .padding(12)
+                  .borderRadius(8)
+                  .backgroundColor(this.themeState.palette.bgSurface)
+                  .onClick(() => { this.pickModel(m.id); })
+                }, (m: LlmModelEntry) => m.id)
+
+                if (this.models.length === 0) {
+                  Text('没有已启用的模型，请到「我的 → AI 模型」中启用')
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
+                    .padding({ top: 12, bottom: 12 })
+                }
+              }
+              .width('100%')
+            }
+            .width('100%')
+            .scrollBar(BarState.Off)
+            .constraintSize({ maxHeight: 360 })
           }
+          .width('100%')
+          .padding(16)
+          .borderRadius(16)
+          .backgroundColor(this.themeState.palette.bgBase)
           .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
-          NewsModelSelector({ compact: true })
-            .width(104)
-          Button(this.digest !== null ? '重新生成' : '生成')
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(Color.White)
-            .backgroundColor(this.themeState.palette.primary)
-            .borderRadius(16)
-            .height(34)
-            .enabled(!this.generating)
-            .onClick(() => { this.generate(); })
+          .onClick(() => {})
         }
         .width('100%')
-        .padding(14)
-        .borderRadius(12)
-        .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-        .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.modelSheet = false; })
+    }
+  }
 
-        // 模式切换：主体分段标签（5 个模式均分，选中高亮）
-        Row({ space: 4 }) {
-          ForEach(this.modeOrder(), (m: string) => {
-            Column({ space: 2 }) {
-              Text(this.modeIcon(m))
-                .fontSize(this.themeState.palette.fsMd + 2)
+  build() {
+    Stack() {
+      Column() {
+        TopBar({
+          title: 'AI 今日要闻',
+          subtitle: NewsRepository.todayLabel()
+        })
+
+        // 顶部固定区：状态卡 + 分段标签 + 指示点
+        Column({ space: 12 }) {
+          // 状态卡
+          Row({ space: 10 }) {
+            Column({ space: 4 }) {
+              Text(this.digest !== null ? this.modeTitle() + '已生成' : this.modeTitle())
+                .fontSize(this.themeState.palette.fsMd)
                 .fontFamily(this.themeState.palette.fontSans)
-              Text(this.modeName(m))
+                .fontColor(this.themeState.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+              Text(this.digest !== null ?
+                (this.digestModel().length > 0 ? '由 ' + this.digestModel() + ' 生成' : '') :
+                this.modeDesc())
                 .fontSize(this.themeState.palette.fsXs)
                 .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.mode === m ? Color.White : this.themeState.palette.textSecondary)
-                .fontWeight(this.mode === m ? FontWeight.Bold : FontWeight.Normal)
+                .fontColor(this.themeState.palette.textTertiary)
             }
+            .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
-            .height(54)
-            .borderRadius(12)
-            .justifyContent(FlexAlign.Center)
-            .backgroundColor(this.mode === m ? this.themeState.palette.primary :
-              GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-            .border({ width: this.mode === m ? 0 : 1,
-              color: this.mode === m ? Color.Transparent :
-                GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
-            .onClick(() => { this.switchMode(m); })
+            this.modelChip(104)
+            Button(this.digest !== null ? '重新生成' : '生成')
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(Color.White)
+              .backgroundColor(this.themeState.palette.primary)
+              .borderRadius(16)
+              .height(34)
+              .enabled(!this.generating)
+              .onClick(() => { this.generate(); })
+          }
+          .width('100%')
+          .padding(14)
+          .borderRadius(12)
+          .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
+          .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+
+          // 模式切换：主体分段标签（4 个模式均分，选中高亮）
+          Row({ space: 4 }) {
+            ForEach(this.modeOrder(), (m: string) => {
+              Column({ space: 2 }) {
+                Text(this.modeIcon(m))
+                  .fontSize(this.themeState.palette.fsMd + 2)
+                  .fontFamily(this.themeState.palette.fontSans)
+                Text(this.modeName(m))
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.mode === m ? Color.White : this.themeState.palette.textSecondary)
+                  .fontWeight(this.mode === m ? FontWeight.Bold : FontWeight.Normal)
+              }
+              .layoutWeight(1)
+              .height(54)
+              .borderRadius(12)
+              .justifyContent(FlexAlign.Center)
+              .backgroundColor(this.mode === m ? this.themeState.palette.primary :
+                GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+              .border({ width: this.mode === m ? 0 : 1,
+                color: this.mode === m ? Color.Transparent :
+                  GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+              .onClick(() => { this.switchMode(m); })
+            }, (m: string) => m)
+          }
+          .width('100%')
+
+          // 位置指示点 + 滑动提示
+          Row({ space: 6 }) {
+            ForEach(this.modeOrder(), (m: string) => {
+              Circle({ width: this.mode === m ? 8 : 6, height: this.mode === m ? 8 : 6 })
+                .fill(this.mode === m ? this.themeState.palette.primary : this.themeState.palette.borderSubtle)
+            }, (m: string) => m + '-dot')
+            Text('左右滑动切换')
+              .fontSize(this.themeState.palette.fsXs - 1)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
+              .margin({ left: 4 })
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .padding({ top: 2, bottom: 4 })
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: 720 })
+        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 12 })
+
+        // Swiper 分页：原生滑动动画；每页占满剩余高度，空白页也可滑动
+        Swiper() {
+          ForEach(this.modeOrder(), (m: string) => {
+            this.modePage(m)
           }, (m: string) => m)
         }
+        .layoutWeight(1)
         .width('100%')
-
-        // 位置指示点 + 滑动提示
-        Row({ space: 6 }) {
-          ForEach(this.modeOrder(), (m: string) => {
-            Circle({ width: this.mode === m ? 8 : 6, height: this.mode === m ? 8 : 6 })
-              .fill(this.mode === m ? this.themeState.palette.primary : this.themeState.palette.borderSubtle)
-          }, (m: string) => m + '-dot')
-          Text('左右滑动切换')
-            .fontSize(this.themeState.palette.fsXs - 1)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textTertiary)
-            .margin({ left: 4 })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .padding({ top: 2, bottom: 4 })
+        .index(this.swiperIndex)
+        .loop(false)
+        .indicator(false)
+        .cachedCount(1)
+        .onChange((index: number) => { this.onSwiperChange(index); })
       }
       .width('100%')
-      .constraintSize({ maxWidth: 720 })
-      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 12 })
+      .height('100%')
 
-      // Swiper 分页：原生滑动动画；每页占满剩余高度，空白页也可滑动
-      Swiper() {
-        ForEach(this.modeOrder(), (m: string) => {
-          this.modePage(m)
-        }, (m: string) => m)
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .index(this.swiperIndex)
-      .loop(false)
-      .indicator(false)
-      .cachedCount(1)
-      .onChange((index: number) => { this.onSwiperChange(index); })
+      this.modelOverlay()
     }
     .width('100%')
     .height('100%')

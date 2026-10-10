@@ -1,10 +1,10 @@
 # 智子（Zhizon）详细设计文档
 
-> **版本**：v7.0.0
+> **版本**：v9.0.0
 > **平台**：HarmonyOS NEXT（鸿蒙 6+ / 纯血鸿蒙）
 > **Bundle Name**：`com.zhizon.manager`
 > **开发语言**：ArkTS
-> **文档状态**：v7.4 当前实现版（4 Tab 导航 + 7 款游戏 + AI 对话 + 多主题系统 + 毛玻璃效果 + AI 调用记录 + 华为账号云同步 + 对局回放 + 成就系统 + 游戏音效 + LazyForEach 长列表 + 端侧 OCR + 战绩可视化 + 排行榜 + AI 对话 Agent 化 P0）
+> **文档状态**：v9.0 当前实现版（5 Tab 导航 + NewsNow 热榜 + 7 款游戏 + AI 对话 + 多主题系统 + 毛玻璃效果 + AI 调用记录 + 华为账号云同步 + 对局回放 + 成就系统 + 游戏音效 + LazyForEach 长列表 + 端侧 OCR + 战绩可视化 + 排行榜 + AI 对话 Agent 化 P0）
 
 ---
 
@@ -102,7 +102,6 @@
 zhizon/
 ├── .gitignore
 ├── README.md
-├── codebase-structure.md
 ├── build-profile.json5                    # 根构建配置
 ├── hvigorfile.ts
 ├── oh-package.json5
@@ -143,8 +142,7 @@ zhizon/
             │   ├── AvatarOptions.ets      # 头像配色选项
             │   ├── CryptoHelper.ets       # AES-256-GCM 加密/解密
             │   ├── DeviceMetrics.ets      # 设备尺寸度量
-            │   └── FailureHandling.ets    # 统一失败处理（AppFailure + RecoverableResult）
-            │
+                        │
             ├── model/                     # 数据模型（2 个）
             │   ├── GovernanceModels.ets   # 治理模型（AppFailure + RecoverableResult + DefectRecord 等）
             │   └── Models.ets             # 通用业务模型
@@ -171,8 +169,7 @@ zhizon/
             │   ├── GlassEffect.ets        # 毛玻璃效果工具（半透明背景 + 边框）
             │   ├── GlobalBackgroundLayer.ets # 全局背景层（自定义背景图 + 强度调节）
             │   ├── GameAIPanel.ets        # 游戏 AI 托管控制面板
-            │   ├── ParticleBackground.ets # 粒子背景
-            │   ├── LockOverlay.ets        # 锁定遮罩
+                        │   ├── LockOverlay.ets        # 锁定遮罩
             │   ├── PrivacyDialog.ets      # 隐私协议弹窗
             │   └── FontRegistry.ets       # 字体注册
             │
@@ -423,9 +420,11 @@ aboutToAppear() {
 
 ### 6.3 数据库表结构
 
-**数据库版本**：v4
+**数据库版本**：v18（v18 丢弃全部旧 news_* 表，热榜域重建为 hot_* 表）
 
-**settings 表**：key(PK), value
+**settings 表**：key(PK), value（含热榜服务器地址 `hot_server_url`、关注列表 `hot_focus_meta`、加密凭证 `hot_jwt_enc`）
+
+**热榜表**：hot_favorites(key PK, source_id, source_name, title, url, info, added_at) · hot_read(key PK, read_at) · hot_digests(id, date, content, model_name, created_at) · hot_article_cache(url PK, title, html, cached_at) · hot_articles_fts(kind, key, title, body)
 
 **game_scores 表**：id(PK), game, score, level, difficulty, created_at
 
@@ -579,67 +578,61 @@ AppShell (主框架)
 
 ---
 
-## 十·一、新闻资讯功能（AI 资讯阅读器 · v8.0）
+## 十·一、热榜功能（NewsNow 后端 · v9.0）
 
-> 定位：**新闻资讯升级为应用主功能**，游戏降为次要功能；AI 摘要等 AI 能力全部手动触发。
-> 详细方案与决策记录见 [news-feature-plan.md](news-feature-plan.md)（v2.1）。
+> 定位：**热榜（全网榜单聚合）为应用主功能**，游戏为次要功能；AI 能力全部手动触发。
+> 完整设计（接口契约 / 数据模型 / 同步协议 / 验收清单）见 [newsnow-redesign.md](newsnow-redesign.md)，本节为摘要。
 
 ### 10.1.1 功能总览
 
 | 模块 | 说明 |
 |------|------|
-| 资讯首页（Index 重写） | 问候栏 + ⭐收藏入口 + AI 今日要闻卡 + 频道 Tabs + 资讯流（下拉刷新/上拉加载） |
-| 频道 | 推荐（全源合并）/ 科技 / AI专题（关键词派生）/ 财经 / 国际 |
-| 内置源 | 知乎日报（JSON）、Hacker News Algolia（JSON）、少数派/IT之家/36氪/BBC中文（RSS/Atom，@ohos.convertxml 解析） |
-| 详情页 | ArkWeb 加载原文 + 收藏/已读 + AI 摘要/翻译/问AI 面板（流式 + 复制 + 失败兜底）+ 🔊 朗读（TTS） |
-| AI 今日要闻 | 独立全屏页，手动生成 8~10 条简报，按日期缓存（news_digests 表），可重新生成/复制 |
-| 为你推荐 | 基于收藏历史 + AI 排序候选新闻 |
-| 收藏/稍后读 | news_favorites 表，列表页/详情页管理 |
-| 设置 | 「资讯」分组：6 个内置源独立开关 + 自定义 RSS 订阅管理（settings.newsCustomRss） |
-| 离线缓存 | 频道快照（news_cache 表）网络失败自动回退；正文缓存（news_article_cache 表）ArkWeb 加载成功后抓取，离线全文回退 |
-| 平板适配 | isLg 宽屏：真·双栏阅读（左列表 + 右详情 NewsDetailPane）；isMd：双列网格 |
-| 新闻搜索 | NewsService.search（HN Algolia + 本地源过滤）+ 搜索页 + AI 汇总 |
-| 资讯分享 | NewsDetail TopBar 📤（Share Kit 系统分享） |
-| Agent 工具 | ToolRegistry 新增 news_top（AI 对话中获取今日热点新闻） |
-| 资讯统计 | NewsStats 页（收藏/已读/AI 调用数 + 清空阅读记录） |
-| 热点速递增强 | 配置联网搜索接口时自动注入搜索补充信息 |
-| 设置 | 资讯分组新增：清空阅读记录、清空资讯缓存、OPML 批量导入订阅 |
-| 模型选择 | 支持「跟随全局模型」恢复默认 + 资讯专属模型记忆 |
-| Agent 工具 | news_top / news_search |
-| 头条轮播 | 推荐频道 Swiper 头条区（自动轮播） |
-| 知乎日报正文 | /api/4/news/{id} 正文 API 渲染（更轻量、可离线） |
-| 时段速递 | 今日要闻 / 🌅早报 / 🌤️午间速递 / 🌙晚报 四档 |
-| 阅读体验 | A-/A+ 字号缩放（Web zoom）+ 深色模式反色 CSS 注入 |
-| Markdown 链接 | 段落含链接时可点击，系统浏览器打开 |
-| 图片优化 | 加载失败占位 + 知乎缩略图参数 |
-| 已读管理 | 资讯统计页「标记全部已读」「清空阅读记录」 |
-| 离线标识 | 离线回退阅读时显示「· 离线缓存」角标 |
-| Token 展示 | AI 摘要/问答/生成面板显示本次消耗 tokens |
+| 后端 | 自部署或公共 [NewsNow](https://github.com/newsnext/newsnow) 实例，App 内可配置服务器地址（默认公共实例），设置页可测活（`/api/latest`） |
+| 首页（Index 重写） | 问候栏 + AI 今日要闻入口 + 视图 Tabs + 源卡片流（下拉刷新 / 单源刷新 / ⭐关注） |
+| 视图 | 关注（用户标星的源）/ 最热 / 实时 / 国内 / 科技 / 财经 / 国际 / 体育 |
+| 源目录 | `common/HotSources.ets` 内置 52 条源（与 NewsNow sourceId 一致，含子榜如 bilibili-hot-search）；`disable` 源不进默认视图 |
+| 单源榜页 | HotBoard：完整 30 条 + 下拉强制刷新（登录时服务端真实抓取）+ ⭐ + 源站入口 |
+| 详情页 | ArkWeb 加载条目 URL（优先 mobileUrl）+ 收藏/已读 + AI 摘要/翻译/问AI 面板（流式）+ 🔊 朗读 + 离线正文缓存 + 分享 |
+| AI 今日要闻 | 独立全屏页，从**已加载榜单**跨源汇总（零额外网络），按日期/时段缓存（hot_digests），可重新生成/复制 |
+| 收藏 | hot_favorites 表，列表页/详情页管理 |
+| 搜索 | 已加载榜单内存检索 + 收藏 FTS + 离线正文 FTS（不可用时回退 LIKE）+ AI 汇总 |
+| 关注同步 | NewsNow GitHub 登录（ArkWeb 拦截 OAuth 回跳取 JWT），focus 列表与网页版双向同步（10s 防抖上传 + updatedTime 新者覆盖） |
+| 凭证安全 | JWT 经 HUKS AES-256-GCM 加密后落 settings（`hot_jwt_enc`），且**排除在华为云备份之外** |
+| 离线策略 | 客户端不做 HTTP 缓存，榜单内存态 + 服务端 TTL；正文缓存（hot_article_cache）支持离线阅读 |
+| 平板适配 | isMd 双列 / isLg 三列源卡片网格 |
+| Agent 工具 | ToolRegistry 的 news_top / news_search 改为读取内存榜单（零网络） |
 
-### 10.1.2 数据表（DatabaseHelper v14）
+### 10.1.2 数据表（DatabaseHelper v18）
 
-- news_favorites(id, url, title, summary, image_url, source_name, added_at) — 收藏/稍后读
-- news_read(url PK, read_at) — 已读标记
-- news_digests(id, date, content, model_name, created_at) — AI 今日要闻缓存（按日期幂等覆盖）
+- hot_favorites(key PK, source_id, source_name, title, url, info, added_at) — 收藏（key = `sourceId:itemId`）
+- hot_read(key PK, read_at) — 已读标记
+- hot_digests(id, date, content, model_name, created_at) — AI 今日要闻/时段简报缓存
+- hot_article_cache(url PK, title, html, cached_at) — 详情页正文缓存（离线阅读 + AI 上下文来源）
+- hot_articles_fts(kind, key, title, body) — FTS5 全文索引（trigram → 默认分词 → LIKE 回退）
+- v18 迁移会 **DROP** 旧的 11 张 news_* 表与 news_articles_fts（不保留历史数据）
 
 ### 10.1.3 服务层
 
 | 服务 | 职责 |
 |------|------|
-| NewsService | 多源并发拉取 → 归一化 NewsItem → 按时间合并去重 → 10 分钟内存缓存；源开关过滤；RSS/Atom 解析（convertxml） |
-| NewsRepository | 收藏/已读/今日要闻的 RDB 门面 |
-| NewsAiService | AI 摘要/翻译/问AI/今日要闻/为你推荐；正文截断 8000 字符；场景 news_* 写入 ai_call_logs |
+| NewsNowClient | baseUrl 配置 + `/api/latest` 探测 + `/api/s` 单源 + `/api/s/entire` 批量（失败逐源降级）+ `/api/me/sync` 拉取/上传 |
+| NewsNowAuth | JWT 加解密存取（HUKS）、用户资料、登录回跳解析、过期判定 |
+| NewsNowSync | 本地 focus 读写（settings.hot_focus_meta）+ 云端 pull/push（防抖 10s、退后台 flush） |
+| HotFeedStore | 各源榜单内存槽位（idle/loading/ready/error）+ 加载编排（entire 预取、懒补、30 分钟驻留刷新）+ 变更通知 |
+| NewsRepository | 收藏/已读/今日要闻/正文缓存 RDB 门面 + FTS 索引与检索 |
+| NewsAiService | AI 摘要/翻译/问AI/今日要闻/热点速递/搜索汇总；上下文 = 标题 + 正文（详情页抽取），场景 news_* 写入 ai_call_logs |
 
 ### 10.1.4 导航
 
-- 主 Tab：📰 资讯（Index）/ 🗨️ AI对话 / 🎮 游戏 / 👤 我的
-- 路由页：pages/NewsDetail、pages/NewsDigest、pages/NewsFavorites、pages/NewsRecommend（均已注册 main_pages.json）
+- 主 Tab：🔥 热榜（Index）/ 🗨️ AI对话 / 🎮 游戏 / 🐟 微舆 / 👤 我的
+- 路由页：pages/NewsDetail、pages/NewsDigest、pages/NewsFavorites、pages/NewsSearch、pages/NewsSettings、pages/HotBoard、pages/NewsLogin（均已注册 main_pages.json）
+- 宿主刷新：AppShell.onPageShow → PageRefreshBus.emitHotShow() → IndexPage 重载已读/关注态
 
 ### 10.1.5 单元测试
 
-- NewsServiceTest：知乎日报 / HN / RSS 2.0 / Atom 解析 + 合并去重
-- NewsAiServiceTest：截断、文章上下文构造
-- NewsRepositoryTest：今日日期键与标签格式
+- HotModuleTest：源目录检索 / 视图过滤 / displayName / 时间格式化 / HotEntry 键约定
+- NewsNowAuthTest：登录回跳解析、JWT exp/主体解析、过期与畸形输入降级
+- NewsRepositoryTest：今日日期键 / 标签 / 简报 id 规则
 
 ---
 
@@ -708,6 +701,7 @@ AppShell (主框架)
 | v7.0.0 | 2026-08-13 | 导航重构为 4 Tab（首页/游戏/AI对话/我的）、新增扫雷/数独/中国象棋、AI 对话、AI 托管、全站字号统一 |
 | v7.1.0 | 2026-08-13 | 新增 AI 调用记录（摘要日志 + ai_call_logs 表 + 查看/清空 + 我的页入口） |
 | v8.0.0 | 2026-08-19 | 新闻资讯主功能（资讯首页 + 多源聚合 + 收藏/已读 + AI 摘要/翻译/问AI + AI 今日要闻 + 为你推荐，RDB v14） |
+| v9.0.0 | 2026-10-10 | 资讯域重构为 NewsNow 后端热榜：52 条源目录 / 视图 Tabs / 单源榜页 / 源关注 + GitHub 登录多端同步 / Cloudflare 403 修复；删除旧抓取-推荐-画像模块（15 个源文件，RDB v18 丢弃 11 张旧表） |
 
 ---
 

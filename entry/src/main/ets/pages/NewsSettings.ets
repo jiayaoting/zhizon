@@ -1,57 +1,52 @@
-// 智子 - 资讯设置（二级页：资讯源/频道 / 个性化推荐 / AI 能力 / 自定义订阅）
-import { promptAction } from '@kit.ArkUI';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
-import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+// 智子 - 热榜设置（服务器 / 账号 / 关注管理 / 数据 / 关于）
+// 设计文档：doc/newsnow-redesign.md §9.6
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
-import { NEWS_SOURCES } from '../common/NewsChannels';
-import { NewsSourceDef } from '../common/NewsModels';
-import { NewsModelSelector } from '../components/NewsModelSelector';
-import { NewsAiService } from '../service/NewsAiService';
-import { NewsRepository } from '../service/NewsRepository';
-import { NewsService } from '../service/NewsService';
-import { DataRepository } from '../service/DataRepository';
+import { ThemeState } from '../common/ThemeState';
+import { TopBar } from '../components/TopBar';
 import { SettingGroupCard } from '../components/SettingGroupCard';
-import { SettingRow, SettingSwitchRow } from '../components/SettingRow';
+import { NewsNowClient, DEFAULT_SERVER_URL, HotPingResult } from '../service/NewsNowClient';
+import { NewsNowAuth } from '../service/NewsNowAuth';
+import { NewsNowSync, HotSyncState } from '../service/NewsNowSync';
+import { HotFeedStore } from '../service/HotFeedStore';
+import { NewsRepository, HotStats } from '../service/NewsRepository';
+import { HotSources } from '../common/HotSources';
+import { NewsNowUser } from '../common/HotModels';
+import { HotSourceBadge } from '../components/HotSourceBadge';
 
-// 自定义 RSS 订阅持久化结构（settings.newsCustomRss）
-interface CustomRssSetting {
-  name: string;
-  url: string;
-}
-
-@Component
+@ComponentV2
 @Entry
 export struct NewsSettingsPage {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  // 服务器
+  @Local serverUrl: string = '';
+  @Local editingServer: boolean = false;
+  @Local urlDraft: string = '';
+  @Local pingText: string = '';
+  @Local pinging: boolean = false;
+  // 账号
+  @Local loggedIn: boolean = false;
+  @Local user: NewsNowUser | null = null;
+  @Local syncText: string = '';
+  @Local syncing: boolean = false;
+  // 关注
+  @Local focusIds: string[] = [];
+  @Local showPicker: boolean = false;
+  // 数据统计
+  @Local stats: HotStats = { favoriteCount: 0, readCount: 0, aiCallCount: 0 };
 
-  // 自定义 RSS
-  @State customRssName: string = '';
-  @State customRssUrl: string = '';
-  @State customSources: NewsSourceDef[] = [];
-  // LLM 智能标签开关（默认关闭，M4）
-  @State newsTagLlmEnabled: boolean = false;
-  // 个性化模式（M2 增强）：standard / aggressive / hot / explore
-  @State newsPersonalizedMode: string = 'standard';
-  // OPML 导入
-  @State showOpmlSheet: boolean = false;
-  @State opmlText: string = '';
-  @State opmlResult: string = '';
-
-  aboutToAppear(): void {
-    this.loadTagLlmState();
-    this.loadNewsMode();
-    this.loadCustomRss();
+  async aboutToAppear(): Promise<void> {
+    this.serverUrl = await NewsNowClient.getBaseUrl();
+    this.urlDraft = this.serverUrl;
+    await this.loadAccount();
+    await this.loadFocus();
+    await this.loadStats();
   }
 
-  private toast(msg: string) {
+  private toast(msg: string): void {
     promptAction.showToast({ message: msg });
   }
 
-  // 危险操作统一确认（重置画像等不可恢复操作）
   private confirmDanger(title: string, message: string, onOk: () => void): void {
     promptAction.showDialog({
       title: title,
@@ -68,474 +63,554 @@ export struct NewsSettingsPage {
     });
   }
 
-  // ==================== LLM 智能标签（M4） ====================
-  private async loadTagLlmState(): Promise<void> {
-    this.newsTagLlmEnabled = await NewsAiService.isTagLlmEnabled();
-  }
-
-  private async onTagLlmToggle(on: boolean): Promise<void> {
-    await NewsAiService.setTagLlmEnabled(on);
-    this.newsTagLlmEnabled = on;
-    this.toast(on ? '已开启智能标签（将把新闻标题/摘要发送至所选模型）' : '已关闭智能标签');
-  }
-
-  // ==================== 个性化模式（M2 增强） ====================
-  private async loadNewsMode(): Promise<void> {
-    this.newsPersonalizedMode = await DataRepository.getSetting('newsPersonalizedMode', 'standard');
-  }
-
-  private modeLabel(mode: string): string {
-    if (mode === 'aggressive') return '高个性化';
-    if (mode === 'explore') return '探索';
-    if (mode === 'hot') return '仅热点';
-    return '标准';
-  }
-
-  private async onNewsModePick(): Promise<void> {
-    promptAction.showActionMenu({
-      title: '个性化模式',
-      buttons: [
-        { text: '标准（推荐）', color: '#666666' },
-        { text: '高个性化', color: '#666666' },
-        { text: '仅热点', color: '#666666' },
-        { text: '探索', color: '#666666' }
-      ]
-    }).then((result: promptAction.ActionMenuSuccessResponse) => {
-      const modes: string[] = ['standard', 'aggressive', 'hot', 'explore'];
-      if (result.index >= 0 && result.index < modes.length) {
-        const mode: string = modes[result.index];
-        this.newsPersonalizedMode = mode;
-        DataRepository.setSetting('newsPersonalizedMode', mode).then(() => {
-          this.toast('个性化模式：' + this.modeLabel(mode));
-        });
+  private async loadAccount(): Promise<void> {
+    this.loggedIn = await NewsNowAuth.isLoggedIn();
+    this.user = this.loggedIn ? await NewsNowAuth.getUser() : null;
+    const state: HotSyncState = NewsNowSync.state();
+    let text: string = state.lastError.length > 0 ? '同步异常：' + state.lastError :
+      (state.lastSyncTime > 0 ? '上次同步：' + NewsSettingsPage.timeLabel(state.lastSyncTime) : '尚未同步');
+    // 凭证临近过期时提示重新登录（设计 §6.1）
+    if (this.loggedIn) {
+      const token: string = await NewsNowAuth.getToken();
+      if (token.length > 0 && NewsNowAuth.isExpiringSoon(token)) {
+        text = text + ' · 登录凭证即将过期，建议重新登录';
       }
-    }).catch(() => {
+    }
+    this.syncText = text;
+  }
+
+  private async loadFocus(): Promise<void> {
+    this.focusIds = await NewsNowSync.focusIds();
+  }
+
+  private async loadStats(): Promise<void> {
+    try {
+      this.stats = await NewsRepository.stats();
+    } catch (e) {
+    }
+  }
+
+  private static timeLabel(ts: number): string {
+    const d: Date = new Date(ts);
+    const pad = (n: number): string => n < 10 ? '0' + n.toString() : n.toString();
+    return pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  // ==================== 服务器 ====================
+
+  private async testConnection(): Promise<void> {
+    if (this.pinging) return;
+    this.pinging = true;
+    this.pingText = '正在检测…';
+    const res: HotPingResult = await NewsNowClient.ping();
+    this.pinging = false;
+    if (res.ok) {
+      this.pingText = res.version.length > 0 ? '✓ 连接成功，服务版本 ' + res.version : '✓ 连接成功';
+    } else {
+      this.pingText = '✗ ' + (res.error === null ? '无法连接' : res.error.message);
+    }
+  }
+
+  private async saveServer(): Promise<void> {
+    const url: string = this.urlDraft.trim();
+    if (!NewsNowClient.isValidUrl(url)) {
+      this.toast('请输入完整地址（以 http:// 或 https:// 开头）');
+      return;
+    }
+    await NewsNowClient.setBaseUrl(url);
+    this.serverUrl = await NewsNowClient.getBaseUrl();
+    this.editingServer = false;
+    this.pingText = '';
+    // 换服务器后内存榜单失效
+    HotFeedStore.clearAll();
+    await this.loadAccount();
+    this.toast('服务器地址已保存');
+  }
+
+  private async restoreDefault(): Promise<void> {
+    await NewsNowClient.setBaseUrl(DEFAULT_SERVER_URL);
+    this.serverUrl = await NewsNowClient.getBaseUrl();
+    this.urlDraft = this.serverUrl;
+    this.editingServer = false;
+    this.pingText = '';
+    HotFeedStore.clearAll();
+    await this.loadAccount();
+    this.toast('已恢复默认服务器');
+  }
+
+  // ==================== 账号 ====================
+
+  private openLogin(): void {
+    AppNavigator.push('pages/NewsLogin');
+  }
+
+  private async syncNow(): Promise<void> {
+    if (this.syncing) return;
+    this.syncing = true;
+    this.syncText = '同步中…';
+    await NewsNowSync.syncNow();
+    this.syncing = false;
+    await this.loadAccount();
+    await this.loadFocus();
+    this.toast(this.syncText.indexOf('异常') >= 0 ? '同步失败' : '同步完成');
+  }
+
+  private logout(): void {
+    this.confirmDanger('退出登录', '退出后关注列表仅保存在本机，不再与网页版同步。', () => {
+      NewsNowAuth.clearSession().then(() => {
+        this.loadAccount();
+        this.toast('已退出登录');
+      });
     });
   }
 
-  // ==================== 自定义 RSS ====================
-  private async loadCustomRss(): Promise<void> {
-    try {
-      const raw: string = await DataRepository.getSetting('newsCustomRss', '');
-      const sources: NewsSourceDef[] = [];
-      if (raw.trim().length > 0) {
-        const parsed: Object = JSON.parse(raw) as Object;
-        if (Array.isArray(parsed)) {
-          const arr: Object[] = parsed as Object[];
-          for (let i: number = 0; i < arr.length; i++) {
-            const entry: Record<string, Object> = arr[i] as Record<string, Object>;
-            const name: string = typeof entry['name'] === 'string' ? entry['name'] as string : '';
-            const url: string = typeof entry['url'] === 'string' ? entry['url'] as string : '';
-            if (name.trim().length > 0 && url.trim().length > 0) {
-              sources.push(new NewsSourceDef('custom:' + url, name.trim(), 'recommend', 'rss', url.trim()));
-            }
-          }
-        }
-      }
-      this.customSources = sources;
-    } catch (e) {
-      this.customSources = [];
-    }
+  // ==================== 关注 ====================
+
+  private async toggleStar(sourceId: string): Promise<void> {
+    const starred: boolean = await NewsNowSync.toggleStar(sourceId);
+    await this.loadFocus();
+    this.toast(starred ? '已关注' : '已取消关注');
   }
 
-  private async persistCustomRss(): Promise<void> {
-    const rows: CustomRssSetting[] = [];
-    for (let i: number = 0; i < this.customSources.length; i++) {
-      const row: CustomRssSetting = { name: this.customSources[i].name, url: this.customSources[i].url };
-      rows.push(row);
-    }
-    await DataRepository.setSetting('newsCustomRss', JSON.stringify(rows));
+  private async moveFocus(index: number, delta: number): Promise<void> {
+    const target: number = index + delta;
+    if (target < 0 || target >= this.focusIds.length) return;
+    const next: string[] = this.focusIds.slice();
+    const tmp: string = next[index];
+    next[index] = next[target];
+    next[target] = tmp;
+    await NewsNowSync.reorderFocus(next);
+    await this.loadFocus();
   }
 
-  private async addCustomRss(): Promise<void> {
-    const name: string = this.customRssName.trim();
-    let url: string = this.customRssUrl.trim();
-    if (name.length === 0 || url.length === 0) {
-      this.toast('请填写订阅名称和 RSS 地址');
-      return;
-    }
-    if (url.indexOf('http://') !== 0 && url.indexOf('https://') !== 0) {
-      this.toast('RSS 地址需以 http:// 或 https:// 开头');
-      return;
-    }
-    for (let i: number = 0; i < this.customSources.length; i++) {
-      if (this.customSources[i].url === url) {
-        this.toast('该订阅已存在');
-        return;
-      }
-    }
-    this.customSources = this.customSources.concat([new NewsSourceDef('custom:' + url, name, 'recommend', 'rss', url)]);
-    await this.persistCustomRss();
-    this.customRssName = '';
-    this.customRssUrl = '';
-    this.toast('已添加订阅：' + name + '（刷新资讯页后生效）');
-  }
-
-  private async removeCustomRss(url: string): Promise<void> {
-    const next: NewsSourceDef[] = [];
-    for (let i: number = 0; i < this.customSources.length; i++) {
-      if (this.customSources[i].url !== url) {
-        next.push(this.customSources[i]);
-      }
-    }
-    this.customSources = next;
-    await this.persistCustomRss();
-    this.toast('已删除订阅');
-  }
-
-  // 解析并导入 OPML（按 URL 去重合并到自定义订阅）
-  private async importOpml(): Promise<void> {
-    const sources: NewsSourceDef[] = NewsService.parseOpml(this.opmlText);
-    if (sources.length === 0) {
-      this.opmlResult = '未解析到有效订阅，请检查 OPML 内容';
-      return;
-    }
-    let added: number = 0;
-    let skipped: number = 0;
-    for (let i: number = 0; i < sources.length; i++) {
-      let exists: boolean = false;
-      for (let j: number = 0; j < this.customSources.length; j++) {
-        if (this.customSources[j].url === sources[i].url) {
-          exists = true;
-          break;
-        }
-      }
-      if (exists) {
-        skipped = skipped + 1;
-      } else {
-        this.customSources = this.customSources.concat([sources[i]]);
-        added = added + 1;
-      }
-    }
-    await this.persistCustomRss();
-    this.opmlResult = '导入完成：新增 ' + added.toString() + ' 个，跳过重复 ' + skipped.toString() + ' 个';
-    this.opmlText = '';
-    this.toast('已导入 ' + added.toString() + ' 个订阅');
-  }
-
-  @Builder actionsBuilder() {}
-
-
-  // OPML 导入弹层
   @Builder
-  opmlSheet() {
-    Stack() {
-      Column() {
-        Blank()
-        Column({ space: 12 }) {
-          Row() {
-            Text('导入 OPML 订阅')
-              .fontSize(this.palette.fsLg)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .fontWeight(FontWeight.Bold)
-            Blank()
-            Text('✕')
-              .fontSize(this.palette.fsLg)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .padding(8)
-              .onClick(() => {
-                this.showOpmlSheet = false;
-                this.opmlText = '';
-                this.opmlResult = '';
-              })
-          }
-          .width('100%')
-
-          TextArea({ placeholder: '粘贴 OPML XML 内容（含 <outline xmlUrl=…/> 的订阅）', text: this.opmlText })
-            .width('100%')
-            .height(150)
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .onChange((v: string) => { this.opmlText = v; })
-
-          if (this.opmlResult.length > 0) {
-            Text(this.opmlResult)
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.primary)
+  serverSection() {
+    SettingGroupCard({ title: '后端服务器' }) {
+      Column({ space: 10 }) {
+        Row({ space: 8 }) {
+          Column({ space: 3 }) {
+            Text('当前服务器')
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .width('100%')
+              .textAlign(TextAlign.Start)
+            Text(this.serverUrl)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontMono)
+              .fontColor(this.themeState.palette.textPrimary)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+              .textAlign(TextAlign.Start)
           }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
 
-          Button('解析并导入')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(Color.White)
-            .backgroundColor(this.palette.primary)
-            .width('100%')
-            .height(42)
-            .borderRadius(10)
-            .onClick(() => { this.importOpml(); })
+          Text(this.editingServer ? '取消' : '编辑')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .onClick(() => {
+              this.editingServer = !this.editingServer;
+              this.urlDraft = this.serverUrl;
+            })
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.navBarHeight + 8) })
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
-        .borderRadius({ topLeft: 24, topRight: 24 })
-        .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
-        .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
-        .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
-        .onClick(() => {})
+        .alignItems(VerticalAlign.Center)
+
+        if (this.editingServer) {
+          Column({ space: 8 }) {
+            TextInput({ text: this.urlDraft, placeholder: 'https://your-newsnow.example.com' })
+              .height(40)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontMono)
+              .backgroundColor(this.themeState.palette.bgSurface2)
+              .borderRadius(10)
+              .onChange((value: string) => {
+                this.urlDraft = value;
+              })
+            Row({ space: 8 }) {
+              Text('保存')
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(Color.White)
+                .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+                .borderRadius(14)
+                .backgroundColor(this.themeState.palette.primary)
+                .onClick(() => {
+                  this.saveServer();
+                })
+              Text('恢复默认')
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textSecondary)
+                .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+                .borderRadius(14)
+                .backgroundColor(this.themeState.palette.bgSurface2)
+                .onClick(() => {
+                  this.restoreDefault();
+                })
+              Blank()
+            }
+            .width('100%')
+          }
+          .width('100%')
+        }
+
+        Row({ space: 10 }) {
+          Text(this.pinging ? '检测中…' : '测试连接')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(14)
+            .backgroundColor(this.themeState.palette.primary + '1A')
+            .onClick(() => {
+              this.testConnection();
+            })
+          if (this.pingText.length > 0) {
+            Text(this.pingText)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.pingText.startsWith('✓') ? this.themeState.palette.success :
+                this.themeState.palette.danger)
+              .layoutWeight(1)
+              .maxLines(2)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text('热榜数据来自 NewsNow 服务端，可自建实例后在此切换。默认使用公共实例。')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        Text('若公共实例提示 403（被 Cloudflare 拦截），多为站点侧的访问策略；可改用自部署实例，或在「账号」中先用 GitHub 登录一次后重试。')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .width('100%')
+          .textAlign(TextAlign.Start)
       }
       .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.End)
+    }
+  }
+
+  @Builder
+  accountSection() {
+    SettingGroupCard({ title: 'NewsNow 账号' }) {
+      Column({ space: 10 }) {
+        if (this.loggedIn && this.user !== null) {
+          Row({ space: 10 }) {
+            if (this.user.avatar.length > 0) {
+              Image(this.user.avatar)
+                .width(40)
+                .height(40)
+                .borderRadius(20)
+                .objectFit(ImageFit.Cover)
+                .border({ width: 1.5, color: '#80FFFFFF' })
+            } else {
+              Text('👤')
+                .fontSize(30)
+            }
+            Column({ space: 3 }) {
+              Text(this.user.name.length > 0 ? this.user.name : 'GitHub 用户')
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .fontWeight(FontWeight.Medium)
+                .width('100%')
+                .textAlign(TextAlign.Start)
+              Text(this.syncText)
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
+                .width('100%')
+                .textAlign(TextAlign.Start)
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+
+          Row({ space: 10 }) {
+            Text(this.syncing ? '同步中…' : '立即同步')
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(Color.White)
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .borderRadius(14)
+              .backgroundColor(this.themeState.palette.primary)
+              .onClick(() => {
+                this.syncNow();
+              })
+            Text('退出登录')
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.danger)
+              .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+              .borderRadius(14)
+              .backgroundColor(this.themeState.palette.bgSurface2)
+              .onClick(() => {
+                this.logout();
+              })
+            Blank()
+          }
+          .width('100%')
+        } else {
+          Text('未登录')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+          Text('登录后可强制刷新实时数据，并把「关注」的源同步到 NewsNow 网页版（多端一致）。')
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+          Text('使用 GitHub 登录')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(Color.White)
+            .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+            .borderRadius(16)
+            .backgroundColor(this.themeState.palette.primary)
+            .onClick(() => {
+              this.openLogin();
+            })
+        }
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  focusSection() {
+    SettingGroupCard({ title: '关注的源（' + this.focusIds.length.toString() + '）' }) {
+      Column({ space: 8 }) {
+        if (this.focusIds.length === 0) {
+          Text('还没有关注任何源。点击下方「管理源」挑选，或在首页源卡片点 ⭐。')
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+        } else {
+          ForEach(this.focusIds, (sourceId: string, index: number) => {
+            Row({ space: 10 }) {
+              HotSourceBadge({ sourceId: sourceId, badgeSize: 26 })
+              Text(HotSources.nameOf(sourceId))
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text('▲')
+                .fontSize(this.themeState.palette.fsXs)
+                .fontColor(this.themeState.palette.textTertiary)
+                .padding(6)
+                .onClick(() => {
+                  this.moveFocus(index, -1);
+                })
+              Text('▼')
+                .fontSize(this.themeState.palette.fsXs)
+                .fontColor(this.themeState.palette.textTertiary)
+                .padding(6)
+                .onClick(() => {
+                  this.moveFocus(index, 1);
+                })
+              Text('✕')
+                .fontSize(this.themeState.palette.fsSm)
+                .fontColor(this.themeState.palette.textTertiary)
+                .padding(6)
+                .onClick(() => {
+                  this.toggleStar(sourceId);
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+          }, (sourceId: string) => sourceId)
+        }
+
+        Text(this.showPicker ? '收起源列表' : '管理源')
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
+          .padding({ top: 6, bottom: 2 })
+          .onClick(() => {
+            this.showPicker = !this.showPicker;
+          })
+
+        if (this.showPicker) {
+          this.pickerList()
+        }
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  pickerList() {
+    Column({ space: 12 }) {
+      ForEach(['china', 'tech', 'finance', 'world', 'sports'], (column: string) => {
+        Column({ space: 6 }) {
+          Text(HotSources.groupLabel(column))
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+            .width('100%')
+            .textAlign(TextAlign.Start)
+          ForEach(HotSources.byColumn(column), (sourceId: string) => {
+            Row({ space: 10 }) {
+              HotSourceBadge({ sourceId: sourceId, badgeSize: 24 })
+              Text(HotSources.nameOf(sourceId))
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textSecondary)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(this.focusIds.indexOf(sourceId) >= 0 ? '⭐' : '☆')
+                .fontSize(this.themeState.palette.fsMd)
+                .padding(4)
+                .onClick(() => {
+                  this.toggleStar(sourceId);
+                })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+          }, (sourceId: string) => sourceId)
+        }
+        .width('100%')
+      }, (column: string) => column)
     }
     .width('100%')
-    .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
-    .onClick(() => {
-      this.showOpmlSheet = false;
-      this.opmlText = '';
-      this.opmlResult = '';
-    })
+  }
+
+  @Builder
+  dataSection() {
+    SettingGroupCard({ title: '数据' }) {
+      Column({ space: 10 }) {
+        Row({ space: 16 }) {
+          this.statCell('收藏', this.stats.favoriteCount)
+          this.statCell('已读', this.stats.readCount)
+          this.statCell('AI 调用', this.stats.aiCallCount)
+        }
+        .width('100%')
+
+        Row({ space: 10 }) {
+          this.dangerChip('清除已读记录', () => {
+            this.confirmDanger('清除已读记录', '清除后所有条目的已读标记将被重置。', () => {
+              NewsRepository.clearRead().then(() => {
+                this.loadStats();
+                this.toast('已清除已读记录');
+              });
+            });
+          })
+          this.dangerChip('清除正文缓存', () => {
+            this.confirmDanger('清除正文缓存', '清除离线保存的正文与搜索索引。', () => {
+              NewsRepository.clearArticleCache().then(() => {
+                this.toast('已清除正文缓存');
+              });
+            });
+          })
+        }
+        .width('100%')
+
+        this.dangerChip('清空收藏', () => {
+          this.confirmDanger('清空收藏', '收藏列表将被清空，且无法恢复。', () => {
+            NewsRepository.clearFavorites().then(() => {
+              this.loadStats();
+              this.toast('已清空收藏');
+            });
+          });
+        })
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
+  statCell(label: string, value: number) {
+    Column({ space: 4 }) {
+      Text(value.toString())
+        .fontSize(this.themeState.palette.fsLg)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+      Text(label)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  @Builder
+  dangerChip(label: string, onTap: () => void) {
+    Text(label)
+      .fontSize(this.themeState.palette.fsSm)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(this.themeState.palette.danger)
+      .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+      .borderRadius(14)
+      .backgroundColor(this.themeState.palette.danger + '14')
+      .onClick(onTap)
+  }
+
+  @Builder
+  aboutSection() {
+    SettingGroupCard({ title: '关于数据源' }) {
+      Column({ space: 6 }) {
+        Text('热榜内容来自各站点公开榜单，经 NewsNow 服务端聚合。内容版权归原站点所有。')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        Text('NewsNow 为 MIT 许可开源项目：github.com/newsnext/newsnow')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+      }
+      .width('100%')
+    }
   }
 
   build() {
-    Stack() {
-      Column() {
-        TopBar({ title: '资讯设置', subtitle: '资讯源 / 个性化 / 模型 / RSS', showBack: true }) {
-          this.actionsBuilder()
+    Column() {
+      TopBar({ title: '热榜设置', showBack: true })
+
+      Scroll() {
+        Column({ space: 12 }) {
+          this.serverSection()
+          this.accountSection()
+          this.focusSection()
+          this.dataSection()
+          this.aboutSection()
         }
-        Scroll() {
-          Column({ space: 16 }) {
-            // 资讯源与频道
-            SettingGroupCard({ title: '资讯源与频道' }) {
-              Column({ space: 8 }) {
-                SettingRow({
-                  icon: '📡',
-                  title: '资讯源管理',
-                  value: NEWS_SOURCES.length.toString() + ' 个源 · 分组/搜索/批量开关',
-                  rowClick: () => { AppNavigator.push('pages/NewsSourceSettings'); }
-                })
-                Text('关闭的源不再出现在资讯流中，支持全部打开/关闭。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                SettingRow({
-                  icon: '📻',
-                  title: '个性化频道设置',
-                  rowClick: () => { AppNavigator.push('pages/NewsChannelSettings'); }
-                })
-                Text('默认全部频道启用个性化；关闭的频道恢复纯时间排序，支持全部打开/关闭。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                  .margin({ top: 2 })
-              }
-              .width('100%')
-            }
-
-            // 个性化推荐
-            SettingGroupCard({ title: '个性化推荐' }) {
-              Column({ space: 8 }) {
-                SettingRow({
-                  icon: '🎯',
-                  title: '个性化模式',
-                  value: this.modeLabel(this.newsPersonalizedMode),
-                  rowClick: () => { this.onNewsModePick(); }
-                })
-                Text('标准=混合排序｜高个性化=反馈权重更高｜仅热点=纯时间排序｜探索=更多新内容')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                SettingRow({
-                  icon: '🧠',
-                  title: '个性化画像（兴趣/厌恶管理）',
-                  value: '查看与调整',
-                  rowClick: () => { AppNavigator.push('pages/NewsProfile'); }
-                })
-                SettingRow({
-                  icon: '🧹',
-                  title: '重置推荐画像',
-                  value: '清空全部权重',
-                  danger: true,
-                  rowClick: () => {
-                    this.confirmDanger('重置推荐画像', '将清空全部兴趣/厌恶权重，推荐回到初始状态，此操作不可撤销。', () => {
-                      NewsRepository.resetProfile().then(() => {
-                        this.toast('已重置推荐画像');
-                      });
-                    });
-                  }
-                })
-              }
-              .width('100%')
-            }
-
-            // AI 能力
-            SettingGroupCard({ title: 'AI 能力' }) {
-              Column({ space: 8 }) {
-                Text('翻译模型')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .width('100%')
-                  .margin({ top: 8 })
-                Text('翻译默认使用资讯功能模型；可单独选择并记忆翻译模型。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                NewsModelSelector({
-                  settingKey: 'newsTranslateModelId',
-                  followLabel: '跟随资讯模型',
-                  followDesc: '翻译默认使用资讯功能模型，可单独选择并记忆'
-                })
-                  .width(220)
-                  .margin({ top: 4 })
-                SettingRow({
-                  icon: '🗑',
-                  title: '清除翻译缓存',
-                  rowClick: () => {
-                    NewsRepository.clearTranslations().then(() => {
-                      this.toast('已清除翻译缓存');
-                    });
-                  }
-                })
-
-                Text('AI 智能标签')
-                  .fontSize(this.palette.fsBase)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
-                  .fontWeight(FontWeight.Medium)
-                  .width('100%')
-                  .margin({ top: 8 })
-                SettingSwitchRow({
-                  icon: '🏷',
-                  title: '智能标签（LLM 精标）',
-                  isOn: this.newsTagLlmEnabled,
-                  onSwitchChange: (v: boolean) => {
-                    this.onTagLlmToggle(v);
-                  }
-                })
-                Text('开启后：将把新闻标题/摘要发送至你选择的模型服务商，用于生成更细标签；失败自动回退本地规则。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
-                  .width('100%')
-                NewsModelSelector({
-                  settingKey: 'newsTagModelId',
-                  followLabel: '跟随资讯模型',
-                  followDesc: '智能标签默认使用资讯功能模型，可单独选择并记忆'
-                })
-                  .width(220)
-                  .margin({ top: 4 })
-                SettingRow({
-                  icon: '🗑',
-                  title: '清除标签缓存',
-                  rowClick: () => {
-                    NewsRepository.clearTags().then(() => {
-                      this.toast('已清除标签缓存');
-                    });
-                  }
-                })
-
-                SettingRow({
-                  icon: '✨',
-                  title: 'AI 摘要 / 翻译 / 问 AI',
-                  value: '手动触发',
-                  rowClick: () => {
-                    this.toast('在新闻详情页手动触发，使用「我的 → AI 模型」配置的模型');
-                  }
-                })
-                SettingRow({
-                  icon: '📌',
-                  title: 'AI 今日要闻 / 为你推荐',
-                  rowClick: () => { AppNavigator.push('pages/NewsRecommend'); }
-                })
-              }
-              .width('100%')
-            }
-
-            // 自定义订阅
-            SettingGroupCard({ title: '自定义订阅' }) {
-              Column({ space: 8 }) {
-                TextInput({ placeholder: '订阅名称（如 我的博客）', text: this.customRssName })
-                  .width('100%')
-                  .height(38)
-                  .fontSize(this.palette.fsSm)
-                  .fontFamily(this.palette.fontSans)
-                  .onChange((v: string) => { this.customRssName = v; })
-                Row({ space: 8 }) {
-                  TextInput({ placeholder: 'https://example.com/feed', text: this.customRssUrl })
-                    .layoutWeight(1)
-                    .height(38)
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .onChange((v: string) => { this.customRssUrl = v; })
-                  Button('添加')
-                    .height(38)
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(Color.White)
-                    .backgroundColor(this.palette.primary)
-                    .borderRadius(8)
-                    .onClick(() => { this.addCustomRss(); })
-                }
-                .width('100%')
-                if (this.customSources.length > 0) {
-                  ForEach(this.customSources, (s: NewsSourceDef) => {
-                    Row() {
-                      Text('📡 ' + s.name)
-                        .fontSize(this.palette.fsSm)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textPrimary)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .layoutWeight(1)
-                      Text('✕')
-                        .fontSize(this.palette.fsSm)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textTertiary)
-                        .padding(6)
-                        .onClick(() => { this.removeCustomRss(s.url); })
-                    }
-                    .width('100%')
-                    .padding({ left: 8, right: 8 })
-                    .borderRadius(6)
-                    .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
-                  }, (s: NewsSourceDef) => s.url)
-                } else {
-                  Text('暂无自定义订阅，添加后自动并入「推荐」频道。')
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
-                    .width('100%')
-                }
-                SettingRow({
-                  icon: '📥',
-                  title: '导入 OPML 订阅',
-                  value: '批量导入',
-                  rowClick: () => { this.showOpmlSheet = true; }
-                })
-              }
-              .width('100%')
-            }
-            Column().height(20)
-          }
-          .width('100%')
-          .constraintSize({ maxWidth: 720 })
-          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12, bottom: Math.max(24, this.navBarHeight + 8) })
-        }
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .align(Alignment.Top)
-        .edgeEffect(EdgeEffect.Spring)
+        .width('100%')
+        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
+          top: 8, bottom: 24 })
       }
+      .layoutWeight(1)
       .width('100%')
-      .height('100%')
-      .backgroundColor(this.palette.bgBase)
-
-      // OPML 导入弹层
-      if (this.showOpmlSheet) {
-        this.opmlSheet()
-      }
+      .scrollBar(BarState.Off)
+      .align(Alignment.Top)
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

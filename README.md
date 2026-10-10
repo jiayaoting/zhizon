@@ -1,12 +1,12 @@
 # 智子 (Zhizon)
 
-> HarmonyOS NEXT 原生应用 · AI 辅助开发 · AI 资讯 + AI 对话 + 游戏中心 + 多主题系统
+> HarmonyOS NEXT 原生应用 · AI 辅助开发 · 全网热榜 + AI 对话 + 游戏中心 + 多主题系统
 
 ## 项目简介
 
 智子是一款由 **AI（大语言模型）辅助开发**的开源应用，运行于鸿蒙 6+ 系统，提供：
 
-- 📰 **AI 资讯（主功能）**：首页即资讯流，多源聚合（知乎日报 / Hacker News / 少数派 / IT之家 / 36氪 / BBC中文 RSS），频道分类（推荐/科技/AI专题/财经/国际），收藏/稍后读、已读标记；AI 摘要 / AI 翻译 / 文章问 AI / AI 今日要闻 / 为你推荐（全部手动触发）
+- 🔥 **全网热榜（主功能）**：以自部署/公共 [NewsNow](https://github.com/newsnext/newsnow) 实例为后端，聚合微博 / 知乎 / 百度 / B站 / 抖音 / 财联社 / 华尔街见闻 / Hacker News / GitHub 等 50+ 站点榜单；视图分类（关注 / 最热 / 实时 / 国内 / 科技 / 财经 / 国际 / 体育）；⭐ 关注源并支持 **GitHub 登录多端同步**（与 NewsNow 网页版数据互通）；收藏、已读标记；AI 摘要 / AI 翻译 / 文章问 AI / AI 今日要闻 / 热点速递（全部手动触发）
 - 🎮 **游戏中心（次要功能）**：俄罗斯方块、2048、贪吃蛇、扫雷、数独、中国象棋、五子棋，多级难度可选，支持 AI 托管
 - 🗨️ **AI 对话**：支持自行配置多家大模型（OpenAI / Anthropic / DeepSeek / 通义千问 / Kimi / 智谱 GLM / Ollama 等），SSE 流式对话
 - 🎙️ **语音输入 + 朗读**：Speech Kit 语音转文字填入输入框，TTS 朗读助手回复
@@ -15,10 +15,10 @@
 - 📊 **上下文预算条**：会话 Token 用量进度可视化，接近上限预警
 - 💾 **会话备份/恢复**：单会话/全部会话导出为 JSON 文件分享，支持从文件导入恢复
 - 🔔 **实况窗（Live View）**：AI 对话生成与游戏 AI 托管进行中，退到后台也能看到进度
-- 📱 **全设备自适应**：手机（底部 4 Tab）、平板、折叠屏自动适配
+- 📱 **全设备自适应**：手机（底部 5 Tab）、平板、折叠屏自动适配
 - 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果 + 全局字号档位
 - 📊 **游戏战绩**：分数记录与历史排行
-- 🔒 **安全加密**：API Key 使用 AES-256-GCM 加密存储，不经过任何第三方
+- 🔒 **安全加密**：API Key 与 NewsNow 登录凭证使用 HUKS AES-256-GCM 加密存储，不经过任何第三方
 - 📋 **AI 调用记录**：记录聊天 / 游戏 AI 托管 / 模型测试的每次调用摘要（场景、模型、耗时、成败），"我的"页可查看与清空
 
 ## 技术栈
@@ -26,9 +26,10 @@
 - **开发语言**：ArkTS
 - **UI 框架**：ArkUI 声明式 + Stage 模型
 - **目标 SDK**：HarmonyOS 6.1.1 (API 24)
-- **数据存储**：RelationalStore (RDB v4) · 6 张持久化表
-- **网络通信**：HTTP 请求 + SSE 流式响应（OpenAI 兼容 / Anthropic 协议）
-- **加密算法**：AES-256-GCM（API Key 加密存储）
+- **数据存储**：RelationalStore (RDB v18) · 热榜收藏/已读/正文缓存/AI 简报
+- **网络通信**：HTTP 请求 + SSE 流式响应（OpenAI 兼容 / Anthropic 协议）；热榜走 NewsNow HTTP API
+- **账号**：ArkWeb 内嵌 GitHub OAuth（NewsNow 登录），JWT 加密存储
+- **加密算法**：AES-256-GCM（HUKS 密钥库，API Key 与登录凭证）
 - **响应式布局**：`@StorageLink` 跨组件状态 + `display` API · 3 档断点
 - **多主题**：ThemePalette 接口 + 6 色彩主题 + 亮/暗模式 + 自定义背景 + 毛玻璃开关 + palette.fs* 全局字号
 
@@ -36,90 +37,48 @@
 
 ```
 zhizon/
-├── AppScope/                  # 应用全局配置
-│   ├── app.json5              # BundleName + 版本
-│   └── resources/
-│
+├── AppScope/                  # 应用全局配置（BundleName + 版本 + 图标）
 ├── doc/
-│   └── DESIGN.md              # 详细设计文档
+│   ├── DESIGN.md              # 详细设计文档
+│   └── newsnow-redesign.md    # 热榜模块设计（接口契约/同步协议/验收清单）
 │
 ├── entry/                     # 主模块
 │   └── src/main/
 │       ├── ets/
-│       │   ├── entryability/  # UIAbility（RDB 初始化 + 沉浸式状态栏 + 主题加载）
-│       │   │   └── EntryAbility.ets
-│       │   │
-│       │   ├── common/        # 主题、常量、导航、难度、大模型、Markdown (11 个文件)
-│       │   │   ├── Theme.ets              # 多主题系统（ThemePalette + 6 配色 + 亮/暗）
-│       │   │   ├── ThemeContracts.ets     # 主题契约接口
-│       │   │   ├── Constants.ets          # 底部导航项 + 全局常量
-│       │   │   ├── Navigation.ets         # NavigationFacade + 页面注册表 + 4 主 Tab
-│       │   │   ├── Difficulty.ets         # 游戏难度 + GameId + GameLaunchFacade
-│       │   │   ├── LlmModels.ets          # 大模型服务商模板 + 配置/消息模型
-│       │   │   ├── MarkdownConverter.ets  # Markdown 解析
-│       │   │   ├── AvatarOptions.ets      # 头像配色
-│       │   │   ├── CryptoHelper.ets       # AES-256-GCM 加密/解密
-│       │   │   ├── DeviceMetrics.ets      # 设备尺寸度量
-│       │   │   └── FailureHandling.ets    # 错误处理工具
-│       │   │
-│       │   ├── model/         # 数据模型 (2 个文件)
-│       │   │   ├── GovernanceModels.ets   # 治理模型
-│       │   │   └── Models.ets             # 通用业务模型
-│       │   │
-│   │   │   └── service/       # 业务服务层 (15 个文件)
-│   │   │       ├── DatabaseHelper.ets     # RDB v4 + 6 表 CRUD
-│       │   │   ├── DataRepository.ets     # 数据门面 + 偏好持久化
-│       │   │   ├── ChatRepository.ets     # AI 会话/消息持久化
-│       │   │   ├── LlmClient.ets          # 大模型客户端（流式/非流式 + 思考控制）
-│       │   │   ├── GameAIService.ets      # 游戏 AI 托管（决策/提示词/动作解析）
-│       │   │   ├── ChineseChessEngine.ets # 中国象棋本地引擎（规则 + 搜索）
-│       │   │   ├── SecurityService.ets    # 安全服务
-│       │   │   ├── BiometricHelper.ets    # 生物认证
-│       │   │   ├── BackgroundImporter.ets # 自定义背景图导入
-│       │   │   ├── SudokuSolver.ets       # 数独求解器
-│       │   │   ├── PickerAdapter.ets      # 文件选择器适配
-│   │   │       ├── WindowEnvironmentProvider.ets # 窗口环境感知
-│   │   │       └── AiCallLogger.ets          # AI 调用日志记录服务
-│       │   │
-│       │   ├── components/    # 通用组件 (12 个)
-│       │   │   ├── TopBar.ets              # 顶栏（响应式 + 自定义返回回调）
-│       │   │   ├── DifficultyOption.ets    # 难度选择项
-│       │   │   ├── FixedBottomNav.ets      # 固定底部导航（4 Tab）
-│       │   │   ├── GlassEffect.ets         # 毛玻璃效果工具
-│       │   │   ├── GlobalBackgroundLayer.ets # 全局背景层
-│       │   │   ├── GameAIPanel.ets         # 游戏 AI 托管控制面板
-│       │   │   ├── ParticleBackground.ets  # 粒子背景
-│       │   │   ├── LockOverlay.ets         # 锁定遮罩
-│       │   │   ├── PrivacyDialog.ets       # 隐私协议弹窗
-│       │   │   └── FontRegistry.ets        # 字体注册
-│       │   │   │   │       └── pages/         # 页面 (16 个)
-│       │       ├── AppShell.ets           # 自适应主框架
-│       │       ├── Index.ets              # 首页（游戏入口 + 最佳战绩）
-│       │       ├── Games.ets              # 游戏中心（6 游戏 + 难度选择器）
-│       │       ├── Chat.ets               # AI 对话（ChatTab，流式输出）
-│       │       ├── Profile.ets            # 我的（用户信息 + 设置入口 + 关于）
-│       │       ├── Settings.ets           # 设置（外观/AI 对话/安全/数据）
-│       │       ├── ChatConfig.ets         # AI 对话配置（服务商/Key/模型）
-│       │       ├── GameHistory.ets        # 游戏历史记录
-│       │       ├── LegalDoc.ets           # 法律文档（用户协议/隐私政策/开源许可）
-│       │       ├── Tetris.ets             # 俄罗斯方块
-│       │       ├── Game2048.ets           # 2048
-│       │       ├── Snake.ets              # 贪吃蛇
-│       │       ├── Minesweeper.ets        # 扫雷
-│       │       ├── Sudoku.ets             # 数独
-│       │       ├── ChineseChess.ets       # 中国象棋（三模式对弈）
-│   │   │       └── AiCallLog.ets          # AI 调用记录（列表/详情/清空）
-│       │
-│       ├── resources/         # 资源文件
-│       └── module.json5       # 模块配置
-│   │
-│   └── src/test/              # 单元测试 (6 个)
-│       ├── DefectClassifierTest.ets
-│       ├── DefectWorkflowTest.ets
-│       ├── GameLaunchFacadeTest.ets
-│       ├── NavigationFacadeTest.ets
-│       ├── WindowEnvironmentProviderTest.ets
-│       └── WindowEnvironmentSnapshotTest.ets
+│       │   ├── entryability/EntryAbility.ets   # RDB/加密/主题初始化 + 热榜启动同步 + 退后台 flush
+│       │   ├── common/        # 主题、导航、模型、工具
+│       │   │   ├── Theme.ets / ThemeState.ets / ThemeContracts.ets   # 多主题系统
+│       │   │   ├── Navigation.ets / AppNavigator.ets                 # 导航门面 + 页面注册表
+│       │   │   ├── HotModels.ets / HotSources.ets / HotFormat.ets    # 热榜模型 / 52 条源目录 / 时间格式化
+│       │   │   ├── LlmModels.ets / MarkdownConverter.ets / CryptoHelper.ets …
+│       │   │   └── PageRefreshBus.ets                                # 宿主 onPageShow 广播（Tab 嵌入页刷新）
+│       │   ├── model/         # 通用业务模型 + 治理模型
+│       │   ├── service/       # 业务服务层
+│       │   │   ├── NewsNowClient.ets   # NewsNow HTTP 客户端（探测/单源/批量/同步）
+│       │   │   ├── NewsNowAuth.ets     # GitHub 登录凭证（HUKS 加密）+ 回跳解析
+│       │   │   ├── NewsNowSync.ets     # 关注列表本地存储 + 云端双向同步
+│       │   │   ├── HotFeedStore.ets    # 榜单内存槽位 + 加载编排
+│       │   │   ├── NewsRepository.ets  # 收藏/已读/正文缓存/简报 + FTS
+│       │   │   ├── NewsAiService.ets   # AI 摘要/翻译/问AI/要闻/速递
+│       │   │   ├── DatabaseHelper.ets  # RDB v18 + 全表 CRUD + 迁移与保留策略
+│       │   │   ├── LlmClient.ets / ChatRepository.ets / ToolRegistry.ets …
+│       │   │   └── CloudSyncService.ets # 华为云备份（排除本机凭证类设置）
+│       │   ├── components/    # 通用组件
+│       │   │   ├── HotSourceCard.ets / HotItemRow.ets / HotSourceBadge.ets   # 热榜卡片 / 条目行 / 源徽标
+│       │   │   ├── TopBar.ets / FixedBottomNav.ets / GlassEffect.ets / SettingGroupCard.ets …
+│       │   └── pages/         # 页面（38 个）
+│       │       ├── AppShell.ets        # 自适应主框架（底部 Tab / 侧边栏）
+│       │       ├── Index.ets           # 热榜首页（视图 Tabs + 源卡片流）
+│       │       ├── HotBoard.ets        # 单源榜单
+│       │       ├── NewsDetail.ets      # 条目详情（ArkWeb + AI 面板 + 朗读）
+│       │       ├── NewsDigest.ets      # AI 今日要闻 / 热点速递
+│       │       ├── NewsFavorites.ets / NewsSearch.ets / NewsSettings.ets / NewsLogin.ets
+│       │       ├── Chat.ets / ChatConfig.ets / AiModelPage.ets / AiRoleLibrary.ets / AiCallLog.ets
+│       │       ├── Games.ets / Tetris.ets / Game2048.ets / Snake.ets / Minesweeper.ets / Sudoku.ets / ChineseChess.ets / Gomoku.ets
+│       │       ├── Profile.ets / Settings.ets / AppearanceSettings.ets / LegalDoc.ets / Achievements.ets
+│       │       └── BettaFish*.ets      # 微舆（分析进度 / 报告 / 服务器配置 / 系统）
+│       ├── resources/         # 资源文件（颜色/字符串/字体/音效/页面清单）
+│       └── module.json5       # 模块配置与权限
 │
 ├── build-profile.json5        # 根构建配置
 ├── oh-package.json5
@@ -131,8 +90,8 @@ zhizon/
 
 | 页面 | 说明 |
 |------|------|
-| AppShell | 自适应主框架（手机底部 4 Tab / 平板侧边栏） |
-| Index | 资讯首页（问候栏 + AI 今日要闻入口 + 频道 Tabs + 资讯流 + 下拉刷新/上拉加载） |
+| AppShell | 自适应主框架（手机底部 5 Tab / 平板侧边栏） |
+| Index | 热榜首页（问候栏 + AI 今日要闻入口 + 视图 Tabs + 源卡片流 + 下拉刷新/单源刷新/⭐关注） |
 | Games | 游戏中心（7 游戏 + 难度选择器 + 长按查看帮助） |
 | Chat | AI 对话（SSE 流式输出 + 会话管理 + 语音输入 + 联网搜索 + 斜杠命令） |
 | Profile | 我的（用户信息 + 设置入口 + 关于） |
@@ -148,12 +107,36 @@ zhizon/
 | ChineseChess | 中国象棋（人机 / 人对AI / AI对AI + 悔棋 + 记谱） |
 | Gomoku | 五子棋（人机 / 人对AI / AI对AI + 模型可选 + 悔棋 + AI 提示） |
 | AiCallLog | AI 调用记录（场景/模型/耗时/成败列表 + 详情展开 + 清空） |
-| NewsDetail | 新闻详情（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI/朗读 + 离线正文缓存 + 分享） |
-| NewsDigest | AI 今日要闻 / 热点速递（手动生成，Markdown 渲染 + 原文链接 + 模型切换） |
-| NewsFavorites | 收藏 / 稍后读列表 |
-| NewsRecommend | 为你推荐（基于收藏历史 + AI 排序） |
-| NewsSearch | 新闻搜索（跨源关键词 + AI 汇总） |
-| NewsStats | 资讯统计（收藏/已读/AI 调用数 + 清空阅读记录） |
+| NewsDetail | 条目详情（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI/朗读 + 离线正文缓存 + 分享） |
+| HotBoard | 单源榜单（完整 30 条 + 下拉强制刷新 + ⭐关注 + 源站入口） |
+| NewsDigest | AI 今日要闻 / 热点速递（跨源汇总，手动生成，Markdown 渲染 + 模型切换） |
+| NewsFavorites | 收藏列表 |
+| NewsSearch | 热榜搜索（已加载榜单 + 收藏 + 离线正文缓存 + AI 汇总） |
+| NewsSettings | 热榜设置（服务器地址 / NewsNow 账号 / 关注管理 / 数据清理 / 关于数据源） |
+| NewsLogin | NewsNow GitHub 登录（ArkWeb 拦截 OAuth 回跳） |
+| ReadingReport | 阅读周报（近 7 天阅读/收藏/AI 调用） |
+
+## 热榜后端（NewsNow）
+
+热榜数据由 [NewsNow](https://github.com/newsnext/newsnow) 服务端提供，App 只做展示与本地偏好，**不解析任何源站页面**。
+
+**1. 准备一个服务端**（二选一）
+
+- 自建（推荐）：仓库自带 Docker 与 Cloudflare Pages 两种部署方式
+  ```bash
+  git clone https://github.com/newsnext/newsnow && cd newsnow
+  docker compose up          # 或按 README 部署到 Cloudflare Pages + D1
+  ```
+- 直接使用公共实例：`https://newsnow.busiyi.world`（默认值）
+
+**2. 在 App 内配置**：`我的 → 热榜设置 → 后端服务器` 填入地址，点「测试连接」会请求 `{地址}/api/latest` 并显示服务版本号；地址变更后自动清空内存榜单。
+
+**3. 登录（可选）**：`热榜设置 → NewsNow 账号 → 使用 GitHub 登录`，内嵌 ArkWeb 完成 OAuth，凭证用本机 HUKS 密钥 AES-256-GCM 加密保存。登录后：
+
+- 下拉刷新会请求服务端**真实抓取**最新数据（未登录只能拿到服务端缓存）
+- 「关注」的源列表与 NewsNow 网页版**双向同步**（标星后 10 秒防抖上传，`updatedTime` 新者覆盖）
+
+> 接口契约、同步协议与验收清单见 [热榜模块设计文档](doc/newsnow-redesign.md)。
 
 ## AI 对话功能
 
@@ -212,6 +195,7 @@ zhizon/
 
 ## 新增能力（本轮迭代）
 
+- 🔥 **热榜模块重构（v9.0）**：资讯域从「客户端直连 RSS/多源抓取 + 本地推荐画像」整体替换为 [NewsNow](https://github.com/newsnext/newsnow) 后端驱动的全网热榜；新增 52 条源目录、视图 Tabs、单源榜单页、源关注、NewsNow GitHub 登录与关注多端同步；**删除**旧抓取/推荐/画像/标签模块共 14 个源码文件与 11 张数据表（DB v18 直接丢弃），净减约 3000 行；设计见 [newsnow-redesign.md](doc/newsnow-redesign.md)
 - ☁️ **华为账号 + 云同步**：接入 Account Kit（华为账号登录，获取昵称/头像）；Cloud Foundation Kit 云存储备份/恢复配置、战绩、成就与全部对话；未配置 AGC 时自动降级为本地备份，配置步骤见 [云同步接入说明](doc/cloud-sync-setup.md)
 - 🎬 **对局回放**：2048、贪吃蛇、五子棋自动录制对局（动作 + 随机格/食物），「我的 → 对局回放」查看、回放（1x/2x/4x）、删除
 - 🚀 **长列表性能**：会话抽屉、游戏战绩、AI 调用记录改用 `LazyForEach` 懒加载（通用 `LazyListDataSource`）
@@ -220,11 +204,13 @@ zhizon/
 - 📷 **端侧 AI（Core Vision Kit）**：聊天输入条「📷」按钮选图，端侧 OCR 识别文字（不出网）并填入输入框，可继续让 AI 翻译/总结
 - 📈 **战绩可视化**：「我的 → 战绩统计」，按游戏查看总局数/最高分/平均分/胜率与最近 20 局得分趋势图（Canvas 绘制）
 - 🏆 **排行榜**：「我的 → 排行榜」，本地高分榜；Game Service Kit 云端排行预留（待 AGC 游戏服务开放后接入）
-- 🤖 **AI 对话 Agent 化（P0）**：「设置 → Agent → Agent 模式」开启后，AI 可主动调用工具（计算器 / 当前时间 / 联网搜索）分步完成任务，展示工具执行步骤，可停止；关闭时保持原纯文本对话
+- 🤖 **AI 对话 Agent 化（P0）**：「设置 → Agent → Agent 模式」开启后，AI 可主动调用工具（计算器 / 当前时间 / 联网搜索 / 热榜检索）分步完成任务，展示工具执行步骤，可停止；关闭时保持原纯文本对话
 
 ## 详细文档
 
-完整的架构设计、数据模型、UI 规范等详见 [详细设计文档](doc/DESIGN.md)。
+- 架构设计、数据模型、UI 规范：[详细设计文档](doc/DESIGN.md)
+- 热榜模块（接口契约 / 同步协议 / 实施与验收清单）：[热榜模块设计](doc/newsnow-redesign.md)
+- 云同步接入：[云同步接入说明](doc/cloud-sync-setup.md)
 
 ## AI 开发声明
 

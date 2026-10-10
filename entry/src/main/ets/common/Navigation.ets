@@ -17,13 +17,10 @@ export enum PageKey {
   NewsDetail = 'NewsDetail',
   NewsDigest = 'NewsDigest',
   NewsFavorites = 'NewsFavorites',
-  NewsRecommend = 'NewsRecommend',
   NewsSearch = 'NewsSearch',
-  NewsStats = 'NewsStats',
-  NewsLikes = 'NewsLikes',
-  NewsProfile = 'NewsProfile',
-  NewsSourceSettings = 'NewsSourceSettings',
-  NewsChannelSettings = 'NewsChannelSettings',
+  NewsSettings = 'NewsSettings',
+  HotBoard = 'HotBoard',
+  NewsLogin = 'NewsLogin',
   GameSettings = 'GameSettings',
   BettaFish = 'BettaFish',
   BettaFishProgress = 'BettaFishProgress',
@@ -214,13 +211,10 @@ export function pageFromString(key: string): PageKey | null {
   if (key === PageKey.NewsDetail) return PageKey.NewsDetail;
   if (key === PageKey.NewsDigest) return PageKey.NewsDigest;
   if (key === PageKey.NewsFavorites) return PageKey.NewsFavorites;
-  if (key === PageKey.NewsRecommend) return PageKey.NewsRecommend;
   if (key === PageKey.NewsSearch) return PageKey.NewsSearch;
-  if (key === PageKey.NewsStats) return PageKey.NewsStats;
-  if (key === PageKey.NewsLikes) return PageKey.NewsLikes;
-  if (key === PageKey.NewsProfile) return PageKey.NewsProfile;
-  if (key === PageKey.NewsSourceSettings) return PageKey.NewsSourceSettings;
-  if (key === PageKey.NewsChannelSettings) return PageKey.NewsChannelSettings;
+  if (key === PageKey.NewsSettings) return PageKey.NewsSettings;
+  if (key === PageKey.HotBoard) return PageKey.HotBoard;
+  if (key === PageKey.NewsLogin) return PageKey.NewsLogin;
   if (key === PageKey.GameSettings) return PageKey.GameSettings;
   if (key === PageKey.BettaFish) return PageKey.BettaFish;
   if (key === PageKey.BettaFishProgress) return PageKey.BettaFishProgress;

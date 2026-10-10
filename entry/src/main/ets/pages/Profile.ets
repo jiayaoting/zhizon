@@ -1,4 +1,4 @@
-// 智子 - 我的页（身份卡 + 业务分组入口：资讯/游戏/AI）
+// 智子 - 我的页（身份卡 + 业务分组入口：热榜/游戏/AI）
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
@@ -6,7 +6,7 @@ import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { SettingRow } from '../components/SettingRow';
 import { DataRepository } from '../service/DataRepository';
 import { HuaweiAccountService } from '../service/HuaweiAccountService';
-import { NewsRepository, NewsStats } from '../service/NewsRepository';
+import { NewsRepository, HotStats } from '../service/NewsRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 
 @ComponentV2
@@ -14,7 +14,7 @@ export struct ProfilePage {
   @Local avatarId: string = 'liquid';
   @Local avatarUri: string = '';
   @Local huaweiNick: string = '';
-  @Local stats: NewsStats = { favoriteCount: 0, readCount: 0, aiCallCount: 0 };
+  @Local stats: HotStats = { favoriteCount: 0, readCount: 0, aiCallCount: 0 };
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Event onNavigate: (key: string) => void = () => {};
 
@@ -133,10 +133,10 @@ export struct ProfilePage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // 三格数据（收藏 / 已读 / AI 资讯调用）
+      // 三格数据（收藏 / 已读 / AI 调用）
       Row({ space: 8 }) {
         this.statCell('⭐', this.stats.favoriteCount, '收藏', () => { AppNavigator.push('pages/NewsFavorites'); })
-        this.statCell('👁', this.stats.readCount, '已读', () => { AppNavigator.push('pages/NewsStats'); })
+        this.statCell('👁', this.stats.readCount, '已读', () => { AppNavigator.push('pages/ReadingReport'); })
         this.statCell('🤖', this.stats.aiCallCount, 'AI 调用', () => { AppNavigator.push('pages/AiCallLog'); })
       }
       .width('100%')
@@ -184,18 +184,16 @@ export struct ProfilePage {
   @Builder
   newsGroup() {
     Column({ space: 10 }) {
-      Text('资讯')
+      Text('热榜')
         .fontSize(this.themeState.palette.fsMd)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
         .width('100%')
       Column({ space: 8 }) {
-        SettingRow({ icon: '⭐', title: '收藏 / 稍后读', rowClick: () => { AppNavigator.push('pages/NewsFavorites'); } })
-        SettingRow({ icon: '👍', title: '我的点赞', rowClick: () => { AppNavigator.push('pages/NewsLikes'); } })
-        SettingRow({ icon: '🎯', title: '为你推荐', rowClick: () => { AppNavigator.push('pages/NewsRecommend'); } })
-        SettingRow({ icon: '🧠', title: '个性化画像', rowClick: () => { AppNavigator.push('pages/NewsProfile'); } })
-        SettingRow({ icon: '📊', title: '资讯统计', rowClick: () => { AppNavigator.push('pages/NewsStats'); } })
+        SettingRow({ icon: '📰', title: '热榜设置', rowClick: () => { AppNavigator.push('pages/NewsSettings'); } })
+        SettingRow({ icon: '⭐', title: '收藏', rowClick: () => { AppNavigator.push('pages/NewsFavorites'); } })
+        SettingRow({ icon: '🔍', title: '搜索热榜', rowClick: () => { AppNavigator.push('pages/NewsSearch'); } })
         SettingRow({ icon: '📅', title: '阅读周报', rowClick: () => { AppNavigator.push('pages/ReadingReport'); } })
       }
       .width('100%')

@@ -3,7 +3,7 @@ import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AffectedFeature, DefectInput, DefectRecord, DefectSeverity, DefectStateHistory, DefectStatus, EvidenceConclusion, EvidenceType, FixEvidence, FixResult } from '../model/GovernanceModels';
-import { NewsItem, NewsDigestEntry, NewsRating } from '../common/NewsModels';
+import { HotDigestEntry } from '../common/HotModels';
 
 export interface GameScoreRecord {
   game: string;
@@ -61,55 +61,21 @@ export interface AiTokenStats {
   totalTokens: number;
 }
 
-// 新闻收藏条目（news_favorites 行）
-export interface NewsFavoriteEntry {
-  id: string;
-  url: string;
-  title: string;
-  summary: string;
-  imageUrl: string;
+// 热榜收藏条目（hot_favorites 行）
+export interface HotFavoriteEntry {
+  key: string;
+  sourceId: string;
   sourceName: string;
+  title: string;
+  url: string;
+  info: string;
   addedAt: number;
 }
 
-// 新闻正文缓存条目（news_article_cache 行）
-export interface NewsArticleCacheEntry {
+// 热榜正文缓存条目（hot_article_cache 行）
+export interface HotArticleCacheEntry {
   title: string;
   html: string;
-}
-
-// 赞/踩状态行（news_ratings 行）
-export interface NewsRatingEntry {
-  url: string;
-  rating: number;
-  itemId: string;
-  title: string;
-  summary: string;
-  imageUrl: string;
-  sourceName: string;
-  category: string;
-  publishedAt: number;
-  tagsJson: string;
-  updatedAt: number;
-}
-
-// 标签缓存行（news_tags 行）
-export interface NewsTagEntry {
-  url: string;
-  tagsJson: string;
-  sourceType: string;
-  model: string;
-  updatedAt: number;
-}
-
-// 翻译缓存行（news_translations 行）
-export interface NewsTranslationEntry {
-  url: string;
-  kind: string;      // title / body
-  langPair: string;  // en->zh / zh->en
-  text: string;
-  model: string;
-  updatedAt: number;
 }
 
 // 阅读周报统计结果（日期标签按时间升序，旧 → 新）
@@ -140,7 +106,7 @@ export class WeeklyReadingStats {
 }
 
 const DB_NAME = 'zhizon.db';
-const DB_VERSION = 17;
+const DB_VERSION = 18;
 const DB_DOMAIN = 0x9201;
 
 const SQL_CREATE_SETTINGS = `
@@ -262,56 +228,38 @@ const SQL_CREATE_CHAT_AGENT_STEPS = `CREATE TABLE IF NOT EXISTS chat_agent_steps
   started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL
 )`;
 
-// 新闻资讯（v14）：收藏 / 已读 / AI 今日要闻缓存
-const SQL_CREATE_NEWS_FAVORITES = `CREATE TABLE IF NOT EXISTS news_favorites (
-  id TEXT PRIMARY KEY, url TEXT NOT NULL, title TEXT NOT NULL,
-  summary TEXT DEFAULT '', image_url TEXT DEFAULT '', source_name TEXT DEFAULT '',
+// 热榜（v18）：收藏 / 已读 / AI 今日要闻缓存（旧 news_* 表在 v18 迁移中丢弃）
+const SQL_CREATE_HOT_FAVORITES = `CREATE TABLE IF NOT EXISTS hot_favorites (
+  key TEXT PRIMARY KEY, source_id TEXT NOT NULL, source_name TEXT DEFAULT '',
+  title TEXT NOT NULL, url TEXT NOT NULL, info TEXT DEFAULT '',
   added_at INTEGER NOT NULL
 )`;
-const SQL_CREATE_NEWS_READ = `CREATE TABLE IF NOT EXISTS news_read (
-  url TEXT PRIMARY KEY, read_at INTEGER NOT NULL
+const SQL_CREATE_HOT_READ = `CREATE TABLE IF NOT EXISTS hot_read (
+  key TEXT PRIMARY KEY, read_at INTEGER NOT NULL
 )`;
-const SQL_CREATE_NEWS_DIGESTS = `CREATE TABLE IF NOT EXISTS news_digests (
+const SQL_CREATE_HOT_DIGESTS = `CREATE TABLE IF NOT EXISTS hot_digests (
   id TEXT PRIMARY KEY, date TEXT NOT NULL, content TEXT NOT NULL,
   model_name TEXT DEFAULT '', created_at INTEGER NOT NULL
 )`;
-// 新闻频道快照缓存（离线阅读，v14）
-const SQL_CREATE_NEWS_CACHE = `CREATE TABLE IF NOT EXISTS news_cache (
-  channel_id TEXT PRIMARY KEY, items_json TEXT NOT NULL, cached_at INTEGER NOT NULL
-)`;
-// 新闻正文缓存（离线全文阅读，v14）
-const SQL_CREATE_NEWS_ARTICLE_CACHE = `CREATE TABLE IF NOT EXISTS news_article_cache (
+// 详情页正文缓存（离线阅读 + AI 摘要/翻译正文来源）
+const SQL_CREATE_HOT_ARTICLE_CACHE = `CREATE TABLE IF NOT EXISTS hot_article_cache (
   url TEXT PRIMARY KEY, title TEXT NOT NULL, html TEXT NOT NULL, cached_at INTEGER NOT NULL
 )`;
-// 个性化推荐（v15）：标签缓存 / 赞踩状态 / 行为流水 / 单篇排除 / 画像快照 / 翻译缓存
-const SQL_CREATE_NEWS_TAGS = `CREATE TABLE IF NOT EXISTS news_tags (
-  url TEXT PRIMARY KEY, tags_json TEXT NOT NULL, source_type TEXT DEFAULT 'rule',
-  model TEXT DEFAULT '', updated_at INTEGER NOT NULL
-)`;
-const SQL_CREATE_NEWS_RATINGS = `CREATE TABLE IF NOT EXISTS news_ratings (
-  url TEXT PRIMARY KEY, rating INTEGER NOT NULL, item_id TEXT DEFAULT '',
-  title TEXT NOT NULL, summary TEXT DEFAULT '', image_url TEXT DEFAULT '',
-  source_name TEXT DEFAULT '', category TEXT DEFAULT '', published_at INTEGER DEFAULT 0,
-  tags_json TEXT DEFAULT '', updated_at INTEGER NOT NULL
-)`;
-const SQL_CREATE_NEWS_EVENTS = `CREATE TABLE IF NOT EXISTS news_events (
-  id TEXT PRIMARY KEY, url TEXT NOT NULL, item_id TEXT DEFAULT '',
-  event_type TEXT NOT NULL, weight REAL DEFAULT 0, extra_json TEXT DEFAULT '',
-  occurred_at INTEGER NOT NULL
-)`;
-const SQL_CREATE_NEWS_EVENTS_URL_IDX = 'CREATE INDEX IF NOT EXISTS idx_news_events_url ON news_events(url)';
-const SQL_CREATE_NEWS_EVENTS_TIME_IDX = 'CREATE INDEX IF NOT EXISTS idx_news_events_time ON news_events(occurred_at)';
-const SQL_CREATE_NEWS_EXCLUSIONS = `CREATE TABLE IF NOT EXISTS news_exclusions (
-  type TEXT NOT NULL, value TEXT NOT NULL, reason TEXT DEFAULT '',
-  created_at INTEGER NOT NULL, PRIMARY KEY (type, value)
-)`;
-const SQL_CREATE_NEWS_PROFILE = `CREATE TABLE IF NOT EXISTS news_profile (
-  key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL
-)`;
-const SQL_CREATE_NEWS_TRANSLATIONS = `CREATE TABLE IF NOT EXISTS news_translations (
-  url TEXT PRIMARY KEY, kind TEXT NOT NULL, lang_pair TEXT NOT NULL,
-  text TEXT NOT NULL, model TEXT DEFAULT '', updated_at INTEGER NOT NULL
-)`;
+// v18：旧新闻域 11 张表 + 旧 FTS 表（无历史兼容要求，直接丢弃）
+const SQL_DROP_LEGACY_NEWS_TABLES: string[] = [
+  'DROP TABLE IF EXISTS news_favorites',
+  'DROP TABLE IF EXISTS news_read',
+  'DROP TABLE IF EXISTS news_digests',
+  'DROP TABLE IF EXISTS news_cache',
+  'DROP TABLE IF EXISTS news_article_cache',
+  'DROP TABLE IF EXISTS news_tags',
+  'DROP TABLE IF EXISTS news_ratings',
+  'DROP TABLE IF EXISTS news_events',
+  'DROP TABLE IF EXISTS news_exclusions',
+  'DROP TABLE IF EXISTS news_profile',
+  'DROP TABLE IF EXISTS news_translations',
+  'DROP TABLE IF EXISTS news_articles_fts'
+];
 
 // 微舆 BettaFish（v17）：服务器配置（多套管理 + 论坛轮询断点）
 const SQL_CREATE_BETTA_SERVERS = `CREATE TABLE IF NOT EXISTS bettafish_servers (
@@ -347,21 +295,19 @@ const SQL_CREATE_BETTA_HISTORY = `CREATE TABLE IF NOT EXISTS bettafish_history (
 // 查询/清理用索引（CREATE INDEX IF NOT EXISTS，幂等）
 const SQL_CREATE_IDX_GAME_SCORES = 'CREATE INDEX IF NOT EXISTS idx_game_scores_game_score ON game_scores(game, score)';
 const SQL_CREATE_IDX_AI_CALL_LOGS_START_TIME = 'CREATE INDEX IF NOT EXISTS idx_ai_call_logs_start_time ON ai_call_logs(start_time)';
-const SQL_CREATE_IDX_NEWS_READ_READ_AT = 'CREATE INDEX IF NOT EXISTS idx_news_read_read_at ON news_read(read_at)';
-const SQL_CREATE_IDX_NEWS_FAVORITES_ADDED_AT = 'CREATE INDEX IF NOT EXISTS idx_news_favorites_added_at ON news_favorites(added_at)';
+const SQL_CREATE_IDX_HOT_READ_READ_AT = 'CREATE INDEX IF NOT EXISTS idx_hot_read_at ON hot_read(read_at)';
+const SQL_CREATE_IDX_HOT_FAVORITES_ADDED_AT = 'CREATE INDEX IF NOT EXISTS idx_hot_favorites_added_at ON hot_favorites(added_at)';
 
-// 已读标记 upsert（url 为主键，一次写完成）
-const SQL_UPSERT_NEWS_READ = 'INSERT OR REPLACE INTO news_read (url, read_at) VALUES (?, ?)';
+// 已读标记 upsert（key 为主键，一次写完成）
+const SQL_UPSERT_HOT_READ = 'INSERT OR REPLACE INTO hot_read (key, read_at) VALUES (?, ?)';
 
 // 保留策略：过期数据清理（executeSql + bindArgs 参数化，禁止字符串拼值）
 const SQL_RETENTION_CHAT_AGENT_STEPS = 'DELETE FROM chat_agent_steps WHERE started_at < ?';
 const SQL_RETENTION_AI_CALL_LOGS = 'DELETE FROM ai_call_logs WHERE start_time < ?';
-const SQL_RETENTION_NEWS_READ = 'DELETE FROM news_read WHERE read_at < ?';
-const SQL_RETENTION_NEWS_ARTICLE_CACHE = 'DELETE FROM news_article_cache WHERE cached_at < ?';
+const SQL_RETENTION_HOT_READ = 'DELETE FROM hot_read WHERE read_at < ?';
+const SQL_RETENTION_HOT_ARTICLE_CACHE = 'DELETE FROM hot_article_cache WHERE cached_at < ?';
 const SQL_RETENTION_GAME_REPLAYS = 'DELETE FROM game_replays WHERE created_at < ?';
 const SQL_RETENTION_CHAT_MESSAGES = 'DELETE FROM chat_messages WHERE time < ?';
-// 行为流水 90 天自动清理（画像已落快照，事件仅用于审计/重算）
-const SQL_RETENTION_NEWS_EVENTS = 'DELETE FROM news_events WHERE occurred_at < ?';
 
 // ========== SQLite FTS5 全文索引（设备支持时启用，不支持自动回退 LIKE） ==========
 // 优先 trigram 分词（中英文子串匹配），失败再退回默认分词；均失败则 ftsReady=false
@@ -369,16 +315,16 @@ const SQL_CREATE_CHAT_FTS_TRIGRAM = "CREATE VIRTUAL TABLE IF NOT EXISTS chat_mes
   "USING fts5(session_id UNINDEXED, role UNINDEXED, content, reasoning, tokenize='trigram')";
 const SQL_CREATE_CHAT_FTS_PLAIN = 'CREATE VIRTUAL TABLE IF NOT EXISTS chat_messages_fts ' +
   'USING fts5(session_id UNINDEXED, role UNINDEXED, content, reasoning)';
-const SQL_CREATE_NEWS_FTS_TRIGRAM = "CREATE VIRTUAL TABLE IF NOT EXISTS news_articles_fts " +
-  "USING fts5(kind UNINDEXED, url UNINDEXED, title, body, tokenize='trigram')";
-const SQL_CREATE_NEWS_FTS_PLAIN = 'CREATE VIRTUAL TABLE IF NOT EXISTS news_articles_fts ' +
-  'USING fts5(kind UNINDEXED, url UNINDEXED, title, body)';
+const SQL_CREATE_HOT_FTS_TRIGRAM = "CREATE VIRTUAL TABLE IF NOT EXISTS hot_articles_fts " +
+  "USING fts5(kind UNINDEXED, key UNINDEXED, title, body, tokenize='trigram')";
+const SQL_CREATE_HOT_FTS_PLAIN = 'CREATE VIRTUAL TABLE IF NOT EXISTS hot_articles_fts ' +
+  'USING fts5(kind UNINDEXED, key UNINDEXED, title, body)';
 
 export class DatabaseHelper {
   private static store: relationalStore.RdbStore | null = null;
   // FTS5 虚拟表可用标记（init 时探测；不可用时搜索自动回退 LIKE）
   private static chatFtsReady: boolean = false;
-  private static newsFtsReady: boolean = false;
+  private static hotFtsReady: boolean = false;
 
   // 初始化数据库
   static async init(context: common.Context): Promise<void> {
@@ -412,23 +358,13 @@ export class DatabaseHelper {
     await DatabaseHelper.store.executeSql(SQL_CREATE_GAME_REPLAYS);
     // Agent 执行步骤（v13）
     await DatabaseHelper.store.executeSql(SQL_CREATE_CHAT_AGENT_STEPS);
-    // 新闻资讯（v14）
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_FAVORITES);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_NEWS_FAVORITES_ADDED_AT);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_READ);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_NEWS_READ_READ_AT);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_DIGESTS);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_CACHE);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_ARTICLE_CACHE);
-    // 个性化推荐（v15）
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_TAGS);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_RATINGS);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS_URL_IDX);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EVENTS_TIME_IDX);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_EXCLUSIONS);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_PROFILE);
-    await DatabaseHelper.store.executeSql(SQL_CREATE_NEWS_TRANSLATIONS);
+    // 热榜（v18）
+    await DatabaseHelper.store.executeSql(SQL_CREATE_HOT_FAVORITES);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_HOT_FAVORITES_ADDED_AT);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_HOT_READ);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_IDX_HOT_READ_READ_AT);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_HOT_DIGESTS);
+    await DatabaseHelper.store.executeSql(SQL_CREATE_HOT_ARTICLE_CACHE);
     // 微舆 BettaFish（v17）
     await DatabaseHelper.store.executeSql(SQL_CREATE_BETTA_SERVERS);
     await DatabaseHelper.store.executeSql(SQL_CREATE_BETTA_HISTORY);
@@ -446,8 +382,8 @@ export class DatabaseHelper {
   private static async initFtsTables(): Promise<void> {
     DatabaseHelper.chatFtsReady = await DatabaseHelper.tryCreateFtsTable(SQL_CREATE_CHAT_FTS_TRIGRAM,
       SQL_CREATE_CHAT_FTS_PLAIN, 'chat_messages_fts');
-    DatabaseHelper.newsFtsReady = await DatabaseHelper.tryCreateFtsTable(SQL_CREATE_NEWS_FTS_TRIGRAM,
-      SQL_CREATE_NEWS_FTS_PLAIN, 'news_articles_fts');
+    DatabaseHelper.hotFtsReady = await DatabaseHelper.tryCreateFtsTable(SQL_CREATE_HOT_FTS_TRIGRAM,
+      SQL_CREATE_HOT_FTS_PLAIN, 'hot_articles_fts');
   }
 
   private static async tryCreateFtsTable(sqlTrigram: string, sqlPlain: string, name: string): Promise<boolean> {
@@ -471,8 +407,8 @@ export class DatabaseHelper {
     return DatabaseHelper.chatFtsReady;
   }
 
-  static isNewsFtsReady(): boolean {
-    return DatabaseHelper.newsFtsReady;
+  static isHotFtsReady(): boolean {
+    return DatabaseHelper.hotFtsReady;
   }
 
   // 版本门控迁移：读取 store.version，只对 version < 目标版本的步骤执行 ALTER。
@@ -490,6 +426,12 @@ export class DatabaseHelper {
         // 列已存在（新库或已补过列）则跳过，避免重复加列
         if (await DatabaseHelper.tableHasColumn(store, step.table, step.column)) continue;
         await store.executeSql(step.sql);
+      }
+      // v18：新闻域整体重做为热榜（NewsNow 后端），旧表无历史兼容需求，直接丢弃
+      if (current < 18) {
+        for (let i: number = 0; i < SQL_DROP_LEGACY_NEWS_TABLES.length; i++) {
+          await store.executeSql(SQL_DROP_LEGACY_NEWS_TABLES[i]);
+        }
       }
       store.version = DB_VERSION;
       await store.commit();
@@ -520,11 +462,9 @@ export class DatabaseHelper {
     await DatabaseHelper.deleteExpired(store, SQL_RETENTION_CHAT_AGENT_STEPS, now - 90 * dayMs, 'chat_agent_steps');
     await DatabaseHelper.deleteExpired(store, SQL_RETENTION_AI_CALL_LOGS, now - 90 * dayMs, 'ai_call_logs');
     // 注意：不动 ai_token_stats 累计表（只增不减，独立于调用记录）
-    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_NEWS_READ, now - 90 * dayMs, 'news_read');
-    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_NEWS_ARTICLE_CACHE, now - 30 * dayMs, 'news_article_cache');
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_HOT_READ, now - 90 * dayMs, 'hot_read');
+    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_HOT_ARTICLE_CACHE, now - 30 * dayMs, 'hot_article_cache');
     await DatabaseHelper.deleteExpired(store, SQL_RETENTION_GAME_REPLAYS, now - 180 * dayMs, 'game_replays');
-    // 行为流水 90 天自动清理（保留原启动清理行为）
-    await DatabaseHelper.deleteExpired(store, SQL_RETENTION_NEWS_EVENTS, now - 90 * dayMs, 'news_events');
     // 聊天消息保留天数由设置决定：默认 365 天，'0' 表示不清理
     let retentionDays: number = 365;
     try {
@@ -711,7 +651,7 @@ export class DatabaseHelper {
     }
   }
 
-  // ========== 阅读周报（近 7 天阅读/收藏/AI 资讯调用） ==========
+  // ========== 阅读周报（近 7 天阅读/收藏/AI 调用） ==========
 
   // 近 7 天阅读周报（含今天；AI 调用统计 news 场景日志）
   static async getWeeklyReadingStats(): Promise<WeeklyReadingStats> {
@@ -727,8 +667,8 @@ export class DatabaseHelper {
       const dayStart: number = now.getTime() - i * dayMs;
       const nextStart: number = dayStart + dayMs;
       dates.push(DatabaseHelper.weekDayLabel(new Date(dayStart)));
-      reads.push(await DatabaseHelper.countBetween(store, 'news_read', 'read_at', dayStart, nextStart, ''));
-      favorites.push(await DatabaseHelper.countBetween(store, 'news_favorites', 'added_at', dayStart, nextStart, ''));
+      reads.push(await DatabaseHelper.countBetween(store, 'hot_read', 'read_at', dayStart, nextStart, ''));
+      favorites.push(await DatabaseHelper.countBetween(store, 'hot_favorites', 'added_at', dayStart, nextStart, ''));
       aiCalls.push(await DatabaseHelper.countBetween(store, 'ai_call_logs', 'start_time', dayStart, nextStart,
         " AND type LIKE 'news%'"));
     }
@@ -1288,13 +1228,13 @@ export class DatabaseHelper {
     }
   }
 
-  // ========== 新闻资讯：收藏 ==========
+  // ========== 热榜：收藏 ==========
 
-  static async isNewsFavorite(url: string): Promise<boolean> {
+  static async isHotFavorite(key: string): Promise<boolean> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_favorites');
-      predicates.equalTo('url', url);
+      const predicates = new relationalStore.RdbPredicates('hot_favorites');
+      predicates.equalTo('key', key);
       const resultSet = await store.query(predicates);
       try {
         return resultSet.goToNextRow();
@@ -1306,53 +1246,54 @@ export class DatabaseHelper {
     }
   }
 
-  static async addNewsFavorite(item: NewsItem): Promise<void> {
-    const exists: boolean = await DatabaseHelper.isNewsFavorite(item.url);
-    if (exists) return;
+  static async addHotFavorite(entry: HotFavoriteEntry): Promise<void> {
     const store = DatabaseHelper.getStore();
-    const id: string = 'fav-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
-    const valueBucket: relationalStore.ValuesBucket = {
-      id: id,
-      url: item.url,
-      title: item.title,
-      summary: item.summary,
-      image_url: item.imageUrl,
-      source_name: item.sourceName,
-      added_at: Date.now()
-    };
     try {
-      await store.insert('news_favorites', valueBucket);
+      // 按 key 先删后插，保证幂等
+      const del = new relationalStore.RdbPredicates('hot_favorites');
+      del.equalTo('key', entry.key);
+      await store.delete(del);
+      const valueBucket: relationalStore.ValuesBucket = {
+        key: entry.key,
+        source_id: entry.sourceId,
+        source_name: entry.sourceName,
+        title: entry.title,
+        url: entry.url,
+        info: entry.info,
+        added_at: entry.addedAt
+      };
+      await store.insert('hot_favorites', valueBucket);
     } catch (e) {
     }
   }
 
-  static async removeNewsFavorite(url: string): Promise<void> {
+  static async removeHotFavorite(key: string): Promise<void> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_favorites');
-      predicates.equalTo('url', url);
+      const predicates = new relationalStore.RdbPredicates('hot_favorites');
+      predicates.equalTo('key', key);
       await store.delete(predicates);
     } catch (e) {
     }
   }
 
-  static async listNewsFavorites(): Promise<NewsFavoriteEntry[]> {
+  static async listHotFavorites(): Promise<HotFavoriteEntry[]> {
     const store = DatabaseHelper.getStore();
-    const results: NewsFavoriteEntry[] = [];
+    const results: HotFavoriteEntry[] = [];
     try {
-      const predicates = new relationalStore.RdbPredicates('news_favorites');
+      const predicates = new relationalStore.RdbPredicates('hot_favorites');
       predicates.orderByDesc('added_at');
       const resultSet = await store.query(predicates);
       while (resultSet.goToNextRow()) {
         results.push({
-          id: resultSet.getString(resultSet.getColumnIndex('id')),
-          url: resultSet.getString(resultSet.getColumnIndex('url')),
-          title: resultSet.getString(resultSet.getColumnIndex('title')),
-          summary: resultSet.getString(resultSet.getColumnIndex('summary')),
-          imageUrl: resultSet.getString(resultSet.getColumnIndex('image_url')),
+          key: resultSet.getString(resultSet.getColumnIndex('key')),
+          sourceId: resultSet.getString(resultSet.getColumnIndex('source_id')),
           sourceName: resultSet.getString(resultSet.getColumnIndex('source_name')),
+          title: resultSet.getString(resultSet.getColumnIndex('title')),
+          url: resultSet.getString(resultSet.getColumnIndex('url')),
+          info: resultSet.getString(resultSet.getColumnIndex('info')),
           addedAt: resultSet.getLong(resultSet.getColumnIndex('added_at'))
-        } as NewsFavoriteEntry);
+        } as HotFavoriteEntry);
       }
       resultSet.close();
     } catch (e) {
@@ -1360,32 +1301,47 @@ export class DatabaseHelper {
     return results;
   }
 
-  static async clearNewsFavorites(): Promise<void> {
+  static async clearHotFavorites(): Promise<void> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_favorites');
+      const predicates = new relationalStore.RdbPredicates('hot_favorites');
       await store.delete(predicates);
     } catch (e) {
     }
   }
 
-  // ========== 新闻资讯：已读 ==========
-
-  static async markNewsRead(url: string): Promise<void> {
+  static async countHotFavorites(): Promise<number> {
     const store = DatabaseHelper.getStore();
     try {
-      // 幂等：url 为主键，INSERT OR REPLACE 覆盖旧行并刷新 read_at（一次写完成）
-      const bindArgs: Array<relationalStore.ValueType> = [url, Date.now()];
-      await store.executeSql(SQL_UPSERT_NEWS_READ, bindArgs);
+      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM hot_favorites');
+      let count: number = 0;
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // ========== 热榜：已读 ==========
+
+  static async markHotRead(key: string): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      // 幂等：key 为主键，INSERT OR REPLACE 覆盖旧行并刷新 read_at（一次写完成）
+      const bindArgs: Array<relationalStore.ValueType> = [key, Date.now()];
+      await store.executeSql(SQL_UPSERT_HOT_READ, bindArgs);
     } catch (e) {
     }
   }
 
-  static async isNewsRead(url: string): Promise<boolean> {
+  static async isHotRead(key: string): Promise<boolean> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_read');
-      predicates.equalTo('url', url);
+      const predicates = new relationalStore.RdbPredicates('hot_read');
+      predicates.equalTo('key', key);
       const resultSet = await store.query(predicates);
       try {
         return resultSet.goToNextRow();
@@ -1397,30 +1353,54 @@ export class DatabaseHelper {
     }
   }
 
-  static async listNewsReadUrls(): Promise<string[]> {
+  static async listHotReadKeys(): Promise<string[]> {
     const store = DatabaseHelper.getStore();
-    const urls: string[] = [];
+    const keys: string[] = [];
     try {
-      const predicates = new relationalStore.RdbPredicates('news_read');
+      const predicates = new relationalStore.RdbPredicates('hot_read');
       predicates.orderByDesc('read_at');
       predicates.limitAs(2000);
       const resultSet = await store.query(predicates);
       while (resultSet.goToNextRow()) {
-        urls.push(resultSet.getString(resultSet.getColumnIndex('url')));
+        keys.push(resultSet.getString(resultSet.getColumnIndex('key')));
       }
       resultSet.close();
     } catch (e) {
     }
-    return urls;
+    return keys;
   }
 
-  // ========== 新闻资讯：AI 今日要闻缓存 ==========
+  static async clearHotRead(): Promise<void> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const predicates = new relationalStore.RdbPredicates('hot_read');
+      await store.delete(predicates);
+    } catch (e) {
+    }
+  }
 
-  static async saveNewsDigest(entry: NewsDigestEntry): Promise<void> {
+  static async countHotRead(): Promise<number> {
+    const store = DatabaseHelper.getStore();
+    try {
+      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM hot_read');
+      let count: number = 0;
+      if (resultSet.goToNextRow()) {
+        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
+      }
+      resultSet.close();
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  // ========== 热榜：AI 今日要闻缓存 ==========
+
+  static async saveHotDigest(entry: HotDigestEntry): Promise<void> {
     const store = DatabaseHelper.getStore();
     try {
       // 按 id 先删后插，保证幂等（同日不同模式互不影响）
-      const del = new relationalStore.RdbPredicates('news_digests');
+      const del = new relationalStore.RdbPredicates('hot_digests');
       del.equalTo('id', entry.id);
       await store.delete(del);
       const valueBucket: relationalStore.ValuesBucket = {
@@ -1430,21 +1410,21 @@ export class DatabaseHelper {
         model_name: entry.modelName,
         created_at: entry.createdAt
       };
-      await store.insert('news_digests', valueBucket);
+      await store.insert('hot_digests', valueBucket);
     } catch (e) {
     }
   }
 
   // 按 id 查询（id = digest-<yyyyMMdd> 或 digest-<yyyyMMdd>-hotspot）
-  static async getNewsDigestById(id: string): Promise<NewsDigestEntry | null> {
+  static async getHotDigestById(id: string): Promise<HotDigestEntry | null> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_digests');
+      const predicates = new relationalStore.RdbPredicates('hot_digests');
       predicates.equalTo('id', id);
       const resultSet = await store.query(predicates);
       try {
         if (resultSet.goToNextRow()) {
-          return new NewsDigestEntry(
+          return new HotDigestEntry(
             resultSet.getString(resultSet.getColumnIndex('id')),
             resultSet.getString(resultSet.getColumnIndex('date')),
             resultSet.getString(resultSet.getColumnIndex('content')),
@@ -1460,15 +1440,15 @@ export class DatabaseHelper {
     return null;
   }
 
-  static async getNewsDigest(date: string): Promise<NewsDigestEntry | null> {
+  static async getHotDigest(date: string): Promise<HotDigestEntry | null> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_digests');
+      const predicates = new relationalStore.RdbPredicates('hot_digests');
       predicates.equalTo('date', date);
       const resultSet = await store.query(predicates);
       try {
         if (resultSet.goToNextRow()) {
-          return new NewsDigestEntry(
+          return new HotDigestEntry(
             resultSet.getString(resultSet.getColumnIndex('id')),
             resultSet.getString(resultSet.getColumnIndex('date')),
             resultSet.getString(resultSet.getColumnIndex('content')),
@@ -1484,58 +1464,12 @@ export class DatabaseHelper {
     return null;
   }
 
-  static async deleteNewsDigest(date: string): Promise<void> {
+  // ========== 热榜：正文缓存（离线阅读 + AI 摘要/翻译正文来源） ==========
+
+  static async saveHotArticleCache(url: string, title: string, html: string): Promise<void> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_digests');
-      predicates.equalTo('date', date);
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  // ========== 新闻资讯：频道快照缓存（离线阅读） ==========
-
-  static async saveNewsChannelCache(channelId: string, itemsJson: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const del = new relationalStore.RdbPredicates('news_cache');
-      del.equalTo('channel_id', channelId);
-      await store.delete(del);
-      const valueBucket: relationalStore.ValuesBucket = {
-        channel_id: channelId,
-        items_json: itemsJson,
-        cached_at: Date.now()
-      };
-      await store.insert('news_cache', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  static async getNewsChannelCache(channelId: string): Promise<string | null> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_cache');
-      predicates.equalTo('channel_id', channelId);
-      const resultSet = await store.query(predicates);
-      try {
-        if (resultSet.goToNextRow()) {
-          return resultSet.getString(resultSet.getColumnIndex('items_json'));
-        }
-      } finally {
-        resultSet.close();
-      }
-    } catch (e) {
-    }
-    return null;
-  }
-
-  // ========== 新闻资讯：正文缓存（离线全文阅读） ==========
-
-  static async saveNewsArticleCache(url: string, title: string, html: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const del = new relationalStore.RdbPredicates('news_article_cache');
+      const del = new relationalStore.RdbPredicates('hot_article_cache');
       del.equalTo('url', url);
       await store.delete(del);
       const valueBucket: relationalStore.ValuesBucket = {
@@ -1544,15 +1478,15 @@ export class DatabaseHelper {
         html: html,
         cached_at: Date.now()
       };
-      await store.insert('news_article_cache', valueBucket);
+      await store.insert('hot_article_cache', valueBucket);
     } catch (e) {
     }
   }
 
-  static async getNewsArticleCache(url: string): Promise<NewsArticleCacheEntry | null> {
+  static async getHotArticleCache(url: string): Promise<HotArticleCacheEntry | null> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_article_cache');
+      const predicates = new relationalStore.RdbPredicates('hot_article_cache');
       predicates.equalTo('url', url);
       const resultSet = await store.query(predicates);
       try {
@@ -1560,7 +1494,7 @@ export class DatabaseHelper {
           return {
             title: resultSet.getString(resultSet.getColumnIndex('title')),
             html: resultSet.getString(resultSet.getColumnIndex('html'))
-          };
+          } as HotArticleCacheEntry;
         }
       } finally {
         resultSet.close();
@@ -1570,410 +1504,19 @@ export class DatabaseHelper {
     return null;
   }
 
-  static async clearNewsArticleCache(): Promise<void> {
+  static async clearHotArticleCache(): Promise<void> {
     const store = DatabaseHelper.getStore();
     try {
-      const predicates = new relationalStore.RdbPredicates('news_article_cache');
+      const predicates = new relationalStore.RdbPredicates('hot_article_cache');
       await store.delete(predicates);
     } catch (e) {
     }
   }
 
-  // ========== 新闻资讯：赞/踩状态（v15） ==========
+  // ========== 热榜：AI 调用统计 ==========
 
-  static async setNewsRating(rating: NewsRating): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const del = new relationalStore.RdbPredicates('news_ratings');
-      del.equalTo('url', rating.url);
-      await store.delete(del);
-      const valueBucket: relationalStore.ValuesBucket = {
-        url: rating.url,
-        rating: rating.rating,
-        item_id: rating.url,
-        title: rating.title,
-        summary: rating.summary,
-        image_url: rating.imageUrl,
-        source_name: rating.sourceName,
-        category: rating.category,
-        published_at: rating.publishedAt,
-        tags_json: JSON.stringify(rating.tags),
-        updated_at: rating.updatedAt
-      };
-      await store.insert('news_ratings', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  static async getNewsRating(url: string): Promise<NewsRating | null> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_ratings');
-      predicates.equalTo('url', url);
-      const resultSet = await store.query(predicates);
-      try {
-        if (resultSet.goToNextRow()) {
-          return DatabaseHelper.ratingFromRow(resultSet);
-        }
-      } finally {
-        resultSet.close();
-      }
-    } catch (e) {
-    }
-    return null;
-  }
-
-  static async listNewsRatings(): Promise<NewsRating[]> {
-    const store = DatabaseHelper.getStore();
-    const results: NewsRating[] = [];
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_ratings');
-      predicates.orderByDesc('updated_at');
-      const resultSet = await store.query(predicates);
-      while (resultSet.goToNextRow()) {
-        results.push(DatabaseHelper.ratingFromRow(resultSet));
-      }
-      resultSet.close();
-    } catch (e) {
-    }
-    return results;
-  }
-
-  static async deleteNewsRating(url: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_ratings');
-      predicates.equalTo('url', url);
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  private static ratingFromRow(resultSet: relationalStore.ResultSet): NewsRating {
-    const tagsRaw: string = resultSet.getString(resultSet.getColumnIndex('tags_json'));
-    let tags: string[] = [];
-    if (tagsRaw.trim().length > 0) {
-      try {
-        const parsed: Object = JSON.parse(tagsRaw) as Object;
-        if (Array.isArray(parsed)) {
-          tags = (parsed as Object[]).map((v: Object) => typeof v === 'string' ? v as string : '')
-            .filter((s: string) => s.length > 0);
-        }
-      } catch (e) {
-        tags = [];
-      }
-    }
-    return new NewsRating(
-      resultSet.getString(resultSet.getColumnIndex('url')),
-      resultSet.getLong(resultSet.getColumnIndex('rating')),
-      resultSet.getString(resultSet.getColumnIndex('title')),
-      resultSet.getString(resultSet.getColumnIndex('summary')),
-      resultSet.getString(resultSet.getColumnIndex('image_url')),
-      resultSet.getString(resultSet.getColumnIndex('source_name')),
-      resultSet.getString(resultSet.getColumnIndex('category')),
-      resultSet.getLong(resultSet.getColumnIndex('published_at')),
-      tags,
-      resultSet.getLong(resultSet.getColumnIndex('updated_at'))
-    );
-  }
-
-  // ========== 新闻资讯：行为流水（v15） ==========
-
-  static async recordNewsEvent(eventType: string, url: string, itemId: string = '',
-    weight: number = 0, extraJson: string = ''): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const id: string = 'evt-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
-      const valueBucket: relationalStore.ValuesBucket = {
-        id: id,
-        url: url,
-        item_id: itemId,
-        event_type: eventType,
-        weight: weight,
-        extra_json: extraJson,
-        occurred_at: Date.now()
-      };
-      await store.insert('news_events', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  // ========== 新闻资讯：单篇排除（v15） ==========
-
-  static async addNewsExclusion(url: string, reason: string = ''): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const valueBucket: relationalStore.ValuesBucket = {
-        type: 'url',
-        value: url,
-        reason: reason,
-        created_at: Date.now()
-      };
-      await store.insert('news_exclusions', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  static async isNewsExcluded(url: string): Promise<boolean> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_exclusions');
-      predicates.equalTo('type', 'url');
-      predicates.equalTo('value', url);
-      const resultSet = await store.query(predicates);
-      try {
-        return resultSet.goToNextRow();
-      } finally {
-        resultSet.close();
-      }
-    } catch (e) {
-      return false;
-    }
-  }
-
-  static async removeNewsExclusion(url: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_exclusions');
-      predicates.equalTo('type', 'url');
-      predicates.equalTo('value', url);
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  static async listNewsExcludedUrls(): Promise<string[]> {
-    const store = DatabaseHelper.getStore();
-    const urls: string[] = [];
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_exclusions');
-      predicates.equalTo('type', 'url');
-      const resultSet = await store.query(predicates);
-      while (resultSet.goToNextRow()) {
-        urls.push(resultSet.getString(resultSet.getColumnIndex('value')));
-      }
-      resultSet.close();
-    } catch (e) {
-    }
-    return urls;
-  }
-
-  // ========== 新闻资讯：标签缓存（v15） ==========
-
-  static async saveNewsTags(url: string, tagsJson: string, sourceType: string = 'rule',
-    model: string = ''): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const del = new relationalStore.RdbPredicates('news_tags');
-      del.equalTo('url', url);
-      await store.delete(del);
-      const valueBucket: relationalStore.ValuesBucket = {
-        url: url,
-        tags_json: tagsJson,
-        source_type: sourceType,
-        model: model,
-        updated_at: Date.now()
-      };
-      await store.insert('news_tags', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  static async saveNewsProfile(valueJson: string): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const del = new relationalStore.RdbPredicates('news_profile');
-      del.equalTo('key', 'main');
-      await store.delete(del);
-      const valueBucket: relationalStore.ValuesBucket = {
-        key: 'main',
-        value_json: valueJson,
-        updated_at: Date.now()
-      };
-      await store.insert('news_profile', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  static async getNewsProfile(): Promise<string | null> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_profile');
-      predicates.equalTo('key', 'main');
-      const resultSet = await store.query(predicates);
-      try {
-        if (resultSet.goToNextRow()) {
-          return resultSet.getString(resultSet.getColumnIndex('value_json'));
-        }
-      } finally {
-        resultSet.close();
-      }
-    } catch (e) {
-    }
-    return null;
-  }
-
-  static async clearNewsTags(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_tags');
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  static async clearNewsProfile(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_profile');
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  static async clearNewsExclusions(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_exclusions');
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  // ========== 新闻资讯：翻译缓存（v15） ==========
-
-  static async saveNewsTranslation(url: string, kind: string, langPair: string, text: string,
-    model: string = ''): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const del = new relationalStore.RdbPredicates('news_translations');
-      del.equalTo('url', url);
-      del.equalTo('kind', kind);
-      await store.delete(del);
-      const valueBucket: relationalStore.ValuesBucket = {
-        url: url,
-        kind: kind,
-        lang_pair: langPair,
-        text: text,
-        model: model,
-        updated_at: Date.now()
-      };
-      await store.insert('news_translations', valueBucket);
-    } catch (e) {
-    }
-  }
-
-  static async getNewsTranslation(url: string, kind: string): Promise<NewsTranslationEntry | null> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_translations');
-      predicates.equalTo('url', url);
-      predicates.equalTo('kind', kind);
-      const resultSet = await store.query(predicates);
-      try {
-        if (resultSet.goToNextRow()) {
-          return {
-            url: url,
-            kind: kind,
-            langPair: resultSet.getString(resultSet.getColumnIndex('lang_pair')),
-            text: resultSet.getString(resultSet.getColumnIndex('text')),
-            model: resultSet.getString(resultSet.getColumnIndex('model')),
-            updatedAt: resultSet.getLong(resultSet.getColumnIndex('updated_at'))
-          } as NewsTranslationEntry;
-        }
-      } finally {
-        resultSet.close();
-      }
-    } catch (e) {
-    }
-    return null;
-  }
-
-  static async clearNewsTranslations(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_translations');
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  static async getNewsTags(url: string): Promise<NewsTagEntry | null> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_tags');
-      predicates.equalTo('url', url);
-      const resultSet = await store.query(predicates);
-      try {
-        if (resultSet.goToNextRow()) {
-          return {
-            url: url,
-            tagsJson: resultSet.getString(resultSet.getColumnIndex('tags_json')),
-            sourceType: resultSet.getString(resultSet.getColumnIndex('source_type')),
-            model: resultSet.getString(resultSet.getColumnIndex('model')),
-            updatedAt: resultSet.getLong(resultSet.getColumnIndex('updated_at'))
-          } as NewsTagEntry;
-        }
-      } finally {
-        resultSet.close();
-      }
-    } catch (e) {
-    }
-    return null;
-  }
-
-  // ========== 新闻资讯：清理与统计 ==========
-
-  static async clearNewsRead(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_read');
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  static async clearNewsChannelCache(): Promise<void> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const predicates = new relationalStore.RdbPredicates('news_cache');
-      await store.delete(predicates);
-    } catch (e) {
-    }
-  }
-
-  static async countNewsFavorites(): Promise<number> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM news_favorites');
-      let count: number = 0;
-      if (resultSet.goToNextRow()) {
-        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
-      }
-      resultSet.close();
-      return count;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  static async countNewsRead(): Promise<number> {
-    const store = DatabaseHelper.getStore();
-    try {
-      const resultSet = await store.querySql('SELECT COUNT(*) AS cnt FROM news_read');
-      let count: number = 0;
-      if (resultSet.goToNextRow()) {
-        count = resultSet.getLong(resultSet.getColumnIndex('cnt'));
-      }
-      resultSet.close();
-      return count;
-    } catch (e) {
-      return 0;
-    }
-  }
-
-  // 统计 AI 调用日志中资讯场景（game 以 news: 开头）的条数
-  static async countNewsAiCalls(): Promise<number> {
+  // 统计 AI 调用日志中热榜场景（game 以 news: 开头）的条数
+  static async countHotAiCalls(): Promise<number> {
     const store = DatabaseHelper.getStore();
     try {
       const resultSet = await store.querySql("SELECT COUNT(*) AS cnt FROM ai_call_logs WHERE game LIKE 'news:%'");

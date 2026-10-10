@@ -1,100 +1,116 @@
-// 智子 - 新闻数据仓库门面（收藏 / 已读 / AI 今日要闻缓存）
-import { DatabaseHelper, NewsArticleCacheEntry, NewsFavoriteEntry, NewsTagEntry,
-  NewsTranslationEntry } from './DatabaseHelper';
-import { NewsItem, NewsDigestEntry, NewsRating } from '../common/NewsModels';
-import { NewsProfileService } from './NewsProfileService';
+// 智子 - 热榜本地数据仓库（收藏 / 已读 / 正文缓存 / AI 今日要闻 / 搜索）
+// 设计文档：doc/newsnow-redesign.md §10
+// 主键统一为 HotEntry.key（`sourceId:itemId`），避免跨源同 URL 相互覆盖
+import { relationalStore } from '@kit.ArkData';
+import { DatabaseHelper, HotFavoriteEntry, HotArticleCacheEntry } from './DatabaseHelper';
+import { HotEntry, HotItem, HotDigestEntry } from '../common/HotModels';
 
-// 资讯本地全文索引（FTS5 虚拟表，DatabaseHelper 探测可用性；不可用时回退 LIKE）
-const SQL_NEWS_FTS_INSERT = 'INSERT OR REPLACE INTO news_articles_fts (kind, url, title, body) VALUES (?, ?, ?, ?)';
-const SQL_NEWS_FTS_DELETE = 'DELETE FROM news_articles_fts WHERE kind = ? AND url = ?';
-const SQL_NEWS_FTS_DELETE_KIND = 'DELETE FROM news_articles_fts WHERE kind = ?';
+// 热榜本地全文索引（hot_articles_fts 虚拟表；不可用时回退 LIKE）
+const SQL_HOT_FTS_INSERT = 'INSERT OR REPLACE INTO hot_articles_fts (kind, key, title, body) VALUES (?, ?, ?, ?)';
+const SQL_HOT_FTS_DELETE = 'DELETE FROM hot_articles_fts WHERE kind = ? AND key = ?';
+const SQL_HOT_FTS_DELETE_KIND = 'DELETE FROM hot_articles_fts WHERE kind = ?';
 
 // 资讯统计
-export interface NewsStats {
+export interface HotStats {
   favoriteCount: number;
   readCount: number;
   aiCallCount: number;
 }
 
-// 频道快照缓存行结构（显式 interface，满足 arkts-no-untyped-obj-literals）
-interface NewsCacheRow {
-  id: string;
+// 搜索结果条目（收藏 / 正文缓存）
+export class HotSearchHit {
+  key: string;
   title: string;
-  summary: string;
   url: string;
-  imageUrl: string;
   sourceId: string;
   sourceName: string;
-  category: string;
-  publishedAt: number;
-  tags: string[];
-  language: string;
+  info: string;
+  kind: string;      // 'fav' | 'article'
+
+  constructor(key: string, title: string, url: string, sourceId: string,
+    sourceName: string, info: string, kind: string) {
+    this.key = key;
+    this.title = title;
+    this.url = url;
+    this.sourceId = sourceId;
+    this.sourceName = sourceName;
+    this.info = info;
+    this.kind = kind;
+  }
 }
 
 export class NewsRepository {
   // ==================== 收藏 ====================
 
-  static async isFavorite(url: string): Promise<boolean> {
-    return await DatabaseHelper.isNewsFavorite(url);
+  static async isFavorite(key: string): Promise<boolean> {
+    return await DatabaseHelper.isHotFavorite(key);
   }
 
-  static async addFavorite(item: NewsItem): Promise<void> {
-    await DatabaseHelper.addNewsFavorite(item);
-    await NewsRepository.indexNewsItem('fav', item.url, item.title, item.summary);
-    await NewsRepository.recordEvent('favorite', item, 5, '');
+  static async addFavorite(entry: HotEntry): Promise<void> {
+    const row: HotFavoriteEntry = {
+      key: entry.key,
+      sourceId: entry.sourceId,
+      sourceName: entry.sourceName,
+      title: entry.item.title,
+      url: entry.item.url,
+      info: entry.item.info,
+      addedAt: Date.now()
+    };
+    await DatabaseHelper.addHotFavorite(row);
+    await NewsRepository.indexItem('fav', entry.key, entry.item.title, entry.item.info);
   }
 
-  static async removeFavorite(url: string): Promise<void> {
-    await DatabaseHelper.removeNewsFavorite(url);
-    await NewsRepository.unindexNewsItem('fav', url);
-    const stub: NewsItem = new NewsItem('fav:' + url, '', '', url, '', 'favorite', '收藏', 'recommend', Date.now());
-    await NewsRepository.recordEvent('unfavorite', stub, -4, '');
+  static async removeFavorite(key: string): Promise<void> {
+    await DatabaseHelper.removeHotFavorite(key);
+    await NewsRepository.unindexItem('fav', key);
   }
 
-  // 收藏/取消收藏；返回 true = 已收藏（隐式信号：favorite +5 / unfavorite -4）
-  static async toggleFavorite(item: NewsItem): Promise<boolean> {
-    const fav: boolean = await DatabaseHelper.isNewsFavorite(item.url);
+  // 切换收藏；返回切换后是否已收藏
+  static async toggleFavorite(entry: HotEntry): Promise<boolean> {
+    const fav: boolean = await DatabaseHelper.isHotFavorite(entry.key);
     if (fav) {
-      await DatabaseHelper.removeNewsFavorite(item.url);
-      await NewsRepository.unindexNewsItem('fav', item.url);
-      await NewsRepository.recordEvent('unfavorite', item, -4, '');
+      await NewsRepository.removeFavorite(entry.key);
       return false;
     }
-    await DatabaseHelper.addNewsFavorite(item);
-    await NewsRepository.indexNewsItem('fav', item.url, item.title, item.summary);
-    await NewsRepository.recordEvent('favorite', item, 5, '');
+    await NewsRepository.addFavorite(entry);
     return true;
   }
 
-  // 收藏列表 → NewsItem（供列表/详情页复用）
-  static async listFavorites(): Promise<NewsItem[]> {
-    const entries = await DatabaseHelper.listNewsFavorites();
-    const items: NewsItem[] = [];
-    for (let i: number = 0; i < entries.length; i++) {
-      const e = entries[i];
-      items.push(new NewsItem('fav:' + e.url, e.title, e.summary, e.url, e.imageUrl,
-        'favorite', e.sourceName.length > 0 ? e.sourceName : '收藏', 'recommend', e.addedAt));
+  // 收藏列表 → HotEntry（列表/详情页复用）
+  static async listFavorites(): Promise<HotEntry[]> {
+    const rows: HotFavoriteEntry[] = await DatabaseHelper.listHotFavorites();
+    const out: HotEntry[] = [];
+    for (let i: number = 0; i < rows.length; i++) {
+      const r: HotFavoriteEntry = rows[i];
+      const itemId: string = NewsRepository.itemIdOf(r.key);
+      const item: HotItem = new HotItem(itemId, r.title, r.url, r.url, 0, r.info);
+      out.push(new HotEntry(r.key, item, r.sourceId, r.sourceName));
     }
-    return items;
+    return out;
   }
 
   static async clearFavorites(): Promise<void> {
-    await DatabaseHelper.clearNewsFavorites();
-    await NewsRepository.clearNewsFtsKind('fav');
+    await DatabaseHelper.clearHotFavorites();
+    await NewsRepository.clearFtsKind('fav');
   }
 
   // ==================== 已读 ====================
 
-  static async markRead(url: string): Promise<void> {
-    await DatabaseHelper.markNewsRead(url);
+  static async markRead(key: string): Promise<void> {
+    if (key.length === 0) return;
+    await DatabaseHelper.markHotRead(key);
   }
 
-  static async isRead(url: string): Promise<boolean> {
-    return await DatabaseHelper.isNewsRead(url);
+  static async isRead(key: string): Promise<boolean> {
+    return await DatabaseHelper.isHotRead(key);
   }
 
-  static async listReadUrls(): Promise<string[]> {
-    return await DatabaseHelper.listNewsReadUrls();
+  static async listReadKeys(): Promise<string[]> {
+    return await DatabaseHelper.listHotReadKeys();
+  }
+
+  static async clearRead(): Promise<void> {
+    await DatabaseHelper.clearHotRead();
   }
 
   // ==================== AI 今日要闻 ====================
@@ -113,467 +129,183 @@ export class NewsRepository {
   }
 
   // 当日简报 id：mode = digest（今日要闻）/ morning（早报）/ noon（午间速递）/ evening（晚报）
-  // 'hotspot' 兼容旧版热点速递（映射到 noon）
   static digestId(mode: string): string {
     const key: string = NewsRepository.todayKey();
     if (mode === 'digest') return 'digest-' + key;
     if (mode === 'morning') return 'digest-' + key + '-morning';
     if (mode === 'evening') return 'digest-' + key + '-evening';
-    if (mode === 'personal') return 'digest-' + key + '-personal';
     return 'digest-' + key + '-noon';
   }
 
-  static async todayDigest(mode: string = 'digest'): Promise<NewsDigestEntry | null> {
-    return await DatabaseHelper.getNewsDigestById(NewsRepository.digestId(mode));
+  static async todayDigest(mode: string = 'digest'): Promise<HotDigestEntry | null> {
+    return await DatabaseHelper.getHotDigestById(NewsRepository.digestId(mode));
   }
 
-  static async saveDigest(content: string, modelName: string, mode: string = 'digest'): Promise<NewsDigestEntry> {
+  static async saveDigest(content: string, modelName: string, mode: string = 'digest'): Promise<HotDigestEntry> {
     const key: string = NewsRepository.todayKey();
-    const entry: NewsDigestEntry = new NewsDigestEntry(NewsRepository.digestId(mode), key, content, modelName, Date.now());
-    await DatabaseHelper.saveNewsDigest(entry);
+    const entry: HotDigestEntry =
+      new HotDigestEntry(NewsRepository.digestId(mode), key, content, modelName, Date.now());
+    await DatabaseHelper.saveHotDigest(entry);
     return entry;
   }
 
-  static async deleteTodayDigest(): Promise<void> {
-    await DatabaseHelper.deleteNewsDigest(NewsRepository.todayKey());
-  }
-
-  // ==================== 正文缓存（离线全文阅读） ====================
+  // ==================== 正文缓存（离线阅读 + AI 摘要/翻译正文来源） ====================
 
   static async saveArticleCache(url: string, title: string, html: string): Promise<void> {
     if (url.trim().length === 0 || html.trim().length === 0) return;
-    await DatabaseHelper.saveNewsArticleCache(url.trim(), title, html);
-    await NewsRepository.indexNewsItem('article', url.trim(), title, html);
+    await DatabaseHelper.saveHotArticleCache(url.trim(), title, html);
+    await NewsRepository.indexItem('article', url.trim(), title, html);
   }
 
-  static async getArticleCache(url: string): Promise<NewsArticleCacheEntry | null> {
-    return await DatabaseHelper.getNewsArticleCache(url);
-  }
-
-  // ==================== 统计与清理 ====================
-
-  static async stats(): Promise<NewsStats> {
-    const stats: NewsStats = {
-      favoriteCount: await DatabaseHelper.countNewsFavorites(),
-      readCount: await DatabaseHelper.countNewsRead(),
-      aiCallCount: await DatabaseHelper.countNewsAiCalls()
-    };
-    return stats;
-  }
-
-  static async clearRead(): Promise<void> {
-    await DatabaseHelper.clearNewsRead();
-  }
-
-  static async clearChannelCache(): Promise<void> {
-    await DatabaseHelper.clearNewsChannelCache();
+  static async getArticleCache(url: string): Promise<HotArticleCacheEntry | null> {
+    return await DatabaseHelper.getHotArticleCache(url);
   }
 
   static async clearArticleCache(): Promise<void> {
-    await DatabaseHelper.clearNewsArticleCache();
-    await NewsRepository.clearNewsFtsKind('article');
+    await DatabaseHelper.clearHotArticleCache();
+    await NewsRepository.clearFtsKind('article');
   }
 
-  // ==================== 赞/踩（v15） ====================
+  // ==================== 搜索（收藏 + 正文缓存） ====================
 
-  // 写入赞/踩状态（rating: 1 赞 / -1 踩），记录事件，并更新偏好画像权重
-  static async setRating(item: NewsItem, rating: number, tags: string[]): Promise<void> {
-    const record: NewsRating = new NewsRating(item.url, rating, item.title, item.summary,
-      item.imageUrl, item.sourceName, item.category, item.publishedAt, tags, Date.now());
-    await DatabaseHelper.setNewsRating(record);
-    const eventType: string = rating === 1 ? 'like' : (rating === -1 ? 'dislike' : 'undo');
-    const extra: string = tags.length > 0 ? JSON.stringify(tags) : '';
-    await DatabaseHelper.recordNewsEvent(eventType, item.url, item.id, rating, extra);
-    // M2：权重累积（点赞 → posTags +1；点踩勾选 → negTags +1）
-    if (rating === 1 || rating === -1) {
-      await NewsProfileService.applyFeedback(item, rating, tags);
-    }
-  }
-
-  static async getRating(url: string): Promise<NewsRating | null> {
-    return await DatabaseHelper.getNewsRating(url);
-  }
-
-  static async listRatings(): Promise<NewsRating[]> {
-    return await DatabaseHelper.listNewsRatings();
-  }
-
-  // 我的点赞列表（rating = 1）
-  static async listLikedItems(): Promise<NewsItem[]> {
-    const ratings: NewsRating[] = await DatabaseHelper.listNewsRatings();
-    const items: NewsItem[] = [];
-    for (let i: number = 0; i < ratings.length; i++) {
-      const r: NewsRating = ratings[i];
-      if (r.rating === 1) {
-        items.push(new NewsItem('like:' + r.url, r.title, r.summary, r.url, r.imageUrl,
-          'favorite', r.sourceName.length > 0 ? r.sourceName : '我的点赞',
-          r.category.length > 0 ? r.category : 'recommend', r.publishedAt, r.tags, 'zh'));
+  static async searchFavorites(q: string, limit: number): Promise<HotSearchHit[]> {
+    const out: HotSearchHit[] = [];
+    const query: string = q.trim();
+    if (query.length === 0) return out;
+    const rows: HotFavoriteEntry[] = await DatabaseHelper.listHotFavorites();
+    // FTS 优先（命中的 key 集合），失败或未命中回退 LIKE
+    let keys: string[] = await NewsRepository.ftsKeys('fav', query, limit);
+    if (keys.length === 0) {      for (let i: number = 0; i < rows.length && out.length < limit; i++) {
+        const r: HotFavoriteEntry = rows[i];
+        if (r.title.indexOf(query) >= 0 || r.info.indexOf(query) >= 0) out.push(NewsRepository.favToHit(r));
       }
+      return out;
     }
-    return items;
-  }
-
-  // 撤销赞/踩：回退画像权重并删除状态（无需再单独调用 deleteNewsRating）
-  static async removeRating(url: string): Promise<void> {
-    await NewsProfileService.revertRating(url);
-  }
-
-  // 重置推荐画像（清空权重；不影响收藏/已读）
-  static async resetProfile(): Promise<void> {
-    await NewsProfileService.reset();
-  }
-
-  // 恢复全部被屏蔽的单篇
-  static async clearExclusions(): Promise<void> {
-    await DatabaseHelper.clearNewsExclusions();
-  }
-
-  // ==================== 行为事件（v15） ====================
-
-  static async recordEvent(eventType: string, item: NewsItem | null = null,
-    weight: number = 0, extraJson: string = ''): Promise<void> {
-    const url: string = item === null ? '' : item.url;
-    const itemId: string = item === null ? '' : item.id;
-    await DatabaseHelper.recordNewsEvent(eventType, url, itemId, weight, extraJson);
-  }
-
-  // ==================== 单篇排除（v15） ====================
-
-  static async excludeUrl(url: string, reason: string = ''): Promise<void> {
-    await DatabaseHelper.addNewsExclusion(url, reason);
-  }
-
-  static async isUrlExcluded(url: string): Promise<boolean> {
-    return await DatabaseHelper.isNewsExcluded(url);
-  }
-
-  static async unexcludeUrl(url: string): Promise<void> {
-    await DatabaseHelper.removeNewsExclusion(url);
-  }
-
-  static async listExcludedUrls(): Promise<string[]> {
-    return await DatabaseHelper.listNewsExcludedUrls();
-  }
-
-  // ==================== 标签缓存（v15，L2 预留） ====================
-
-  static async saveTags(url: string, tags: string[], sourceType: string = 'rule',
-    model: string = ''): Promise<void> {
-    await DatabaseHelper.saveNewsTags(url, JSON.stringify(tags), sourceType, model);
-  }
-
-  static async getTags(url: string): Promise<NewsTagEntry | null> {
-    return await DatabaseHelper.getNewsTags(url);
-  }
-
-  // 清除全部标签缓存（LLM 标签重生成时使用）
-  static async clearTags(): Promise<void> {
-    await DatabaseHelper.clearNewsTags();
-  }
-
-  // ==================== 翻译缓存（v15 / M3） ====================
-
-  // 卡片轻量译（标题+摘要）
-  static async saveTitleTranslation(item: NewsItem, text: string, model: string): Promise<void> {
-    await DatabaseHelper.saveNewsTranslation(item.url, 'title', 'en->zh', text, model);
-  }
-
-  static async getTitleTranslation(url: string): Promise<string> {
-    const entry: NewsTranslationEntry | null = await DatabaseHelper.getNewsTranslation(url, 'title');
-    return entry === null ? '' : entry.text;
-  }
-
-  // 详情页全文译
-  static async saveBodyTranslation(item: NewsItem, text: string, model: string): Promise<void> {
-    await DatabaseHelper.saveNewsTranslation(item.url, 'body', 'en->zh', text, model);
-  }
-
-  static async getBodyTranslation(url: string): Promise<string> {
-    const entry: NewsTranslationEntry | null = await DatabaseHelper.getNewsTranslation(url, 'body');
-    return entry === null ? '' : entry.text;
-  }
-
-  static async clearTranslations(): Promise<void> {
-    await DatabaseHelper.clearNewsTranslations();
-  }
-
-  // ==================== 频道个性化开关（v15） ====================
-
-  // 读取关闭个性化的频道 id 列表（默认空 = 全部频道个性化）
-  private static async personalizedOffIds(): Promise<string[]> {
-    try {
-      const raw: string = await DatabaseHelper.getSetting('newsPersonalizedChannels', '');
-      if (raw.trim().length === 0) return [];
-      const parsed: Object = JSON.parse(raw) as Object;
-      if (Array.isArray(parsed)) {
-        const ids: string[] = [];
-        const arr: Object[] = parsed as Object[];
-        for (let i: number = 0; i < arr.length; i++) {
-          if (typeof arr[i] === 'string') ids.push(arr[i] as string);
-        }
-        return ids;
-      }
-    } catch (e) {
-    }
-    return [];
-  }
-
-  // 频道是否启用个性化（默认 true；新增频道自动默认启用）
-  static async isChannelPersonalized(channelId: string): Promise<boolean> {
-    const off: string[] = await NewsRepository.personalizedOffIds();
-    return off.indexOf(channelId) < 0;
-  }
-
-  // 设置频道个性化开关（false = 关闭该频道个性化）
-  static async setChannelPersonalized(channelId: string, on: boolean): Promise<void> {
-    const off: string[] = await NewsRepository.personalizedOffIds();
-    const idx: number = off.indexOf(channelId);
-    if (on && idx >= 0) {
-      off.splice(idx, 1);
-    } else if (!on && idx < 0) {
-      off.push(channelId);
-    } else {
-      return;
-    }
-    await DatabaseHelper.setSetting('newsPersonalizedChannels', JSON.stringify(off));
-  }
-
-  // ==================== 频道快照缓存（离线阅读） ====================
-
-  static async saveChannelCache(channelId: string, items: NewsItem[]): Promise<void> {
-    try {
-      const rows: NewsCacheRow[] = [];
-      for (let i: number = 0; i < items.length; i++) {
-        const item: NewsItem = items[i];
-        const row: NewsCacheRow = {
-          id: item.id,
-          title: item.title,
-          summary: item.summary,
-          url: item.url,
-          imageUrl: item.imageUrl,
-          sourceId: item.sourceId,
-          sourceName: item.sourceName,
-          category: item.category,
-          publishedAt: item.publishedAt,
-          tags: item.tags === undefined ? [] : item.tags,
-          language: item.language === undefined ? '' : item.language
-        };
-        rows.push(row);
-      }
-      await DatabaseHelper.saveNewsChannelCache(channelId, JSON.stringify(rows));
-    } catch (e) {
-    }
-  }
-
-  static async loadChannelCache(channelId: string): Promise<NewsItem[] | null> {
-    try {
-      const json: string | null = await DatabaseHelper.getNewsChannelCache(channelId);
-      if (json === null || json.trim().length === 0) return null;
-      const parsed: Object = JSON.parse(json) as Object;
-      if (!Array.isArray(parsed)) return null;
-      const arr: Object[] = parsed as Object[];
-      const items: NewsItem[] = [];
-      for (let i: number = 0; i < arr.length; i++) {
-        const r: Record<string, Object> = arr[i] as Record<string, Object>;
-        const url: string = typeof r['url'] === 'string' ? r['url'] as string : '';
-        const title: string = typeof r['title'] === 'string' ? r['title'] as string : '';
-        if (url.length === 0 || title.length === 0) continue;
-        let tags: string[] = [];
-        const rawTags: Object | undefined = r['tags'];
-        if (rawTags !== undefined && Array.isArray(rawTags)) {
-          const arr: Object[] = rawTags as Object[];
-          tags = [];
-          for (let t: number = 0; t < arr.length; t++) {
-            if (typeof arr[t] === 'string') tags.push(arr[t] as string);
-          }
-        }
-        items.push(new NewsItem(
-          typeof r['id'] === 'string' ? r['id'] as string : 'c:' + url,
-          title,
-          typeof r['summary'] === 'string' ? r['summary'] as string : '',
-          url,
-          typeof r['imageUrl'] === 'string' ? r['imageUrl'] as string : '',
-          typeof r['sourceId'] === 'string' ? r['sourceId'] as string : '',
-          typeof r['sourceName'] === 'string' ? r['sourceName'] as string : '',
-          typeof r['category'] === 'string' ? r['category'] as string : 'recommend',
-          typeof r['publishedAt'] === 'number' ? r['publishedAt'] as number : 0,
-          tags,
-          typeof r['language'] === 'string' ? r['language'] as string : ''
-        ));
-      }
-      return items.length > 0 ? items : null;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // ==================== 本地全文搜索（FTS5 优先，LIKE 兜底） ====================
-
-  // 本地全文搜索：收藏（标题/摘要）+ 离线正文缓存（标题/正文），按 url 去重合并
-  static async searchLocal(query: string, limit: number = 30): Promise<NewsItem[]> {
-    const q: string = query.trim();
-    if (q.length === 0) return [];
-    const favItems: NewsItem[] = await NewsRepository.favSearch(q, limit);
-    const cacheItems: NewsItem[] = await NewsRepository.articleSearch(q, limit);
-    const seen: Set<string> = new Set<string>();
-    const out: NewsItem[] = [];
-    for (let i: number = 0; i < favItems.length; i++) {
-      if (!seen.has(favItems[i].url)) {
-        seen.add(favItems[i].url);
-        out.push(favItems[i]);
-      }
-    }
-    for (let i: number = 0; i < cacheItems.length && out.length < limit; i++) {
-      if (!seen.has(cacheItems[i].url)) {
-        seen.add(cacheItems[i].url);
-        out.push(cacheItems[i]);
-      }
+    for (let i: number = 0; i < rows.length && out.length < limit; i++) {
+      if (keys.indexOf(rows[i].key) >= 0) out.push(NewsRepository.favToHit(rows[i]));
     }
     return out;
   }
 
-  private static async favSearch(q: string, limit: number): Promise<NewsItem[]> {
-    let entries: NewsFavoriteEntry[] = [];
-    if (DatabaseHelper.isNewsFtsReady() && q.length >= 3) {
+  // 正文缓存命中（FTS 优先，回退 LIKE）
+  static async searchArticles(q: string, limit: number): Promise<HotSearchHit[]> {
+    const out: HotSearchHit[] = [];
+    const query: string = q.trim();
+    if (query.length === 0) return out;
+    const store: relationalStore.RdbStore = DatabaseHelper.getStore();
+    if (DatabaseHelper.isHotFtsReady() && query.length >= 3) {
       try {
-        entries = await NewsRepository.favFts(q, limit);
-      } catch (e) {
-        entries = [];
-      }
-    }
-    if (entries.length === 0) {
-      entries = await NewsRepository.favLike(q, limit);
-    }
-    const items: NewsItem[] = [];
-    for (let i: number = 0; i < entries.length; i++) {
-      const e: NewsFavoriteEntry = entries[i];
-      items.push(new NewsItem('fav:' + e.url, e.title, e.summary, e.url, e.imageUrl,
-        'favorite', e.sourceName.length > 0 ? e.sourceName : '收藏', 'recommend', e.addedAt));
-    }
-    return items;
-  }
-
-  private static async favFts(q: string, limit: number): Promise<NewsFavoriteEntry[]> {
-    const store = DatabaseHelper.getStore();
-    const rows: NewsFavoriteEntry[] = [];
-    const rs = await store.querySql(
-      'SELECT url, title, summary, image_url, source_name FROM news_articles_fts ' +
-      'WHERE kind = ? AND news_articles_fts MATCH ? ORDER BY bm25(news_articles_fts) LIMIT ?',
-      ['fav', NewsRepository.ftsPhrase(q), limit]);
-    try {
-      while (rs.goToNextRow()) {
-        rows.push({
-          id: 'fav:' + rs.getString(rs.getColumnIndex('url')),
-          url: rs.getString(rs.getColumnIndex('url')),
-          title: rs.getString(rs.getColumnIndex('title')),
-          summary: rs.getString(rs.getColumnIndex('summary')),
-          imageUrl: rs.getString(rs.getColumnIndex('image_url')),
-          sourceName: rs.getString(rs.getColumnIndex('source_name')),
-          addedAt: 0
-        } as NewsFavoriteEntry);
-      }
-    } finally {
-      rs.close();
-    }
-    return rows;
-  }
-
-  private static async favLike(q: string, limit: number): Promise<NewsFavoriteEntry[]> {
-    const store = DatabaseHelper.getStore();
-    const rows: NewsFavoriteEntry[] = [];
-    const like: string = '%' + q + '%';
-    try {
-      const rs = await store.querySql(
-        'SELECT * FROM news_favorites WHERE title LIKE ? OR summary LIKE ? ORDER BY added_at DESC LIMIT ?',
-        [like, like, limit]);
-      while (rs.goToNextRow()) {
-        rows.push({
-          id: rs.getString(rs.getColumnIndex('id')),
-          url: rs.getString(rs.getColumnIndex('url')),
-          title: rs.getString(rs.getColumnIndex('title')),
-          summary: rs.getString(rs.getColumnIndex('summary')),
-          imageUrl: rs.getString(rs.getColumnIndex('image_url')),
-          sourceName: rs.getString(rs.getColumnIndex('source_name')),
-          addedAt: rs.getLong(rs.getColumnIndex('added_at'))
-        } as NewsFavoriteEntry);
-      }
-      rs.close();
-    } catch (e) {
-    }
-    return rows;
-  }
-
-  private static async articleSearch(q: string, limit: number): Promise<NewsItem[]> {
-    const rows: NewsItem[] = [];
-    if (DatabaseHelper.isNewsFtsReady() && q.length >= 3) {
-      try {
-        const store = DatabaseHelper.getStore();
-        const rs = await store.querySql(
-          'SELECT url, title FROM news_articles_fts WHERE kind = ? AND news_articles_fts MATCH ? ' +
-          'ORDER BY bm25(news_articles_fts) LIMIT ?',
-          ['article', NewsRepository.ftsPhrase(q), limit]);
+        const sql: string = 'SELECT key, title FROM hot_articles_fts WHERE kind = ? AND hot_articles_fts MATCH ? LIMIT ?';
+        const args: Array<relationalStore.ValueType> = ['article', NewsRepository.ftsPhrase(query), limit];
+        const rs: relationalStore.ResultSet = await store.querySql(sql, args);
         try {
           while (rs.goToNextRow()) {
-            rows.push(new NewsItem('cache:' + rs.getString(rs.getColumnIndex('url')),
-              rs.getString(rs.getColumnIndex('title')), '', rs.getString(rs.getColumnIndex('url')),
-              '', 'article-cache', '离线缓存', 'recommend', 0));
+            const url: string = rs.getString(rs.getColumnIndex('key'));
+            const title: string = rs.getString(rs.getColumnIndex('title'));
+            out.push(new HotSearchHit(url, title, url, '', '缓存正文', '', 'article'));
           }
         } finally {
           rs.close();
         }
-        return rows;
+        if (out.length > 0) return out;
       } catch (e) {
       }
     }
-    // LIKE 兜底：正文缓存标题/正文命中
-    const store = DatabaseHelper.getStore();
-    const like: string = '%' + q + '%';
+    const like: string = '%' + query + '%';
+    const sql2: string = 'SELECT url, title FROM hot_article_cache WHERE title LIKE ? OR html LIKE ? LIMIT ?';
+    const args2: Array<relationalStore.ValueType> = [like, like, limit];
     try {
-      const rs = await store.querySql(
-        'SELECT url, title FROM news_article_cache WHERE title LIKE ? OR html LIKE ? ORDER BY cached_at DESC LIMIT ?',
-        [like, like, limit]);
-      while (rs.goToNextRow()) {
-        rows.push(new NewsItem('cache:' + rs.getString(rs.getColumnIndex('url')),
-          rs.getString(rs.getColumnIndex('title')), '', rs.getString(rs.getColumnIndex('url')),
-          '', 'article-cache', '离线缓存', 'recommend', 0));
+      const rs2: relationalStore.ResultSet = await store.querySql(sql2, args2);
+      try {
+        while (rs2.goToNextRow()) {
+          const url: string = rs2.getString(rs2.getColumnIndex('url'));
+          const title: string = rs2.getString(rs2.getColumnIndex('title'));
+          out.push(new HotSearchHit(url, title, url, '', '缓存正文', '', 'article'));
+        }
+      } finally {
+        rs2.close();
       }
-      rs.close();
     } catch (e) {
     }
-    return rows;
+    return out;
   }
 
-  // FTS 短语转义（与 ChatRepository 一致）
-  private static ftsPhrase(query: string): string {
-    const q: string = query.trim();
-    return '"' + q.replace(/"/g, '""') + '"';
+  // ==================== 统计 ====================
+
+  static async stats(): Promise<HotStats> {
+    const stats: HotStats = {
+      favoriteCount: await DatabaseHelper.countHotFavorites(),
+      readCount: await DatabaseHelper.countHotRead(),
+      aiCallCount: await DatabaseHelper.countHotAiCalls()
+    };
+    return stats;
   }
 
-  // 写入/删除/清空 FTS 索引（虚拟表不可用时为空操作）
-  private static async indexNewsItem(kind: string, url: string, title: string, body: string): Promise<void> {
-    if (!DatabaseHelper.isNewsFtsReady()) return;
+  // ==================== 内部：全文索引 ====================
+
+  private static async indexItem(kind: string, key: string, title: string, body: string): Promise<void> {
+    if (!DatabaseHelper.isHotFtsReady()) return;
     try {
-      const store = DatabaseHelper.getStore();
-      await store.executeSql(SQL_NEWS_FTS_INSERT, [kind, url, title, body]);
+      const store: relationalStore.RdbStore = DatabaseHelper.getStore();
+      const args: Array<relationalStore.ValueType> = [kind, key, title, body];
+      await store.executeSql(SQL_HOT_FTS_INSERT, args);
     } catch (e) {
     }
   }
 
-  private static async unindexNewsItem(kind: string, url: string): Promise<void> {
-    if (!DatabaseHelper.isNewsFtsReady()) return;
+  private static async unindexItem(kind: string, key: string): Promise<void> {
+    if (!DatabaseHelper.isHotFtsReady()) return;
     try {
-      const store = DatabaseHelper.getStore();
-      await store.executeSql(SQL_NEWS_FTS_DELETE, [kind, url]);
+      const store: relationalStore.RdbStore = DatabaseHelper.getStore();
+      const args: Array<relationalStore.ValueType> = [kind, key];
+      await store.executeSql(SQL_HOT_FTS_DELETE, args);
     } catch (e) {
     }
   }
 
-  private static async clearNewsFtsKind(kind: string): Promise<void> {
-    if (!DatabaseHelper.isNewsFtsReady()) return;
+  private static async clearFtsKind(kind: string): Promise<void> {
+    if (!DatabaseHelper.isHotFtsReady()) return;
     try {
-      const store = DatabaseHelper.getStore();
-      await store.executeSql(SQL_NEWS_FTS_DELETE_KIND, [kind]);
+      const store: relationalStore.RdbStore = DatabaseHelper.getStore();
+      const args: Array<relationalStore.ValueType> = [kind];
+      await store.executeSql(SQL_HOT_FTS_DELETE_KIND, args);
     } catch (e) {
     }
+  }
+
+  // FTS 命中的 key 列表（不可用/查询过短/无命中 → 空数组，调用方回退 LIKE）
+  private static async ftsKeys(kind: string, q: string, limit: number): Promise<string[]> {
+    const keys: string[] = [];
+    if (!DatabaseHelper.isHotFtsReady() || q.length < 3) return keys;
+    try {
+      const store: relationalStore.RdbStore = DatabaseHelper.getStore();
+      const sql: string = 'SELECT key FROM hot_articles_fts WHERE kind = ? AND hot_articles_fts MATCH ? LIMIT ?';
+      const args: Array<relationalStore.ValueType> = [kind, NewsRepository.ftsPhrase(q), limit];
+      const rs: relationalStore.ResultSet = await store.querySql(sql, args);
+      try {
+        while (rs.goToNextRow()) {
+          keys.push(rs.getString(rs.getColumnIndex('key')));
+        }
+      } finally {
+        rs.close();
+      }
+    } catch (e) {
+    }
+    return keys;
+  }
+
+  private static favToHit(r: HotFavoriteEntry): HotSearchHit {
+    return new HotSearchHit(r.key, r.title, r.url, r.sourceId, r.sourceName, r.info, 'fav');
+  }
+
+  // `sourceId:itemId` → itemId
+  private static itemIdOf(key: string): string {
+    const idx: number = key.indexOf(':');
+    return idx < 0 ? key : key.substring(idx + 1);
+  }
+
+  // FTS 查询串转义（trigram 分词下直接使用子串；去掉会破坏语法的字符）
+  private static ftsPhrase(q: string): string {
+    return q.replace(/["'*()]/g, ' ').trim();
   }
 }

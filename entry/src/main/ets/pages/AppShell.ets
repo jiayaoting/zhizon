@@ -6,6 +6,7 @@ import { SideNav } from '../components/SideNav';
 import { MainNavKey, PageKey, NavigationState, NavigationResult, NavigationSuccess,
   NavigationFailure, NavigationSource, NavigationFacade, mainPage, AppShellRouteParams } from '../common/Navigation';
 import { IndexPage } from './Index';
+import { PageRefreshBus } from '../common/PageRefreshBus';
 import { SettingsPage } from './Settings';
 import { GamesPage } from './Games';
 import { ProfilePage } from './Profile';
@@ -16,7 +17,6 @@ import { PrivacyDialog } from '../components/PrivacyDialog';
 import { LockOverlay } from '../components/LockOverlay';
 import { SecurityService } from '../service/SecurityService';
 import { StartupState } from '../entryability/EntryAbility';
-import { AppNavigator } from '../common/AppNavigator';
 import { TetrisPage } from './Tetris';
 import { Game2048Page } from './Game2048';
 import { SnakePage } from './Snake';
@@ -31,13 +31,9 @@ import { AiCallLogPage } from './AiCallLog';
 import { NewsDetailPage } from './NewsDetail';
 import { NewsDigestPage } from './NewsDigest';
 import { NewsFavoritesPage } from './NewsFavorites';
-import { NewsRecommendPage } from './NewsRecommend';
 import { NewsSearchPage } from './NewsSearch';
-import { NewsStatsPage } from './NewsStats';
-import { NewsLikesPage } from './NewsLikes';
-import { NewsProfilePage } from './NewsProfile';
-import { NewsSourceSettingsPage } from './NewsSourceSettings';
-import { NewsChannelSettingsPage } from './NewsChannelSettings';
+import { HotBoardPage } from './HotBoard';
+import { NewsLoginPage } from './NewsLogin';
 import { GameSettingsPage } from './GameSettings';
 import { ReadingReportPage } from './ReadingReport';
 import { AiRoleLibraryPage } from './AiRoleLibrary';
@@ -71,6 +67,10 @@ struct AppShell {
   onPageShow(): void {
     if (this.navigation.currentPage === PageKey.Chat) {
       this.bumpChatRefresh();
+    }
+    // 热榜 Tab：从详情/设置/登录等子页返回时刷新已读与关注态
+    if (this.navigation.currentPage === PageKey.Index) {
+      PageRefreshBus.emitHotShow();
     }
     // 微舆 Hub：从服务器配置/系统管理等子页返回时刷新连接状态
     if (this.navigation.currentPage === PageKey.BettaFish) {
@@ -248,20 +248,12 @@ struct AppShell {
       NewsDigestPage()
     } else if (name === 'pages/NewsFavorites') {
       NewsFavoritesPage()
-    } else if (name === 'pages/NewsRecommend') {
-      NewsRecommendPage()
     } else if (name === 'pages/NewsSearch') {
       NewsSearchPage()
-    } else if (name === 'pages/NewsStats') {
-      NewsStatsPage()
-    } else if (name === 'pages/NewsLikes') {
-      NewsLikesPage()
-    } else if (name === 'pages/NewsProfile') {
-      NewsProfilePage()
-    } else if (name === 'pages/NewsSourceSettings') {
-      NewsSourceSettingsPage()
-    } else if (name === 'pages/NewsChannelSettings') {
-      NewsChannelSettingsPage()
+    } else if (name === 'pages/HotBoard') {
+      HotBoardPage()
+    } else if (name === 'pages/NewsLogin') {
+      NewsLoginPage()
     } else if (name === 'pages/GameSettings') {
       GameSettingsPage()
     } else if (name === 'pages/ReadingReport') {

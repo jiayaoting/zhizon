@@ -1,6 +1,6 @@
 // 智子 - 毛玻璃效果工具组件
 // 用法：作为属性方法调用，根据开关状态自动切换玻璃/纯色
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemePalette } from '../common/Theme';
 import { batteryInfo } from '@kit.BasicServicesKit';
 
 // 玻璃效果级别：P0(顶栏/底栏)、P1(指标卡)、P2(列表卡)

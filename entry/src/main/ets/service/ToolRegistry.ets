@@ -1,9 +1,9 @@
-// 智子 - 工具注册表（P0：计算器 / 当前时间 / 联网搜索，均为 SAFE 只读）
-import { ToolDefinition, ToolResult, ToolLevel } from '../common/AgentModels';
+// 智子 - 工具注册表（P0：计算器 / 当前时间 / 联网搜索 / 热榜检索，均为 SAFE 只读）
+import { ToolDefinition, ToolResult } from '../common/AgentModels';
 import { WebSearchService, WebSearchResult } from './WebSearchService';
 import { DataRepository } from './DataRepository';
-import { NewsService } from './NewsService';
-import { NewsItem } from '../common/NewsModels';
+import { HotFeedStore } from './HotFeedStore';
+import { HotViewKey, HotEntry } from '../common/HotModels';
 
 const CALC_SCHEMA = '{"type":"object","properties":{"expression":{"type":"string","description":"数学表达式，如 123*45+7"}},"required":["expression"]}';
 const NOW_SCHEMA = '{"type":"object","properties":{}}';
@@ -18,8 +18,8 @@ export class ToolRegistry {
       new ToolDefinition('calculator', '计算数学表达式，支持 + - * / 与括号', CALC_SCHEMA, 'SAFE'),
       new ToolDefinition('now', '获取当前日期与时间', NOW_SCHEMA, 'SAFE'),
       new ToolDefinition('web_search', '联网搜索，返回相关结果摘要', SEARCH_SCHEMA, 'SAFE'),
-      new ToolDefinition('news_top', '获取今日热点新闻标题列表（含来源），供回答近期热点问题', NEWS_SCHEMA, 'SAFE'),
-      new ToolDefinition('news_search', '按关键词搜索新闻，返回标题与摘要', NEWS_SEARCH_SCHEMA, 'SAFE')
+      new ToolDefinition('news_top', '获取各平台热榜当前热门条目（含来源），供回答近期热点问题', NEWS_SCHEMA, 'SAFE'),
+      new ToolDefinition('news_search', '在已加载热榜与收藏中按关键词检索，返回标题与来源', NEWS_SEARCH_SCHEMA, 'SAFE')
     ];
   }
 
@@ -32,39 +32,60 @@ export class ToolRegistry {
     return new ToolResult('', false, '', '未知工具：' + name);
   }
 
-  // ---- 新闻搜索 ----
+  // ---- 热榜关键词检索（已加载榜单内存过滤 + 收藏/正文缓存） ----
   private static async runNewsSearch(argsJson: string): Promise<ToolResult> {
     try {
       const args: Record<string, Object> = JSON.parse(argsJson) as Record<string, Object>;
       const query: string = typeof args['query'] === 'string' ? args['query'] as string : '';
-      if (query.trim().length === 0) return new ToolResult('', false, '', '搜索关键词为空');
-      const items: NewsItem[] = await NewsService.search(query.trim(), 10);
-      if (items.length === 0) return new ToolResult('', false, '', '未找到相关新闻');
-      let text: string = '搜索「' + query.trim() + '」结果（' + items.length.toString() + ' 条）：\n';
-      for (let i: number = 0; i < items.length; i++) {
-        text = text + (i + 1).toString() + '. [' + items[i].sourceName + '] ' + items[i].title +
-          (items[i].summary.length > 0 ? ' —— ' + items[i].summary.trim().substring(0, 60) : '') + '\n';
+      const q: string = query.trim();
+      if (q.length === 0) return new ToolResult('', false, '', '搜索关键词为空');
+      // 榜单未加载时先拉一次「最热」（服务端缓存，开销小）
+      let entries: HotEntry[] = HotFeedStore.allLoadedEntries();
+      if (entries.length === 0) {
+        await HotFeedStore.ensureView(HotViewKey.Hottest, false);
+        entries = HotFeedStore.allLoadedEntries();
+      }
+      const lower: string = q.toLowerCase();
+      const hits: HotEntry[] = [];
+      for (let i: number = 0; i < entries.length && hits.length < 10; i++) {
+        if (entries[i].item.title.toLowerCase().indexOf(lower) >= 0) hits.push(entries[i]);
+      }
+      if (hits.length === 0) return new ToolResult('', false, '', '未找到相关热榜条目');
+      let text: string = '热榜搜索「' + q + '」结果（' + hits.length.toString() + ' 条）：\n';
+      for (let i: number = 0; i < hits.length; i++) {
+        text = text + (i + 1).toString() + '. [' + hits[i].sourceName + '] ' + hits[i].item.title +
+          (hits[i].item.info.length > 0 ? '（' + hits[i].item.info + '）' : '') + '\n';
       }
       return new ToolResult('', true, text, '');
     } catch (e) {
-      return new ToolResult('', false, '', '搜索新闻失败');
+      return new ToolResult('', false, '', '搜索热榜失败');
     }
   }
 
-  // ---- 今日热点新闻（资讯功能数据） ----
+  // ---- 今日热点（各平台热榜 Top 条目） ----
   private static async runNewsTop(): Promise<ToolResult> {
     try {
-      const items: NewsItem[] = await NewsService.fetchChannel('recommend', 10, false);
-      if (items.length === 0) {
-        return new ToolResult('', false, '', '暂无新闻数据，请检查网络');
+      let entries: HotEntry[] = HotFeedStore.allLoadedEntries();
+      if (entries.length === 0) {
+        await HotFeedStore.ensureView(HotViewKey.Hottest, false);
+        entries = HotFeedStore.allLoadedEntries();
       }
-      let text: string = '今日热点新闻（共 ' + items.length.toString() + ' 条）：\n';
-      for (let i: number = 0; i < items.length; i++) {
-        text = text + (i + 1).toString() + '. [' + items[i].sourceName + '] ' + items[i].title + '\n';
+      if (entries.length === 0) {
+        return new ToolResult('', false, '', '暂无热榜数据，请检查网络或热榜服务器配置');
+      }
+      const sourceIds: string[] = await HotFeedStore.sourceIds(HotViewKey.Hottest);
+      const picked: HotEntry[] = [];
+      for (let s: number = 0; s < sourceIds.length && picked.length < 15; s++) {
+        const top: HotEntry[] = HotFeedStore.topEntries(sourceIds[s], 2);
+        for (let i: number = 0; i < top.length && picked.length < 15; i++) picked.push(top[i]);
+      }
+      let text: string = '今日热点（来自各平台热榜）：\n';
+      for (let i: number = 0; i < picked.length; i++) {
+        text = text + (i + 1).toString() + '. [' + picked[i].sourceName + '] ' + picked[i].item.title + '\n';
       }
       return new ToolResult('', true, text, '');
     } catch (e) {
-      return new ToolResult('', false, '', '获取新闻失败');
+      return new ToolResult('', false, '', '获取热榜失败');
     }
   }
 

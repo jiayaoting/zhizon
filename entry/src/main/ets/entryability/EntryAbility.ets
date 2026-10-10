@@ -8,6 +8,8 @@ import { ThemeManager, ThemePalette, PreferenceFailureReason } from '../common/T
 import { WindowEnvironmentProvider } from '../service/WindowEnvironmentProvider';
 import { SecurityService } from '../service/SecurityService';
 import { SoundService } from '../service/SoundService';
+import { HotFeedStore } from '../service/HotFeedStore';
+import { NewsNowSync } from '../service/NewsNowSync';
 
 const DOMAIN = 0x9201;
 
@@ -114,6 +116,13 @@ export default class EntryAbility extends UIAbility {
       });
       await ThemeManager.getInstance().init(this.context, sysIsDark);
       hilog.info(DOMAIN, 'EntryAbility', '主题系统初始化成功');
+      // 热榜：已登录时静默拉取云端关注列表（失败不影响启动）
+      HotFeedStore.refreshFocusCache().catch((e: Error) => {
+        hilog.warn(DOMAIN, 'EntryAbility', '热榜关注缓存初始化失败 %{public}s', e.message);
+      });
+      NewsNowSync.onAppStart().catch((e: Error) => {
+        hilog.warn(DOMAIN, 'EntryAbility', '热榜关注同步失败 %{public}s', e.message);
+      });
       this.setStartupState(StartupState.READY);
       this.updateStatusBarColor();
       return true;
@@ -160,6 +169,10 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, 'EntryAbility', 'onBackground');
     SecurityService.onBackground().catch((e: Error) => {
       hilog.warn(DOMAIN, 'EntryAbility', '后台锁定处理失败 %{public}s', e.message);
+    });
+    // 退后台前把待上传的「关注」变更立即同步（防抖计时器可能被回收）
+    NewsNowSync.flushPush().catch((e: Error) => {
+      hilog.warn(DOMAIN, 'EntryAbility', '热榜关注上传失败 %{public}s', e.message);
     });
   }
 }

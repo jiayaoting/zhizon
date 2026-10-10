@@ -1,5 +1,7 @@
 # 智子（Zhizon）AI 对话体验改造方案
 
+> ✅ **已实施（历史设计稿）**：本方案的会话组织 / 流式 Markdown / 多会话管理等改造均已落地（见 [Chat.ets](../entry/src/main/ets/pages/Chat.ets) 与 [DESIGN.md](DESIGN.md) 模块 3），文中「待办 / 待确认」仅记录当时状态。
+
 > 版本：v1.4　|　状态：DevEco 首轮编译 17 个错误已全部修复（未类型化对象字面量 ×4、ClickEvent.stopPropagation 不存在、pasteboard.PasteRecord/getPrimaryRecord 不存在、TopBar 多 @BuilderParam 破坏尾随闭包 ×8、ChatTab 缺 @Component、重复 @Builder）；预检扫描（无类型字面量/可选链/非空断言/@Prop 函数类型）干净；待办：用户在 DevEco 重新编译确认
 > 依据：现有代码走读 + GitHub 开源项目调研（2025-06）
 
@@ -221,3 +223,4 @@
 - ChatCube（鸿蒙原生）：https://github.com/LongLiveY96/chatcube
 - GoodChat-Harmony（鸿蒙原生）：https://github.com/ImGoodBai/Goodchat-Harmony
 - assistant-ui：https://github.com/assistant-ui/assistant-ui
+

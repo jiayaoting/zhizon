@@ -1,5 +1,4 @@
 // 智子 - 全局常量
-import { ColorThemeId } from './Theme';
 import { MainNavKey } from './Navigation';
 
 export class NavItem {
@@ -25,7 +24,7 @@ export class AppConstants {
   static readonly dbName = 'zhizon_db';
 
   static readonly navItems: NavItem[] = [
-    new NavItem(MainNavKey.Index, '资讯', '📰'),
+    new NavItem(MainNavKey.Index, '热榜', '🔥'),
     new NavItem(MainNavKey.Chat, 'AI对话', '🗨️'),
     new NavItem(MainNavKey.Games, '游戏', '🎮'),
     new NavItem(MainNavKey.BettaFish, '微舆', '🐟'),

@@ -42,7 +42,7 @@ export struct ReadingReportPage {
   private reportText(): string {
     if (this.stats === null) return '';
     const s: WeeklyReadingStats = this.stats;
-    if (s.totalReads <= 0) return '本周还没有阅读记录，去资讯页看看吧';
+    if (s.totalReads <= 0) return '本周还没有阅读记录，去热榜页看看吧';
     let bestLabel: string = '';
     if (s.bestDayIndex >= 0 && s.bestDayIndex < s.dates.length) {
       bestLabel = s.dates[s.bestDayIndex];
@@ -53,7 +53,7 @@ export struct ReadingReportPage {
     }
     let text: string = '本周共阅读 ' + s.totalReads.toString() + ' 篇';
     text += '，收藏 ' + s.totalFavorites.toString() + ' 篇';
-    text += '，AI 资讯调用 ' + s.totalAiCalls.toString() + ' 次';
+    text += '，AI 调用 ' + s.totalAiCalls.toString() + ' 次';
     text += '，活跃 ' + s.activeDays.toString() + ' 天';
     if (bestLabel.length > 0) {
       text += '。最活跃的一天是 ' + bestLabel + '（' + bestCount.toString() + ' 篇）';
@@ -65,7 +65,7 @@ export struct ReadingReportPage {
     } else if (s.totalReads >= 10) {
       text += ' 阅读节奏不错，试着每天都读一点。';
     } else {
-      text += ' 碎片时间也可以读一篇资讯，积少成多。';
+      text += ' 碎片时间也可以读几条热榜，积少成多。';
     }
     return text;
   }

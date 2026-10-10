@@ -1,62 +1,98 @@
-// 智子 - 收藏/稍后读列表页
+// 智子 - 热榜收藏列表页
+// 设计文档：doc/newsnow-redesign.md §9
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { NewsItem, NewsDetailRouteParams } from '../common/NewsModels';
+import { HotEntry, HotDetailRouteParams } from '../common/HotModels';
 import { NewsRepository } from '../service/NewsRepository';
-import { LazyListDataSource } from '../common/LazyDataSource';
-import { NewsCard } from '../components/NewsCard';
+import { HotSourceBadge } from '../components/HotSourceBadge';
 
 @ComponentV2
 @Entry
 export struct NewsFavoritesPage {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
-  @Local favorites: NewsItem[] = [];
+  @Local favorites: HotEntry[] = [];
   @Local loading: boolean = true;
-
-  private source: LazyListDataSource<NewsItem> = new LazyListDataSource<NewsItem>([]);
 
   aboutToAppear(): void {
     this.loadFavorites();
-  }
-
-  aboutToDisappear(): void {
-    // 单次拉取，无持久资源需要释放
   }
 
   private async loadFavorites(): Promise<void> {
     this.loading = true;
     try {
       this.favorites = await NewsRepository.listFavorites();
-      this.source.replace(this.favorites);
     } catch (e) {
       this.favorites = [];
-      this.source.replace([]);
     }
     this.loading = false;
   }
 
-  private openDetail(item: NewsItem): void {
-    AppNavigator.push('pages/NewsDetail', new NewsDetailRouteParams(item));
+  private openDetail(entry: HotEntry): void {
+    AppNavigator.push('pages/NewsDetail', new HotDetailRouteParams(entry.key, entry.sourceId,
+      entry.sourceName, entry.item.title, entry.item.url, entry.item.info));
   }
 
-  private async removeFavorite(item: NewsItem): Promise<void> {
-    await NewsRepository.removeFavorite(item.url);
-    this.loadFavorites();
+  private async removeFavorite(entry: HotEntry): Promise<void> {
+    await NewsRepository.removeFavorite(entry.key);
+    await this.loadFavorites();
     promptAction.showToast({ message: '已取消收藏' });
   }
 
   private async clearAll(): Promise<void> {
     if (this.favorites.length === 0) return;
     await NewsRepository.clearFavorites();
-    this.loadFavorites();
+    await this.loadFavorites();
     promptAction.showToast({ message: '已清空收藏' });
+  }
+
+  @Builder
+  favRow(entry: HotEntry) {
+    Row({ space: 10 }) {
+      HotSourceBadge({ sourceId: entry.sourceId, badgeSize: 28 })
+
+      Column({ space: 4 }) {
+        Text(entry.item.title)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .fontWeight(FontWeight.Medium)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        Text(entry.sourceName +
+          (entry.item.info.length > 0 ? ' · ' + entry.item.info : ''))
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .textAlign(TextAlign.Start)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Text('✕')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+        .padding(10)
+        .onClick(() => { this.removeFavorite(entry); })
+    }
+    .width('100%')
+    .padding(12)
+    .borderRadius(12)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 1, color: this.themeState.palette.borderSubtle })
+    .alignItems(VerticalAlign.Center)
   }
 
   build() {
     Column() {
-      TopBar({ title: '收藏 / 稍后读', showBack: true }) {
+      TopBar({ title: '收藏', showBack: true }) {
         Row({ space: 8 }) {
           Text('🗑')
             .fontSize(this.themeState.palette.fsLg)
@@ -75,7 +111,7 @@ export struct NewsFavoritesPage {
             .fontSize(this.themeState.palette.fsLg)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
-          Text('在新闻详情页点击 ☆ 收藏感兴趣的文章')
+          Text('在热榜条目详情页点击收藏，稍后再读')
             .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
@@ -85,26 +121,12 @@ export struct NewsFavoritesPage {
         .justifyContent(FlexAlign.Center)
       } else {
         List({ space: 10 }) {
-          LazyForEach(this.source, (item: NewsItem) => {
+          ForEach(this.favorites, (entry: HotEntry) => {
             ListItem() {
-              Row({ space: 8 }) {
-                NewsCard({
-                  item: item,
-                  read: false,
-                  onOpen: (opened: NewsItem): void => { this.openDetail(opened); }
-                })
-                .layoutWeight(1)
-                Text('✕')
-                  .fontSize(this.themeState.palette.fsMd)
-                  .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.themeState.palette.textTertiary)
-                  .padding(10)
-                  .onClick(() => { this.removeFavorite(item); })
-              }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
+              this.favRow(entry)
             }
-          }, (item: NewsItem) => item.id)
+            .onClick(() => { this.openDetail(entry); })
+          }, (entry: HotEntry) => entry.key)
         }
         .width('100%')
         .constraintSize({ maxWidth: 720 })

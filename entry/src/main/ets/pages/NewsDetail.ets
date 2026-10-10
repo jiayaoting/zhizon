@@ -1,4 +1,5 @@
-// 智子 - 新闻详情页（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI）
+// 智子 - 热榜条目详情页（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI + 朗读）
+// 设计文档：doc/newsnow-redesign.md §9.3
 import { webview } from '@kit.ArkWeb';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
@@ -8,16 +9,13 @@ import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { NewsModelSelector } from '../components/NewsModelSelector';
 import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { NewsDislikePanel } from '../components/NewsDislikePanel';
-import { NewsItem, NewsDetailRouteParams } from '../common/NewsModels';
+import { HotEntry, HotItem, HotDetailRouteParams } from '../common/HotModels';
 import { NewsRepository } from '../service/NewsRepository';
-import { NewsService } from '../service/NewsService';
-import { NewsArticleCacheEntry } from '../service/DatabaseHelper';
+import { HotArticleCacheEntry } from '../service/DatabaseHelper';
 import { NewsAiService } from '../service/NewsAiService';
 import { SpeechService } from '../service/SpeechService';
-import { LlmConfig, ChatMessage, LlmResult } from '../common/LlmModels';
+import { LlmConfig, LlmModelEntry, ChatMessage, LlmResult } from '../common/LlmModels';
 
 enum AiPanelKind {
   NONE = 0,
@@ -26,22 +24,27 @@ enum AiPanelKind {
   ASK = 3
 }
 
-function formatDetailTime(ts: number): string {
-  const d: Date = new Date(ts);
-  const pad = (n: number) => n < 10 ? '0' + n.toString() : n.toString();
-  return d.getFullYear().toString() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
-    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+// 正文缓存 HTML → 纯文本（离线/抽取失败时作为 AI 上下文兜底）
+function htmlToText(html: string): string {
+  const stripped: string = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  return stripped.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 }
 
 @ComponentV2
 @Entry
 export struct NewsDetailPage {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
-  @Local item: NewsItem = new NewsItem('', '', '', '', '', '', '', '', 0);
+  // 路由参数（HotDetailRouteParams 序列化纯数据）
+  @Local itemKey: string = '';
+  @Local sourceId: string = '';
+  @Local sourceName: string = '';
+  @Local title: string = '';
+  @Local url: string = '';
+  @Local info: string = '';
   @Local favorited: boolean = false;
-  @Local liked: boolean = false;
-  @Local disliked: boolean = false;
-  @Local dislikeTarget: NewsItem | null = null;
   @Local webFailed: boolean = false;
   @Local offlineMode: boolean = false;
   // AI 面板状态
@@ -52,54 +55,81 @@ export struct NewsDetailPage {
   @Local askInput: string = '';
   // 问AI 历史（只保留最近 4 轮）
   @Local askHistory: ChatMessage[] = [];
+  // 正文纯文本（ArkWeb JS 抽取，供 AI 摘要/翻译/问答）
+  @Local bodyText: string = '';
   // 朗读状态
   @Local speaking: boolean = false;
-  // 知乎日报正文（API 渲染，替代网页）
-  @Local zhihuHtml: string = '';
-  @Local zhihuInjected: boolean = false;
   // 阅读缩放
   @Local zoomFactor: number = 1.0;
   // 最近一次 AI 调用 token 消耗
   @Local lastTokens: number = 0;
+  // 模型选择（热榜专属模型，跟随全局时为空）
+  @Local modelName: string = '跟随全局';
+  @Local models: LlmModelEntry[] = [];
+  @Local modelSheet: boolean = false;
 
   private controller: webview.WebviewController = new webview.WebviewController();
 
   aboutToAppear(): void {
-    const params: NewsDetailRouteParams | null = AppNavigator.getParam('pages/NewsDetail') as NewsDetailRouteParams | null;
-    // 注意：router 参数为序列化纯数据对象，类方法（如 toItem）不可用，需直接读字段
-    if (params !== null && params !== undefined && params.url.length > 0) {
-      this.item = new NewsItem(params.itemId, params.title, params.summary, params.url,
-        params.imageUrl, params.sourceId, params.sourceName, params.category, params.publishedAt,
-        params.tags === undefined ? [] : params.tags,
-        params.language === undefined ? 'zh' : params.language);
+    const params: HotDetailRouteParams | null =
+      AppNavigator.getParam('pages/NewsDetail') as HotDetailRouteParams | null;
+    // 注意：router 参数为序列化纯数据对象，类方法不可用，需直接读字段
+    if (params !== null) {
+      this.itemKey = params.key;
+      this.sourceId = params.sourceId;
+      this.sourceName = params.sourceName;
+      this.title = params.title;
+      this.url = params.url;
+      this.info = params.info;
     }
     this.loadState();
-    this.prefetchZhihu();
+    this.loadModelName();
   }
 
   aboutToDisappear(): void {
-    // Web 组件随页面销毁，AI 请求由 LlmClient 内部管理
+    SpeechService.stopSpeaking();
   }
 
-  // 知乎日报：预取正文 HTML（更轻量、图片协议补全），就绪后注入 Web
-  private async prefetchZhihu(): Promise<void> {
-    const sid: string = NewsService.zhihuStoryId(this.item.id);
-    if (sid.length === 0) return;
-    const html: string = await NewsService.fetchZhihuStory(sid);
-    if (html.length > 0) {
-      this.zhihuHtml = html;
-      this.maybeInjectZhihu();
-    }
-  }
-
-  private maybeInjectZhihu(): void {
-    if (this.zhihuHtml.length === 0 || this.zhihuInjected) return;
+  private async loadState(): Promise<void> {
+    if (this.itemKey.length === 0) return;
     try {
-      this.controller.loadData(this.zhihuHtml, 'text/html', 'UTF-8', this.item.url);
-      this.zhihuInjected = true;
+      this.favorited = await NewsRepository.isFavorite(this.itemKey);
+      await NewsRepository.markRead(this.itemKey);
     } catch (e) {
     }
   }
+
+  private async loadModelName(): Promise<void> {
+    try {
+      this.modelName = await NewsAiService.getActiveModelName();
+    } catch (e) {
+      this.modelName = '未配置模型';
+    }
+  }
+
+  // 路由参数 → 收藏用条目（key = `sourceId:itemId`）
+  private entryOf(): HotEntry {
+    const idx: number = this.itemKey.indexOf(':');
+    const itemId: string = idx < 0 ? this.itemKey : this.itemKey.substring(idx + 1);
+    const item: HotItem = new HotItem(itemId, this.title, this.url, this.url, 0, this.info);
+    return new HotEntry(this.itemKey, item, this.sourceId, this.sourceName);
+  }
+
+  private async toggleFavorite(): Promise<void> {
+    if (this.itemKey.length === 0) {
+      promptAction.showToast({ message: '该条目暂不支持收藏' });
+      return;
+    }
+    try {
+      const fav: boolean = await NewsRepository.toggleFavorite(this.entryOf());
+      this.favorited = fav;
+      promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
+    } catch (e) {
+      promptAction.showToast({ message: '操作失败，请重试' });
+    }
+  }
+
+  // ==================== Web 正文 ====================
 
   // 阅读字号缩放（ArkWeb zoom）
   private adjustZoom(delta: number): void {
@@ -125,67 +155,27 @@ export struct NewsDetailPage {
     }
   }
 
-  private async loadState(): Promise<void> {
-    if (this.item.url.length === 0) return;
+  // 抽取正文纯文本（供 AI 摘要/翻译/问答；热榜无摘要字段）
+  private extractBodyText(): void {
     try {
-      this.favorited = await NewsRepository.isFavorite(this.item.url);
-      const rating = await NewsRepository.getRating(this.item.url);
-      this.liked = rating !== null && rating.rating === 1;
-      this.disliked = rating !== null && rating.rating === -1;
-      await NewsRepository.markRead(this.item.url);
-      // 隐式信号：深度阅读 +2
-      await NewsRepository.recordEvent('read', this.item, 2, '');
+      this.controller.runJavaScript('document.body ? document.body.innerText : ""',
+        (error: BusinessError, result: string): void => {
+          if (error !== null && error !== undefined) return;
+          const text: string = result === undefined ? '' : result;
+          const trimmed: string = text.trim();
+          if (trimmed.length > 0) {
+            this.bodyText = NewsAiService.truncate(trimmed);
+          }
+        });
     } catch (e) {
     }
   }
 
-  // ==================== 点赞 / 点踩（v0.7） ====================
-
-  private async toggleLike(): Promise<void> {
-    try {
-      if (this.liked) {
-        await NewsRepository.removeRating(this.item.url);
-        await NewsRepository.recordEvent('undo', this.item, 0, '');
-        this.liked = false;
-        promptAction.showToast({ message: '已取消点赞' });
-      } else {
-        await NewsRepository.setRating(this.item, 1, this.item.tags === undefined ? [] : this.item.tags);
-        this.liked = true;
-        this.disliked = false;
-        promptAction.showToast({ message: '已点赞，之后会多推同类内容' });
-      }
-    } catch (e) {
-    }
-  }
-
-  private openDislike(): void {
-    this.dislikeTarget = this.item;
-  }
-
-  private async confirmDislike(item: NewsItem, tags: string[]): Promise<void> {
-    this.dislikeTarget = null;
-    try {
-      await NewsRepository.setRating(item, -1, tags);
-      if (tags.length === 0) {
-        await NewsRepository.excludeUrl(item.url, 'dislike-no-tag');
-      }
-      this.liked = false;
-      this.disliked = true;
-      NewsService.clearExclusionCache();
-      promptAction.showToast({ message: tags.length > 0 ?
-        '已减少「' + tags.join('、') + '」类推送' : '已减少本篇推荐' });
-    } catch (e) {
-    }
-  }
-
-  private async toggleFavorite(): Promise<void> {
-    try {
-      const fav: boolean = await NewsRepository.toggleFavorite(this.item);
-      this.favorited = fav;
-      promptAction.showToast({ message: fav ? '已收藏' : '已取消收藏' });
-    } catch (e) {
-      promptAction.showToast({ message: '操作失败，请重试' });
-    }
+  // AI 上下文正文：优先网页抽取，其次离线缓存抽取，最后用热度描述兜底
+  private aiBody(): string {
+    const text: string = this.bodyText.trim();
+    if (text.length > 0) return NewsAiService.truncate(text);
+    return this.info;
   }
 
   // ==================== AI 能力 ====================
@@ -205,7 +195,8 @@ export struct NewsDetailPage {
   }
 
   // 开始一次 AI 调用（摘要/翻译）
-  private async runAi(panel: AiPanelKind, builder: (config: LlmConfig, onDelta: (d: string) => void) => Promise<LlmResult>): Promise<void> {
+  private async runAi(panel: AiPanelKind,
+    builder: (config: LlmConfig, onDelta: (d: string) => void) => Promise<LlmResult>): Promise<void> {
     const has: boolean = await NewsAiService.hasModel();
     if (!has) {
       promptAction.showToast({ message: '请先在「我的 → AI 模型」配置模型' });
@@ -235,20 +226,12 @@ export struct NewsDetailPage {
 
   private onSummary(): void {
     this.runAi(AiPanelKind.SUMMARY, (config: LlmConfig, onDelta: (d: string) => void): Promise<LlmResult> => {
-      return NewsAiService.summarize(config, this.item, this.item.summary, onDelta);
+      return NewsAiService.summarize(config, this.title, this.aiBody(), onDelta);
     });
   }
 
-  // 外文翻译：缓存优先 + 方向自动（外文→中文；中文→英文）+ 翻译模型（可单独记忆）
+  // 外文/中文正文统一翻译成简体中文（翻译模型可单独记忆）
   private async onTranslate(): Promise<void> {
-    // 缓存优先（正文译文缓存 7 天）
-    const cached: string = await NewsRepository.getBodyTranslation(this.item.url);
-    if (cached.length > 0) {
-      this.aiPanel = AiPanelKind.TRANSLATE;
-      this.aiText = cached;
-      this.aiError = '';
-      return;
-    }
     const config: LlmConfig | null = await NewsAiService.getTranslateConfig();
     if (config === null) {
       promptAction.showToast({ message: '请先在「我的 → AI 模型」配置模型' });
@@ -258,18 +241,13 @@ export struct NewsDetailPage {
     this.aiText = '';
     this.aiError = '';
     this.aiBusy = true;
-    const targetZh: boolean = this.item.language === 'zh';
-    const result: LlmResult = await NewsAiService.translate(config, this.item, this.item.summary,
-      !targetZh, (d: string): void => {
+    const result: LlmResult = await NewsAiService.translate(config, this.title, this.aiBody(), true,
+      (d: string): void => {
         this.aiText = this.aiText + d;
       });
     this.aiBusy = false;
     if (result.success) {
       this.lastTokens = result.tokenUsage.totalTokens;
-      if (this.aiText.length > 0) {
-        NewsRepository.saveBodyTranslation(this.item, this.aiText, config.displayName).catch(() => {
-        });
-      }
     } else {
       this.aiError = result.errorMessage.length > 0 ? result.errorMessage : '翻译失败，请重试';
     }
@@ -295,7 +273,7 @@ export struct NewsDetailPage {
       promptAction.showToast({ message: '模型配置不可用' });
       return;
     }
-    const result: LlmResult = await NewsAiService.ask(config, this.item, this.item.summary,
+    const result: LlmResult = await NewsAiService.ask(config, this.title, this.aiBody(),
       this.askHistory, q, (d: string): void => {
         this.aiText = this.aiText + d;
       });
@@ -314,11 +292,37 @@ export struct NewsDetailPage {
     }
   }
 
+  // ==================== 模型选择 ====================
+
+  private modelLabel(m: LlmModelEntry): string {
+    return m.displayName.length > 0 ? m.displayName : m.model;
+  }
+
+  private async openModelSheet(): Promise<void> {
+    try {
+      this.models = await NewsAiService.listModels();
+    } catch (e) {
+      this.models = [];
+    }
+    this.modelSheet = true;
+  }
+
+  // id 为空字符串 = 恢复「跟随全局」
+  private async pickModel(id: string): Promise<void> {
+    try {
+      await NewsAiService.selectModel(id);
+    } catch (e) {
+    }
+    this.modelSheet = false;
+    await this.loadModelName();
+    promptAction.showToast({ message: '当前模型：' + this.modelName });
+  }
+
   // ==================== 离线正文缓存 ====================
 
   // 页面加载完成：抓取当前页面 HTML 存入缓存（供离线/弱网时回退阅读）
   private cacheArticleHtml(): void {
-    if (this.item.url.length === 0) return;
+    if (this.url.length === 0) return;
     try {
       this.controller.runJavaScript('document.documentElement.outerHTML',
         (error: BusinessError, result: string): void => {
@@ -326,7 +330,7 @@ export struct NewsDetailPage {
           const html: string = result === undefined ? '' : result;
           // 空页/过小页面不缓存；过大页面截断，避免数据库膨胀
           if (html.length < 500 || html.length > 800 * 1024) return;
-          NewsRepository.saveArticleCache(this.item.url, this.item.title, html).catch(() => {
+          NewsRepository.saveArticleCache(this.url, this.title, html).catch(() => {
           });
         });
     } catch (e) {
@@ -335,15 +339,19 @@ export struct NewsDetailPage {
 
   // 加载失败：尝试用缓存 HTML 回退（离线阅读）
   private useCachedArticle(): void {
-    if (this.item.url.length === 0) {
+    if (this.url.length === 0) {
       this.webFailed = true;
       return;
     }
-    NewsRepository.getArticleCache(this.item.url).then((cached: NewsArticleCacheEntry | null) => {
+    NewsRepository.getArticleCache(this.url).then((cached: HotArticleCacheEntry | null) => {
       if (cached !== null && cached.html.length > 0) {
         try {
           this.offlineMode = true;
-          this.controller.loadData(cached.html, 'text/html', 'UTF-8', this.item.url);
+          if (this.bodyText.trim().length === 0) {
+            const text: string = htmlToText(cached.html);
+            if (text.length > 0) this.bodyText = NewsAiService.truncate(text);
+          }
+          this.controller.loadData(cached.html, 'text/html', 'UTF-8', this.url);
         } catch (e) {
           this.webFailed = true;
         }
@@ -355,12 +363,12 @@ export struct NewsDetailPage {
     });
   }
 
-  // ==================== 分享 ====================
+  // ==================== 分享 / 朗读 / 复制 ====================
 
   private shareNews(): void {
-    const text: string = '【' + this.item.sourceName + '】' + this.item.title + '\n' +
-      (this.item.summary.length > 0 ? this.item.summary + '\n' : '') +
-      '原文：' + this.item.url + '\n—— 来自 智子 AI 资讯';
+    const text: string = '【' + this.sourceName + '】' + this.title + '\n' +
+      (this.info.length > 0 ? this.info + '\n' : '') +
+      '原文：' + this.url + '\n—— 来自 智子 热榜';
     try {
       const data: systemShare.SharedData = new systemShare.SharedData({
         utd: utd.UniformDataType.PLAIN_TEXT,
@@ -374,24 +382,22 @@ export struct NewsDetailPage {
       };
       controller.show(context, options).catch((e: Object) => {
       });
-      // 隐式信号：分享 +4
-      NewsRepository.recordEvent('share', this.item, 4, '').catch(() => {
-      });
     } catch (e) {
       promptAction.showToast({ message: '分享失败' });
     }
   }
 
-  // 朗读标题 + 摘要（复用 SpeechService TTS）
+  // 朗读标题 + 正文（复用 SpeechService TTS）
   private async toggleSpeak(): Promise<void> {
     if (this.speaking) {
       SpeechService.stopSpeaking();
       this.speaking = false;
       return;
     }
-    let text: string = this.item.title;
-    if (this.item.summary.trim().length > 0) {
-      text = text + '。' + this.item.summary.trim();
+    let text: string = this.title;
+    const body: string = this.aiBody().trim();
+    if (body.length > 0) {
+      text = text + '。' + body;
     }
     this.speaking = true;
     await SpeechService.speak(text, {
@@ -434,18 +440,46 @@ export struct NewsDetailPage {
     .onClick(onClick)
   }
 
+  // 当前模型 chip（点击切换热榜专属模型）
+  @Builder
+  modelChip(chipWidth: number) {
+    Row({ space: 4 }) {
+      Text('🤖')
+        .fontSize(11)
+        .fontFamily(this.themeState.palette.fontSans)
+      Text(this.modelName)
+        .fontSize(11)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      Text('▾')
+        .fontSize(10)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+    }
+    .width(chipWidth)
+    .height(30)
+    .padding({ left: 8, right: 8 })
+    .borderRadius(8)
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => { this.openModelSheet(); })
+  }
+
   @Builder
   aiPanelContent() {
     Column() {
-      Row() {
+      Row({ space: 8 }) {
         Text(this.panelTitle())
           .fontSize(this.themeState.palette.fsLg)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Blank()
-        NewsModelSelector()
-          .width(170)
+        this.modelChip(160)
         Text('✕')
           .fontSize(this.themeState.palette.fsLg)
           .fontFamily(this.themeState.palette.fontSans)
@@ -567,31 +601,128 @@ export struct NewsDetailPage {
   }
 
   @Builder
+  modelOverlay() {
+    if (this.modelSheet) {
+      Stack() {
+        Column() {
+          Blank()
+          Column({ space: 4 }) {
+            Row() {
+              Text('选择模型')
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+              Blank()
+              Text('✕')
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
+                .padding(8)
+                .onClick(() => { this.modelSheet = false; })
+            }
+            .width('100%')
+            .padding({ left: 4, right: 4, bottom: 6 })
+
+            Scroll() {
+              Column({ space: 4 }) {
+                Row({ space: 10 }) {
+                  Column({ space: 2 }) {
+                    Text('跟随全局')
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textPrimary)
+                    Text('使用「我的 → AI 模型」中的默认模型')
+                      .fontSize(10)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textTertiary)
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+                }
+                .width('100%')
+                .padding(12)
+                .borderRadius(8)
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .onClick(() => { this.pickModel(''); })
+
+                ForEach(this.models, (m: LlmModelEntry) => {
+                  Row({ space: 10 }) {
+                    Column({ space: 2 }) {
+                      Text(this.modelLabel(m))
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textPrimary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      Text(m.model)
+                        .fontSize(10)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textTertiary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    }
+                    .alignItems(HorizontalAlign.Start)
+                    .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .padding(12)
+                  .borderRadius(8)
+                  .backgroundColor(this.themeState.palette.bgSurface)
+                  .onClick(() => { this.pickModel(m.id); })
+                }, (m: LlmModelEntry) => m.id)
+
+                if (this.models.length === 0) {
+                  Text('没有已启用的模型，请到「我的 → AI 模型」中启用')
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
+                    .padding({ top: 12, bottom: 12 })
+                }
+              }
+              .width('100%')
+            }
+            .width('100%')
+            .scrollBar(BarState.Off)
+            .constraintSize({ maxHeight: 360 })
+          }
+          .width('100%')
+          .padding(16)
+          .borderRadius(16)
+          .backgroundColor(this.themeState.palette.bgBase)
+          .alignItems(HorizontalAlign.Start)
+          .onClick(() => {})
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor('rgba(0,0,0,0.35)')
+      .onClick(() => { this.modelSheet = false; })
+    }
+  }
+
+  @Builder
   fallbackContent() {
     Column({ space: 12 }) {
-      Text(this.item.title)
+      Text(this.title)
         .fontSize(this.themeState.palette.fsXl)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
-      if (this.item.summary.length > 0) {
-        Text(this.item.summary)
+      if (this.info.length > 0) {
+        Text(this.info)
           .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textSecondary)
           .lineHeight(24)
       }
-      Button('用系统浏览器打开原文')
+      Text('原文加载失败，且暂无离线缓存')
         .fontSize(this.themeState.palette.fsSm)
         .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(Color.White)
-        .backgroundColor(this.themeState.palette.primary)
-        .borderRadius(8)
-        .height(38)
-        .margin({ top: 8 })
-        .onClick(() => {
-          promptAction.showToast({ message: '请在浏览器中打开' });
-        })
+        .fontColor(this.themeState.palette.textTertiary)
     }
     .width('100%')
     .padding(20)
@@ -601,7 +732,7 @@ export struct NewsDetailPage {
   build() {
     Stack() {
       Column() {
-        TopBar({ title: '新闻详情', showBack: true }) {
+        TopBar({ title: '热榜详情', showBack: true }) {
           Row({ space: 10 }) {
             Text('A-')
               .fontSize(this.themeState.palette.fsSm)
@@ -623,7 +754,7 @@ export struct NewsDetailPage {
           }
         }
 
-        if (this.item.url.length === 0) {
+        if (this.url.length === 0) {
           Column({ space: 12 }) {
             Text('未找到文章内容')
               .fontSize(this.themeState.palette.fsMd)
@@ -635,73 +766,67 @@ export struct NewsDetailPage {
           .justifyContent(FlexAlign.Center)
         } else {
           Column() {
-            // 文章头部：宽屏（平板/折叠展开/横屏）图左字右，手机保持竖排紧凑
+            // 文章头部：宽屏（平板/折叠展开/横屏）字号更大，手机紧凑
             if (this.themeState.isLg || this.themeState.isMd) {
-              Row({ space: 14 }) {
-                if (this.item.imageUrl.length > 0) {
-                  Image(this.item.imageUrl)
-                    .width(150)
-                    .height(100)
-                    .objectFit(ImageFit.Cover)
-                    .borderRadius(10)
-                }
-                Column({ space: 6 }) {
-                  Text(this.item.title)
-                    .fontSize(this.themeState.palette.fsXl)
+              Column({ space: 6 }) {
+                Text(this.title)
+                  .fontSize(this.themeState.palette.fsXl)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textPrimary)
+                  .fontWeight(FontWeight.Bold)
+                  .maxLines(3)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
+                Row({ space: 8 }) {
+                  Text(this.sourceName)
+                    .fontSize(this.themeState.palette.fsSm)
                     .fontFamily(this.themeState.palette.fontSans)
-                    .fontColor(this.themeState.palette.textPrimary)
-                    .fontWeight(FontWeight.Bold)
-                    .maxLines(3)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Row({ space: 8 }) {
-                    Text(this.item.sourceName)
-                      .fontSize(this.themeState.palette.fsSm)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.primary)
-                    Text(formatDetailTime(this.item.publishedAt))
+                    .fontColor(this.themeState.palette.primary)
+                  if (this.info.length > 0) {
+                    Text('· ' + this.info)
                       .fontSize(this.themeState.palette.fsSm)
                       .fontFamily(this.themeState.palette.fontSans)
                       .fontColor(this.themeState.palette.textTertiary)
-                    if (this.offlineMode) {
-                      Text('· 离线缓存')
-                        .fontSize(this.themeState.palette.fsXs)
-                        .fontFamily(this.themeState.palette.fontSans)
-                        .fontColor(this.themeState.palette.warning)
-                    }
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
                   }
-                  .width('100%')
+                  if (this.offlineMode) {
+                    Text('· 离线缓存')
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.warning)
+                  }
                 }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
+                .width('100%')
               }
               .width('100%')
               .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 12, bottom: 12 })
-              .alignItems(VerticalAlign.Center)
+              .alignItems(HorizontalAlign.Start)
             } else {
               Column({ space: 6 }) {
-                if (this.item.imageUrl.length > 0) {
-                  Image(this.item.imageUrl)
-                    .width('100%')
-                    .height(110)
-                    .objectFit(ImageFit.Cover)
-                    .borderRadius(10)
-                }
-                Text(this.item.title)
+                Text(this.title)
                   .fontSize(this.themeState.palette.fsLg)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.textPrimary)
                   .fontWeight(FontWeight.Bold)
                   .maxLines(3)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
                 Row({ space: 8 }) {
-                  Text(this.item.sourceName)
+                  Text(this.sourceName)
                     .fontSize(this.themeState.palette.fsSm)
                     .fontFamily(this.themeState.palette.fontSans)
                     .fontColor(this.themeState.palette.primary)
-                  Text(formatDetailTime(this.item.publishedAt))
-                    .fontSize(this.themeState.palette.fsSm)
-                    .fontFamily(this.themeState.palette.fontSans)
-                    .fontColor(this.themeState.palette.textTertiary)
+                  if (this.info.length > 0) {
+                    Text('· ' + this.info)
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textTertiary)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                  }
                   if (this.offlineMode) {
                     Text('· 离线缓存')
                       .fontSize(this.themeState.palette.fsXs)
@@ -716,10 +841,8 @@ export struct NewsDetailPage {
               .alignItems(HorizontalAlign.Start)
             }
 
-            // 操作条
+            // 操作条：收藏 / 摘要 / 翻译 / 问AI / 朗读
             Row() {
-              this.actionButton(this.liked ? '👍' : '👍🏻', this.liked ? '已赞' : '点赞', () => { this.toggleLike(); })
-              this.actionButton(this.disliked ? '👎' : '👎🏻', this.disliked ? '已踩' : '点踩', () => { this.openDislike(); })
               this.actionButton(this.favorited ? '⭐' : '☆', this.favorited ? '已收藏' : '收藏', () => { this.toggleFavorite(); })
               this.actionButton('🤖', '摘要', () => { this.onSummary(); })
               this.actionButton('🌐', '翻译', () => { this.onTranslate(); })
@@ -735,15 +858,15 @@ export struct NewsDetailPage {
             .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
             .borderRadius(12)
 
-            // 正文（ArkWeb 加载原文；成功时缓存正文供离线阅读，失败时回退缓存）
+            // 正文（ArkWeb 加载原文；成功时缓存正文并抽取正文文本，失败时回退缓存）
             Column() {
               if (!this.webFailed) {
-                Web({ src: this.item.url, controller: this.controller })
+                Web({ src: this.url, controller: this.controller })
                   .width('100%')
                   .layoutWeight(1)
                   .onPageEnd(() => {
                     this.cacheArticleHtml();
-                    this.maybeInjectZhihu();
+                    this.extractBodyText();
                     this.injectDarkCss();
                   })
                   .onErrorReceive(() => {
@@ -766,15 +889,7 @@ export struct NewsDetailPage {
 
       this.aiPanelOverlay()
 
-      if (this.dislikeTarget !== null) {
-        ForEach([this.dislikeTarget], (target: NewsItem) => {
-          NewsDislikePanel({
-            item: target,
-            onConfirm: (item: NewsItem, tags: string[]): void => { this.confirmDislike(item, tags); },
-            onCancel: (): void => { this.dislikeTarget = null; }
-          })
-        }, (target: NewsItem) => target.url)
-      }
+      this.modelOverlay()
     }
     .width('100%')
     .height('100%')

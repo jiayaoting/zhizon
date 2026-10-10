@@ -3,7 +3,7 @@
 > 版本：v1.0
 > 目标系统：HarmonyOS 6.1.1(24)（API 24）
 > 服务端：自部署 BettaFish（微舆）多 Agent 舆情分析系统
-> 文档状态：方案设计稿（未进入编码）
+> 文档状态：已实施（服务端对接契约参考；App 侧见 entry/src/main/ets/pages/BettaFish*.ets）
 
 ---
 

@@ -1,7 +1,7 @@
 // 智子 - BettaFish 引擎状态卡
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from './GlassEffect';
+import { GlassStyle } from './GlassEffect';
 import { BettaEngineStatus } from '../common/BettaFishModels';
 
 @ComponentV2

@@ -204,13 +204,27 @@ export class CloudSyncService {
     payload.exportedAt = Date.now();
     const account = await DataRepository.getSetting('huaweiAccountProfile', '');
     payload.account = account.length > 0 ? account : 'local';
-    payload.settings = await DatabaseHelper.getAllSettings();
+    payload.settings = CloudSyncService.filterSyncedSettings(await DatabaseHelper.getAllSettings());
     payload.scores = await DatabaseHelper.getAllGameScores();
     payload.achievements = await AchievementService.getAll();
     const sessions: ChatSession[] = await ChatRepository.loadSessions();
     payload.chat = await CloudSyncService.exportAllChat(sessions);
     payload.checksum = await CloudSyncService.sha256Hex(CloudSyncService.bodyJson(payload));
     return payload;
+  }
+
+  // 仅本机有效的设置：凭证密文由本机 HUKS 硬件密钥加密，换机无法解密，不参与云备份
+  private static readonly LOCAL_ONLY_SETTINGS: string[] = ['hot_jwt_enc', 'huaweiAccountProfile'];
+
+  private static filterSyncedSettings(all: Record<string, string>): Record<string, string> {
+    const out: Record<string, string> = {};
+    const keys: string[] = Object.keys(all);
+    for (let i: number = 0; i < keys.length; i++) {
+      const k: string = keys[i];
+      if (CloudSyncService.LOCAL_ONLY_SETTINGS.indexOf(k) >= 0) continue;
+      out[k] = all[k];
+    }
+    return out;
   }
 
   // 不含 checksum 字段的载荷 JSON（字段顺序即哈希输入，恢复校验时必须保持一致）

@@ -3,7 +3,7 @@
 > 版本：v1.1
 > 目标应用：智子（HarmonyOS NEXT · API 24 · Stage 模型）
 > 依据：《BettaFish_HarmonyOS_设计方案.md》（服务端对接契约以其为准）
-> 状态：设计稿（未进入编码）
+> 状态：已实施（集成落地参考；App 侧见 entry/src/main/ets/pages/BettaFish*.ets）
 
 ---
 

@@ -20,7 +20,7 @@ import { SpeechService } from '../service/SpeechService';
 import { LiveViewService } from '../service/LiveViewService';
 import { WebSearchService, WebSearchResult } from '../service/WebSearchService';
 import { DataRepository } from '../service/DataRepository';
-import { PromptPreset, PROMPT_PRESETS, presetMatches, applyPreset } from '../common/PromptPresets';
+import { PromptPreset, presetMatches, applyPreset } from '../common/PromptPresets';
 import { AiCallContext } from '../service/AiCallLogger';
 import { ChatExporter, ImportedChat } from '../service/ChatExporter';
 import { ImageAttachment, AttachmentResult } from '../service/ImageAttachment';
@@ -30,7 +30,7 @@ import { AgentOrchestrator } from '../service/AgentOrchestrator';
 import { AgentStep, LlmAgentResult } from '../common/AgentModels';
 import { ChatMessage, ChatSession, entryToConfig, LlmConfig, LlmModelEntry, LlmResult,
   modelDisplayName, modelDisplayNameFromConfig } from '../common/LlmModels';
-import { MarkdownConverter, MdBlock, InlineSpan } from '../common/MarkdownConverter';
+import { MarkdownConverter } from '../common/MarkdownConverter';
 import { ChatMessageList } from '../components/ChatMessageList';
 import { ChatInputBar } from '../components/ChatInputBar';
 import { ChatSessionDrawer } from '../components/ChatSessionDrawer';

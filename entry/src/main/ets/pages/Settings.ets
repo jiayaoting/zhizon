@@ -1,4 +1,4 @@
-// 智子 - 设置页面（分组索引版：账号云同步 / 外观 / 资讯 / 游戏 / Agent / 安全隐私 / 数据存储 / 关于）
+// 智子 - 设置页面（分组索引版：账号云同步 / 外观 / 热榜 / 游戏 / Agent / 安全隐私 / 数据存储 / 关于）
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { ThemePalette, defaultLightPalette } from '../common/Theme';
@@ -12,7 +12,6 @@ import { AppNavigator } from '../common/AppNavigator';
 import { AppConstants } from '../common/Constants';
 import { LegalDocRouteParams } from '../common/Navigation';
 import { NewsRepository } from '../service/NewsRepository';
-import { NewsService } from '../service/NewsService';
 import { TopBar } from '../components/TopBar';
 import { SettingGroupCard } from '../components/SettingGroupCard';
 import { SettingRowKind, SettingActionId, SettingItem, SettingGroup, settingMatches } from '../common/SettingModels';
@@ -366,11 +365,11 @@ export struct SettingsPage {
         '颜色主题、深色模式、背景图、玻璃效果、字号、字体、应用图标与头像。',
         SettingRowKind.NAV, false, SettingActionId.APPEARANCE)
     ]));
-    groups.push(new SettingGroup('news', '资讯', [
-      new SettingItem('news', '资讯设置', '📰', '源 / 频道 / 个性化 / 模型 / RSS',
-        '资讯源开关、频道个性化、推荐画像、翻译与智能标签模型、自定义 RSS。',
+    groups.push(new SettingGroup('news', '热榜', [
+      new SettingItem('news', '热榜设置', '🔥', '服务器 / 账号 / 关注 / 数据',
+        'NewsNow 服务器地址、GitHub 登录与关注同步、数据清理。',
         SettingRowKind.NAV, false, SettingActionId.NEWS),
-      new SettingItem('readingReport', '阅读周报', '📅', '近 7 天阅读画像',
+      new SettingItem('readingReport', '阅读周报', '📅', '近 7 天阅读与 AI 调用',
         '本周阅读 / 收藏 / AI 调用统计与可视化图表。',
         SettingRowKind.NAV, false, SettingActionId.READING_REPORT)
     ]));
@@ -408,8 +407,8 @@ export struct SettingsPage {
     groups.push(new SettingGroup('storage', '数据与存储', [
       new SettingItem('clearRead', '清空阅读记录', '🗑', '',
         '删除全部已读记录，此操作不可恢复。', SettingRowKind.NAV, true, SettingActionId.CLEAR_READ),
-      new SettingItem('clearCache', '清空资讯缓存', '🧹', '',
-        '清除频道快照与离线正文，下次打开资讯时重新下载。', SettingRowKind.NAV, true, SettingActionId.CLEAR_CACHE)
+      new SettingItem('clearCache', '清空热榜缓存', '🧹', '',
+        '清除离线保存的正文与搜索索引，下次阅读时重新缓存。', SettingRowKind.NAV, true, SettingActionId.CLEAR_CACHE)
     ]));
     groups.push(new SettingGroup('about', '关于', [
       new SettingItem('version', '版本', '', AppConstants.appVersion, '',
@@ -488,12 +487,9 @@ export struct SettingsPage {
         });
       });
     } else if (action === SettingActionId.CLEAR_CACHE) {
-      this.confirmDanger('清空资讯缓存', '将清除频道快照与离线正文，下次打开资讯时重新下载。', () => {
-        NewsRepository.clearChannelCache().then(() => {
-          NewsRepository.clearArticleCache().then(() => {
-            NewsService.clearCache();
-            this.toast('已清空资讯缓存（频道快照与离线正文）');
-          });
+      this.confirmDanger('清空热榜缓存', '将清除离线保存的正文与搜索索引，下次打开时重新下载。', () => {
+        NewsRepository.clearArticleCache().then(() => {
+          this.toast('已清空离线正文缓存');
         });
       });
     } else if (action === SettingActionId.ABOUT_UPDATE) {

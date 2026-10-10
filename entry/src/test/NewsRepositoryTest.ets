@@ -20,10 +20,12 @@ export default function NewsRepositoryTest() {
       expect(label.indexOf('日')).assertGreaterThan(-1);
     });
 
-    it('digestId distinguishes digest and hotspot modes', 0, () => {
+    it('digestId distinguishes digest and period modes', 0, () => {
       const key: string = NewsRepository.todayKey();
       expect(NewsRepository.digestId('digest')).assertEqual('digest-' + key);
-      expect(NewsRepository.digestId('hotspot')).assertEqual('digest-' + key + '-hotspot');
+      expect(NewsRepository.digestId('morning')).assertEqual('digest-' + key + '-morning');
+      expect(NewsRepository.digestId('evening')).assertEqual('digest-' + key + '-evening');
+      expect(NewsRepository.digestId('noon')).assertEqual('digest-' + key + '-noon');
     });
   });
 }
