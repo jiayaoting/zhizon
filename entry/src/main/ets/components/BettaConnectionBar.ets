@@ -1,8 +1,9 @@
 // 智子 - BettaFish 连接状态条（微舆 Hub 顶栏）
 // 状态机：unconfigured（未配置） / checking（测试中） / connected（已连接） / error（连接失败）
+// v10：状态卡改「淡色底状态区」——按状态取 success / warning / danger 语义色 + 对应淡底；无玻璃、无阴影。
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from './GlassEffect';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 
 @ComponentV2
 export struct BettaConnectionBar {
@@ -13,11 +14,20 @@ export struct BettaConnectionBar {
   @Event onRetryTap: () => void = () => {};
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
-  private stateIcon(): string {
-    if (this.state === 'connected') return '🟢';
-    if (this.state === 'checking') return '⏳';
-    if (this.state === 'error') return '🔴';
-    return '⚪';
+  // 状态点颜色（语义色）
+  private statusColor(): string {
+    if (this.state === 'connected') return this.themeState.palette.success;
+    if (this.state === 'checking') return this.themeState.palette.warning;
+    if (this.state === 'error') return this.themeState.palette.danger;
+    return this.themeState.palette.textTertiary;
+  }
+
+  // 状态区淡底
+  private statusBg(): string {
+    if (this.state === 'connected') return this.themeState.palette.successBg;
+    if (this.state === 'checking') return this.themeState.palette.warningBg;
+    if (this.state === 'error') return this.themeState.palette.dangerBg;
+    return this.themeState.palette.bgSurface2;
   }
 
   private stateTitle(): string {
@@ -27,14 +37,57 @@ export struct BettaConnectionBar {
     return '尚未配置服务器';
   }
 
+  // 服务器配置入口（44vp 触控目标）
+  @Builder
+  configButton() {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.settings)
+          .fontSize(20)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(AppIcons.settingsEmoji)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(44)
+    .height(44)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .accessibilityText('服务器配置')
+    .onClick(() => { this.onConfigTap(); })
+  }
+
+  // 文字动作：主操作 primary 填充，次操作 bgSurface2
+  @Builder
+  textAction(label: string, primaryFill: boolean, onTap: () => void) {
+    Text(label)
+      .fontSize(this.themeState.palette.fsSm)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(primaryFill ? this.themeState.palette.primaryOnColor : this.themeState.palette.textPrimary)
+      .fontWeight(FontWeight.Medium)
+      .height(44)
+      .padding({ left: 16, right: 16 })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(primaryFill ? this.themeState.palette.primary : this.themeState.palette.bgSurface)
+      .textAlign(TextAlign.Center)
+      .onClick(onTap)
+  }
+
   build() {
-    Row({ space: 12 }) {
-      Text(this.stateIcon())
-        .fontSize(this.themeState.palette.fsLg)
-        .fontFamily(this.themeState.palette.fontSans)
+    Row({ space: this.themeState.palette.sp3 }) {
+      Circle()
+        .width(8)
+        .height(8)
+        .fill(this.statusColor())
+
       Column({ space: 2 }) {
         Text(this.stateTitle())
-          .fontSize(this.themeState.palette.fsBase)
+          .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
@@ -55,50 +108,20 @@ export struct BettaConnectionBar {
       .alignItems(HorizontalAlign.Start)
 
       if (this.state === 'connected') {
-        Text('⚙')
-          .fontSize(16)
-          .fontFamily(this.themeState.palette.fontSans)
-          .width(36)
-          .height(36)
-          .textAlign(TextAlign.Center)
-          .borderRadius(18)
-          .backgroundColor(this.themeState.palette.primaryDim)
-          .accessibilityText('服务器配置')
-          .onClick(() => { this.onConfigTap(); })
+        this.configButton()
       } else if (this.state === 'error') {
-        Text('重试')
-          .fontSize(this.themeState.palette.fsSm)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.primary)
-          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-          .borderRadius(16)
-          .backgroundColor(this.themeState.palette.primaryDim)
-          .onClick(() => { this.onRetryTap(); })
-        Text('⚙')
-          .fontSize(16)
-          .fontFamily(this.themeState.palette.fontSans)
-          .width(36)
-          .height(36)
-          .textAlign(TextAlign.Center)
-          .borderRadius(18)
-          .backgroundColor(this.themeState.palette.primaryDim)
-          .onClick(() => { this.onConfigTap(); })
+        this.textAction('重试', false, (): void => { this.onRetryTap(); })
+        this.configButton()
       } else {
-        Text('去配置')
-          .fontSize(this.themeState.palette.fsSm)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.primary)
-          .padding({ left: 14, right: 14, top: 7, bottom: 7 })
-          .borderRadius(16)
-          .backgroundColor(this.themeState.palette.primaryDim)
-          .onClick(() => { this.onConfigTap(); })
+        this.textAction('去配置', true, (): void => { this.onConfigTap(); })
       }
     }
     .width('100%')
-    .padding(14)
-    .borderRadius(14)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+    .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp2,
+      top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+    .borderRadius(this.themeState.palette.radiusLg)
+    .backgroundColor(this.statusBg())
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(VerticalAlign.Center)
     .accessibilityText(this.stateTitle())
   }

@@ -1,51 +1,54 @@
 // 智子 - 微舆（BettaFish）Hub 页：连接状态 + 分析/论坛/报告 三 Tab（M2-M4 完整闭环）
-import { promptAction } from '@kit.ArkUI';
+// v10：内容卡改纯色面（bgSurface + 发丝边框，无阴影/无玻璃），状态语义色，列表发丝分割线，空态含原因 + CTA。
+// P4（V2 状态迁移）：V1 状态装饰器全部改 V2（ComponentV2 / Local），主题色、断点、状态栏高度改由
+// ThemeState（AppStorageV2）提供；AppStorage 里的刷新令牌改在已有的 3 秒轮询中比较（V2 组件禁用存储装饰器）。
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 import { BettaConnectionBar } from '../components/BettaConnectionBar';
 import { BettaEngineStatusCard } from '../components/BettaEngineStatusCard';
 import { BettaForumMessageItem } from '../components/BettaForumMessageItem';
-import { BettaFishStore } from '../service/BettaFishStore';
-import { BettaFishApiClient } from '../service/BettaFishApiClient';
+import { BettaFishStore } from '../service/betta/BettaFishStore';
+import { BettaFishApiClient } from '../service/betta/BettaFishApiClient';
 import { BettaServerConfig, BettaEngineStatus, BettaForumMessage, BettaHistoryItem } from '../common/BettaFishModels';
 import { BettaFishProgressRouteParams, BettaFishReportRouteParams } from '../common/Navigation';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
+import { PageRefreshBus } from '../common/PageRefreshBus';
 
 const EXAMPLE_QUERIES: string[] = ['武汉大学舆情', '鸿蒙系统用户口碑', '国产大模型热度分析'];
+const FORUM_FILTERS: string[] = ['全部', 'HOST', 'QUERY', 'MEDIA', 'INSIGHT'];
 
-@Component
+@ComponentV2
 export struct BettaFishPage {
-  @State server: BettaServerConfig | null = null;
-  @State connState: string = 'unconfigured';   // unconfigured | checking | connected | error
-  @State connDetail: string = '';
-  @State currentTab: number = 0;
-  @State engines: BettaEngineStatus[] = [];
-  @State query: string = '';
-  @State submitting: boolean = false;
-  @State forumMessages: BettaForumMessage[] = [];
-  @State forumFilter: string = '全部';
-  @State history: BettaHistoryItem[] = [];
-  @StorageLink('bettaRefreshToken') @Watch('onRefreshToken') bettaRefreshToken: number = 0;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @StorageLink('statusBarHeight') statusBarHeight: number = 20;
+  @Local server: BettaServerConfig | null = null;
+  @Local connState: string = 'unconfigured';   // unconfigured | checking | connected | error
+  @Local connDetail: string = '';
+  @Local currentTab: number = 0;
+  @Local engines: BettaEngineStatus[] = [];
+  @Local query: string = '';
+  @Local submitting: boolean = false;
+  @Local forumMessages: BettaForumMessage[] = [];
+  @Local forumFilter: string = '全部';
+  @Local history: BettaHistoryItem[] = [];
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  // v10：宿主可见性刷新统一走 PageRefreshBus（V2 组件无法使用 @StorageLink + @Watch 观察 AppShell 的令牌）
   private forumTimer: number = -1;
+  private onHostShow = (): void => {
+    this.reload();
+  };
 
   aboutToAppear(): void {
+    PageRefreshBus.onBettaShow(this.onHostShow);
     this.reload();
     this.startForumPolling();
   }
 
   aboutToDisappear(): void {
+    PageRefreshBus.offBettaShow(this.onHostShow);
     if (this.forumTimer >= 0) {
       clearInterval(this.forumTimer);
       this.forumTimer = -1;
     }
-  }
-
-  onRefreshToken(): void {
-    this.reload();
   }
 
   private async reload(): Promise<void> {
@@ -200,8 +203,8 @@ export struct BettaFishPage {
       title: '删除历史记录',
       message: '删除「' + (item.query.length > 0 ? item.query : item.taskId) + '」？',
       buttons: [
-        { text: '取消', color: '#888888' },
-        { text: '删除', color: '#E84026' }
+        { text: '取消', color: this.themeState.palette.textSecondary },
+        { text: '删除', color: this.themeState.palette.danger }
       ]
     }).then(async (result: promptAction.ShowDialogSuccessResponse) => {
       if (result.index === 1) {
@@ -214,26 +217,85 @@ export struct BettaFishPage {
   }
 
   private statusBadge(status: string): string {
-    if (status === 'completed') return '✅ 已完成';
-    if (status === 'running') return '🔄 生成中';
-    if (status === 'error') return '❌ 失败';
-    if (status === 'cancelled') return '⏹ 已取消';
-    return '⏳ ' + status;
+    if (status === 'completed') return '已完成';
+    if (status === 'running') return '生成中';
+    if (status === 'error') return '失败';
+    if (status === 'cancelled') return '已取消';
+    return status;
+  }
+
+  private statusColor(status: string): string {
+    if (status === 'completed') return this.themeState.palette.success;
+    if (status === 'running') return this.themeState.palette.primary;
+    if (status === 'error') return this.themeState.palette.danger;
+    return this.themeState.palette.textTertiary;
+  }
+
+  private statusBg(status: string): string {
+    if (status === 'completed') return this.themeState.palette.successBg;
+    if (status === 'running') return this.themeState.palette.primaryBg;
+    if (status === 'error') return this.themeState.palette.dangerBg;
+    return this.themeState.palette.bgSurface2;
   }
 
   // ========== 构建器 ==========
+
+  // 顶栏图标钮（44vp 触控目标，矢量优先 / emoji 回退）
+  @Builder
+  iconButton(icon: Resource, emoji: string, label: string, onTap: () => void) {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(icon)
+          .fontSize(22)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(emoji)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(44)
+    .height(44)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .accessibilityText(label)
+    .onClick(onTap)
+  }
+
+  // Tab 标签（华为式下划线选中态）
+  @Builder
+  tabLabel(label: string, index: number) {
+    Column({ space: 5 }) {
+      Text(label)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.currentTab === index ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+        .fontWeight(this.currentTab === index ? FontWeight.Medium : FontWeight.Normal)
+        .maxLines(1)
+      Row()
+        .width(20)
+        .height(2.5)
+        .borderRadius(2)
+        .backgroundColor(this.currentTab === index ? this.themeState.palette.primary : Color.Transparent)
+    }
+    .height(44)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
 
   @Builder
   engineRows() {
     if (this.engines.length === 0) {
       Text('暂无引擎状态（需系统启动后显示）')
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
         .width('100%')
     }
     if (this.engines.length > 0) {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         BettaEngineStatusCard({ engine: this.engines[0] })
           .layoutWeight(1)
         if (this.engines.length > 1) {
@@ -244,10 +306,10 @@ export struct BettaFishPage {
         }
       }
       .width('100%')
-      .margin({ bottom: 8 })
+      .margin({ bottom: this.themeState.palette.sp2 })
     }
     if (this.engines.length > 2) {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         BettaEngineStatusCard({ engine: this.engines[2] })
           .layoutWeight(1)
         if (this.engines.length > 3) {
@@ -258,113 +320,117 @@ export struct BettaFishPage {
         }
       }
       .width('100%')
-      .margin({ bottom: 8 })
+      .margin({ bottom: this.themeState.palette.sp2 })
     }
   }
 
   @Builder
   analysisTab() {
-    Column({ space: 12 }) {
-      Column({ space: 8 }) {
+    Column({ space: this.themeState.palette.cardGap }) {
+      Column({ space: this.themeState.palette.sp2 }) {
         Row() {
           Text('引擎状态')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
           Blank()
           Text('3 秒自动刷新')
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .width('100%')
         this.engineRows()
       }
       .width('100%')
-      .padding(14)
-      .borderRadius(14)
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+      .padding(this.themeState.palette.sp4)
+      .borderRadius(this.themeState.palette.radiusLg)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
-      Column({ space: 10 }) {
+      Column({ space: this.themeState.palette.sp3 }) {
         Text('发起舆情分析')
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .width('100%')
         TextInput({ placeholder: '输入要分析的舆情话题…', text: this.query })
           .width('100%')
           .height(44)
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
-          .placeholderColor(this.palette.textTertiary)
-          .backgroundColor(this.palette.bgSurface2)
-          .borderRadius(12)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .placeholderColor(this.themeState.palette.textTertiary)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .onChange((v: string) => { this.query = v; })
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(EXAMPLE_QUERIES, (item: string) => {
             Text(item)
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.primary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primary)
               .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .borderRadius(14)
-              .backgroundColor(this.palette.primaryDim)
-              .margin({ right: 8, bottom: 8 })
+              .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.primaryBg)
+              .margin({ right: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
               .onClick(() => { this.query = item; })
           }, (item: string) => item)
         }
         .width('100%')
-        Button(this.submitting ? '正在发起…' : '🚀 发起分析')
+        Button(this.submitting ? '正在发起…' : '发起分析')
           .width('100%')
-          .height(42)
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .backgroundColor(this.palette.primary)
+          .height(44)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
+          .fontWeight(FontWeight.Medium)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .backgroundColor(this.themeState.palette.primary)
           .enabled(!this.submitting)
           .onClick(() => { this.onSubmit(); })
       }
       .width('100%')
-      .padding(14)
-      .borderRadius(14)
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+      .padding(this.themeState.palette.sp4)
+      .borderRadius(this.themeState.palette.radiusLg)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 14 })
+    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp3 })
   }
 
   @Builder
   forumTab() {
-    Column({ space: 10 }) {
-      Column({ space: 8 }) {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Column({ space: this.themeState.palette.sp2 }) {
         Row() {
           Text('Agent 论坛实况')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
           Blank()
           Text(this.forumMessages.length.toString() + ' 条')
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .width('100%')
         Flex({ wrap: FlexWrap.Wrap }) {
-          ForEach(['全部', 'HOST', 'QUERY', 'MEDIA', 'INSIGHT'], (item: string) => {
+          ForEach(FORUM_FILTERS, (item: string) => {
             Text(item)
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.forumFilter === item ? Color.White : this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.forumFilter === item ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
               .fontWeight(this.forumFilter === item ? FontWeight.Medium : FontWeight.Regular)
               .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .borderRadius(14)
-              .backgroundColor(this.forumFilter === item ? this.palette.primary : this.palette.bgSurface2)
-              .margin({ right: 8, bottom: 8 })
+              .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.forumFilter === item ? this.themeState.palette.primaryBg : this.themeState.palette.bgSurface2)
+              .margin({ right: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
               .onClick(() => { this.forumFilter = item; })
           }, (item: string) => item)
         }
@@ -373,34 +439,52 @@ export struct BettaFishPage {
       .width('100%')
 
       if (this.filteredForum().length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: this.themeState.palette.sp3 }) {
           Text('💬')
-            .fontSize(30)
-            .fontFamily(this.palette.fontSans)
-          Text('暂无论坛消息，发起分析后这里会实时滚动')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(48)
+            .fontFamily(this.themeState.palette.fontSans)
+          Text('暂无论坛消息')
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
+          Text('发起分析后，Agent 论坛会在这里实时滚动')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+            .textAlign(TextAlign.Center)
+          Text('去发起分析')
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .fontWeight(FontWeight.Medium)
+            .height(44)
+            .padding({ left: 24, right: 24 })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
+            .textAlign(TextAlign.Center)
+            .onClick(() => { this.currentTab = 0; })
         }
         .width('100%')
-        .padding(30)
+        .padding(this.themeState.palette.sp8)
         .justifyContent(FlexAlign.Center)
-        .borderRadius(14)
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+        .borderRadius(this.themeState.palette.radiusLg)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
       } else {
         Scroll() {
           Column() {
             ForEach(this.filteredForum(), (msg: BettaForumMessage) => {
               BettaForumMessageItem({ message: msg })
                 .width('100%')
-                .padding({ left: 4, right: 4 })
             }, (msg: BettaForumMessage) => msg.timestamp + '-' + msg.content.length.toString() + '-' + msg.sender)
           }
           .width('100%')
-          .padding(12)
-          .borderRadius(14)
-          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette) })
+          .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3, top: this.themeState.palette.sp1 })
+          .borderRadius(this.themeState.palette.radiusLg)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
+          .clip(true)
         }
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
@@ -410,88 +494,129 @@ export struct BettaFishPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 14 })
+    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp3 })
+  }
+
+  // 报告历史行：56vp 行高 + 发丝分割线，元信息 fsXs textTertiary
+  @Builder
+  historyRow(item: BettaHistoryItem) {
+    Row({ space: this.themeState.palette.sp2 }) {
+      Column({ space: 3 }) {
+        Text(item.query.length > 0 ? item.query : item.taskId)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        Row({ space: this.themeState.palette.sp2 }) {
+          Text(this.statusBadge(item.status))
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.statusColor(item.status))
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(this.statusBg(item.status))
+          Text(new Date(item.createdAt).toLocaleString())
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('打开')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primary)
+        .height(44)
+        .padding({ left: 8, right: 8 })
+        .textAlign(TextAlign.Center)
+        .onClick(() => { this.openReport(item); })
+      Text('删除')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.danger)
+        .height(44)
+        .padding({ left: 8, right: 8 })
+        .textAlign(TextAlign.Center)
+        .onClick(() => { this.removeHistory(item); })
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 56 })
+    .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp2 })
+    .alignItems(VerticalAlign.Center)
+    .border({ width: { bottom: 0.5 }, color: this.themeState.palette.divider })
+    .onClick(() => { this.openReport(item); })
   }
 
   @Builder
   historyTab() {
-    Column({ space: 10 }) {
+    Column({ space: this.themeState.palette.sp3 }) {
       Row() {
         Text('报告历史')
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('本地保存 ' + this.history.length.toString() + ' 条')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
       .width('100%')
 
       if (this.history.length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: this.themeState.palette.sp3 }) {
           Text('📊')
-            .fontSize(30)
-            .fontFamily(this.palette.fontSans)
-          Text('暂无报告历史，生成报告后自动记录')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(48)
+            .fontFamily(this.themeState.palette.fontSans)
+          Text('暂无报告历史')
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
+          Text('生成报告后会自动记录在这里')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+            .textAlign(TextAlign.Center)
+          Text('去发起分析')
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .fontWeight(FontWeight.Medium)
+            .height(44)
+            .padding({ left: 24, right: 24 })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
+            .textAlign(TextAlign.Center)
+            .onClick(() => { this.currentTab = 0; })
         }
         .width('100%')
-        .padding(30)
+        .padding(this.themeState.palette.sp8)
         .justifyContent(FlexAlign.Center)
-        .borderRadius(14)
-        .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P1_CARD, this.palette))
+        .borderRadius(this.themeState.palette.radiusLg)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
       } else {
         Scroll() {
-          Column({ space: 8 }) {
+          Column() {
             ForEach(this.history, (item: BettaHistoryItem) => {
-              Column({ space: 6 }) {
-                Row({ space: 8 }) {
-                  Text(item.query.length > 0 ? item.query : item.taskId)
-                    .fontSize(this.palette.fsBase)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
-                    .fontWeight(FontWeight.Medium)
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .layoutWeight(1)
-                  Text(this.statusBadge(item.status))
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.primary)
-                }
-                .width('100%')
-                Row({ space: 12 }) {
-                  Text(new Date(item.createdAt).toLocaleString())
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
-                  Blank()
-                  Text('打开')
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.primary)
-                    .onClick(() => { this.openReport(item); })
-                  Text('删除')
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.danger)
-                    .onClick(() => { this.removeHistory(item); })
-                }
-                .width('100%')
-              }
-              .width('100%')
-              .padding(12)
-              .borderRadius(12)
-              .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
-              .onClick(() => { this.openReport(item); })
+              this.historyRow(item)
             }, (item: BettaHistoryItem) => item.taskId)
           }
           .width('100%')
+          .borderRadius(this.themeState.palette.radiusLg)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
+          .clip(true)
         }
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
@@ -501,45 +626,55 @@ export struct BettaFishPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 14 })
+    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp3 })
   }
 
   build() {
     Column() {
-      // 头部
-      Row({ space: 10 }) {
-        Text('🐟')
-          .fontSize(22)
-          .fontFamily(this.palette.fontSans)
+      // 头部：Tab 首页无返回键；右侧仅 1 个设置动作（≤3 个，符合 §3.4.2）
+      Row({ space: this.themeState.palette.sp3 }) {
+        Row() {
+          if (USE_SYMBOL_ICONS) {
+            SymbolGlyph(AppIcons.navBetta)
+              .fontSize(24)
+              .fontColor([this.themeState.palette.primary])
+          } else {
+            Text(AppIcons.navBettaEmoji)
+              .fontSize(this.themeState.palette.fsXl)
+              .fontFamily(this.themeState.palette.fontSans)
+          }
+        }
+        .width(40)
+        .height(40)
+        .borderRadius(this.themeState.palette.radiusSm)
+        .backgroundColor(this.themeState.palette.primaryBg)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+
         Column({ space: 2 }) {
           Text('微舆')
-            .fontSize(this.palette.fsXl)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsXl)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
           Text('BettaFish 舆情分析控制台')
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
-        Text('⚙')
-          .fontSize(18)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
-          .width(38)
-          .height(38)
-          .textAlign(TextAlign.Center)
-          .borderRadius(19)
-          .backgroundColor(this.palette.primaryDim)
-          .accessibilityText('微舆设置')
-          .onClick(() => { this.openServerConfig(); })
+
+        this.iconButton(AppIcons.settings, AppIcons.settingsEmoji, '微舆设置', (): void => {
+          this.openServerConfig();
+        })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
-        top: Math.max(this.statusBarHeight, 44) + 8 })
+      .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        top: Math.max(this.themeState.statusBarHeight, 44) + 8 })
 
       BettaConnectionBar({
         state: this.connState,
@@ -554,7 +689,8 @@ export struct BettaFishPage {
           }
         }
       })
-      .margin({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12 })
+      .margin({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp3 })
 
       Tabs({ barPosition: BarPosition.Start, index: this.currentTab }) {
         TabContent() {
@@ -567,18 +703,19 @@ export struct BettaFishPage {
           .align(Alignment.Top)
           .edgeEffect(EdgeEffect.Spring)
         }
-        .tabBar('🔍 分析')
+        .tabBar(this.tabLabel('分析', 0))
         TabContent() {
           this.forumTab()
         }
-        .tabBar('💬 论坛')
+        .tabBar(this.tabLabel('论坛', 1))
         TabContent() {
           this.historyTab()
         }
-        .tabBar('📊 报告')
+        .tabBar(this.tabLabel('报告', 2))
       }
       .layoutWeight(1)
       .width('100%')
+      .barHeight(44)
       .scrollable(true)
       .onChange((index: number) => {
         this.currentTab = index;
@@ -586,6 +723,6 @@ export struct BettaFishPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.bgBase)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

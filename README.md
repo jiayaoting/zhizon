@@ -16,7 +16,7 @@
 - 💾 **会话备份/恢复**：单会话/全部会话导出为 JSON 文件分享，支持从文件导入恢复
 - 🔔 **实况窗（Live View）**：AI 对话生成与游戏 AI 托管进行中，退到后台也能看到进度
 - 📱 **全设备自适应**：手机（底部 5 Tab）、平板、折叠屏自动适配
-- 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果 + 全局字号档位
+- 🎨 **外观系统**：华为原生拟物白（默认）+ 深色两套色板 + 自定义背景 + 底栏毛玻璃 + 全局字号档位
 - 📊 **游戏战绩**：分数记录与历史排行
 - 🔒 **安全加密**：API Key 与 NewsNow 登录凭证使用 HUKS AES-256-GCM 加密存储，不经过任何第三方
 - 📋 **AI 调用记录**：记录聊天 / 游戏 AI 托管 / 模型测试的每次调用摘要（场景、模型、耗时、成败），"我的"页可查看与清空
@@ -31,7 +31,7 @@
 - **账号**：ArkWeb 内嵌 GitHub OAuth（NewsNow 登录），JWT 加密存储
 - **加密算法**：AES-256-GCM（HUKS 密钥库，API Key 与登录凭证）
 - **响应式布局**：`@StorageLink` 跨组件状态 + `display` API · 3 档断点
-- **多主题**：ThemePalette 接口 + 6 色彩主题 + 亮/暗模式 + 自定义背景 + 毛玻璃开关 + palette.fs* 全局字号
+- **外观**：ThemePalette token 体系（拟物白 / 深色双套）+ 自定义背景 + 底部导航毛玻璃 + palette.fs* 全局字号 + `AppIcons` 矢量图标中心（含 emoji 一键回退）
 
 ## 项目结构
 
@@ -57,18 +57,18 @@ zhizon/
 │       │   │   ├── LlmModels.ets / MarkdownConverter.ets / CryptoHelper.ets …
 │       │   │   └── PageRefreshBus.ets                                # 宿主 onPageShow 广播（Tab 嵌入页刷新）
 │       │   ├── model/         # 通用业务模型 + 治理模型
-│       │   ├── service/       # 业务服务层
-│       │   │   ├── NewsNowClient.ets   # NewsNow HTTP 客户端（探测/单源/批量/同步）
-│       │   │   ├── NewsNowAuth.ets     # GitHub 登录凭证（HUKS 加密）+ 回跳解析
-│       │   │   ├── NewsNowSync.ets     # 关注列表本地存储 + 云端双向同步
-│       │   │   ├── HotFeedStore.ets    # 榜单内存槽位 + 加载编排
-│       │   │   ├── NewsRepository.ets  # 收藏/已读/正文缓存/简报 + FTS
-│       │   │   ├── NewsAiService.ets   # AI 摘要/翻译/问AI/要闻/速递
-│       │   │   ├── DatabaseHelper.ets  # RDB v18 + 全表 CRUD + 迁移与保留策略
-│       │   │   ├── LlmClient.ets / ChatRepository.ets / ToolRegistry.ets …
-│       │   │   └── CloudSyncService.ets # 华为云备份（排除本机凭证类设置）
-│       │   ├── components/    # 通用组件
-│       │   │   ├── HotSourceCard.ets / HotItemRow.ets / HotSourceBadge.ets   # 热榜卡片 / 条目行 / 源徽标
+│       │   ├── service/       # 业务服务层（43 个，v10 按域分层）
+│       │   │   ├── hot/        # 热榜域：NewsNowClient / NewsNowAuth / NewsNowSync / HotFeedStore /
+│       │   │   │               #          NewsRepository / NewsAiService / HotDataProvider（可注入数据源）
+│       │   │   ├── chat/       # 对话域：LlmClient / ChatRepository / ChatViewModel / ToolRegistry /
+│       │   │   │               #          AgentOrchestrator / WebSearch / Speech / OnDeviceAI / 附件
+│       │   │   ├── game/       # 游戏域：GameAIService / 各棋类引擎 / 成就 / 回放 / 排行榜
+│       │   │   ├── betta/      # 微舆域：BettaFishApiClient / SseClient / Store
+│       │   │   └── platform/   # 平台域：DatabaseHelper（RDB v18）/ DataRepository / 安全 / 云同步 /
+│       │   │                   #          账号 / 背景 / 选择器 / 音效 / 日志 / 缺陷治理
+│       │   ├── components/    # 通用组件（27 个）
+│       │   │   ├── HotSourceCard.ets / HotItemRow.ets / HotSourceBadge.ets / HotSourcePicker.ets
+│       │   │   ├── AiModelPicker.ets   # 模型切换半模态（对话/详情复用）
 │       │   │   ├── TopBar.ets / FixedBottomNav.ets / GlassEffect.ets / SettingGroupCard.ets …
 │       │   └── pages/         # 页面（38 个）
 │       │       ├── AppShell.ets        # 自适应主框架（底部 Tab / 侧边栏）
@@ -200,6 +200,7 @@ zhizon/
 
 ## 新增能力（本轮迭代）
 
+- 🎨 **视觉重构 v10（华为原生拟物白）**：全站从深色终端风切换为 HarmonyOS 设计规范（拟物白默认 + 深色一套），重建设计令牌（色彩/字号/圆角/间距/行高全部 token 化，正文基准 16、标题上限 22）；毛玻璃只保留底栏与悬浮条；导航与操作用系统矢量图标（`AppIcons` 中心化 + 一键 emoji 回退）；重排信息架构（首页大标题 + 今日要闻胶囊 + 下划线视图 Tabs；我的页华为式分组）并**收敛重复入口**（同一功能仅一处主入口，数据操作归功能设置）；修复 14 处「末尾追加 alpha」导致的透明色 bug（ArkUI 8 位色为 ARGB）。设计见 [v10-redesign.md](doc/v10-redesign.md)
 - 🔥 **热榜模块重构（v9.0）**：资讯域从「客户端直连 RSS/多源抓取 + 本地推荐画像」整体替换为 [NewsNow](https://github.com/newsnext/newsnow) 后端驱动的全网热榜；新增 52 条源目录、视图 Tabs、单源榜单页、源关注、NewsNow GitHub 登录与关注多端同步；**删除**旧抓取/推荐/画像模块 14 个源码文件、4 个失效测试与 7 份过期文档（DB v18 直接丢弃 11 张旧表），`.ets` 净减约 5700 行；设计见 [newsnow-redesign.md](doc/newsnow-redesign.md)
 - ☁️ **华为账号 + 云同步**：接入 Account Kit（华为账号登录，获取昵称/头像）；Cloud Foundation Kit 云存储备份/恢复配置、战绩、成就与全部对话；未配置 AGC 时自动降级为本地备份，配置步骤见 [云同步接入说明](doc/cloud-sync-setup.md)
 - 🎬 **对局回放**：2048、贪吃蛇、五子棋自动录制对局（动作 + 随机格/食物），「我的 → 对局回放」查看、回放（1x/2x/4x）、删除
@@ -216,6 +217,7 @@ zhizon/
 | 文档 | 内容 |
 |------|------|
 | [详细设计文档](doc/DESIGN.md) | 架构分层、目录结构、功能模块、数据模型、UI 规范、开发历史 |
+| [v10 视觉重构设计](doc/v10-redesign.md) | 设计令牌、信息架构与菜单/层级规范、各页面规格、工程收敛、分期与验收、实施记录 |
 | [热榜模块设计](doc/newsnow-redesign.md) | NewsNow 接口契约、数据模型、登录与同步协议、实施记录与真机实测结论 |
 | [云同步接入说明](doc/cloud-sync-setup.md) | 华为账号登录 + AGC 云存储桶配置步骤、载荷范围与隐私说明 |
 | [微舆服务端对接契约](doc/BettaFish_HarmonyOS_设计方案.md) | BettaFish 服务端接口、SSE 事件结构、导出接口 |

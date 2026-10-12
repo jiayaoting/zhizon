@@ -2,7 +2,8 @@
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { ReplayService, ReplayRecord } from '../service/ReplayService';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { ReplayService, ReplayRecord } from '../service/game/ReplayService';
 import { AppNavigator } from '../common/AppNavigator';
 import { DifficultyLevel, GameId, GameLaunchFacade, GameLaunchRequest, GameRouteParams } from '../common/Difficulty';
 import { PageKey } from '../common/Navigation';
@@ -90,16 +91,18 @@ export struct ReplayListPage {
 
   @Builder
   recordCard(record: ReplayRecord) {
-    Row({ space: 12 }) {
+    Row({ space: this.themeState.palette.sp3 }) {
       Text(gameIcon(record.game))
         .fontSize(26)
-      Column({ space: 4 }) {
+      Column({ space: this.themeState.palette.sp1 }) {
         Text(gameLabel(record.game) + ' · ' + fmtTime(record.createdAt))
           .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
-        Row({ space: 10 }) {
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row({ space: this.themeState.palette.sp3 }) {
           Text('得分 ' + record.score.toString())
             .fontSize(this.themeState.palette.fsXs)
             .fontFamily(this.themeState.palette.fontSans)
@@ -116,55 +119,91 @@ export struct ReplayListPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+
       Text('▶ 回放')
         .fontSize(this.themeState.palette.fsSm)
         .fontFamily(this.themeState.palette.fontSans)
-        .fontColor('#FFFFFF')
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .borderRadius(8)
+        .fontColor(this.themeState.palette.primaryOnColor)
+        .height(this.themeState.palette.touchTarget)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+        .textAlign(TextAlign.Center)
+        .borderRadius(this.themeState.palette.radiusCapsule)
         .backgroundColor(this.themeState.palette.primary)
+        .accessibilityText('回放')
         .onClick(() => { this.play(record); })
-      Text('🗑️')
-        .fontSize(16)
-        .padding(6)
-        .onClick(() => { this.remove(record); })
+
+      Row() {
+        if (USE_SYMBOL_ICONS) {
+          SymbolGlyph(AppIcons.trash)
+            .fontSize(18)
+            .fontColor([this.themeState.palette.danger])
+        } else {
+          Text(AppIcons.trashEmoji)
+            .fontSize(16)
+            .fontFamily(this.themeState.palette.fontSans)
+        }
+      }
+      .width(this.themeState.palette.touchTarget)
+      .height(this.themeState.palette.touchTarget)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
+      .accessibilityText('删除回放')
+      .onClick(() => { this.remove(record); })
     }
     .width('100%')
-    .padding(12)
-    .borderRadius(12)
+    .constraintSize({ minHeight: this.themeState.palette.rowHeight })
+    .padding(this.themeState.palette.sp3)
+    .borderRadius(this.themeState.palette.radiusLg)
     .backgroundColor(this.themeState.palette.bgSurface)
-    .border({ width: 1, color: this.themeState.palette.borderSubtle })
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
   build() {
     Column() {
       TopBar({ title: '对局回放', subtitle: '支持 2048 / 贪吃蛇 / 五子棋', showBack: true })
       if (this.loading) {
-        Column() {
+        Column({ space: this.themeState.palette.sp2 }) {
           LoadingProgress().width(32).height(32)
+          Text('正在加载回放…')
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .layoutWeight(1)
         .width('100%')
         .justifyContent(FlexAlign.Center)
       } else if (this.records.length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: this.themeState.palette.sp3 }) {
           Text('🎬').fontSize(44)
-          Text('暂无回放')
+          Text('还没有可回放的对局')
             .fontSize(this.themeState.palette.fsLg)
             .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textSecondary)
+            .fontColor(this.themeState.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
           Text('完成一局 2048 / 贪吃蛇 / 五子棋后会自动保存回放')
-            .fontSize(this.themeState.palette.fsXs)
+            .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
             .textAlign(TextAlign.Center)
+          Button('去玩一局')
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .height(this.themeState.palette.touchTarget)
+            .padding({ left: this.themeState.palette.sp6, right: this.themeState.palette.sp6 })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
+            .margin({ top: this.themeState.palette.sp1 })
+            .onClick(() => { AppNavigator.pop(); })
         }
         .layoutWeight(1)
         .width('100%')
         .justifyContent(FlexAlign.Center)
-        .padding({ left: 32, right: 32 })
+        .padding({ left: this.themeState.palette.sp8, right: this.themeState.palette.sp8 })
       } else {
-        List({ space: 10 }) {
+        List({ space: this.themeState.palette.cardGap }) {
           ForEach(this.records, (record: ReplayRecord) => {
             ListItem() {
               this.recordCard(record)
@@ -173,8 +212,9 @@ export struct ReplayListPage {
         }
         .width('100%')
         .layoutWeight(1)
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-          top: 12, bottom: 24 })
+        .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          top: this.themeState.palette.sp1, bottom: this.themeState.palette.sp6 })
         .scrollBar(BarState.Auto)
       }
     }

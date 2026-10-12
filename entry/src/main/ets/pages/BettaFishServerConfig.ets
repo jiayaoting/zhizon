@@ -1,10 +1,12 @@
 // 智子 - 微舆 服务器配置页（多配置管理 + 测试连接）
+// v10：表单卡/列表卡改 bgSurface + 发丝边框（无玻璃/无阴影）；输入框 44vp，主按钮 primary 胶囊；
+//      测试结果用 success/danger 语义淡底；当前服务器行 primaryBg 高亮。
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { BettaFishStore } from '../service/BettaFishStore';
-import { BettaFishApiClient } from '../service/BettaFishApiClient';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { BettaFishStore } from '../service/betta/BettaFishStore';
+import { BettaFishApiClient } from '../service/betta/BettaFishApiClient';
 import { BettaServerConfig } from '../common/BettaFishModels';
 
 @ComponentV2
@@ -126,8 +128,8 @@ export struct BettaFishServerConfigPage {
       title: '删除服务器配置',
       message: '删除「' + server.name + '」？本地历史记录不会删除。',
       buttons: [
-        { text: '取消', color: '#888888' },
-        { text: '删除', color: '#E84026' }
+        { text: '取消', color: this.themeState.palette.textSecondary },
+        { text: '删除', color: this.themeState.palette.danger }
       ]
     }).then(async (result: promptAction.ShowDialogSuccessResponse) => {
       if (result.index === 1) {
@@ -142,13 +144,15 @@ export struct BettaFishServerConfigPage {
   @Builder
   schemeChip(label: string, value: string) {
     Text(label)
-      .fontSize(this.themeState.palette.fsBase)
+      .fontSize(this.themeState.palette.fsSm)
       .fontFamily(this.themeState.palette.fontSans)
-      .fontColor(this.scheme === value ? Color.White : this.themeState.palette.textSecondary)
+      .fontColor(this.scheme === value ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
       .fontWeight(this.scheme === value ? FontWeight.Medium : FontWeight.Regular)
-      .padding({ left: 18, right: 18, top: 8, bottom: 8 })
-      .borderRadius(18)
-      .backgroundColor(this.scheme === value ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
+      .height(40)
+      .padding({ left: 20, right: 20 })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.scheme === value ? this.themeState.palette.primaryBg : this.themeState.palette.bgSurface2)
+      .border({ width: 0.5, color: this.scheme === value ? this.themeState.palette.primary : this.themeState.palette.divider })
       .onClick(() => { this.scheme = value; })
   }
 
@@ -165,21 +169,21 @@ export struct BettaFishServerConfigPage {
   textField(placeholder: string, value: string, onChange: (v: string) => void, type: InputType = InputType.Normal) {
     TextInput({ placeholder: placeholder, text: value })
       .width('100%')
-      .height(42)
-      .fontSize(this.themeState.palette.fsBase)
+      .height(44)
+      .fontSize(this.themeState.palette.fsMd)
       .fontFamily(this.themeState.palette.fontSans)
       .fontColor(this.themeState.palette.textPrimary)
       .placeholderColor(this.themeState.palette.textTertiary)
       .backgroundColor(this.themeState.palette.bgSurface2)
-      .borderRadius(10)
+      .borderRadius(this.themeState.palette.radiusSm)
       .type(type)
       .onChange((v: string) => { onChange(v); })
   }
 
   @Builder
   formCard() {
-    Column({ space: 12 }) {
-      Row({ space: 12 }) {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
         Text(this.editingId.length > 0 ? '编辑配置' : '新增配置')
           .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
@@ -191,25 +195,32 @@ export struct BettaFishServerConfigPage {
             .fontSize(this.themeState.palette.fsXs)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.primary)
+            .height(44)
+            .padding({ left: this.themeState.palette.sp2, right: this.themeState.palette.sp2 })
             .onClick(() => { this.resetForm(); })
         }
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       this.label('配置名称')
       this.textField('如：家里服务器', this.name, (v: string) => { this.name = v; })
 
-      this.label('协议')
-      Row({ space: 10 }) {
-        this.schemeChip('HTTP', 'http')
-        this.schemeChip('HTTPS', 'https')
+      Column({ space: this.themeState.palette.sp2 }) {
+        this.label('协议')
+        Row({ space: this.themeState.palette.sp3 }) {
+          this.schemeChip('HTTP', 'http')
+          this.schemeChip('HTTPS', 'https')
+        }
+        .width('100%')
       }
       .width('100%')
+      .alignItems(HorizontalAlign.Start)
 
       this.label('服务器 IP / 域名')
       this.textField('如 192.168.1.100 或 betta.example.com', this.host, (v: string) => { this.host = v; })
 
-      Row({ space: 12 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
         Column({ space: 6 }) {
           this.label('端口')
           this.textField('5000', this.port, (v: string) => { this.port = v; }, InputType.Number)
@@ -230,51 +241,74 @@ export struct BettaFishServerConfigPage {
         Text(this.testResult)
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.testResult.startsWith('连接成功') ? this.themeState.palette.primary :
+          .fontColor(this.testResult.startsWith('连接成功') ? this.themeState.palette.success :
             this.themeState.palette.danger)
           .width('100%')
+          .padding(this.themeState.palette.sp3)
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.testResult.startsWith('连接成功') ? this.themeState.palette.successBg :
+            this.themeState.palette.dangerBg)
       }
 
-      Row({ space: 12 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
         Button(this.testing ? '测试中…' : '测试连接')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
-          .backgroundColor(Color.Transparent)
-          .fontColor(this.themeState.palette.primary)
-          .border({ width: 1, color: this.themeState.palette.primary })
+          .fontColor(this.themeState.palette.textPrimary)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .layoutWeight(1)
-          .height(40)
+          .height(44)
           .enabled(!this.testing)
           .onClick(() => { this.onTest(); })
         Button('保存')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
           .backgroundColor(this.themeState.palette.primary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .layoutWeight(1)
-          .height(40)
+          .height(44)
           .onClick(() => { this.onSave(); })
       }
       .width('100%')
     }
     .width('100%')
-    .padding(16)
-    .borderRadius(14)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+    .padding(this.themeState.palette.sp4)
+    .borderRadius(this.themeState.palette.radiusLg)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
+  // 服务器行：当前项 primaryBg 高亮；动作 44vp 触控目标
   @Builder
   serverItem(server: BettaServerConfig) {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        Text(server.isCurrent ? '✅' : '⚪')
-          .fontSize(14)
-          .fontFamily(this.themeState.palette.fontSans)
+    Column({ space: 6 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
+        Row() {
+          if (USE_SYMBOL_ICONS) {
+            SymbolGlyph(server.isCurrent ? AppIcons.check : AppIcons.server)
+              .fontSize(18)
+              .fontColor([server.isCurrent ? this.themeState.palette.primary : this.themeState.palette.textTertiary])
+          } else {
+            Text(server.isCurrent ? AppIcons.checkEmoji : AppIcons.serverEmoji)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+          }
+        }
+        .width(32)
+        .height(32)
+        .borderRadius(this.themeState.palette.radiusSm)
+        .backgroundColor(server.isCurrent ? this.themeState.palette.primaryBg : this.themeState.palette.bgSurface2)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         Text(server.name)
-          .fontSize(this.themeState.palette.fsBase)
+          .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         if (server.isCurrent) {
           Text('当前')
@@ -282,11 +316,12 @@ export struct BettaFishServerConfigPage {
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.primary)
             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .borderRadius(10)
-            .backgroundColor(this.themeState.palette.primaryDim)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(this.themeState.palette.primaryBg)
         }
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       Text(BettaFishApiClient.buildBaseUrl(server))
         .fontSize(this.themeState.palette.fsXs)
@@ -296,16 +331,20 @@ export struct BettaFishServerConfigPage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
 
-      Row({ space: 10 }) {
+      Row({ space: this.themeState.palette.sp4 }) {
         Text('编辑')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.primary)
+          .height(44)
+          .padding({ left: this.themeState.palette.sp1, right: this.themeState.palette.sp1 })
           .onClick(() => { this.editServer(server); })
         Text('设为当前')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(server.isCurrent ? this.themeState.palette.textTertiary : this.themeState.palette.primary)
+          .height(44)
+          .padding({ left: this.themeState.palette.sp1, right: this.themeState.palette.sp1 })
           .enabled(!server.isCurrent)
           .onClick(() => { this.switchServer(server); })
         Blank()
@@ -313,14 +352,18 @@ export struct BettaFishServerConfigPage {
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.danger)
+          .height(44)
+          .padding({ left: this.themeState.palette.sp1, right: this.themeState.palette.sp1 })
           .onClick(() => { this.removeServer(server); })
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .padding(14)
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+    .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4,
+      top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp1 })
+    .backgroundColor(server.isCurrent ? this.themeState.palette.primaryBg : Color.Transparent)
+    .border({ width: { bottom: 0.5 }, color: this.themeState.palette.divider })
   }
 
   build() {
@@ -329,28 +372,38 @@ export struct BettaFishServerConfigPage {
         Column()
       }
       Scroll() {
-        Column({ space: 14 }) {
+        Column({ space: this.themeState.palette.sectionGap }) {
           this.formCard()
 
           if (this.serverList.length > 0) {
-            Column({ space: 8 }) {
+            Column({ space: this.themeState.palette.sp2 }) {
               Text('已保存配置（' + this.serverList.length.toString() + '）')
                 .fontSize(this.themeState.palette.fsMd)
                 .fontFamily(this.themeState.palette.fontSans)
                 .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
                 .width('100%')
-              ForEach(this.serverList, (server: BettaServerConfig) => {
-                this.serverItem(server)
-              }, (server: BettaServerConfig) => server.id)
+              Column() {
+                ForEach(this.serverList, (server: BettaServerConfig) => {
+                  this.serverItem(server)
+                }, (server: BettaServerConfig) => server.id)
+              }
+              .width('100%')
+              .borderRadius(this.themeState.palette.radiusLg)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .border({ width: 0.5, color: this.themeState.palette.divider })
+              .clip(true)
             }
             .width('100%')
+            .alignItems(HorizontalAlign.Start)
           }
-          Column().height(20)
+          Column().height(this.themeState.palette.sp5)
         }
         .width('100%')
         .constraintSize({ maxWidth: 720 })
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 14 })
+        .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          top: this.themeState.palette.sp3 })
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)

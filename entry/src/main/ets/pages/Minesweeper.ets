@@ -1,20 +1,20 @@
-// 智子 - 扫雷（重做版：@Observed + @ObjectLink 标准状态管理架构）
-import { promptAction } from '@kit.ArkUI';
+// 智子 - 扫雷（重做版：@ObservedV2 + @Trace 标准状态管理架构）
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { DataRepository } from '../service/DataRepository';
+import { DataRepository } from '../service/platform/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
-import { GameAIService, GameAction, AI_SPEED_DELAYS, MinesweeperCellInfo } from '../service/GameAIService';
+import { GameAIService, GameAction, AI_SPEED_DELAYS, MinesweeperCellInfo } from '../service/game/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
-import { SoundService } from '../service/SoundService';
+import { SoundService } from '../service/platform/SoundService';
 
 // 难度配置
 class MinesweeperConfig {
@@ -69,13 +69,13 @@ function levelConfig(level: DifficultyLevel, levelNo: number): MinesweeperConfig
   return new MinesweeperConfig(rows, cols, mines, Math.max(60, 60));
 }
 
-// 格子状态：@Observed 使属性变化可被 @ObjectLink 精确观察
-@Observed
+// 格子状态：@ObservedV2 + @Trace 使属性变化可被精确观察
+@ObservedV2
 class MineCell implements MinesweeperCellInfo {
-  isMine: boolean = false;
-  adjacent: number = 0;
-  revealed: boolean = false;
-  flagged: boolean = false;
+  @Trace isMine: boolean = false;
+  @Trace adjacent: number = 0;
+  @Trace revealed: boolean = false;
+  @Trace flagged: boolean = false;
 }
 
 interface MinePos {
@@ -83,24 +83,24 @@ interface MinePos {
   c: number;
 }
 
-// 单个格子组件：@ObjectLink 绑定格子对象，状态变化立即驱动本组件刷新
-@Component
+// 单个格子组件：@Param 绑定格子对象（@ObservedV2/@Trace 深层可观察），状态变化立即驱动本组件刷新
+@ComponentV2
 struct MineCellView {
-  @ObjectLink cell: MineCell;
-  @Prop isCursor: boolean = false;
-  @Prop fontSize: number = 14;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  onReveal: () => void = () => {};
-  onFlag: () => void = () => {};
+  @Param cell: MineCell = new MineCell();
+  @Param isCursor: boolean = false;
+  @Param fontSize: number = 14;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Event onReveal: () => void = () => {};
+  @Event onFlag: () => void = () => {};
 
   private cellColor(): string {
     if (this.cell.revealed) {
       // 已翻开：深色凹陷，与未翻开形成强烈明暗对比
-      return this.palette.isDark ? '#0B101B' : '#C0C9D6';
+      return this.themeState.palette.isDark ? '#0B101B' : '#C0C9D6';
     }
-    if (this.cell.flagged) return this.palette.primaryDim;
+    if (this.cell.flagged) return this.themeState.palette.primaryBgStrong;
     // 未翻开：明亮凸起
-    return this.palette.isDark ? '#333F58' : '#FFFFFF';
+    return this.themeState.palette.isDark ? '#333F58' : '#FFFFFF';
   }
 
   private cellText(): string {
@@ -114,19 +114,19 @@ struct MineCellView {
   }
 
   private cellTextColor(): string {
-    if (!this.cell.revealed) return this.palette.textPrimary;
-    if (this.cell.isMine) return this.palette.danger;
-    if (this.cell.adjacent === 1) return this.palette.info;
-    if (this.cell.adjacent === 2) return this.palette.success;
-    if (this.cell.adjacent === 3) return this.palette.danger;
-    return this.palette.textTertiary;
+    if (!this.cell.revealed) return this.themeState.palette.textPrimary;
+    if (this.cell.isMine) return this.themeState.palette.danger;
+    if (this.cell.adjacent === 1) return this.themeState.palette.info;
+    if (this.cell.adjacent === 2) return this.themeState.palette.success;
+    if (this.cell.adjacent === 3) return this.themeState.palette.danger;
+    return this.themeState.palette.textTertiary;
   }
 
   build() {
     Row() {
       Text(this.cellText())
         .fontSize(this.fontSize)
-        .fontFamily(this.palette.fontSans)
+        .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.cellTextColor())
         .fontWeight(FontWeight.Bold)
     }
@@ -134,12 +134,12 @@ struct MineCellView {
     .aspectRatio(1)
     .borderRadius(2)
     .border({ width: this.isCursor ? 2 : 1,
-      color: this.isCursor ? this.palette.primary :
-        (this.cell.revealed ? this.palette.borderSubtle :
-          (this.palette.isDark ? '#3D4A63' : '#AEB8C6')) })
+      color: this.isCursor ? this.themeState.palette.primary :
+        (this.cell.revealed ? this.themeState.palette.borderSubtle :
+          (this.themeState.palette.isDark ? '#3D4A63' : '#AEB8C6')) })
     .backgroundColor(this.cellColor())
     .shadow({ radius: this.cell.revealed ? 0 : 3,
-      color: this.palette.isDark ? 'rgba(0,0,0,0.50)' : 'rgba(30,41,59,0.28)',
+      color: this.themeState.palette.isDark ? 'rgba(0,0,0,0.50)' : 'rgba(30,41,59,0.28)',
       offsetX: 0, offsetY: this.cell.revealed ? 0 : 2 })
     .justifyContent(FlexAlign.Center)
     .onClick(() => { this.onReveal(); })
@@ -150,48 +150,46 @@ struct MineCellView {
   }
 }
 
-@Component
+@ComponentV2
 @Entry
 export struct MinesweeperPage {
-  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
-  @State currentLevel: number = 1;
-  @State bestLevel: number = 1;
-  @State timeLimit: number = 0;
-  @State gameStarted: boolean = false;
-  @State isGameOver: boolean = false;
-  @State showHelp: boolean = false;
-  @State isPaused: boolean = false;
-  @State isWin: boolean = false;
-  @State autoPaused: boolean = false;
-  @State flagMode: boolean = false;
-  @State board: MineCell[][] = [];
-  @State remainingMines: number = 0;
-  @State score: number = 0;
-  @State bestScore: number = 0;
-  @State playSeconds: number = 0;
-  @State newRecord: boolean = false;
-  @State cursorR: number = 0;
-  @State cursorC: number = 0;
+  @Local difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @Local currentLevel: number = 1;
+  @Local bestLevel: number = 1;
+  @Local timeLimit: number = 0;
+  @Local gameStarted: boolean = false;
+  @Local isGameOver: boolean = false;
+  @Local showHelp: boolean = false;
+  @Local isPaused: boolean = false;
+  @Local isWin: boolean = false;
+  @Local autoPaused: boolean = false;
+  @Local flagMode: boolean = false;
+  @Local board: MineCell[][] = [];
+  @Local remainingMines: number = 0;
+  @Local score: number = 0;
+  @Local bestScore: number = 0;
+  @Local playSeconds: number = 0;
+  @Local newRecord: boolean = false;
+  @Local cursorR: number = 0;
+  @Local cursorC: number = 0;
   // 棋盘版本号：每次重新开局递增，强制 ForEach 销毁重建所有格子组件，
-  // 确保 @ObjectLink 重新绑定全新格子对象（修复重新开始后 UI 不更新）
-  @State boardEpoch: number = 0;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // 确保 @Param 重新绑定全新格子对象（修复重新开始后 UI 不更新）
+  @Local boardEpoch: number = 0;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   // ---- AI 托管 ----
-  @State aiRunning: boolean = false;
-  @State aiStatus: string = '';
-  @State aiModelNames: string[] = [];
-  @State aiModelIndex: number = 0;
-  @State aiSpeedIndex: number = 2;
-  @State aiModelsConfigured: boolean = true;
+  @Local aiRunning: boolean = false;
+  @Local aiStatus: string = '';
+  @Local aiModelNames: string[] = [];
+  @Local aiModelIndex: number = 0;
+  @Local aiSpeedIndex: number = 2;
+  @Local aiModelsConfigured: boolean = true;
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  @State aiFailCount: number = 0;
-  @State aiThinkCount: number = 0;
-  @State aiThinkTimeMs: number = 0;
-  @State aiThinkTotalMs: number = 0;
+  @Local aiFailCount: number = 0;
+  @Local aiThinkCount: number = 0;
+  @Local aiThinkTimeMs: number = 0;
+  @Local aiThinkTotalMs: number = 0;
   private aiThinkTimer: number = -1;
   private aiThinkStart: number = 0;
   private aiHosted: boolean = false;
@@ -827,7 +825,7 @@ export struct MinesweeperPage {
 
   // 自适应棋盘格子尺寸
   private boardCell(): number {
-    if (this.isSm) {
+    if (this.themeState.isSm) {
       return DeviceMetrics.fitCellSize(this.cols, this.rows, 270, 10, 30);
     }
     return DeviceMetrics.fitCellSize(this.cols, this.rows, 140, 12, 36);
@@ -869,10 +867,10 @@ export struct MinesweeperPage {
     }
     .width('100%')
     .height('100%')
-    .border({ width: 2, color: this.palette.borderDefault })
+    .border({ width: 2, color: this.themeState.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
-    .backgroundColor(this.palette.bgSurface)
+    .backgroundColor(this.themeState.palette.bgSurface)
   }
 
   private cellFontSize(): number {
@@ -889,71 +887,71 @@ export struct MinesweeperPage {
     Row({ space: 8 }) {
       Column({ space: 2 }) {
         Text('关卡')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.currentLevel.toString())
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Column({ space: 2 }) {
         Text('剩余雷')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.remainingMines.toString())
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.danger)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.danger)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Column({ space: 2 }) {
         Text('用时')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.formatDuration(this.playSeconds))
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.info)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.info)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Column({ space: 2 }) {
         Text('最佳')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.bestScore.toString())
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
     }
     .width('100%')
   }
@@ -964,22 +962,22 @@ export struct MinesweeperPage {
     Row({ space: 8 }) {
       Row() {
         Text(this.flagMode ? '🚩 标旗模式' : '🖱 翻开模式')
-          .fontSize(this.palette.fsSm)
-          .fontColor(this.flagMode ? this.palette.danger : this.palette.primary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontColor(this.flagMode ? this.themeState.palette.danger : this.themeState.palette.primary)
+          .fontFamily(this.themeState.palette.fontSans)
           .fontWeight(FontWeight.Medium)
       }
-      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-      .borderRadius(8)
-      .backgroundColor(this.flagMode ? this.palette.primaryDim : this.palette.bgSurface2)
+      .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.flagMode ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface2)
       .onClick(() => { this.flagMode = !this.flagMode; })
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
 
       Text('长按格子也可标旗')
-        .fontSize(this.palette.fsXs)
-        .fontColor(this.palette.textTertiary)
-        .fontFamily(this.palette.fontSans)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontColor(this.themeState.palette.textTertiary)
+        .fontFamily(this.themeState.palette.fontSans)
     }
     .width('100%')
   }
@@ -991,12 +989,12 @@ export struct MinesweeperPage {
       Row() {
         Text('📖')
           .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.showHelp = true; })
 
@@ -1006,8 +1004,8 @@ export struct MinesweeperPage {
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
          AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('Minesweeper'));
@@ -1016,24 +1014,24 @@ export struct MinesweeperPage {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
-          .fontColor(this.palette.textPrimary)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.togglePause(); })
 
       Row() {
         Text('↺')
           .fontSize(16)
-          .fontColor(this.palette.textPrimary)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.restartGame(); })
     }
@@ -1045,50 +1043,50 @@ export struct MinesweeperPage {
     Stack() {
       Column({ space: 12 }) {
         Text(this.isWin ? '🎉 胜利！' : '💥 踩雷了')
-          .fontSize(this.palette.fs2xl)
-          .fontColor(this.isWin ? this.palette.primary : this.palette.danger)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontColor(this.isWin ? this.themeState.palette.primary : this.themeState.palette.danger)
+          .fontFamily(this.themeState.palette.fontSans)
           .fontWeight(FontWeight.Bold)
         if (this.isWin && this.newRecord) {
           Text('🎉 新纪录！')
-            .fontSize(this.palette.fsMd)
-            .fontColor(this.palette.warning)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontColor(this.themeState.palette.warning)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontWeight(FontWeight.Bold)
         }
         if (this.isWin) {
           Text('得分：' + this.score.toString())
-            .fontSize(this.palette.fsMd)
-            .fontColor(this.palette.textPrimary)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontColor(this.themeState.palette.textPrimary)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontWeight(FontWeight.Medium)
           Text('用时 ' + this.formatDuration(this.playSeconds) + ' · 历史最高 ' + this.bestScore.toString())
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textTertiary)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontColor(this.themeState.palette.textTertiary)
+            .fontFamily(this.themeState.palette.fontSans)
         } else {
           Text('用时 ' + this.formatDuration(this.playSeconds))
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textTertiary)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontColor(this.themeState.palette.textTertiary)
+            .fontFamily(this.themeState.palette.fontSans)
         }
         Row({ space: 12 }) {
           Column({ space: 6 }) {
             Row() {
               Text(this.isWin ? '▶' : '↺')
                 .fontSize(22)
-                .fontColor('#0A0E1A')
+                .fontColor(this.themeState.palette.primaryOnColor)
                 .fontWeight(FontWeight.Bold)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text(this.isWin ? '下一关' : '重试本关')
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textSecondary)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.textSecondary)
+              .fontFamily(this.themeState.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { if (this.isWin) { this.nextLevel(); } else { this.restartGame(); } })
@@ -1097,17 +1095,17 @@ export struct MinesweeperPage {
             Row() {
               Text('←')
                 .fontSize(22)
-                .fontColor(this.palette.textPrimary)
+                .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('返回')
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textSecondary)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.textSecondary)
+              .fontFamily(this.themeState.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { AppNavigator.pop(); })
@@ -1115,11 +1113,16 @@ export struct MinesweeperPage {
         .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -1129,44 +1132,44 @@ export struct MinesweeperPage {
     Stack() {
       Column({ space: 12 }) {
         Text('已暂停')
-          .fontSize(this.palette.fs2xl)
-          .fontColor(this.palette.textPrimary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontColor(this.themeState.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
           .fontWeight(FontWeight.Bold)
         Row({ space: 10 }) {
           Text('难度')
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textTertiary)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontColor(this.themeState.palette.textTertiary)
+            .fontFamily(this.themeState.palette.fontSans)
           Text(difficultyLabel(this.difficulty))
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.primary)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontColor(this.themeState.palette.primary)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontWeight(FontWeight.Medium)
           Text('›')
-            .fontSize(this.palette.fsSm)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontColor(this.themeState.palette.textTertiary)
         }
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .onClick(() => { this.cycleDifficulty(); })
         Row({ space: 12 }) {
           Column({ space: 6 }) {
             Row() {
               Text('▶')
                 .fontSize(20)
-                .fontColor('#0A0E1A')
+                .fontColor(this.themeState.palette.primaryOnColor)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text('继续')
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textSecondary)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.textSecondary)
+              .fontFamily(this.themeState.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.togglePause(); })
@@ -1175,17 +1178,17 @@ export struct MinesweeperPage {
             Row() {
               Text('↺')
                 .fontSize(20)
-                .fontColor(this.palette.textPrimary)
+                .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textSecondary)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.textSecondary)
+              .fontFamily(this.themeState.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.restartGame(); })
@@ -1194,17 +1197,17 @@ export struct MinesweeperPage {
             Row() {
               Text('←')
                 .fontSize(20)
-                .fontColor(this.palette.textPrimary)
+                .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('返回')
-              .fontSize(this.palette.fsXs)
-              .fontColor(this.palette.textSecondary)
-              .fontFamily(this.palette.fontSans)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.textSecondary)
+              .fontFamily(this.themeState.palette.fontSans)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { AppNavigator.pop(); })
@@ -1212,11 +1215,16 @@ export struct MinesweeperPage {
         .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.7)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -1256,8 +1264,8 @@ export struct MinesweeperPage {
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showHelp = false; })
           }
@@ -1276,9 +1284,9 @@ export struct MinesweeperPage {
               '• 数字格表明周围地雷数，帮助推理安全格\n' +
               '• 标记所有地雷并翻开所有安全格即为胜利\n' +
               '• 首次点击必定安全（不会踩雷）')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .lineHeight(22)
               .width('100%')
           }
@@ -1287,9 +1295,9 @@ export struct MinesweeperPage {
           .padding({ left: 20, right: 20, bottom: 16 })
         }
         .width('100%')
-        .borderRadius(16)
-        .backgroundColor(this.palette.bgBase)
-        .padding({ bottom: Math.max(16, this.navBarHeight) })
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .padding({ bottom: Math.max(16, this.themeState.navBarHeight) })
       }
       .width('100%')
       .height('100%')
@@ -1297,7 +1305,7 @@ export struct MinesweeperPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showHelp = false; })
   }
 
@@ -1312,7 +1320,7 @@ export struct MinesweeperPage {
           this.actionsBuilder()
         }
 
-        if (this.isSm) {
+        if (this.themeState.isSm) {
           if (this.gameStarted) {
             Column({ space: 8 }) {
               this.infoPanel()
@@ -1386,31 +1394,31 @@ export struct MinesweeperPage {
                   this.infoPanel()
                   Column({ space: 6 }) {
                     Text('操作提示')
-                      .fontSize(this.palette.fsXs)
-                      .fontColor(this.palette.textTertiary)
-                      .fontFamily(this.palette.fontSans)
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontColor(this.themeState.palette.textTertiary)
+                      .fontFamily(this.themeState.palette.fontSans)
                     Column({ space: 4 }) {
                       Text('点击/空格：翻开格子')
-                        .fontSize(this.palette.fsSm)
-                        .fontColor(this.palette.textSecondary)
-                        .fontFamily(this.palette.fontSans)
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontColor(this.themeState.palette.textSecondary)
+                        .fontFamily(this.themeState.palette.fontSans)
                       Text('长按/标旗模式/F：标记地雷')
-                        .fontSize(this.palette.fsSm)
-                        .fontColor(this.palette.textSecondary)
-                        .fontFamily(this.palette.fontSans)
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontColor(this.themeState.palette.textSecondary)
+                        .fontFamily(this.themeState.palette.fontSans)
                       Text('方向键/WASD：移动光标')
-                        .fontSize(this.palette.fsSm)
-                        .fontColor(this.palette.textSecondary)
-                        .fontFamily(this.palette.fontSans)
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontColor(this.themeState.palette.textSecondary)
+                        .fontFamily(this.themeState.palette.fontSans)
                       Text('首次点击必安全，数字=周围雷数')
-                        .fontSize(this.palette.fsSm)
-                        .fontColor(this.palette.primary)
-                        .fontFamily(this.palette.fontSans)
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontColor(this.themeState.palette.primary)
+                        .fontFamily(this.themeState.palette.fontSans)
                     }
-                    .padding(14)
-                    .backgroundColor(this.palette.bgSurface)
-                    .borderRadius(10)
-                    .border({ width: 1, color: this.palette.borderSubtle })
+                    .padding(this.themeState.palette.sp4)
+                    .backgroundColor(this.themeState.palette.bgSurface)
+                    .borderRadius(this.themeState.palette.radiusMd)
+                    .border({ width: 0.5, color: this.themeState.palette.divider })
                   }
                   .width('100%')
                   .alignItems(HorizontalAlign.Start)
@@ -1430,8 +1438,8 @@ export struct MinesweeperPage {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
-      .padding({ bottom: Math.max(0, this.navBarHeight) })
+      .backgroundColor(this.themeState.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.themeState.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {

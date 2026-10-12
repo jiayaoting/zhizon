@@ -1,21 +1,22 @@
 // 智子 - 2048
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemePalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { DataRepository } from '../service/DataRepository';
+import { DataRepository } from '../service/platform/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
-import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/GameAIService';
+import { GameAIService, GameAction, AI_SPEED_DELAYS } from '../service/game/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
-import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/ReplayService';
-import { SoundService } from '../service/SoundService';
+import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/game/ReplayService';
+import { SoundService } from '../service/platform/SoundService';
 
 
 interface TileStyle {
@@ -64,47 +65,45 @@ class LevelConfig2048 {
   }
 }
 
-@Component
+@ComponentV2
 @Entry
 export struct Game2048Page {
-  @State board: number[][] = [];
-  @State score: number = 0;
-  @State bestScore: number = 0;
-  @State isGameOver: boolean = false;
-  @State isWin: boolean = false;
-  @State hasWonBefore: boolean = false;
-  @State moveAnimating: boolean = false;
-  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
-  @State boardSize: number = 4;
-  @State currentLevel: number = 1;
-  @State targetValue: number = 256;
-  @State bestLevel: number = 1;
-  @State gameStarted: boolean = false;
-  @State isPaused: boolean = false;
-  @State autoPaused: boolean = false;
-  @State mergePulse: boolean = false;
-  @State floatScore: string = '';
-  @State showFloatScore: boolean = false;
-  @State newRecord: boolean = false;
-  @State showHelp: boolean = false;
-  @State playSeconds: number = 0;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @Local board: number[][] = [];
+  @Local score: number = 0;
+  @Local bestScore: number = 0;
+  @Local isGameOver: boolean = false;
+  @Local isWin: boolean = false;
+  @Local hasWonBefore: boolean = false;
+  @Local moveAnimating: boolean = false;
+  @Local difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @Local boardSize: number = 4;
+  @Local currentLevel: number = 1;
+  @Local targetValue: number = 256;
+  @Local bestLevel: number = 1;
+  @Local gameStarted: boolean = false;
+  @Local isPaused: boolean = false;
+  @Local autoPaused: boolean = false;
+  @Local mergePulse: boolean = false;
+  @Local floatScore: string = '';
+  @Local showFloatScore: boolean = false;
+  @Local newRecord: boolean = false;
+  @Local showHelp: boolean = false;
+  @Local playSeconds: number = 0;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   // ---- AI 托管 ----
-  @State aiRunning: boolean = false;
-  @State aiStatus: string = '';
-  @State aiModelNames: string[] = [];
-  @State aiModelIndex: number = 0;
-  @State aiSpeedIndex: number = 2;
-  @State aiModelsConfigured: boolean = true;
+  @Local aiRunning: boolean = false;
+  @Local aiStatus: string = '';
+  @Local aiModelNames: string[] = [];
+  @Local aiModelIndex: number = 0;
+  @Local aiSpeedIndex: number = 2;
+  @Local aiModelsConfigured: boolean = true;
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  @State aiFailCount: number = 0;
-  @State aiThinkCount: number = 0;
-  @State aiThinkTimeMs: number = 0;
-  @State aiThinkTotalMs: number = 0;
+  @Local aiFailCount: number = 0;
+  @Local aiThinkCount: number = 0;
+  @Local aiThinkTimeMs: number = 0;
+  @Local aiThinkTotalMs: number = 0;
   private aiThinkTimer: number = -1;
   private aiThinkStart: number = 0;
   private aiHosted: boolean = false;
@@ -115,8 +114,8 @@ export struct Game2048Page {
   private scoreSaved: boolean = false;
 
   // ---- 对局回放 ----
-  @State replayMode: boolean = false;
-  @State replaySpeed: number = 1;
+  @Local replayMode: boolean = false;
+  @Local replaySpeed: number = 1;
   private recorder: ReplayRecorder = new ReplayRecorder();
   private replayEvents: ReplayEvent[] = [];
   private replayIndex: number = 0;
@@ -141,7 +140,7 @@ export struct Game2048Page {
 
   // 自适应棋盘边长
   private boardSide(): number {
-    if (this.isSm) {
+    if (this.themeState.isSm) {
       // 手机端：TopBar + 记分牌 + 间距 + 安全区
       return this.boardSize * DeviceMetrics.fitCellSize(this.boardSize, this.boardSize, 240, 12, 72);
     }
@@ -738,16 +737,16 @@ export struct Game2048Page {
             Stack() {
               if (cell > 0) {
                 Text(cell.toString())
-                  .fontSize(tileStyle(cell, this.palette).fontSize)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(tileStyle(cell, this.palette).fg)
+                  .fontSize(tileStyle(cell, this.themeState.palette).fontSize)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(tileStyle(cell, this.themeState.palette).fg)
                   .fontWeight(FontWeight.Bold)
               }
             }
             .layoutWeight(1)
             .aspectRatio(1)
-            .borderRadius(8)
-            .backgroundColor(tileStyle(cell, this.palette).bg)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(tileStyle(cell, this.themeState.palette).bg)
             .alignContent(Alignment.Center)
           }, (colIdx: number) => colIdx.toString())
         }
@@ -757,9 +756,9 @@ export struct Game2048Page {
     .width('100%')
     .aspectRatio(1)
     .padding(8)
-    .backgroundColor(this.palette.bgSurface)
+    .backgroundColor(this.themeState.palette.bgSurface)
     .borderRadius(12)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .border({ width: 1, color: this.themeState.palette.borderSubtle })
     .scale(this.mergeBoardScale())
     .animation({ duration: 180, curve: Curve.EaseOut })
     .gesture(
@@ -788,78 +787,78 @@ export struct Game2048Page {
       // 当前关卡
       Column({ space: 2 }) {
         Text('关卡')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.currentLevel.toString())
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.info)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.info)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(12)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(10)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       // 目标数字
       Column({ space: 2 }) {
         Text('目标')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.targetValue.toString())
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(12)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(10)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       // 当前分数
       Column({ space: 2 }) {
         Text('分数')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.score.toString())
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(12)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(10)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       // 最佳分数
       Column({ space: 2 }) {
         Text('最佳')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.bestScore.toString())
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(12)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(10)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
     }
     .width('100%')
   }
@@ -870,32 +869,32 @@ export struct Game2048Page {
     Stack() {
       Column({ space: 16 }) {
         Text('🎉 恭喜！')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
           .fontWeight(FontWeight.Bold)
         Text('你达到了 ' + this.targetValue.toString() + '！')
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
         Row({ space: 16 }) {
           // 继续刷分
           Column({ space: 6 }) {
             Row() {
               Text('♾')
                 .fontSize(20)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('继续刷分')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.continueGame(); })
@@ -905,30 +904,35 @@ export struct Game2048Page {
             Row() {
               Text('▶')
                 .fontSize(20)
-                .fontFamily(this.palette.fontSans)
-                .fontColor('#0A0E1A')
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.primaryOnColor)
                 .fontWeight(FontWeight.Bold)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-            .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text('下一关')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.nextLevel(); })
         }
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -938,45 +942,45 @@ export struct Game2048Page {
     Stack() {
       Column({ space: 12 }) {
         Text('游戏结束')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.danger)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.danger)
           .fontWeight(FontWeight.Bold)
         if (this.newRecord) {
           Text('🎉 新纪录！')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.warning)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.warning)
             .fontWeight(FontWeight.Bold)
         }
         Text('最终得分：' + this.score.toString())
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
         Text('历史最高：' + this.bestScore.toString() + ' · 用时 ' + this.formatDuration(this.playSeconds))
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Row({ space: 12 }) {
           // 重新开始
           Column({ space: 6 }) {
             Row() {
             Text('↺')
               .fontSize(22)
-              .fontFamily(this.palette.fontSans)
-              .fontColor('#0A0E1A')
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primaryOnColor)
               .fontWeight(FontWeight.Bold)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.restartGame(); })
@@ -986,18 +990,18 @@ export struct Game2048Page {
             Row() {
             Text('←')
               .fontSize(22)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('返回')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { AppNavigator.pop(); })
@@ -1005,11 +1009,16 @@ export struct Game2048Page {
         .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -1019,28 +1028,28 @@ export struct Game2048Page {
     Stack() {
       Column({ space: 12 }) {
         Text('已暂停')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row({ space: 10 }) {
           Text('难度')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
           Text(difficultyLabel(this.difficulty))
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.primary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
             .fontWeight(FontWeight.Medium)
           Text('›')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .onClick(() => { this.cycleDifficulty(); })
         Row({ space: 12 }) {
           // 继续
@@ -1048,18 +1057,18 @@ export struct Game2048Page {
             Row() {
             Text('▶')
               .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-              .fontColor('#0A0E1A')
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primaryOnColor)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text('继续')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.togglePause(); })
@@ -1069,18 +1078,18 @@ export struct Game2048Page {
             Row() {
             Text('↺')
               .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.restartGame(); })
@@ -1090,18 +1099,18 @@ export struct Game2048Page {
             Row() {
             Text('←')
               .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('返回')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { AppNavigator.pop(); })
@@ -1109,11 +1118,16 @@ export struct Game2048Page {
         .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.7)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -1125,24 +1139,24 @@ export struct Game2048Page {
       Row() {
         Text('📖')
           .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.showHelp = true; })
 
       Row() {
         Text('🏆')
           .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
          AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('2048'));
@@ -1152,26 +1166,26 @@ export struct Game2048Page {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.togglePause(); })
 
       Row() {
         Text('↺')
           .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.restartGame(); })
     }
@@ -1325,8 +1339,8 @@ export struct Game2048Page {
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showHelp = false; })
           }
@@ -1344,9 +1358,9 @@ export struct Game2048Page {
               '• 棋盘满格且无法继续合并时游戏结束\n' +
               '• 合并出 2048 方块即为胜利，可继续挑战更高分\n' +
               '• 不同难度影响初始方块数量和 4 的出现概率')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .lineHeight(22)
               .width('100%')
           }
@@ -1355,9 +1369,9 @@ export struct Game2048Page {
           .padding({ left: 20, right: 20, bottom: 16 })
         }
         .width('100%')
-        .borderRadius(16)
-        .backgroundColor(this.palette.bgBase)
-        .padding({ bottom: Math.max(16, this.navBarHeight) })
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .padding({ bottom: Math.max(16, this.themeState.navBarHeight) })
       }
       .width('100%')
       .height('100%')
@@ -1365,7 +1379,7 @@ export struct Game2048Page {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showHelp = false; })
   }
 
@@ -1383,28 +1397,28 @@ export struct Game2048Page {
         if (this.replayMode) {
           Row({ space: 10 }) {
             Text('🎬 回放中 · 速度 x' + this.replaySpeed.toString())
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .layoutWeight(1)
             Button('速度')
-              .fontSize(this.palette.fsSm)
+              .fontSize(this.themeState.palette.fsSm)
               .height(30)
-              .backgroundColor(this.palette.bgSurface)
-              .fontColor(this.palette.textPrimary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .fontColor(this.themeState.palette.textPrimary)
               .onClick(() => { this.cycleReplaySpeed(); })
             Button('退出')
-              .fontSize(this.palette.fsSm)
+              .fontSize(this.themeState.palette.fsSm)
               .height(30)
-              .backgroundColor(this.palette.danger)
-              .fontColor('#FFFFFF')
+              .backgroundColor(this.themeState.palette.danger)
+              .fontColor(this.themeState.palette.primaryOnColor)
               .onClick(() => { this.exitReplay(); })
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 8, bottom: 8 })
         }
 
-        if (this.isSm) {
+        if (this.themeState.isSm) {
           // 手机端布局
           if (this.gameStarted) {
             Column({ space: 16 }) {
@@ -1479,27 +1493,27 @@ export struct Game2048Page {
               })
               Column({ space: 8 }) {
                 Text('操作提示')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
                 Column({ space: 6 }) {
                   Text('滑动屏幕即可操作')
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                   Text('相同数字会合并相加')
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                   Text('目标：达到 ' + this.targetValue.toString() + '！')
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.primary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.primary)
                 }
                 .padding(16)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(10)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusMd)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)
@@ -1516,8 +1530,8 @@ export struct Game2048Page {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
-      .padding({ bottom: Math.max(0, this.navBarHeight) })
+      .backgroundColor(this.themeState.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.themeState.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {
@@ -1547,9 +1561,9 @@ export struct Game2048Page {
       // 得分飘字
       if (this.showFloatScore) {
         Text(this.floatScore)
-          .fontSize(this.palette.fsXl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fsXl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
           .position({ x: '50%', y: '12%' })
           .translate({ x: '-50%' })

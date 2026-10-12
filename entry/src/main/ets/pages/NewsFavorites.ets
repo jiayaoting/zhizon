@@ -5,7 +5,7 @@ import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { HotEntry, HotDetailRouteParams } from '../common/HotModels';
-import { NewsRepository } from '../service/NewsRepository';
+import { NewsRepository } from '../service/hot/NewsRepository';
 import { HotSourceBadge } from '../components/HotSourceBadge';
 
 @ComponentV2

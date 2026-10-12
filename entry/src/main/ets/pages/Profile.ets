@@ -1,12 +1,17 @@
-// 智子 - 我的页（身份卡 + 业务分组入口：热榜/游戏/AI）
+// 智子 - 我的页（v10 华为原生拟物白）
+// 结构（§3.2）：头部账号卡（账号 + 统计 meta）→ 热榜数据 / 游戏 / AI / 通用 四张分组卡。
+// IA（§3.5 入口去重）：本页只留「看」的入口（收藏 / 周报 / 成就 / 战绩 / 回放 / 排行）与账号、通用；
+// 「热榜设置」收敛到 设置 → 热榜（首页 ⚙ 保留为快捷），「搜索热榜」收敛到首页顶栏 🔍，
+// 均不再在本页重复出现。
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { SettingRow } from '../components/SettingRow';
-import { DataRepository } from '../service/DataRepository';
-import { HuaweiAccountService } from '../service/HuaweiAccountService';
-import { NewsRepository, HotStats } from '../service/NewsRepository';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { AppConstants } from '../common/Constants';
+import { LegalDocRouteParams } from '../common/Navigation';
+import { DataRepository } from '../service/platform/DataRepository';
+import { HuaweiAccountService } from '../service/platform/HuaweiAccountService';
+import { NewsRepository, HotStats } from '../service/hot/NewsRepository';
 import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
 
 @ComponentV2
@@ -33,7 +38,7 @@ export struct ProfilePage {
     }
   }
 
-  // 身份区点击：未登录 → 登录华为账号；已登录 → 进入设置（账号与云同步）
+  // 账号卡点击：未登录 → 登录华为账号；已登录 → 进入设置（账号与云同步组）
   private async onIdentityTap(): Promise<void> {
     if (this.huaweiNick.length > 0) {
       this.onNavigate('Settings');
@@ -65,191 +70,355 @@ export struct ProfilePage {
     }
   }
 
+  // ==================== 行构件（图标 22vp / 行高 56vp / 发丝分割线 36vp 缩进对齐标题）====================
   @Builder
-  headerCard() {
-    Column({ space: 14 }) {
-      Row({ space: 16 }) {
-        // 头像（点击进入设置）
+  rowIcon(symbol: Resource, emoji: string) {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(symbol)
+          .fontSize(22)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(emoji)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(24)
+    .height(24)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  forwardArrow() {
+    if (USE_SYMBOL_ICONS) {
+      SymbolGlyph(AppIcons.forward)
+        .fontSize(16)
+        .fontColor([this.themeState.palette.textTertiary])
+    } else {
+      Text(AppIcons.forwardEmoji)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+    }
+  }
+
+  @Builder
+  rowDivider() {
+    Divider()
+      .color(this.themeState.palette.divider)
+      .strokeWidth(0.5)
+      .margin({ left: 36 })
+  }
+
+  @Builder
+  groupHeader(title: string) {
+    Text(title)
+      .fontSize(this.themeState.palette.fsSm)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(this.themeState.palette.textTertiary)
+      .width('100%')
+      .textAlign(TextAlign.Start)
+  }
+
+  @Builder
+  navRow(symbol: Resource, emoji: string, title: string, showDivider: boolean, onTap: () => void) {
+    Column({ space: 0 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
+        this.rowIcon(symbol, emoji)
+        Text(title)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .textAlign(TextAlign.Start)
+        this.forwardArrow()
+      }
+      .width('100%')
+      .height(this.themeState.palette.rowHeight)
+      .alignItems(VerticalAlign.Center)
+      .stateStyles({
+        pressed: {
+          .backgroundColor(this.themeState.palette.bgHover)
+        }
+      })
+      .accessibilityText(title)
+      .onClick(() => {
+        onTap();
+      })
+
+      if (showDivider) {
+        this.rowDivider()
+      }
+    }
+    .width('100%')
+  }
+
+  // 只读信息行（右侧为值、无箭头，如「版本」）
+  @Builder
+  infoRow(symbol: Resource, emoji: string, title: string, value: string, showDivider: boolean) {
+    Column({ space: 0 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
+        this.rowIcon(symbol, emoji)
+        Text(title)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .maxLines(1)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Start)
+        Text(value)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .maxLines(1)
+      }
+      .width('100%')
+      .height(this.themeState.palette.rowHeight)
+      .alignItems(VerticalAlign.Center)
+      .accessibilityText(title + '，' + value)
+
+      if (showDivider) {
+        this.rowDivider()
+      }
+    }
+    .width('100%')
+  }
+
+  // ==================== 头部账号卡 ====================
+  @Builder
+  statMeta(label: string, value: number) {
+    Row({ space: this.themeState.palette.sp1 }) {
+      Text(value.toString())
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+      Text(label)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+    }
+    .accessibilityText(label + '，' + value.toString())
+  }
+
+  @Builder
+  accountCard() {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Row({ space: this.themeState.palette.sp4 }) {
+        // 头像（自定义图片 / 预设渐变）
         Stack() {
           if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
             Image(this.avatarUri)
-              .width(64)
-              .height(64)
-              .borderRadius(32)
+              .width(56)
+              .height(56)
+              .borderRadius(28)
               .objectFit(ImageFit.Cover)
-              .border({ width: 1.5, color: '#80FFFFFF' })
+              .border({ width: 0.5, color: this.themeState.palette.borderDefault })
           } else {
             Column()
-              .width(64)
-              .height(64)
-              .borderRadius(32)
+              .width(56)
+              .height(56)
+              .borderRadius(28)
               .linearGradient({
                 angle: 135,
                 colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
               })
-              .shadow({ radius: 12, color: avatarColors(this.avatarId)[0] + '55', offsetX: 0, offsetY: 4 })
             Text('Z')
-              .fontSize(28)
+              .fontSize(24)
               .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(Color.White)
+              .fontColor(this.themeState.palette.primaryOnColor)
               .fontWeight(FontWeight.Bold)
           }
         }
-        .onClick(() => { this.onNavigate('Settings'); })
+        .width(56)
+        .height(56)
+        .onClick(() => {
+          this.onIdentityTap();
+        })
 
-        Column({ space: 4 }) {
+        Column({ space: 2 }) {
           Text(this.huaweiNick.length > 0 ? this.huaweiNick : '未登录')
-            .fontSize(this.themeState.palette.fsXl)
+            .fontSize(this.themeState.palette.fsLg)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.huaweiNick.length > 0 ? '华为账号已登录' : '点击登录 · 开启云同步')
+            .width('100%')
+            .textAlign(TextAlign.Start)
+          Text(this.huaweiNick.length > 0 ? '华为账号已登录' : '登录后开启云同步')
             .fontSize(this.themeState.palette.fsXs)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
+            .maxLines(1)
+            .width('100%')
+            .textAlign(TextAlign.Start)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         .accessibilityText(this.huaweiNick.length > 0 ? this.huaweiNick + '，华为账号已登录' : '未登录，点击登录')
-        .onClick(() => { this.onIdentityTap(); })
+        .onClick(() => {
+          this.onIdentityTap();
+        })
 
-        Row() {
-          Text('⚙')
-            .fontSize(18)
+        // 未登录：登录 CTA；已登录：账号二级入口箭头
+        if (this.huaweiNick.length > 0) {
+          this.forwardArrow()
+        } else {
+          Text('登录')
+            .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.primary)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .fontWeight(FontWeight.Medium)
+            .height(36)
+            .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
+            .textAlign(TextAlign.Center)
+            .accessibilityText('登录华为账号')
+            .onClick(() => {
+              this.onIdentityTap();
+            })
         }
-        .width(36)
-        .height(36)
-        .borderRadius(18)
-        .backgroundColor(this.themeState.palette.primaryDim)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .accessibilityText('设置')
-        .onClick(() => { this.onNavigate('Settings'); })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      // 三格数据（收藏 / 已读 / AI 调用）
-      Row({ space: 8 }) {
-        this.statCell('⭐', this.stats.favoriteCount, '收藏', () => { AppNavigator.push('pages/NewsFavorites'); })
-        this.statCell('👁', this.stats.readCount, '已读', () => { AppNavigator.push('pages/ReadingReport'); })
-        this.statCell('🤖', this.stats.aiCallCount, 'AI 调用', () => { AppNavigator.push('pages/AiCallLog'); })
+      Divider()
+        .color(this.themeState.palette.divider)
+        .strokeWidth(0.5)
+
+      // 数据 meta（收藏 / 已读 / AI 调用）：只读展示，入口在下方分组卡
+      Row({ space: this.themeState.palette.sp5 }) {
+        this.statMeta('收藏', this.stats.favoriteCount)
+        this.statMeta('已读', this.stats.readCount)
+        this.statMeta('AI 调用', this.stats.aiCallCount)
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .padding(18)
-    .borderRadius(16)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+    .padding(this.themeState.palette.sp4)
+    .borderRadius(this.themeState.palette.radiusLg)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
-  @Builder
-  statCell(icon: string, value: number, label: string, onTap?: () => void) {
-    Column({ space: 4 }) {
-      Text(icon)
-        .fontSize(14)
-        .fontFamily(this.themeState.palette.fontSans)
-        .width(28)
-        .height(28)
-        .textAlign(TextAlign.Center)
-        .borderRadius(14)
-        .backgroundColor(this.themeState.palette.primaryDim)
-      Text(value.toString())
-        .fontSize(this.themeState.palette.fsLg)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.primary)
-        .fontWeight(FontWeight.Bold)
-      Text(label)
-        .fontSize(this.themeState.palette.fsXs - 1)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textTertiary)
-    }
-    .layoutWeight(1)
-    .padding({ top: 10, bottom: 10 })
-    .borderRadius(10)
-    .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-    .onClick(() => {
-      if (onTap) {
-        onTap();
-      }
-    })
-    .accessibilityText(label + '，' + value.toString())
-  }
-
+  // ==================== 分组卡：热榜数据 ====================
   @Builder
   newsGroup() {
-    Column({ space: 10 }) {
-      Text('热榜')
-        .fontSize(this.themeState.palette.fsMd)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-      Column({ space: 8 }) {
-        SettingRow({ icon: '📰', title: '热榜设置', rowClick: () => { AppNavigator.push('pages/NewsSettings'); } })
-        SettingRow({ icon: '⭐', title: '收藏', rowClick: () => { AppNavigator.push('pages/NewsFavorites'); } })
-        SettingRow({ icon: '🔍', title: '搜索热榜', rowClick: () => { AppNavigator.push('pages/NewsSearch'); } })
-        SettingRow({ icon: '📅', title: '阅读周报', rowClick: () => { AppNavigator.push('pages/ReadingReport'); } })
+    Column({ space: this.themeState.palette.sp2 }) {
+      this.groupHeader('热榜数据')
+      Column({ space: 0 }) {
+        this.navRow(AppIcons.starFill, AppIcons.starFillEmoji, '收藏', true, () => {
+          AppNavigator.push('pages/NewsFavorites');
+        })
+        this.navRow(AppIcons.calendar, AppIcons.calendarEmoji, '阅读周报', false, () => {
+          AppNavigator.push('pages/ReadingReport');
+        })
       }
       .width('100%')
+      .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+      .borderRadius(this.themeState.palette.radiusLg)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .clip(true)
     }
     .width('100%')
-    .padding(16)
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
     .alignItems(HorizontalAlign.Start)
   }
 
+  // ==================== 分组卡：游戏 ====================
   @Builder
   gameGroup() {
-    Column({ space: 10 }) {
-      Text('游戏')
-        .fontSize(this.themeState.palette.fsMd)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-      Column({ space: 8 }) {
-        SettingRow({ icon: '🏆', title: '成就', rowClick: () => { AppNavigator.push('pages/Achievements'); } })
-        SettingRow({ icon: '🎬', title: '对局回放', rowClick: () => { AppNavigator.push('pages/ReplayList'); } })
-        SettingRow({ icon: '📈', title: '排行榜', rowClick: () => { AppNavigator.push('pages/Leaderboard'); } })
+    Column({ space: this.themeState.palette.sp2 }) {
+      this.groupHeader('游戏')
+      Column({ space: 0 }) {
+        this.navRow(AppIcons.trophy, AppIcons.trophyEmoji, '成就', true, () => {
+          AppNavigator.push('pages/Achievements');
+        })
+        this.navRow(AppIcons.chart, AppIcons.chartEmoji, '战绩统计', true, () => {
+          AppNavigator.push('pages/GameStats');
+        })
+        this.navRow(AppIcons.play, AppIcons.playEmoji, '对局回放', true, () => {
+          AppNavigator.push('pages/ReplayList');
+        })
+        this.navRow(AppIcons.list, AppIcons.listEmoji, '排行榜', false, () => {
+          AppNavigator.push('pages/Leaderboard');
+        })
       }
       .width('100%')
+      .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+      .borderRadius(this.themeState.palette.radiusLg)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .clip(true)
     }
     .width('100%')
-    .padding(16)
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
     .alignItems(HorizontalAlign.Start)
   }
 
+  // ==================== 分组卡：AI ====================
   @Builder
-  systemGroup() {
-    Column({ space: 10 }) {
-      Text('AI')
-        .fontSize(this.themeState.palette.fsMd)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-        .width('100%')
-      Column({ space: 8 }) {
-        SettingRow({ icon: '🤖', title: 'AI 模型', rowClick: () => { AppNavigator.push('pages/AiModelPage'); } })
-        SettingRow({ icon: '🎭', title: 'AI 角色模板', rowClick: () => { AppNavigator.push('pages/AiRoleLibrary'); } })
+  aiGroup() {
+    Column({ space: this.themeState.palette.sp2 }) {
+      this.groupHeader('AI')
+      Column({ space: 0 }) {
+        // 「我的 → AI 模型」是模型配置的唯一主入口（§3.5）
+        this.navRow(AppIcons.slider, AppIcons.sliderEmoji, 'AI 模型', true, () => {
+          AppNavigator.push('pages/AiModelPage');
+        })
+        this.navRow(AppIcons.navProfile, AppIcons.navProfileEmoji, 'AI 角色模板', true, () => {
+          AppNavigator.push('pages/AiRoleLibrary');
+        })
+        this.navRow(AppIcons.clock, AppIcons.clockEmoji, 'AI 调用记录', false, () => {
+          AppNavigator.push('pages/AiCallLog');
+        })
       }
       .width('100%')
+      .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+      .borderRadius(this.themeState.palette.radiusLg)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .clip(true)
     }
     .width('100%')
-    .padding(16)
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  // ==================== 分组卡：通用（设置 + 关于）====================
+  @Builder
+  generalGroup() {
+    Column({ space: this.themeState.palette.sp2 }) {
+      this.groupHeader('通用')
+      Column({ space: 0 }) {
+        this.navRow(AppIcons.settings, AppIcons.settingsEmoji, '设置', true, () => {
+          this.onNavigate('Settings');
+        })
+        this.infoRow(AppIcons.doc, AppIcons.docEmoji, '版本', AppConstants.appVersion, true)
+        this.navRow(AppIcons.bookmark, AppIcons.bookmarkEmoji, '用户协议', true, () => {
+          AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('agreement'));
+        })
+        this.navRow(AppIcons.lock, AppIcons.lockEmoji, '隐私政策', true, () => {
+          AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('privacy'));
+        })
+        this.navRow(AppIcons.link, AppIcons.linkEmoji, '开源许可', false, () => {
+          AppNavigator.push('pages/LegalDoc', new LegalDocRouteParams('license'));
+        })
+      }
+      .width('100%')
+      .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+      .borderRadius(this.themeState.palette.radiusLg)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .clip(true)
+    }
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -257,22 +426,27 @@ export struct ProfilePage {
     Column() {
       Scroll() {
         Row() {
-          Column({ space: 12 }) {
-            this.headerCard()
+          Column({ space: this.themeState.palette.sectionGap }) {
+            this.accountCard()
             this.newsGroup()
             this.gameGroup()
-            this.systemGroup()
-            Column().height(20)
+            this.aiGroup()
+            this.generalGroup()
           }
           .width('100%')
           .constraintSize({ maxWidth: 720 })
-          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-            top: Math.max(this.themeState.statusBarHeight, 44) + 8 })
+          .padding({
+            left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            top: Math.max(this.themeState.statusBarHeight, 44) + 8,
+            bottom: this.themeState.palette.sp6
+          })
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
       }
       .layoutWeight(1)
+      .width('100%')
       .scrollBar(BarState.Auto)
       .align(Alignment.Top)
       .edgeEffect(EdgeEffect.Spring)

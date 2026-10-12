@@ -3,8 +3,7 @@ import { AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { AiCallLogger } from '../service/AiCallLogger';
+import { AiCallLogger } from '../service/platform/AiCallLogger';
 
 @ComponentV2
 @Entry
@@ -56,9 +55,9 @@ export struct AiModelPage {
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-    .borderRadius(10)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .onClick(onClick)
   }
 

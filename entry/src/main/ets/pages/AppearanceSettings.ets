@@ -1,11 +1,12 @@
-// 智子 - 外观设置（二级页：颜色主题 / 深色模式 / 背景图 / 玻璃效果 / 字号 / 字体 / 应用图标 / 头像）
-import { promptAction } from '@kit.ArkUI';
-import { ThemePalette, defaultLightPalette, ColorThemeId, colorThemeName, colorThemeColor,
+// 智子 - 外观设置（二级页：深色模式 / 背景图 / 玻璃效果 / 字号 / 字体 / 应用图标 / 头像）
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
+import {
   ThemeManager, ThemeMode, PreferenceMutationResult, PreferenceFailureReason,
   BackgroundDisplayState } from '../common/Theme';
-import { DataRepository } from '../service/DataRepository';
-import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
-import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/PickerAdapter';
+import { ThemeState } from '../common/ThemeState';
+import { DataRepository } from '../service/platform/DataRepository';
+import { BackgroundImporter, BackgroundImportResult } from '../service/platform/BackgroundImporter';
+import { PickerAdapter, ImagePickResult, ImagePickState } from '../service/platform/PickerAdapter';
 import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
 import { AvatarOption, AVATAR_OPTIONS, CUSTOM_AVATAR_ID, avatarLabel } from '../common/AvatarOptions';
 import { TopBar } from '../components/TopBar';
@@ -28,39 +29,40 @@ interface FontFamilyOption {
 
 // 应用图标选项
 interface AppIconOption {
-  id: string;       // 持久化用的标识
-  label: string;    // 显示名称
-  style: string;    // 风格描述
-  resource: string; // media 资源名（不带 $media: 前缀）
+  id: string;          // 持久化用的标识
+  label: string;       // 显示名称
+  style: string;       // 风格描述
+  resource: Resource;  // media 资源（字面量 $r，不用动态 $r()）
 }
 
-@Component
+// 应用图标资源：字面量 $r，由编译器校验资源名（替换原先运行时拼接的动态 $r）
+const APP_ICON_CLASSIC: Resource = $r('app.media.app_icon_classic');
+const APP_ICON_BRIGHT_GRADIENT: Resource = $r('app.media.app_icon_bright_gradient');
+const APP_ICON_GLASS: Resource = $r('app.media.app_icon_glass');
+const APP_ICON_FLAT: Resource = $r('app.media.app_icon_flat');
+const APP_ICON_3D_CARTOON: Resource = $r('app.media.app_icon_3d_cartoon');
+const APP_ICON_LIQUID: Resource = $r('app.media.app_icon_liquid');
+
+@ComponentV2
 @Entry
 export struct AppearanceSettingsPage {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @StorageLink('liquidGlassEnabled') liquidGlassEnabled: boolean = false;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
-  @StorageLink('isDarkMode') isDarkMode: boolean = true;
-  @StorageLink('followSystemDark') followSystemDark: boolean = true;
-  @StorageLink('colorThemeId') colorThemeId: string = 'cyan';
-  @StorageLink('backgroundDisplayState') backgroundDisplayState: BackgroundDisplayState = BackgroundDisplayState.INVALID;
+  // 全局 UI 状态统一走 AppStorageV2（P4 · §5.1 状态管理统一）
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   // 外观
-  @State fontSizeScale: string = 'standard';
-  @State fontFamily: string = 'HarmonyOS Sans';
-  @State showFontSizeSheet: boolean = false;
-  @State showFontFamilySheet: boolean = false;
-  @State showAppIconSheet: boolean = false;
-  @State showAvatarSheet: boolean = false;
-  @State appIconId: string = 'liquid';
-  @State avatarId: string = 'liquid';
-  @State avatarUri: string = '';
+  @Local fontSizeScale: string = 'standard';
+  @Local fontFamily: string = 'HarmonyOS Sans';
+  @Local showFontSizeSheet: boolean = false;
+  @Local showFontFamilySheet: boolean = false;
+  @Local showAppIconSheet: boolean = false;
+  @Local showAvatarSheet: boolean = false;
+  @Local appIconId: string = 'liquid';
+  @Local avatarId: string = 'liquid';
+  @Local avatarUri: string = '';
 
   // 背景图设置
-  @State globalBgUri: string = '';
-  @State backgroundStrength: number = 50;
+  @Local globalBgUri: string = '';
+  @Local backgroundStrength: number = 50;
 
   // 字号/字体选项
   private fontSizeOptions: FontSizeOption[] = [
@@ -86,19 +88,14 @@ export struct AppearanceSettingsPage {
   ];
   // 应用图标选项（共 6 款，含当前正在使用的经典款）
   private appIconOptions: AppIconOption[] = [
-    { id: 'classic',        label: '经典',   style: '当前应用图标',                         resource: 'app_icon_classic' },
-    { id: 'bright_gradient',label: '明亮渐变', style: '青绿到深蓝渐变 + 几何 Z 符号',         resource: 'app_icon_bright_gradient' },
-    { id: 'glass',          label: '玻璃拟物', style: '毛玻璃方块层叠 + 折射光',             resource: 'app_icon_glass' },
-    { id: 'flat',           label: '扁平彩色', style: '四色圆点十字花瓣 + 纯白背景',         resource: 'app_icon_flat' },
-    { id: '3d_cartoon',     label: '3D 卡通', style: '圆润方块层叠 + 橡皮糖质感',           resource: 'app_icon_3d_cartoon' },
-    { id: 'liquid',         label: '液态渐变', style: '流动渐变背景 + 镂空 Z 符号',         resource: 'app_icon_liquid' }
+    { id: 'classic',        label: '经典',   style: '当前应用图标',                         resource: APP_ICON_CLASSIC },
+    { id: 'bright_gradient',label: '明亮渐变', style: '青绿到深蓝渐变 + 几何 Z 符号',         resource: APP_ICON_BRIGHT_GRADIENT },
+    { id: 'glass',          label: '玻璃拟物', style: '毛玻璃方块层叠 + 折射光',             resource: APP_ICON_GLASS },
+    { id: 'flat',           label: '扁平彩色', style: '四色圆点十字花瓣 + 纯白背景',         resource: APP_ICON_FLAT },
+    { id: '3d_cartoon',     label: '3D 卡通', style: '圆润方块层叠 + 橡皮糖质感',           resource: APP_ICON_3D_CARTOON },
+    { id: 'liquid',         label: '液态渐变', style: '流动渐变背景 + 镂空 Z 符号',         resource: APP_ICON_LIQUID }
   ];
 
-  // 主题颜色选项
-  private themeColors: ColorThemeId[] = [
-    ColorThemeId.CYAN, ColorThemeId.OCEAN, ColorThemeId.SUNSET,
-    ColorThemeId.AURORA, ColorThemeId.SAKURA, ColorThemeId.FOREST
-  ];
 
   async aboutToAppear(): Promise<void> {
     this.fontSizeScale = await DataRepository.getSetting('fontSizeScale', 'standard');
@@ -147,26 +144,26 @@ export struct AppearanceSettingsPage {
   }
 
   private async updateFollowSystem(follow: boolean): Promise<void> {
-    this.followSystemDark = follow;
+    this.themeState.followSystemDark = follow;
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setFollowSystem(follow);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(follow ? '已开启跟随系统深色模式' : '已切换为手动模式');
     } else {
-      this.followSystemDark = !follow;
+      this.themeState.followSystemDark = !follow;
       this.toast('设置未保存，请重试');
     }
   }
 
   private async updateManualMode(isDark: boolean): Promise<void> {
-    this.isDarkMode = isDark;
+    this.themeState.isDark = isDark;
     const mode = isDark ? ThemeMode.DARK : ThemeMode.LIGHT;
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setManualMode(mode);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(isDark ? '已切换为深色模式' : '已切换为浅色模式');
     } else {
-      this.isDarkMode = !isDark;
+      this.themeState.isDark = !isDark;
       this.toast('设置未保存，请重试');
     }
   }
@@ -191,47 +188,41 @@ export struct AppearanceSettingsPage {
   }
 
   private async updateGlassEffect(enabled: boolean): Promise<void> {
-    this.glassEnabled = enabled;
+    this.themeState.glassEnabled = enabled;
     if (enabled) {
-      this.liquidGlassEnabled = false;
+      this.themeState.liquidGlassEnabled = false;
     }
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setGlassEffect(enabled);
     this.applyPreferenceResult(result);
     if (result.success) {
       this.toast(enabled ? '已开启毛玻璃效果' : '已关闭毛玻璃效果');
     } else {
-      this.glassEnabled = !enabled;
+      this.themeState.glassEnabled = !enabled;
       this.toast('设置未保存，请重试');
     }
   }
 
   private async updateLiquidGlassEffect(enabled: boolean): Promise<void> {
-    this.liquidGlassEnabled = enabled;
+    this.themeState.liquidGlassEnabled = enabled;
     if (enabled) {
-      this.glassEnabled = false;
+      this.themeState.glassEnabled = false;
     }
     const result: PreferenceMutationResult = await ThemeManager.getInstance().setLiquidGlassEffect(enabled);
     if (result.success) {
       this.toast(enabled ? '已开启液态玻璃效果' : '已关闭液态玻璃效果');
     } else {
-      this.liquidGlassEnabled = !enabled;
+      this.themeState.liquidGlassEnabled = !enabled;
       this.toast('设置未保存，请重试');
     }
   }
 
-  private async updateColorTheme(themeId: ColorThemeId): Promise<void> {
-    const result: PreferenceMutationResult = await ThemeManager.getInstance().setColorTheme(themeId);
-    this.applyPreferenceResult(result);
-    if (!result.success) this.toast('设置未保存，请重试');
-  }
 
   private applyPreferenceResult(result: PreferenceMutationResult): void {
     if (result.published || result.restored) {
       this.globalBgUri = result.snapshot.backgroundUri;
       this.backgroundStrength = result.snapshot.backgroundStrength;
-      this.followSystemDark = result.snapshot.followSystem;
-      this.colorThemeId = result.snapshot.colorThemeId;
-      this.isDarkMode = result.snapshot.followSystem ? this.isDarkMode :
+      this.themeState.followSystemDark = result.snapshot.followSystem;
+      this.themeState.isDark = result.snapshot.followSystem ? this.themeState.isDark :
         result.snapshot.manualThemeMode === ThemeMode.DARK;
       this.fontSizeScale = result.snapshot.fontSizeScale;
     }
@@ -399,78 +390,45 @@ export struct AppearanceSettingsPage {
   @Builder actionsBuilder() {}
 
 
-  // 颜色主题选择器
-  @Builder colorThemeSelector() {
-    Row({ space: 10 }) {
-      ForEach(this.themeColors, (themeId: ColorThemeId) => {
-        Column() {
-          Stack() {
-            Circle({ width: 36, height: 36 })
-              .fill(colorThemeColor(themeId))
-            if (this.colorThemeId === themeId) {
-              Text('✓')
-                .fontSize(this.palette.fsMd)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(Color.White)
-                .fontWeight(FontWeight.Bold)
-            }
-          }
-          Text(colorThemeName(themeId))
-            .fontSize(this.palette.fsXs - 1)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
-            .margin({ top: 4 })
-            .maxLines(1)
-        }
-        .alignItems(HorizontalAlign.Center)
-        .onClick(async () => {
-          await this.updateColorTheme(themeId);
-        })
-      }, (themeId: ColorThemeId) => themeId)
-    }
-    .width('100%')
-    .justifyContent(FlexAlign.SpaceEvenly)
-  }
-
   // 深色模式设置
   @Builder darkModeSettings() {
     Column({ space: 8 }) {
       Row() {
         Text('跟随系统深色模式')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.followSystemDark })
-          .selectedColor(this.palette.primary)
+        Toggle({ type: ToggleType.Switch, isOn: this.themeState.followSystemDark })
+          .selectedColor(this.themeState.palette.primary)
           .onChange((v: boolean) => {
             this.updateFollowSystem(v);
           })
       }
       .width('100%')
-      .height(48)
+      .height(this.themeState.palette.rowHeightCompact)
       .padding({ left: 12, right: 12 })
-      .borderRadius(8)
-      .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
 
-      if (!this.followSystemDark) {
+      if (!this.themeState.followSystemDark) {
         Row() {
           Text('深色模式')
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .layoutWeight(1)
-          Toggle({ type: ToggleType.Switch, isOn: this.isDarkMode })
-            .selectedColor(this.palette.primary)
+          Toggle({ type: ToggleType.Switch, isOn: this.themeState.isDark })
+            .selectedColor(this.themeState.palette.primary)
             .onChange((v: boolean) => {
               this.updateManualMode(v);
             })
         }
         .width('100%')
-        .height(48)
+        .height(this.themeState.palette.rowHeightCompact)
         .padding({ left: 12, right: 12 })
-        .borderRadius(8)
-        .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+        .borderRadius(this.themeState.palette.radiusSm)
+        .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
       }
     }
     .width('100%')
@@ -481,37 +439,37 @@ export struct AppearanceSettingsPage {
     Column({ space: 8 }) {
       Row() {
         Text('全局背景图')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .layoutWeight(1)
-        if (this.backgroundDisplayState === BackgroundDisplayState.LOADING) {
+        if (this.themeState.backgroundDisplayState === BackgroundDisplayState.LOADING) {
           Text('正在应用')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.primary)
-        } else if (this.backgroundDisplayState === BackgroundDisplayState.INVALID && this.globalBgUri) {
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
+        } else if (this.themeState.backgroundDisplayState === BackgroundDisplayState.INVALID && this.globalBgUri) {
           Text('背景失效，请重新选择')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.warning)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.warning)
         } else if (this.globalBgUri) {
           Text('已设置')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.success)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.success)
         } else {
           Text('未设置')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
       }
       .width('100%')
-      .height(48)
+      .height(this.themeState.palette.rowHeightCompact)
       .padding({ left: 12, right: 12 })
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .onClick(() => {
         this.pickBackgroundImage();
       })
@@ -519,15 +477,15 @@ export struct AppearanceSettingsPage {
       if (this.globalBgUri) {
         Row() {
           Text('清除背景图')
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.danger)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.danger)
         }
         .width('100%')
-        .height(48)
+        .height(this.themeState.palette.rowHeightCompact)
         .padding({ left: 12, right: 12 })
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .borderRadius(this.themeState.palette.radiusSm)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .onClick(() => {
           this.confirmClearBackground();
         })
@@ -535,19 +493,19 @@ export struct AppearanceSettingsPage {
 
       Row() {
         Text('可见强度')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .layoutWeight(1)
         Text(`${this.backgroundStrength}%`)
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
       .width('100%')
       Slider({ value: this.backgroundStrength, min: 0, max: 100, step: 1, style: SliderStyle.OutSet })
         .width('100%')
-        .selectedColor(this.palette.primary)
+        .selectedColor(this.themeState.palette.primary)
         .onChange((value: number, mode: SliderChangeMode) => {
           this.backgroundStrength = Math.round(value);
           if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
@@ -566,67 +524,67 @@ export struct AppearanceSettingsPage {
       Column()
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => { this.showFontSizeSheet = false; })
         .transition({ type: TransitionType.All, opacity: 0 })
 
       // 底部面板
       Column({ space: 4 }) {
         Text('字号')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('选择全局字号大小')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ bottom: 8 })
 
         ForEach(this.fontSizeOptions, (option: FontSizeOption) => {
           Row({ space: 12 }) {
             Text('Aa 智子 123')
               .fontSize(option.preview)
-              .fontFamily(this.palette.fontSans)
+              .fontFamily(this.themeState.palette.fontSans)
               .fontWeight(FontWeight.Medium)
-              .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textPrimary)
+              .fontColor(this.fontSizeScale === option.value ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
             Blank()
             Text(option.label)
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.fontSizeScale === option.value ? this.palette.primary : this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.fontSizeScale === option.value ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
             if (this.fontSizeScale === option.value) {
               Text('✓')
-                .fontSize(this.palette.fsMd)
-                .fontFamily(this.palette.fontSans)
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(this.palette.primary)
+                .fontColor(this.themeState.palette.primary)
             }
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 13, bottom: 13 })
-          .borderRadius(10)
+          .borderRadius(this.themeState.palette.radiusSm)
           .backgroundColor(this.fontSizeScale === option.value ?
-            this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+            this.themeState.palette.primaryBgStrong : GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
           .onClick(() => { this.pickFontSize(option.value); })
         }, (option: FontSizeOption) => option.value)
 
         Text('取消')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
           .padding({ top: 12, bottom: 4 })
           .width('100%')
           .textAlign(TextAlign.Center)
           .onClick(() => { this.showFontSizeSheet = false; })
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.navBarHeight + 8) })
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
-      .borderRadius({ topLeft: 24, topRight: 24 })
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
-      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
-      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.themeState.navBarHeight + 8) })
+      .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
+      .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+      .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
+      .shadow({ radius: 24, color: this.themeState.palette.maskOverlay, offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
       .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
     }
     .width('100%')
@@ -642,21 +600,21 @@ export struct AppearanceSettingsPage {
       Column()
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => { this.showFontFamilySheet = false; })
         .transition({ type: TransitionType.All, opacity: 0 })
 
       // 底部面板
       Column({ space: 4 }) {
         Text('字体')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('选择全局字体')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ bottom: 8 })
 
         Scroll() {
@@ -665,30 +623,30 @@ export struct AppearanceSettingsPage {
               Row({ space: 12 }) {
                 Column({ space: 3 }) {
                   Text(option.name)
-                    .fontSize(this.palette.fsSm)
+                    .fontSize(this.themeState.palette.fsSm)
                     .fontFamily(option.family)
-                    .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textPrimary)
+                    .fontColor(this.fontFamily === option.family ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text('Aa 智子 123 — ' + option.category)
-                    .fontSize(this.palette.fsSm - 1)
+                    .fontSize(this.themeState.palette.fsSm - 1)
                     .fontFamily(option.family)
-                    .fontColor(this.fontFamily === option.family ? this.palette.primary : this.palette.textTertiary)
+                    .fontColor(this.fontFamily === option.family ? this.themeState.palette.primary : this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
                 if (this.fontFamily === option.family) {
                   Text('✓')
-                    .fontSize(this.palette.fsMd)
-                    .fontFamily(this.palette.fontSans)
+                    .fontSize(this.themeState.palette.fsMd)
+                    .fontFamily(this.themeState.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
-                    .fontColor(this.palette.primary)
+                    .fontColor(this.themeState.palette.primary)
                 }
               }
               .width('100%')
               .padding({ left: 16, right: 16, top: 13, bottom: 13 })
-              .borderRadius(10)
+              .borderRadius(this.themeState.palette.radiusSm)
               .backgroundColor(this.fontFamily === option.family ?
-                this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+                this.themeState.palette.primaryBgStrong : GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
               .onClick(() => { this.pickFontFamily(option.family); })
             }, (option: FontFamilyOption) => option.family)
           }
@@ -700,9 +658,9 @@ export struct AppearanceSettingsPage {
         .edgeEffect(EdgeEffect.Spring)
 
         Text('取消')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
           .padding({ top: 12, bottom: 4 })
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -710,12 +668,12 @@ export struct AppearanceSettingsPage {
       }
       .width('100%')
       .height('70%')
-      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.navBarHeight + 8) })
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
-      .borderRadius({ topLeft: 24, topRight: 24 })
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
-      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
-      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.themeState.navBarHeight + 8) })
+      .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
+      .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+      .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
+      .shadow({ radius: 24, color: this.themeState.palette.maskOverlay, offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
       .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
     }
     .width('100%')
@@ -731,61 +689,61 @@ export struct AppearanceSettingsPage {
       Column()
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => { this.showAppIconSheet = false; })
         .transition({ type: TransitionType.All, opacity: 0 })
 
       // 底部面板
       Column({ space: 4 }) {
         Text('应用图标')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('选择应用图标（重新打包发布后桌面图标生效）')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ bottom: 8 })
 
         Scroll() {
           Column({ space: 8 }) {
             ForEach(this.appIconOptions, (option: AppIconOption) => {
               Row({ space: 12 }) {
-                Image($r(`app.media.${option.resource}`))
+                Image(option.resource)
                   .width(48)
                   .height(48)
-                  .borderRadius(12)
+                  .borderRadius(this.themeState.palette.radiusSm)
                   .border({
                     width: this.appIconId === option.id ? 2 : 1,
-                    color: this.appIconId === option.id ? this.palette.primary : this.palette.borderSubtle
+                    color: this.appIconId === option.id ? this.themeState.palette.primary : this.themeState.palette.borderSubtle
                   })
                 Column({ space: 2 }) {
                   Text(option.label)
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.appIconId === option.id ? this.palette.primary : this.palette.textPrimary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.appIconId === option.id ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text(option.style)
-                    .fontSize(this.palette.fsSm - 1)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.appIconId === option.id ? this.palette.primary : this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsSm - 1)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.appIconId === option.id ? this.themeState.palette.primary : this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
                 if (this.appIconId === option.id) {
                   Text('✓')
-                    .fontSize(this.palette.fsMd)
-                    .fontFamily(this.palette.fontSans)
+                    .fontSize(this.themeState.palette.fsMd)
+                    .fontFamily(this.themeState.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
-                    .fontColor(this.palette.primary)
+                    .fontColor(this.themeState.palette.primary)
                 }
               }
               .width('100%')
               .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-              .borderRadius(10)
+              .borderRadius(this.themeState.palette.radiusSm)
               .backgroundColor(this.appIconId === option.id ?
-                this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+                this.themeState.palette.primaryBgStrong : GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
               .onClick(() => { this.pickAppIcon(option.id); })
             }, (option: AppIconOption) => option.id)
           }
@@ -797,9 +755,9 @@ export struct AppearanceSettingsPage {
         .edgeEffect(EdgeEffect.Spring)
 
         Text('取消')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
           .padding({ top: 12, bottom: 4 })
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -807,12 +765,12 @@ export struct AppearanceSettingsPage {
       }
       .width('100%')
       .height('70%')
-      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.navBarHeight + 8) })
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
-      .borderRadius({ topLeft: 24, topRight: 24 })
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
-      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
-      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.themeState.navBarHeight + 8) })
+      .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
+      .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+      .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
+      .shadow({ radius: 24, color: this.themeState.palette.maskOverlay, offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
       .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
     }
     .width('100%')
@@ -828,21 +786,21 @@ export struct AppearanceSettingsPage {
       Column()
         .width('100%')
         .layoutWeight(1)
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => { this.showAvatarSheet = false; })
         .transition({ type: TransitionType.All, opacity: 0 })
 
       // 底部面板
       Column({ space: 4 }) {
         Text('头像')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('选择头像样式，或从相册选择自定义图片')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ bottom: 8 })
 
         Scroll() {
@@ -854,52 +812,52 @@ export struct AppearanceSettingsPage {
                   Image(this.avatarUri)
                     .width(48)
                     .height(48)
-                    .borderRadius(24)
+                    .borderRadius(this.themeState.palette.radiusCapsule)
                     .objectFit(ImageFit.Cover)
                     .border({
                       width: 2,
-                      color: this.palette.primary
+                      color: this.themeState.palette.primary
                     })
                 } else {
                   Circle({ width: 48, height: 48 })
-                    .fill(this.palette.bgSurface2)
+                    .fill(this.themeState.palette.bgSurface2)
                     .border({
                       width: this.avatarId === CUSTOM_AVATAR_ID ? 2 : 1,
-                      color: this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.borderSubtle
+                      color: this.avatarId === CUSTOM_AVATAR_ID ? this.themeState.palette.primary : this.themeState.palette.borderSubtle
                     })
                   Text('＋')
                     .fontSize(24)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.primary)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.primary)
                     .fontWeight(FontWeight.Bold)
                 }
               }
               Column({ space: 2 }) {
                 Text('自定义图片')
-                  .fontSize(this.palette.fsSm)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.textPrimary)
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
                 Text('从相册选择一张图片作为头像')
-                  .fontSize(this.palette.fsSm - 1)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.palette.primary : this.palette.textTertiary)
+                  .fontSize(this.themeState.palette.fsSm - 1)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.avatarId === CUSTOM_AVATAR_ID ? this.themeState.palette.primary : this.themeState.palette.textTertiary)
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               if (this.avatarId === CUSTOM_AVATAR_ID) {
                 Text('✓')
-                  .fontSize(this.palette.fsMd)
-                  .fontFamily(this.palette.fontSans)
+                  .fontSize(this.themeState.palette.fsMd)
+                  .fontFamily(this.themeState.palette.fontSans)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor(this.palette.primary)
+                  .fontColor(this.themeState.palette.primary)
               }
             }
             .width('100%')
             .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-            .borderRadius(10)
+            .borderRadius(this.themeState.palette.radiusSm)
             .backgroundColor(this.avatarId === CUSTOM_AVATAR_ID ?
-              this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+              this.themeState.palette.primaryBgStrong : GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
             .onClick(() => { this.pickCustomAvatar(); })
 
             ForEach(AVATAR_OPTIONS, (option: AvatarOption) => {
@@ -909,55 +867,55 @@ export struct AppearanceSettingsPage {
                   Column()
                     .width(48)
                     .height(48)
-                    .borderRadius(24)
+                    .borderRadius(this.themeState.palette.radiusCapsule)
                     .linearGradient({
                       angle: 135,
                       colors: [[option.colors[0], 0.0], [option.colors[1], 1.0]]
                     })
                     .border({
                       width: this.avatarId === option.id ? 2 : 1,
-                      color: this.avatarId === option.id ? this.palette.primary : this.palette.borderSubtle
+                      color: this.avatarId === option.id ? this.themeState.palette.primary : this.themeState.palette.borderSubtle
                     })
                   Text('Z')
                     .fontSize(20)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(Color.White)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.primaryOnColor)
                     .fontWeight(FontWeight.Bold)
                 }
                 Column({ space: 2 }) {
                   Text(option.label)
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.avatarId === option.id ? this.palette.primary : this.palette.textPrimary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.avatarId === option.id ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                   Text(option.style)
-                    .fontSize(this.palette.fsSm - 1)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.avatarId === option.id ? this.palette.primary : this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsSm - 1)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.avatarId === option.id ? this.themeState.palette.primary : this.themeState.palette.textTertiary)
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
                 if (this.avatarId === option.id) {
                   Text('✓')
-                    .fontSize(this.palette.fsMd)
-                    .fontFamily(this.palette.fontSans)
+                    .fontSize(this.themeState.palette.fsMd)
+                    .fontFamily(this.themeState.palette.fontSans)
                     .fontWeight(FontWeight.Bold)
-                    .fontColor(this.palette.primary)
+                    .fontColor(this.themeState.palette.primary)
                 }
               }
               .width('100%')
               .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-              .borderRadius(10)
+              .borderRadius(this.themeState.palette.radiusSm)
               .backgroundColor(this.avatarId === option.id ?
-                this.palette.primaryDim : GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+                this.themeState.palette.primaryBgStrong : GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
               .onClick(() => { this.pickAvatar(option.id); })
             }, (option: AvatarOption) => option.id)
 
             if (this.avatarId === CUSTOM_AVATAR_ID) {
               Text('恢复默认')
-                .fontSize(this.palette.fsBase)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.danger)
+                .fontSize(this.themeState.palette.fsBase)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.danger)
                 .padding({ top: 8, bottom: 4 })
                 .width('100%')
                 .textAlign(TextAlign.Center)
@@ -972,9 +930,9 @@ export struct AppearanceSettingsPage {
         .edgeEffect(EdgeEffect.Spring)
 
         Text('取消')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
           .padding({ top: 12, bottom: 4 })
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -982,12 +940,12 @@ export struct AppearanceSettingsPage {
       }
       .width('100%')
       .height('70%')
-      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.navBarHeight + 8) })
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette))
-      .borderRadius({ topLeft: 24, topRight: 24 })
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P0_BAR, this.palette) })
-      .shadow({ radius: 24, color: 'rgba(0, 0, 0, 0.25)', offsetY: -4 })
-      .backgroundBlurStyle(glassBlurStyle(this.glassEnabled, GlassLevel.P0_BAR))
+      .padding({ left: 20, right: 20, top: 20, bottom: Math.max(20, this.themeState.navBarHeight + 8) })
+      .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
+      .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+      .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
+      .shadow({ radius: 24, color: this.themeState.palette.maskOverlay, offsetY: -4 })
+      .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
       .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
     }
     .width('100%')
@@ -1003,13 +961,6 @@ export struct AppearanceSettingsPage {
         }
         Scroll() {
           Column({ space: 16 }) {
-            SettingGroupCard({ title: '颜色主题' }) {
-              Column({ space: 12 }) {
-                this.colorThemeSelector()
-              }
-              .width('100%')
-            }
-
             SettingGroupCard({ title: '深色模式' }) {
               Column({ space: 8 }) {
                 this.darkModeSettings()
@@ -1028,49 +979,49 @@ export struct AppearanceSettingsPage {
               Column({ space: 8 }) {
                 Row() {
                   Text('启用毛玻璃效果')
-                    .fontSize(this.palette.fsBase)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
+                    .fontSize(this.themeState.palette.fsBase)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textPrimary)
                     .layoutWeight(1)
-                  Toggle({ type: ToggleType.Switch, isOn: this.glassEnabled })
-                    .selectedColor(this.palette.primary)
+                  Toggle({ type: ToggleType.Switch, isOn: this.themeState.glassEnabled })
+                    .selectedColor(this.themeState.palette.primary)
                     .onChange((v: boolean) => {
                       this.updateGlassEffect(v);
                     })
                 }
                 .width('100%')
-                .height(48)
+                .height(this.themeState.palette.rowHeightCompact)
                 .padding({ left: 12, right: 12 })
-                .borderRadius(8)
-                .backgroundColor(GlassStyle.innerBackgroundColor(this.glassEnabled, this.palette))
+                .borderRadius(this.themeState.palette.radiusSm)
+                .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
                 Text('开启后顶栏、底栏、卡片将呈现透明磨砂质感，建议搭配背景图使用。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
                   .width('100%')
                   .margin({ top: 2 })
 
                 Row() {
                   Text('启用液态玻璃效果')
-                    .fontSize(this.palette.fsBase)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
+                    .fontSize(this.themeState.palette.fsBase)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textPrimary)
                     .layoutWeight(1)
-                  Toggle({ type: ToggleType.Switch, isOn: this.liquidGlassEnabled })
-                    .selectedColor(this.palette.primary)
+                  Toggle({ type: ToggleType.Switch, isOn: this.themeState.liquidGlassEnabled })
+                    .selectedColor(this.themeState.palette.primary)
                     .onChange((v: boolean) => {
                       this.updateLiquidGlassEffect(v);
                     })
                 }
                 .width('100%')
-                .height(48)
+                .height(this.themeState.palette.rowHeightCompact)
                 .padding({ left: 12, right: 12 })
-                .borderRadius(8)
-                .backgroundColor(GlassStyle.innerBackgroundColor(this.liquidGlassEnabled, this.palette))
+                .borderRadius(this.themeState.palette.radiusSm)
+                .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.liquidGlassEnabled, this.themeState.palette))
                 Text('开启后界面呈现更通透的液态玻璃质感，与毛玻璃互斥。')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
                   .width('100%')
                   .margin({ top: 2 })
               }
@@ -1110,7 +1061,9 @@ export struct AppearanceSettingsPage {
           }
           .width('100%')
           .constraintSize({ maxWidth: 720 })
-          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 12, bottom: Math.max(24, this.navBarHeight + 8) })
+          .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            top: 12, bottom: Math.max(24, this.themeState.navBarHeight + 8) })
         }
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
@@ -1119,7 +1072,7 @@ export struct AppearanceSettingsPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
+      .backgroundColor(this.themeState.palette.bgBase)
 
       // 弹层
       if (this.showFontSizeSheet) {

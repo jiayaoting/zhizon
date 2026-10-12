@@ -1,28 +1,23 @@
-// 智子 - 首页（热榜 · 主功能界面）
-// 视图 Tabs（关注/最热/实时/各分类）+ 源卡片流（下拉刷新/单源刷新/关注）
-// 设计文档：doc/newsnow-redesign.md §9.1
+// 智子 - 首页（热榜 · 主功能界面）· v10 华为原生拟物白
+// 大标题 + 今日要闻胶囊 + 下划线视图 Tabs + 源卡片流（下拉刷新 / 单源刷新 / ⭐关注）
+// 设计文档：doc/v10-redesign.md §3.4 / §4.1；接口契约：doc/newsnow-redesign.md
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { HotEntry, HotViewKey, HOT_VIEWS, HotViewDef, HotDetailRouteParams, HotBoardRouteParams } from '../common/HotModels';
-import { HotFeedStore } from '../service/HotFeedStore';
-import { NewsNowSync } from '../service/NewsNowSync';
-import { NewsNowAuth } from '../service/NewsNowAuth';
-import { NewsRepository } from '../service/NewsRepository';
-import { DataRepository } from '../service/DataRepository';
+import { HotFeedStore } from '../service/hot/HotFeedStore';
+import { NewsNowSync } from '../service/hot/NewsNowSync';
+import { NewsNowAuth } from '../service/hot/NewsNowAuth';
+import { NewsRepository } from '../service/hot/NewsRepository';
 import { PageRefreshBus } from '../common/PageRefreshBus';
 import { HotSources } from '../common/HotSources';
-import { CUSTOM_AVATAR_ID, avatarColors } from '../common/AvatarOptions';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 import { HotSourceCard } from '../components/HotSourceCard';
 
 @ComponentV2
 export struct IndexPage {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
-  @Local currentTime: string = '';
-  @Local greeting: string = '';
-  @Local avatarId: string = 'liquid';
-  @Local avatarUri: string = '';
+  @Local todayLabel: string = '';
   @Local viewKey: HotViewKey = HotViewKey.Hottest;
   @Local sourceIds: string[] = [];
   @Local starredIds: string[] = [];
@@ -47,8 +42,7 @@ export struct IndexPage {
   };
 
   aboutToAppear() {
-    this.currentTime = this.formatNow();
-    this.greeting = this.getGreeting();
+    this.todayLabel = this.formatToday();
     HotFeedStore.addChangeListener(this.onChange);
     PageRefreshBus.onHotShow(this.onHostShow);
     this.loadLocal();
@@ -61,8 +55,6 @@ export struct IndexPage {
   }
 
   private async loadLocal(): Promise<void> {
-    this.avatarId = await DataRepository.getSetting('avatarId', 'liquid');
-    this.avatarUri = await DataRepository.getSetting('avatarUri', '');
     this.loggedIn = await NewsNowAuth.isLoggedIn();
     try {
       this.starredIds = await NewsNowSync.focusIds();
@@ -117,7 +109,7 @@ export struct IndexPage {
   private async toggleStar(sourceId: string): Promise<void> {
     const starred: boolean = await NewsNowSync.toggleStar(sourceId);
     this.starredIds = await NewsNowSync.focusIds();
-    promptAction.showToast({ message: starred ? '已关注，可在「关注」视图查看' : '已取消关注' });
+    promptAction.showToast({ message: starred ? '已关注' : '已取消关注' });
     if (this.viewKey === HotViewKey.Focus) {
       this.sourceIds = await HotFeedStore.sourceIds(HotViewKey.Focus);
     }
@@ -138,128 +130,119 @@ export struct IndexPage {
     AppNavigator.push('pages/HotBoard', new HotBoardRouteParams(sourceId, HotSources.nameOf(sourceId)));
   }
 
-  private getGreeting(): string {
-    const h: number = new Date().getHours();
-    if (h < 6) return '夜深了';
-    if (h < 12) return '早上好';
-    if (h < 14) return '中午好';
-    if (h < 18) return '下午好';
-    return '晚上好';
-  }
-
-  private formatNow(): string {
+  private formatToday(): string {
     const d: Date = new Date();
-    const pad = (n: number): string => n < 10 ? '0' + n.toString() : n.toString();
     const weekDays: string[] = ['日', '一', '二', '三', '四', '五', '六'];
-    return d.getFullYear().toString() + '年' + pad(d.getMonth() + 1) + '月' + pad(d.getDate()) +
-      '日 星期' + weekDays[d.getDay()];
+    return (d.getMonth() + 1).toString() + '月' + d.getDate().toString() + '日 星期' + weekDays[d.getDay()];
   }
 
-  // ==================== 问候栏 ====================
+  // 图标按钮（矢量优先，emoji 回退）
+  @Builder
+  iconButton(icon: Resource, emoji: string, onTap: () => void) {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(icon)
+          .fontSize(22)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(emoji)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(44)
+    .height(44)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .onClick(onTap)
+  }
+
+  // ==================== 大标题栏（无返回；操作区 2 个图标）====================
   @Builder
   header() {
-    Row() {
-      Row({ space: 8 }) {
-        Text(this.greeting)
-          .fontSize(this.themeState.palette.fsXl + 2)
+    Row({ space: 4 }) {
+      Column({ space: 2 }) {
+        Text('热榜')
+          .fontSize(this.themeState.palette.fsXl)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
-        Text(this.currentTime)
-          .fontSize(this.themeState.palette.fsSm)
+          .width('100%')
+          .textAlign(TextAlign.Start)
+        Text(this.todayLabel)
+          .fontSize(this.themeState.palette.fsXs)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
+          .width('100%')
+          .textAlign(TextAlign.Start)
       }
-      .alignItems(VerticalAlign.Center)
+      .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      Row() {
-        Text('🔍')
-          .fontSize(this.themeState.palette.fsLg)
-          .fontFamily(this.themeState.palette.fontSans)
-      }
-      .width(40)
-      .height(40)
-      .borderRadius(20)
-      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .margin({ right: 10 })
-      .onClick(() => {
+      this.iconButton(AppIcons.search, AppIcons.searchEmoji, (): void => {
         AppNavigator.push('pages/NewsSearch');
       })
-
-      Stack() {
-        if (this.avatarId === CUSTOM_AVATAR_ID && this.avatarUri.length > 0) {
-          Image(this.avatarUri)
-            .width(40)
-            .height(40)
-            .borderRadius(20)
-            .objectFit(ImageFit.Cover)
-            .border({ width: 1.5, color: '#80FFFFFF' })
-        } else {
-          Column()
-            .width(40)
-            .height(40)
-            .borderRadius(20)
-            .linearGradient({
-              angle: 135,
-              colors: [[avatarColors(this.avatarId)[0], 0.0], [avatarColors(this.avatarId)[1], 1.0]]
-            })
-          Text('Z')
-            .fontSize(16)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(Color.White)
-            .fontWeight(FontWeight.Bold)
-        }
-      }
-      .onClick(() => {
-        this.onNavigate('Settings');
+      this.iconButton(AppIcons.settings, AppIcons.settingsEmoji, (): void => {
+        AppNavigator.push('pages/NewsSettings');
       })
     }
     .width('100%')
-    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-      top: Math.max(this.themeState.statusBarHeight, 44) + 8 })
+    .padding({
+      left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      top: Math.max(this.themeState.statusBarHeight, 44) + 8,
+      bottom: 4
+    })
     .alignItems(VerticalAlign.Center)
   }
 
-  // ==================== AI 今日要闻入口 ====================
+  // ==================== AI 今日要闻（胶囊条）====================
   @Builder
-  digestCard() {
-    Row({ space: 10 }) {
-      Text('📰')
-        .fontSize(20)
-        .fontFamily(this.themeState.palette.fontSans)
-      Text('AI 今日要闻')
+  digestBar() {
+    Row({ space: this.themeState.palette.sp2 }) {
+      Text('🌤')
         .fontSize(this.themeState.palette.fsMd)
         .fontFamily(this.themeState.palette.fontSans)
+      Text('AI 今日要闻')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
       Blank()
-      Text(this.hasDigestToday ? '已生成 ›' : '生成今日简报 ›')
+      Text(this.hasDigestToday ? '已生成' : '生成今日简报')
         .fontSize(this.themeState.palette.fsXs)
         .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textTertiary)
+        .fontColor(this.themeState.palette.primary)
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.forward)
+          .fontSize(16)
+          .fontColor([this.themeState.palette.textTertiary])
+      } else {
+        Text(AppIcons.forwardEmoji)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontColor(this.themeState.palette.textTertiary)
+      }
     }
     .width('100%')
-    .height(44)
-    .padding({ left: 14, right: 14 })
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+    .height(40)
+    .padding({ left: 14, right: 12 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(VerticalAlign.Center)
-    .margin({ top: 8, bottom: 4 })
     .onClick(() => {
       AppNavigator.push('pages/NewsDigest');
     })
   }
 
-  // ==================== 服务器离线横幅 ====================
+  // ==================== 服务器不可达提示 ====================
   @Builder
   offlineBanner() {
     if (!HotFeedStore.isServerOnline()) {
-      Row({ space: 8 }) {
-        Text('⚠️')
+      Row({ space: this.themeState.palette.sp2 }) {
+        Text(AppIcons.warningEmoji)
           .fontSize(this.themeState.palette.fsSm)
         Text('无法连接热榜服务器')
           .fontSize(this.themeState.palette.fsSm)
@@ -275,61 +258,88 @@ export struct IndexPage {
           })
       }
       .width('100%')
-      .height(38)
+      .height(40)
       .padding({ left: 12, right: 12 })
-      .borderRadius(10)
-      .backgroundColor(this.themeState.palette.warning + '22')
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.warningBg)
       .alignItems(VerticalAlign.Center)
-      .margin({ bottom: 6 })
     }
   }
 
-  // ==================== 视图 Tabs ====================
+  // ==================== 视图 Tabs（华为式下划线）====================
+  @Builder
+  viewTab(view: HotViewDef) {
+    Column({ space: 5 }) {
+      Text(view.name)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.viewKey === view.key ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+        .fontWeight(this.viewKey === view.key ? FontWeight.Medium : FontWeight.Normal)
+        .maxLines(1)
+      Row()
+        .width(20)
+        .height(2.5)
+        .borderRadius(2)
+        .backgroundColor(this.viewKey === view.key ? this.themeState.palette.primary : Color.Transparent)
+    }
+    .height(42)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .onClick(() => {
+      this.switchView(view.key);
+    })
+  }
+
   @Builder
   viewBar() {
     Scroll() {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp5 }) {
         ForEach(HOT_VIEWS, (view: HotViewDef) => {
-          Row({ space: 4 }) {
-            Text(view.icon)
-              .fontSize(this.themeState.palette.fsSm)
-              .fontFamily(this.themeState.palette.fontSans)
-            Text(view.name)
-              .fontSize(this.themeState.palette.fsSm)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.viewKey === view.key ? this.themeState.palette.textPrimary :
-                this.themeState.palette.textSecondary)
-              .fontWeight(this.viewKey === view.key ? FontWeight.Bold : FontWeight.Normal)
-          }
-          .height(40)
-          .padding({ left: 16, right: 16 })
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(20)
-          .backgroundColor(this.viewKey === view.key ? this.themeState.palette.primary + '2A' :
-            this.themeState.palette.bgSurface2)
-          .border({ width: this.viewKey === view.key ? 1.5 : 0,
-            color: this.viewKey === view.key ? this.themeState.palette.primary : Color.Transparent })
-          .onClick(() => {
-            this.switchView(view.key);
-          })
+          this.viewTab(view)
         }, (view: HotViewDef) => view.key)
       }
-      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 4 })
+      .padding({
+        left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        top: 4
+      })
     }
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.None)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 
-  // ==================== 卡片内容区 ====================
+  // ==================== 源卡片 ====================
+  @Builder
+  sourceCard(sourceId: string) {
+    HotSourceCard({
+      sourceId: sourceId,
+      starred: this.starredIds.indexOf(sourceId) >= 0,
+      limit: 5,
+      readKeys: this.readKeys,
+      tick: this.tick,
+      onToggleStar: (id: string): void => { this.toggleStar(id); },
+      onOpenEntry: (e: HotEntry): void => { this.openEntry(e); },
+      onOpenBoard: (id: string): void => { this.openBoard(id); },
+      onRefresh: (id: string): void => {
+        HotFeedStore.refreshSource(id, true).then(() => {
+          this.tick = this.tick + 1;
+        });
+      }
+    })
+  }
+
+  // ==================== 内容区 ====================
   @Builder
   feedBody(useGrid: boolean) {
     if (this.loading && this.sourceIds.length === 0) {
-      Column({ space: 12 }) {
+      Column({ space: this.themeState.palette.sp3 }) {
         LoadingProgress()
-          .width(32)
-          .height(32)
+          .width(36)
+          .height(36)
+          .color(this.themeState.palette.primary)
         Text('正在加载热榜…')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
@@ -346,49 +356,25 @@ export struct IndexPage {
           Grid() {
             ForEach(this.sourceIds, (sourceId: string) => {
               GridItem() {
-                HotSourceCard({
-                  sourceId: sourceId,
-                  starred: this.starredIds.indexOf(sourceId) >= 0,
-                  limit: 5,
-                  readKeys: this.readKeys,
-                  tick: this.tick,
-                  onToggleStar: (id: string): void => { this.toggleStar(id); },
-                  onOpenEntry: (e: HotEntry): void => { this.openEntry(e); },
-                  onOpenBoard: (id: string): void => { this.openBoard(id); },
-                  onRefresh: (id: string): void => {
-                    HotFeedStore.refreshSource(id, true).then(() => {
-                      this.tick = this.tick + 1;
-                    });
-                  }
-                })
+                this.sourceCard(sourceId)
               }
             }, (sourceId: string) => sourceId + ':' + this.tick.toString())
           }
           .columnsTemplate(this.themeState.isLg ? '1fr 1fr 1fr' : '1fr 1fr')
-          .columnsGap(10)
-          .rowsGap(10)
+          .columnsGap(this.themeState.palette.cardGap)
+          .rowsGap(this.themeState.palette.cardGap)
           .width('100%')
-          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-            top: 8, bottom: 12 })
+          .padding({
+            left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            top: this.themeState.palette.sp2,
+            bottom: this.themeState.palette.sp4
+          })
         } else {
-          List({ space: 10 }) {
+          List({ space: this.themeState.palette.cardGap }) {
             ForEach(this.sourceIds, (sourceId: string) => {
               ListItem() {
-                HotSourceCard({
-                  sourceId: sourceId,
-                  starred: this.starredIds.indexOf(sourceId) >= 0,
-                  limit: 5,
-                  readKeys: this.readKeys,
-                  tick: this.tick,
-                  onToggleStar: (id: string): void => { this.toggleStar(id); },
-                  onOpenEntry: (e: HotEntry): void => { this.openEntry(e); },
-                  onOpenBoard: (id: string): void => { this.openBoard(id); },
-                  onRefresh: (id: string): void => {
-                    HotFeedStore.refreshSource(id, true).then(() => {
-                      this.tick = this.tick + 1;
-                    });
-                  }
-                })
+                this.sourceCard(sourceId)
               }
             }, (sourceId: string) => sourceId + ':' + this.tick.toString())
             ListItem() {
@@ -404,8 +390,12 @@ export struct IndexPage {
             }
           }
           .width('100%')
-          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-            top: 8, bottom: 12 })
+          .padding({
+            left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            top: this.themeState.palette.sp2,
+            bottom: this.themeState.palette.sp4
+          })
         }
       }
       .layoutWeight(1)
@@ -416,29 +406,35 @@ export struct IndexPage {
     }
   }
 
+  // 空态：原因 + 下一步 CTA
   @Builder
   emptyState() {
-    Column({ space: 12 }) {
+    Column({ space: this.themeState.palette.sp3 }) {
       Text(this.viewKey === HotViewKey.Focus ? '⭐' : '📭')
-        .fontSize(44)
+        .fontSize(48)
         .fontFamily(this.themeState.palette.fontSans)
       Text(this.viewKey === HotViewKey.Focus ? '还没有关注的源' : '该分类暂无可用源')
         .fontSize(this.themeState.palette.fsLg)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
-      Text(this.viewKey === HotViewKey.Focus ? '点击任意源卡片右上角 ⭐ 添加关注' : '试试其他视图')
+        .fontWeight(FontWeight.Medium)
+      Text(this.viewKey === HotViewKey.Focus ? '在源卡片右上角点 ⭐ 即可关注' : '换个视图看看')
         .fontSize(this.themeState.palette.fsSm)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textTertiary)
+        .textAlign(TextAlign.Center)
       if (this.viewKey === HotViewKey.Focus) {
-        Button('去看最热榜')
-          .fontSize(this.themeState.palette.fsSm)
+        Text('去看最热榜')
+          .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(Color.White)
+          .fontColor(this.themeState.palette.primaryOnColor)
+          .fontWeight(FontWeight.Medium)
+          .height(44)
+          .padding({ left: 24, right: 24 })
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .backgroundColor(this.themeState.palette.primary)
-          .borderRadius(16)
-          .height(32)
-          .margin({ top: 4 })
+          .textAlign(TextAlign.Center)
+          .margin({ top: this.themeState.palette.sp1 })
           .onClick(() => {
             this.switchView(HotViewKey.Hottest);
           })
@@ -447,18 +443,28 @@ export struct IndexPage {
     .layoutWeight(1)
     .width('100%')
     .justifyContent(FlexAlign.Center)
+    .padding({ left: this.themeState.palette.pagePadding, right: this.themeState.palette.pagePadding })
   }
 
   build() {
     Column() {
       this.header()
-      this.digestCard()
-      this.offlineBanner()
+      Column({ space: this.themeState.palette.sp2 }) {
+        this.digestBar()
+        this.offlineBanner()
+      }
+      .width('100%')
+      .padding({
+        left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        top: this.themeState.palette.sp1,
+        bottom: this.themeState.palette.sp1
+      })
       this.viewBar()
       this.feedBody(this.themeState.isMd || this.themeState.isLg)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(Color.Transparent)
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

@@ -3,7 +3,6 @@ import { AppNavigator } from '../common/AppNavigator';
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { LegalDocRouteParams } from '../common/Navigation';
 
 export enum LegalDocType {
@@ -312,9 +311,9 @@ export struct LegalDocPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(10)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(HorizontalAlign.Start)
   }
 

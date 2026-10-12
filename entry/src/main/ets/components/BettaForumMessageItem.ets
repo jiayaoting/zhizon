@@ -1,4 +1,5 @@
 // 智子 - BettaFish 论坛消息气泡（按来源着色）
+// v10：来源色改语义 token（HOST=warning / QUERY=info / MEDIA=purple / INSIGHT=success），头像用主色上的文字色；行末发丝分割线。
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { BettaForumMessage } from '../common/BettaFishModels';
@@ -9,11 +10,11 @@ export struct BettaForumMessageItem {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   private sourceColor(): string {
-    if (this.message.source === 'HOST') return '#F59E0B';
-    if (this.message.source === 'QUERY') return '#3B82F6';
-    if (this.message.source === 'MEDIA') return '#8B5CF6';
-    if (this.message.source === 'INSIGHT') return '#10B981';
-    return '#9CA3AF';
+    if (this.message.source === 'HOST') return this.themeState.palette.warning;
+    if (this.message.source === 'QUERY') return this.themeState.palette.info;
+    if (this.message.source === 'MEDIA') return this.themeState.palette.purple;
+    if (this.message.source === 'INSIGHT') return this.themeState.palette.success;
+    return this.themeState.palette.textTertiary;
   }
 
   private senderLabel(): string {
@@ -23,33 +24,38 @@ export struct BettaForumMessageItem {
   }
 
   build() {
-    Row({ space: 10 }) {
+    Row({ space: this.themeState.palette.sp3 }) {
       Text(this.message.source.length > 0 ? this.message.source.substring(0, 2) : 'AG')
         .fontSize(this.themeState.palette.fsXs)
         .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(Color.White)
-        .width(30)
-        .height(30)
+        .fontColor(this.themeState.palette.primaryOnColor)
+        .fontWeight(FontWeight.Medium)
+        .width(32)
+        .height(32)
         .textAlign(TextAlign.Center)
-        .borderRadius(15)
+        .borderRadius(this.themeState.palette.radiusCapsule)
         .backgroundColor(this.sourceColor())
       Column({ space: 4 }) {
-        Row({ space: 8 }) {
+        Row({ space: this.themeState.palette.sp2 }) {
           Text(this.senderLabel())
             .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.sourceColor())
             .fontWeight(FontWeight.Medium)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
           if (this.message.timestamp.length > 0) {
             Text(this.message.timestamp)
-              .fontSize(this.themeState.palette.fsXs - 1)
+              .fontSize(this.themeState.palette.fsXs)
               .fontFamily(this.themeState.palette.fontSans)
               .fontColor(this.themeState.palette.textTertiary)
           }
         }
         .width('100%')
+        .alignItems(VerticalAlign.Center)
         Text(this.message.content)
-          .fontSize(this.themeState.palette.fsBase)
+          .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .width('100%')
@@ -59,6 +65,7 @@ export struct BettaForumMessageItem {
     }
     .width('100%')
     .alignItems(VerticalAlign.Top)
-    .padding({ top: 8, bottom: 8 })
+    .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+    .border({ width: { bottom: 0.5 }, color: this.themeState.palette.divider })
   }
 }

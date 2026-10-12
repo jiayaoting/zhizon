@@ -2,7 +2,8 @@
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { DatabaseHelper, GameScoreRecord } from '../service/DatabaseHelper';
+import { AppNavigator } from '../common/AppNavigator';
+import { DatabaseHelper, GameScoreRecord } from '../service/platform/DatabaseHelper';
 
 function gameIcon(game: string): string {
   if (game === '2048') return '🔢';
@@ -116,9 +117,9 @@ export struct GameStatsPage {
 
   @Builder
   statCard(label: string, value: string) {
-    Column({ space: 4 }) {
+    Column({ space: this.themeState.palette.sp1 }) {
       Text(value)
-        .fontSize(this.themeState.palette.fsLg)
+        .fontSize(this.themeState.palette.fsXl)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
@@ -128,16 +129,17 @@ export struct GameStatsPage {
         .fontColor(this.themeState.palette.textTertiary)
     }
     .layoutWeight(1)
-    .padding(10)
-    .borderRadius(10)
+    .padding(this.themeState.palette.sp3)
+    .borderRadius(this.themeState.palette.radiusMd)
     .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
   @Builder
   chartArea() {
-    Column({ space: 8 }) {
+    Column({ space: this.themeState.palette.sp2 }) {
       Text('最近 20 局得分趋势')
-        .fontSize(this.themeState.palette.fsMd)
+        .fontSize(this.themeState.palette.fsLg)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
@@ -146,13 +148,28 @@ export struct GameStatsPage {
         .width('100%')
         .height(200)
         .onReady(() => { this.drawChart(); })
-        .backgroundColor(this.themeState.palette.bgSurface)
-        .borderRadius(10)
+        .backgroundColor(this.themeState.palette.bgSurface2)
+        .borderRadius(this.themeState.palette.radiusSm)
     }
     .width('100%')
-    .padding(14)
-    .borderRadius(12)
+    .padding(this.themeState.palette.sp4)
+    .borderRadius(this.themeState.palette.radiusLg)
     .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
+  }
+
+  // 空态引导：趋势图无数据时给出下一步动作
+  @Builder
+  chartEmptyAction() {
+    Button('去玩一局')
+      .fontSize(this.themeState.palette.fsMd)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(this.themeState.palette.primaryOnColor)
+      .height(this.themeState.palette.touchTarget)
+      .padding({ left: this.themeState.palette.sp6, right: this.themeState.palette.sp6 })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.themeState.palette.primary)
+      .onClick(() => { AppNavigator.pop(); })
   }
 
   private drawChart(): void {
@@ -162,7 +179,7 @@ export struct GameStatsPage {
     ctx.clearRect(0, 0, w, h);
     const scores: GameScoreRecord[] = this.recentScores();
     if (scores.length === 0) {
-      ctx.fillStyle = this.themeState.palette.textSecondary;
+      ctx.fillStyle = this.themeState.palette.textTertiary;
       ctx.font = '16px sans-serif';
       ctx.fillText('暂无数据，快去玩一局吧', 20, h / 2);
       return;
@@ -184,21 +201,21 @@ export struct GameStatsPage {
       const y: number = h - bottomPad - barH;
       ctx.fillStyle = this.themeState.palette.primary;
       ctx.fillRect(x, y, barW, barH);
-      // 柱顶数值标签（主题色，深色/浅色都清晰）
-      ctx.fillStyle = this.themeState.palette.textSecondary;
+      // 柱顶数值标签（弱化色，深色/浅色都清晰）
+      ctx.fillStyle = this.themeState.palette.textTertiary;
       ctx.font = labelFont;
       const label: string = scores[i].score.toString();
       ctx.fillText(label, x + barW / 2 - label.length * 3, y - 5);
     }
     // 基线
-    ctx.strokeStyle = this.themeState.palette.borderSubtle;
+    ctx.strokeStyle = this.themeState.palette.divider;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(leftPad, h - bottomPad);
     ctx.lineTo(w - leftPad, h - bottomPad);
     ctx.stroke();
     // 最高分提示（14px，明显放大）
-    ctx.fillStyle = this.themeState.palette.textSecondary;
+    ctx.fillStyle = this.themeState.palette.textTertiary;
     ctx.font = '14px sans-serif';
     ctx.fillText('最高 ' + max.toString(), leftPad, 14);
   }
@@ -208,28 +225,34 @@ export struct GameStatsPage {
       TopBar({ title: '战绩统计', subtitle: '趋势与汇总', showBack: true })
       // 游戏选择（横向可滑动）
       Scroll() {
-        Row({ space: 8 }) {
+        Row({ space: this.themeState.palette.sp2 }) {
           ForEach(this.gameKeys, (key: string) => {
-              Row({ space: 3 }) {
-                Text(this.gameKey === 'all' ? '🎮' : gameIcon(key))
+            Row({ space: this.themeState.palette.sp1 }) {
+              Text(key === 'all' ? '🎮' : gameIcon(key))
                 .fontSize(this.themeState.palette.fsSm)
               Text(key === 'all' ? '全部' : gameName(key))
                 .fontSize(this.themeState.palette.fsSm)
                 .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.gameKey === key ? this.themeState.palette.textPrimary : this.themeState.palette.textTertiary)
+                .fontColor(this.gameKey === key ? this.themeState.palette.textPrimary : this.themeState.palette.textSecondary)
                 .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
             }
-            .height(32)
-            .padding({ left: 10, right: 10 })
-            .borderRadius(8)
-            .backgroundColor(this.gameKey === key ? this.themeState.palette.primary + '22' : Color.Transparent)
+            .height(36)
+            .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3 })
+            .justifyContent(FlexAlign.Center)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.gameKey === key ? this.themeState.palette.primaryBg :
+              this.themeState.palette.bgSurface)
+            .border({ width: 0.5, color: this.gameKey === key ? this.themeState.palette.primary :
+              this.themeState.palette.divider })
             .onClick(() => {
               this.gameKey = key;
               this.redrawChart();
             })
           })
         }
-        .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+        .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp2 })
       }
       .width('100%')
       .scrollable(ScrollDirection.Horizontal)
@@ -237,20 +260,37 @@ export struct GameStatsPage {
 
       // 纵向内容
       Scroll() {
-        Column({ space: 12 }) {
-          Row({ space: 10 }) {
-            this.statCard('总局数', this.totalCount().toString())
-            this.statCard('最高分', this.maxScore().toString())
-            this.statCard('平均分', this.avgScore())
-            this.statCard('胜率', this.winRate())
-          }
-          .width('100%')
+        Column({ space: this.themeState.palette.sp3 }) {
+          if (this.loading) {
+            Column({ space: this.themeState.palette.sp2 }) {
+              LoadingProgress().width(32).height(32)
+              Text('正在加载战绩…')
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
+            }
+            .width('100%')
+            .padding(this.themeState.palette.sp6)
+            .justifyContent(FlexAlign.Center)
+          } else {
+            Row({ space: this.themeState.palette.sp3 }) {
+              this.statCard('总局数', this.totalCount().toString())
+              this.statCard('最高分', this.maxScore().toString())
+              this.statCard('平均分', this.avgScore())
+              this.statCard('胜率', this.winRate())
+            }
+            .width('100%')
 
-          this.chartArea()
-          Column().height(20)
+            this.chartArea()
+            if (this.totalCount() === 0) {
+              this.chartEmptyAction()
+            }
+          }
+          Column().height(this.themeState.palette.sp5)
         }
         .width('100%')
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
+        .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg })
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)

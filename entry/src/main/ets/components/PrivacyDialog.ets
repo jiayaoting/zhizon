@@ -3,7 +3,7 @@
 import { AppNavigator } from '../common/AppNavigator';
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { DataRepository } from '../service/DataRepository';
+import { DataRepository } from '../service/platform/DataRepository';
 import { LegalDocRouteParams } from '../common/Navigation';
 
 const PRIVACY_CONSENT_KEY = 'privacy_consent_accepted';
@@ -89,7 +89,7 @@ export struct PrivacyDialog {
         }
         .width('100%')
         .padding(14)
-        .borderRadius(8)
+        .borderRadius(this.themeState.palette.radiusSm)
         .backgroundColor(this.themeState.palette.bgSurface)
 
         // 查看完整协议

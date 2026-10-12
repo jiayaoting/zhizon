@@ -211,27 +211,32 @@ export class ChatSession {
   }
 }
 
-// 对话消息（@Observed 用于流式增量更新，仅修改 content 即可触发 UI 刷新，无需重建整个数组）
-@Observed
+// 对话消息（V2：@ObservedV2 + @Trace 用于流式增量更新）
+// 流式生成期间由 Chat.ets 原地修改 content / reasoning（约 60ms 一次刷新），
+// 结束后再原地写入 status / errorCode / errorMessage / modelId / modelName /
+// inputTokens / cachedTokens / outputTokens / totalTokens（用户消息另写 imageDataUrl），
+// 因此这些字段全部加 @Trace：V2 子组件（ChatMessageBubble）以 @Param 持有同一对象，
+// 深层属性变化即可精确驱动重渲染，无需重建消息数组。
+@ObservedV2
 export class ChatMessage {
   id: string;
   role: string; // user / assistant / system
-  content: string;
-  reasoning: string; // 思考过程（thinking/reasoning），与正文分离展示
+  @Trace content: string = '';
+  @Trace reasoning: string = ''; // 思考过程（thinking/reasoning），与正文分离展示
   time: number;
   // ---- 多会话 / 状态 / 用量（默认值保证旧代码与旧数据兼容） ----
   sessionId: string = '';
-  status: string = 'ok'; // ok / failed / stopped / streaming
-  errorCode: string = '';
-  errorMessage: string = '';
-  modelId: string = '';
-  modelName: string = '';
-  inputTokens: number = 0;
-  cachedTokens: number = 0;
-  outputTokens: number = 0;
-  totalTokens: number = 0;
+  @Trace status: string = 'ok'; // ok / failed / stopped / streaming
+  @Trace errorCode: string = '';
+  @Trace errorMessage: string = '';
+  @Trace modelId: string = '';
+  @Trace modelName: string = '';
+  @Trace inputTokens: number = 0;
+  @Trace cachedTokens: number = 0;
+  @Trace outputTokens: number = 0;
+  @Trace totalTokens: number = 0;
   // 图片附件（data URL，如 data:image/jpeg;base64,xxx；仅用户消息使用）
-  imageDataUrl: string = '';
+  @Trace imageDataUrl: string = '';
 
   constructor(id: string, role: string, content: string, time: number = Date.now(),
     reasoning: string = '') {

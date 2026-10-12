@@ -2,9 +2,8 @@
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { AiCallLogger } from '../service/AiCallLogger';
-import { AiCallLogEntry, AiTokenStats } from '../service/DatabaseHelper';
+import { AiCallLogger } from '../service/platform/AiCallLogger';
+import { AiCallLogEntry, AiTokenStats } from '../service/platform/DatabaseHelper';
 import { LazyListDataSource } from '../common/LazyDataSource';
 
 // 场景标签与配色
@@ -97,8 +96,8 @@ export struct AiCallLogPage {
     }
     .width(44)
     .height(30)
-    .borderRadius(8)
-    .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface2)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
@@ -195,14 +194,14 @@ export struct AiCallLogPage {
         }
         .width('100%')
         .padding({ top: 8 })
-        .border({ width: { top: 1 }, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+        .border({ width: { top: 1 }, color: this.themeState.palette.divider })
       }
     }
     .width('100%')
     .padding(12)
-    .borderRadius(10)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .onClick(() => {
       this.expandedId = this.expandedId === entry.id ? '' : entry.id;
     })
@@ -256,9 +255,9 @@ export struct AiCallLogPage {
     }
     .width('100%')
     .padding(14)
-    .borderRadius(10)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
   @Builder
@@ -269,7 +268,7 @@ export struct AiCallLogPage {
       .fontColor(this.themeState.palette.textSecondary)
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
       .borderRadius(4)
-      .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+      .backgroundColor(this.themeState.palette.bgSurface2)
   }
 
   @Builder

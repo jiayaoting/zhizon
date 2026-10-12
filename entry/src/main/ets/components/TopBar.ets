@@ -1,8 +1,11 @@
-// 智子 - 通用组件：顶栏（沉浸光感版）
+// 智子 - 通用组件：顶栏（v10 华为原生拟物白）
+// 大标题 fsXl Bold + 可选副标题 fsXs；左侧可选 菜单/返回 40×40 钮；右侧 @BuilderParam actions（尾随闭包语法保持不变）。
+// 玻璃材质仅此级（P0_BAR）保留。
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from './GlassEffect';
+import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
 import { AppNavigator } from '../common/AppNavigator';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 
 @ComponentV2
 export struct TopBar {
@@ -15,73 +18,100 @@ export struct TopBar {
   // 左侧菜单按钮（会话列表等入口）：布尔开关 + 事件回调，不引入第二个 @BuilderParam（会破坏尾随闭包语法）
   @Param showLeading: boolean = false;
   @Event onLeadingTap: () => void = () => {};
-          @BuilderParam actions: () => void = this.emptyActions;
+  @BuilderParam actions: () => void = this.emptyActions;
 
   @Builder emptyActions() {}
 
-  build() {
-    Row({ space: 12 }) {
-      if (this.showLeading) {
-        Row() {
-          Text('☰')
-            .fontSize(18)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textPrimary)
-        }
-        .width(32)
-        .height(32)
-        .borderRadius(8)
-        .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.onLeadingTap(); })
-      }
-      if (this.showBack) {
-        Row() {
-          Text('‹')
-            .fontSize(22)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textSecondary)
-            .fontWeight(FontWeight.Bold)
-        }
-        .width(32)
-        .height(32)
-        .borderRadius(8)
-        .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => { this.onBackTap(); })
-      }
+  // 左右安全边距：手机 16vp / 大屏 24vp
+  private horizontalPadding(): string {
+    return this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg;
+  }
 
-      Column() {
-        Text(this.title)
-          .fontSize(this.themeState.palette.fsXl)
-          .fontColor(this.themeState.palette.textPrimary)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontWeight(FontWeight.Bold)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (this.subtitle.length > 0) {
-          Text(this.subtitle)
-            .fontSize(this.themeState.palette.fsXs)
-            .fontColor(this.themeState.palette.textTertiary)
+  build() {
+    Column() {
+      Row({ space: this.themeState.palette.sp2 }) {
+        if (this.showLeading) {
+          Row() {
+            if (USE_SYMBOL_ICONS) {
+              SymbolGlyph(AppIcons.list)
+                .fontSize(22)
+                .fontColor([this.themeState.palette.textPrimary])
+            } else {
+              Text(AppIcons.listEmoji)
+                .fontSize(18)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+            }
+          }
+          .width(40)
+          .height(40)
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .clickEffect({ level: ClickEffectLevel.LIGHT })
+          .accessibilityText('会话列表')
+          .onClick(() => { this.onLeadingTap(); })
+        }
+        if (this.showBack) {
+          Row() {
+            if (USE_SYMBOL_ICONS) {
+              SymbolGlyph(AppIcons.back)
+                .fontSize(24)
+                .fontColor([this.themeState.palette.textPrimary])
+            } else {
+              Text(AppIcons.backEmoji)
+                .fontSize(22)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .fontWeight(FontWeight.Bold)
+            }
+          }
+          .width(40)
+          .height(40)
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .clickEffect({ level: ClickEffectLevel.LIGHT })
+          .accessibilityText('返回')
+          .onClick(() => { this.onBackTap(); })
+        }
+
+        Column() {
+          Text(this.title)
+            .fontSize(this.themeState.palette.fsXl)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontFamily(this.themeState.palette.fontSans)
+            .fontWeight(FontWeight.Bold)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ top: 2 })
+          if (this.subtitle.length > 0) {
+            Text(this.subtitle)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ top: 2 })
+          }
         }
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
 
-      this.actions()
+        this.actions()
+      }
+      .width('100%')
+      // 标题区高度 ≈ titleBarHeight（64vp），左右按钮 40×40 落在 ≥44vp 行内
+      .height(this.themeState.palette.titleBarHeight)
+      .padding({ left: this.horizontalPadding(), right: this.horizontalPadding() })
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    // 全屏沉浸：状态栏安全区兜底（避免个别设备上报异常导致内容与状态栏重叠），并适当收矮
-    .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24,
-      top: Math.max(this.themeState.statusBarHeight, 44) + 12, bottom: 12 })
-    .alignItems(VerticalAlign.Center)
+    // 全屏沉浸：状态栏安全区兜底（避免个别设备上报异常导致内容与状态栏重叠）
+    .padding({ top: Math.max(this.themeState.statusBarHeight, 44) })
     .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
-    .border({ width: { bottom: 1 }, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
+    .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
+    .border({ width: { bottom: 0.5 }, color: this.themeState.palette.divider })
   }
 }

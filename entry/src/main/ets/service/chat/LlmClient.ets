@@ -1,0 +1,1225 @@
+// 智子 - 大模型客户端（OpenAI Chat Completions + Anthropic Messages + SSE 流式）
+import { http } from '@kit.NetworkKit';
+import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { AnthropicRequestBody, ChatMessage, ChatRequestBody, ChatRequestMessage, LlmConfig, LlmResult, LlmTokenUsage } from '../../common/LlmModels';
+import { ToolDefinition, ToolCall, LlmAgentResult } from '../../common/AgentModels';
+import { AiCallLogger, AiCallContext } from '../platform/AiCallLogger';
+// 连接超时（网络握手）与读取超时（响应传输）分开设置：
+// 流式响应/思考型模型可能长时间持续传输数据，读取超时需放宽
+const CONNECT_TIMEOUT = 30000;
+const READ_TIMEOUT = 300000;
+// 非流式请求（游戏AI决策/连接测试）：等完整响应，30 秒足够（游戏决策已禁用思考），超时快速失败避免长时间挂起
+const READ_TIMEOUT_NON_STREAM = 30000;
+
+// 可取消请求的返回结构：promise 为结果，cancel 用于主动中断底层请求
+export class CancelableLlmRequest {
+  promise: Promise<LlmResult>;
+  cancel: () => void;
+
+  constructor(promise: Promise<LlmResult>, cancel: () => void) {
+    this.promise = promise;
+    this.cancel = cancel;
+  }
+}
+
+// Anthropic extended thinking 参数（thinkingEnabled 时随请求发送）
+class AnthropicThinkingParam {
+  type: string;
+  budget_tokens: number;
+
+  constructor(type: string, budgetTokens: number) {
+    this.type = type;
+    this.budget_tokens = budgetTokens;
+  }
+}
+
+// 图片 data URL 解析结果（Anthropic image block 需要 media_type + base64 data）
+class ImageDataUrl {
+  mediaType: string;
+  data: string;
+
+  constructor(mediaType: string, data: string) {
+    this.mediaType = mediaType;
+    this.data = data;
+  }
+}
+
+export class LlmClient {
+  // 非流式单次对话（用于测试连接）
+  static async testConnection(config: LlmConfig): Promise<LlmResult> {
+    if (!config.baseUrl.trim()) return new LlmResult(false, '', 'EMPTY_BASE_URL', '接口地址不能为空');
+    if (!config.model.trim()) return new LlmResult(false, '', 'EMPTY_MODEL', '模型名称不能为空');
+    if (config.needsKey && !config.apiKey.trim()) {
+      return new LlmResult(false, '', 'EMPTY_API_KEY', 'API Key 不能为空');
+    }
+    const messages: ChatMessage[] = [ChatMessage.create('user', '你好，请回复"连接成功"四个字。')];
+    try {
+      const result = await LlmClient.postCompletion(config, messages, new AiCallContext('test'));
+      return result;
+    } catch (e) {
+      return LlmClient.toResult(e);
+    }
+  }
+
+  // 构建请求消息列表：systemPrompt 非空时前置 system 消息（OpenAI 兼容格式）
+  private static buildRequestMessages(messages: ChatMessage[], systemPrompt: string): ChatRequestMessage[] {
+    const result: ChatRequestMessage[] = [];
+    const sp: string = systemPrompt.trim();
+    if (sp.length > 0) {
+      result.push(new ChatRequestMessage('system', sp));
+    }
+    for (let i: number = 0; i < messages.length; i++) {
+      const rm = new ChatRequestMessage(messages[i].role, messages[i].content);
+      rm.imageDataUrl = messages[i].imageDataUrl;
+      result.push(rm);
+    }
+    return result;
+  }
+
+  // 复制消息列表（Anthropic 路径：system 走顶层字段，不注入消息数组）
+  private static copyRequestMessages(messages: ChatMessage[]): ChatRequestMessage[] {
+    const result: ChatRequestMessage[] = [];
+    for (let i: number = 0; i < messages.length; i++) {
+      const rm = new ChatRequestMessage(messages[i].role, messages[i].content);
+      rm.imageDataUrl = messages[i].imageDataUrl;
+      result.push(rm);
+    }
+    return result;
+  }
+
+  // OpenAI 消息序列化：带图片的消息转为 content 数组（多模态格式）
+  private static openAIMessagesPayload(messages: ChatRequestMessage[]): Object[] {
+    const out: Object[] = [];
+    for (let i: number = 0; i < messages.length; i++) {
+      const m: ChatRequestMessage = messages[i];
+      if (m.imageDataUrl.trim().length > 0) {
+        const textPart: Record<string, Object> = { 'type': 'text', 'text': m.content };
+        const urlObj: Record<string, Object> = {};
+        urlObj['url'] = m.imageDataUrl.trim();
+        const imagePart: Record<string, Object> = {
+          'type': 'image_url',
+          'image_url': urlObj
+        };
+        const parts: Object[] = [textPart, imagePart];
+        const item: Record<string, Object> = { 'role': m.role, 'content': parts };
+        out.push(item);
+      } else {
+        const item: Record<string, Object> = { 'role': m.role, 'content': m.content };
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  // Anthropic 消息序列化：图片转为 content blocks（image 在前，text 在后，符合 Claude 规范）
+  private static anthropicMessagesPayload(messages: ChatRequestMessage[]): Object[] {
+    const out: Object[] = [];
+    for (let i: number = 0; i < messages.length; i++) {
+      const m: ChatRequestMessage = messages[i];
+      if (m.imageDataUrl.trim().length > 0) {
+        const parsed: ImageDataUrl = LlmClient.parseImageDataUrl(m.imageDataUrl);
+        const sourceObj: Record<string, Object> = {};
+        sourceObj['type'] = 'base64';
+        sourceObj['media_type'] = parsed.mediaType;
+        sourceObj['data'] = parsed.data;
+        const imageBlock: Record<string, Object> = {
+          'type': 'image',
+          'source': sourceObj
+        };
+        const textBlock: Record<string, Object> = { 'type': 'text', 'text': m.content };
+        const blocks: Object[] = [imageBlock, textBlock];
+        const item: Record<string, Object> = { 'role': m.role, 'content': blocks };
+        out.push(item);
+      } else {
+        const item: Record<string, Object> = { 'role': m.role, 'content': m.content };
+        out.push(item);
+      }
+    }
+    return out;
+  }
+
+  // 解析 data URL：data:image/jpeg;base64,xxxx → mediaType + base64 数据
+  private static parseImageDataUrl(dataUrl: string): ImageDataUrl {
+    const commaIdx: number = dataUrl.indexOf(',');
+    if (commaIdx > 0) {
+      const meta: string = dataUrl.substring(0, commaIdx);
+      const data: string = dataUrl.substring(commaIdx + 1);
+      let mediaType: string = 'image/jpeg';
+      if (meta.indexOf('image/png') >= 0) mediaType = 'image/png';
+      else if (meta.indexOf('image/webp') >= 0) mediaType = 'image/webp';
+      else if (meta.indexOf('image/gif') >= 0) mediaType = 'image/gif';
+      return new ImageDataUrl(mediaType, data);
+    }
+    return new ImageDataUrl('image/jpeg', dataUrl);
+  }
+
+  // 构建 OpenAI 兼容请求 payload：
+  // - enable_thinking 顶层字段始终显式发送（true/false），tokenrhythm/硅基流动/DeepSeek 等网关以此控制思考开关
+  // - chat_template_kwargs 仅 vLLM 兼容模式发送（vllmCompat）：vLLM 部署（如 api.do.top 的 Qwen3 系列）
+  //   只认该字段；tokenrhythm 等普通网关收到会报 400 UNKNOWN_FIELD，必须默认不发送
+  private static buildOpenAIPayload(body: ChatRequestBody, vllmCompat: boolean): string {
+    const payload: Record<string, Object> = {
+      'model': body.model,
+      'messages': LlmClient.openAIMessagesPayload(body.messages),
+      'temperature': body.temperature,
+      'stream': body.stream,
+      'enable_thinking': body.thinkingEnabled
+    };
+    if (body.stream) {
+      // 流式请求显式要求返回 usage：OpenAI 标准下最后一个 chunk 才会带用量统计
+      const streamOptions: Record<string, Object> = { 'include_usage': true };
+      payload['stream_options'] = streamOptions;
+    }
+    if (vllmCompat) {
+      const thinkingKwargs: Record<string, Object> = { 'enable_thinking': body.thinkingEnabled };
+      payload['chat_template_kwargs'] = thinkingKwargs;
+    }
+    return JSON.stringify(payload);
+  }
+
+  // 构建 Anthropic 请求 payload：thinkingEnabled 映射为 thinking 参数（Claude extended thinking）
+  private static buildAnthropicPayload(body: AnthropicRequestBody): string {
+    const payload: Record<string, Object> = {
+      'model': body.model,
+      'max_tokens': body.max_tokens,
+      'messages': LlmClient.anthropicMessagesPayload(body.messages),
+      'stream': body.stream
+    };
+    if (body.system.trim().length > 0) {
+      payload['system'] = body.system.trim();
+    }
+    if (body.thinkingEnabled) {
+      payload['thinking'] = new AnthropicThinkingParam('enabled', body.max_tokens);
+    }
+    return JSON.stringify(payload);
+  }
+
+  // 非流式请求完整返回（带调用日志，context 缺省视为聊天）
+  static async postCompletion(config: LlmConfig, messages: ChatMessage[],
+    context?: AiCallContext): Promise<LlmResult> {
+    const startTime: number = Date.now();
+    const log = AiCallLogger.start(config, context !== undefined ? context : new AiCallContext('chat'),
+      messages, startTime);
+    const result: LlmResult = await LlmClient.postCompletionInner(config, messages);
+    AiCallLogger.end(log, result, Date.now());
+    return result;
+  }
+
+  private static async postCompletionInner(config: LlmConfig, messages: ChatMessage[]): Promise<LlmResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAnthropic(config, messages, false);
+    }
+    return LlmClient.postOpenAI(config, messages, false);
+  }
+
+  // ========== Agent 工具调用（非流式，返回文本或 tool_calls） ==========
+
+  static async postCompletionAgent(config: LlmConfig, messages: ChatMessage[], tools: ToolDefinition[],
+    systemExtra: string): Promise<LlmAgentResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAgentAnthropic(config, messages, tools, systemExtra);
+    }
+    return LlmClient.postAgentOpenAI(config, messages, tools, systemExtra);
+  }
+
+  private static async postAgentOpenAI(config: LlmConfig, messages: ChatMessage[],
+    tools: ToolDefinition[], systemExtra: string): Promise<LlmAgentResult> {
+    const httpRequest: http.HttpRequest = http.createHttp();
+    try {
+      const url: string = LlmClient.openAIUrl(config);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Connection': 'close'
+      };
+      if (config.needsKey) {
+        header['Authorization'] = 'Bearer ' + config.apiKey.trim();
+      }
+      const system: string = config.systemPrompt.trim().length > 0
+        ? config.systemPrompt.trim() + '\n' + systemExtra : systemExtra;
+      const requestMessages: ChatRequestMessage[] = LlmClient.buildRequestMessages(messages, system);
+      const toolsPayload: Object[] = [];
+      for (let i: number = 0; i < tools.length; i++) {
+        const t: ToolDefinition = tools[i];
+        let schemaObj: Record<string, Object> = {};
+        try { schemaObj = JSON.parse(t.parametersJson) as Record<string, Object>; } catch (e) {}
+        const fn: Record<string, Object> = {
+          'name': t.name,
+          'description': t.description,
+          'parameters': schemaObj
+        };
+        const toolObj: Record<string, Object> = { 'type': 'function', 'function': fn };
+        toolsPayload.push(toolObj);
+      }
+      const payload: Record<string, Object> = {
+        'model': config.model.trim(),
+        'messages': LlmClient.openAIMessagesPayload(requestMessages),
+        'temperature': config.temperature,
+        'stream': false,
+        'enable_thinking': false,
+        'tools': toolsPayload,
+        'tool_choice': 'auto'
+      };
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(payload),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
+        expectDataType: http.HttpDataType.STRING,
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmAgentResult(false, '', '', [], 'HTTP_' + code.toString(),
+          LlmClient.errorMessageFromBody(response.result, code), new LlmTokenUsage());
+      }
+      const text: string = LlmClient.resultToString(response.result);
+      const parsed: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
+      const choices: Object = parsed['choices'];
+      let content: string = '';
+      const toolCalls: ToolCall[] = [];
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const msg: Object = first['message'];
+        if (msg !== undefined) {
+          const msgObj: Record<string, Object> = msg as Record<string, Object>;
+          content = typeof msgObj['content'] === 'string' ? msgObj['content'] as string : '';
+          const rawCalls: Object = msgObj['tool_calls'];
+          if (rawCalls !== undefined && Array.isArray(rawCalls)) {
+            const arr: Object[] = rawCalls as Object[];
+            for (let i: number = 0; i < arr.length; i++) {
+              const item: Record<string, Object> = arr[i] as Record<string, Object>;
+              const fnObj: Object = item['function'];
+              const fn: Record<string, Object> = fnObj !== undefined ? fnObj as Record<string, Object> : {};
+              toolCalls.push(new ToolCall(
+                typeof item['id'] === 'string' ? item['id'] as string : '',
+                typeof fn['name'] === 'string' ? fn['name'] as string : '',
+                typeof fn['arguments'] === 'string' ? fn['arguments'] as string : '{}'));
+            }
+          }
+        }
+      }
+      const reasoning: string = LlmClient.openAIReasoning(text);
+      const usage: LlmTokenUsage | null = LlmClient.openAIUsage(text);
+      return new LlmAgentResult(true, content, reasoning, toolCalls, '', '',
+        usage !== null ? usage : new LlmTokenUsage());
+    } catch (e) {
+      return new LlmAgentResult(false, '', '', [], 'ERROR', LlmClient.agentErrorMessage(e), new LlmTokenUsage());
+    } finally {
+      httpRequest.destroy();
+    }
+  }
+
+  private static async postAgentAnthropic(config: LlmConfig, messages: ChatMessage[],
+    tools: ToolDefinition[], systemExtra: string): Promise<LlmAgentResult> {
+    const httpRequest: http.HttpRequest = http.createHttp();
+    try {
+      const url: string = LlmClient.anthropicUrl(config);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        'Connection': 'close'
+      };
+      if (config.needsKey) {
+        header['x-api-key'] = config.apiKey.trim();
+      }
+      const system: string = config.systemPrompt.trim().length > 0
+        ? config.systemPrompt.trim() + '\n' + systemExtra : systemExtra;
+      const requestMessages: ChatRequestMessage[] = LlmClient.copyRequestMessages(messages);
+      const toolsPayload: Object[] = [];
+      for (let i: number = 0; i < tools.length; i++) {
+        const t: ToolDefinition = tools[i];
+        let schemaObj: Record<string, Object> = {};
+        try { schemaObj = JSON.parse(t.parametersJson) as Record<string, Object>; } catch (e) {}
+        const toolObj: Record<string, Object> = {
+          'name': t.name,
+          'description': t.description,
+          'input_schema': schemaObj
+        };
+        toolsPayload.push(toolObj);
+      }
+      const payload: Record<string, Object> = {
+        'model': config.model.trim(),
+        'max_tokens': config.maxTokens,
+        'messages': LlmClient.anthropicMessagesPayload(requestMessages),
+        'stream': false,
+        'system': system,
+        'tools': toolsPayload
+      };
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: JSON.stringify(payload),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
+        expectDataType: http.HttpDataType.STRING,
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmAgentResult(false, '', '', [], 'HTTP_' + code.toString(),
+          LlmClient.anthropicErrorMessage(response.result, code), new LlmTokenUsage());
+      }
+      const text: string = LlmClient.resultToString(response.result);
+      const parsed: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
+      const contentArr: Object = parsed['content'];
+      let content: string = '';
+      const toolCalls: ToolCall[] = [];
+      if (contentArr !== undefined && Array.isArray(contentArr)) {
+        const arr: Object[] = contentArr as Object[];
+        for (let i: number = 0; i < arr.length; i++) {
+          const block: Record<string, Object> = arr[i] as Record<string, Object>;
+          const type: string = typeof block['type'] === 'string' ? block['type'] as string : '';
+          if (type === 'text') {
+            content = content + (typeof block['text'] === 'string' ? block['text'] as string : '');
+          } else if (type === 'tool_use') {
+            const input: Object = block['input'];
+            toolCalls.push(new ToolCall(
+              typeof block['id'] === 'string' ? block['id'] as string : '',
+              typeof block['name'] === 'string' ? block['name'] as string : '',
+              input !== undefined ? JSON.stringify(input) : '{}'));
+          }
+        }
+      }
+      const reasoning: string = LlmClient.anthropicReasoning(text);
+      return new LlmAgentResult(true, content, reasoning, toolCalls, '', '', new LlmTokenUsage());
+    } catch (e) {
+      return new LlmAgentResult(false, '', '', [], 'ERROR', LlmClient.agentErrorMessage(e), new LlmTokenUsage());
+    } finally {
+      httpRequest.destroy();
+    }
+  }
+
+  private static agentErrorMessage(e: Object): string {
+    const err = e as Error;
+    if (err.message !== undefined && err.message.length > 0) return err.message;
+    return 'Agent 请求失败';
+  }
+
+  // 可取消的非流式请求：返回结果 Promise + 取消函数（decide 超时时主动中断底层请求）
+  static postCompletionCancelable(config: LlmConfig, messages: ChatMessage[],
+    context?: AiCallContext): CancelableLlmRequest {
+    const startTime: number = Date.now();
+    const log = AiCallLogger.start(config, context !== undefined ? context : new AiCallContext('chat'),
+      messages, startTime);
+    const httpRequest = http.createHttp();
+    let cancelled: boolean = false;
+    // 请求结束（无论成功/失败/取消）都必须销毁 HttpRequest，否则底层连接与资源会泄漏积攒
+    const releaseRequest = (): void => {
+      try {
+        httpRequest.off('dataReceive');
+        httpRequest.destroy();
+      } catch (e) {
+      }
+    };
+    const promise: Promise<LlmResult> = LlmClient.postWithRequest(config, messages, httpRequest).then(
+      (result: LlmResult): LlmResult => {
+        releaseRequest();
+        AiCallLogger.end(log, result, Date.now());
+        return result;
+      },
+      (e: Object): LlmResult => {
+        releaseRequest();
+        const errResult: LlmResult = cancelled
+          ? new LlmResult(false, '', 'CANCELLED', 'AI 请求已取消')
+          : LlmClient.toResult(e);
+        AiCallLogger.end(log, errResult, Date.now());
+        return errResult;
+      });
+    const cancel = (): void => {
+      cancelled = true;
+      releaseRequest();
+    };
+    return new CancelableLlmRequest(promise, cancel);
+  }
+
+  // 在外部传入的 httpRequest 上执行非流式请求（支持取消）
+  private static async postWithRequest(config: LlmConfig, messages: ChatMessage[], httpRequest: http.HttpRequest):
+    Promise<LlmResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAnthropicWith(config, messages, httpRequest);
+    }
+    return LlmClient.postOpenAIWith(config, messages, httpRequest);
+  }
+
+  // 流式请求：onDelta 逐片回调正文，onReasoning 逐片回调思考过程，返回完整内容（带调用日志）
+  static async postCompletionStream(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void,
+    context?: AiCallContext): Promise<LlmResult> {
+    const startTime: number = Date.now();
+    const log = AiCallLogger.start(config, context !== undefined ? context : new AiCallContext('chat'),
+      messages, startTime);
+    const result: LlmResult = await LlmClient.postCompletionStreamInner(config, messages, onDelta, onReasoning);
+    AiCallLogger.end(log, result, Date.now());
+    return result;
+  }
+
+  private static async postCompletionStreamInner(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
+    if (config.apiFormat === 'anthropic') {
+      return LlmClient.postAnthropicStream(config, messages, onDelta, onReasoning);
+    }
+    return LlmClient.postOpenAIStream(config, messages, onDelta, onReasoning);
+  }
+
+  // ---- OpenAI Chat Completions ----
+
+  // externalRequest 不为空时复用外部请求实例（可取消），由调用方负责销毁
+  private static async postOpenAI(config: LlmConfig, messages: ChatMessage[], stream: boolean,
+    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void,
+    externalRequest?: http.HttpRequest): Promise<LlmResult> {
+    const httpRequest: http.HttpRequest = externalRequest !== undefined ? externalRequest : http.createHttp();
+    let fullContent: string = '';
+    let fullReasoning: string = '';
+    let buffer: string = '';
+    let rawData: string = '';
+    let tokenUsage: LlmTokenUsage = new LlmTokenUsage();
+    try {
+      const url: string = LlmClient.openAIUrl(config);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        // 强制 HTTP/1.1 + 禁用连接复用：彻底避开 netstack 连接池/HTTP2 复用的死连接问题
+        'Connection': 'close'
+      };
+      if (stream) {
+        header['Accept'] = 'text/event-stream';
+      }
+      if (config.needsKey) {
+        header['Authorization'] = 'Bearer ' + config.apiKey.trim();
+      }
+      const requestMessages: ChatRequestMessage[] = LlmClient.buildRequestMessages(messages, config.systemPrompt);
+      const body: ChatRequestBody = new ChatRequestBody(config.model.trim(), requestMessages, config.temperature,
+        stream, config.thinkingEnabled);
+
+      const processData = (data: ArrayBuffer): void => {
+        const chunk: string = LlmClient.arrayBufferToString(data);
+        rawData = rawData + chunk;
+        buffer = buffer + chunk;
+        const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+        const events: string[] = parseResult.events;
+        buffer = LlmClient.remainingBuffer(buffer, parseResult);
+        for (let i: number = 0; i < events.length; i++) {
+          const contentDelta: string = LlmClient.openAIContentFromSse(events[i]);
+          if (contentDelta.length > 0) {
+            fullContent = fullContent + contentDelta;
+            if (onDelta !== undefined) onDelta(contentDelta);
+          }
+          const reasoningDelta: string = LlmClient.openAIReasoningFromSse(events[i]);
+          if (reasoningDelta.length > 0) {
+            fullReasoning = fullReasoning + reasoningDelta;
+            if (onReasoning !== undefined) onReasoning(reasoningDelta);
+          }
+          LlmClient.updateOpenAIUsageFromSse(tokenUsage, events[i]);
+        }
+      };
+
+      if (stream && onDelta !== undefined) {
+        // 流式必须用 requestInStream：dataReceive 事件才会逐块触发（request 时不回调）
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          processData(data);
+        });
+        // 等待 dataEnd 才算完整接收：requestInStream 只返回响应码，响应体经 dataReceive 异步推送，
+        // 若提前 return，后续数据会被丢弃导致响应缺失/超时
+        // 同时加超时兜底：请求被外部 cancel/destroy 时 dataEnd 可能不触发，避免 Promise 永久挂起
+        const streamDone = new Promise<boolean>((resolve: (value: boolean) => void) => {
+          httpRequest.on('dataEnd', () => {
+            resolve(true);
+          });
+          setTimeout(() => {
+            resolve(true);
+          }, READ_TIMEOUT + 1000);
+        });
+        const code: number = await httpRequest.requestInStream(url, {
+          method: http.RequestMethod.POST,
+          header: header,
+          extraData: LlmClient.buildOpenAIPayload(body, config.vllmCompat),
+          connectTimeout: CONNECT_TIMEOUT,
+          readTimeout: READ_TIMEOUT,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+          usingProtocol: http.HttpProtocol.HTTP1_1,
+          usingCache: false
+        });
+        if (code !== 200) {
+          return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(rawData, code));
+        }
+        // 等待流式数据全部接收完毕（dataEnd）
+        await streamDone;
+        // 流结束：处理尾部未完整解析的数据
+        if (buffer.trim().length > 0) {
+          const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+          const tailEvents: string[] = tailResult.events;
+          for (let i: number = 0; i < tailEvents.length; i++) {
+            const contentDelta: string = LlmClient.openAIContentFromSse(tailEvents[i]);
+            if (contentDelta.length > 0) {
+              fullContent = fullContent + contentDelta;
+              if (onDelta !== undefined) onDelta(contentDelta);
+            }
+            const reasoningDelta: string = LlmClient.openAIReasoningFromSse(tailEvents[i]);
+            if (reasoningDelta.length > 0) {
+              fullReasoning = fullReasoning + reasoningDelta;
+              if (onReasoning !== undefined) onReasoning(reasoningDelta);
+            }
+            LlmClient.updateOpenAIUsageFromSse(tokenUsage, tailEvents[i]);
+          }
+        }
+        if (!fullContent.trim() && !fullReasoning.trim()) {
+          return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+        }
+        return new LlmResult(true, fullContent, '', '', fullReasoning, tokenUsage);
+      }
+
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: LlmClient.buildOpenAIPayload(body, config.vllmCompat),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
+        expectDataType: http.HttpDataType.STRING,
+        // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmResult(false, '', 'HTTP_' + code.toString(), LlmClient.errorMessageFromBody(response.result, code));
+      }
+      const text: string = LlmClient.resultToString(response.result);
+      const content: string = LlmClient.openAIContent(text);
+      if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+      const reasoning: string = LlmClient.openAIReasoning(text);
+      const usage: LlmTokenUsage | null = LlmClient.openAIUsage(text);
+      return new LlmResult(true, content, '', '', reasoning,
+        usage !== null ? usage : new LlmTokenUsage());
+    } catch (e) {
+      return LlmClient.toResult(e);
+    } finally {
+      httpRequest.off('dataReceive');
+      // 外部传入的请求由调用方（取消函数）负责销毁
+      if (externalRequest === undefined) {
+        httpRequest.destroy();
+      }
+    }
+  }
+
+  private static async postOpenAIStream(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
+    return LlmClient.postOpenAI(config, messages, true, onDelta, onReasoning);
+  }
+
+  private static async postOpenAIWith(config: LlmConfig, messages: ChatMessage[],
+    httpRequest: http.HttpRequest): Promise<LlmResult> {
+    return LlmClient.postOpenAI(config, messages, false, undefined, undefined, httpRequest);
+  }
+
+  // ---- Anthropic Messages ----
+
+  // externalRequest 不为空时复用外部请求实例（可取消），由调用方负责销毁
+  private static async postAnthropic(config: LlmConfig, messages: ChatMessage[], stream: boolean,
+    onDelta?: (delta: string) => void, onReasoning?: (reasoning: string) => void,
+    externalRequest?: http.HttpRequest): Promise<LlmResult> {
+    const httpRequest: http.HttpRequest = externalRequest !== undefined ? externalRequest : http.createHttp();
+    let fullContent: string = '';
+    let fullReasoning: string = '';
+    let buffer: string = '';
+    let rawData: string = '';
+    let tokenUsage: LlmTokenUsage = new LlmTokenUsage();
+    try {
+      const url: string = LlmClient.anthropicUrl(config);
+      const header: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'anthropic-version': '2023-06-01',
+        // 强制 HTTP/1.1 + 禁用连接复用：彻底避开 netstack 连接池/HTTP2 复用的死连接问题
+        'Connection': 'close'
+      };
+      if (stream) {
+        header['Accept'] = 'text/event-stream';
+      }
+      if (config.needsKey) {
+        header['x-api-key'] = config.apiKey.trim();
+      }
+      const requestMessages: ChatRequestMessage[] = LlmClient.copyRequestMessages(messages);
+      const body: AnthropicRequestBody = new AnthropicRequestBody(config.model.trim(), config.maxTokens,
+        requestMessages, stream, config.thinkingEnabled, config.systemPrompt);
+
+      const processData = (data: ArrayBuffer): void => {
+        const chunk: string = LlmClient.arrayBufferToString(data);
+        rawData = rawData + chunk;
+        buffer = buffer + chunk;
+        const parseResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+        const events: string[] = parseResult.events;
+        buffer = LlmClient.remainingBuffer(buffer, parseResult);
+        for (let i: number = 0; i < events.length; i++) {
+          const contentDelta: string = LlmClient.anthropicContentFromSse(events[i]);
+          if (contentDelta.length > 0) {
+            fullContent = fullContent + contentDelta;
+            if (onDelta !== undefined) onDelta(contentDelta);
+          }
+          const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(events[i]);
+          if (reasoningDelta.length > 0) {
+            fullReasoning = fullReasoning + reasoningDelta;
+            if (onReasoning !== undefined) onReasoning(reasoningDelta);
+          }
+          LlmClient.updateAnthropicUsageFromSse(tokenUsage, events[i]);
+        }
+      };
+
+      if (stream && onDelta !== undefined) {
+        // 流式必须用 requestInStream：dataReceive 事件才会逐块触发（request 时不回调）
+        httpRequest.on('dataReceive', (data: ArrayBuffer) => {
+          processData(data);
+        });
+        // 等待 dataEnd 才算完整接收：requestInStream 只返回响应码，响应体经 dataReceive 异步推送，
+        // 若提前 return，后续数据会被丢弃导致响应缺失/超时
+        // 同时加超时兜底：请求被外部 cancel/destroy 时 dataEnd 可能不触发，避免 Promise 永久挂起
+        const streamDone = new Promise<boolean>((resolve: (value: boolean) => void) => {
+          httpRequest.on('dataEnd', () => {
+            resolve(true);
+          });
+          setTimeout(() => {
+            resolve(true);
+          }, READ_TIMEOUT + 1000);
+        });
+        const code: number = await httpRequest.requestInStream(url, {
+          method: http.RequestMethod.POST,
+          header: header,
+          extraData: LlmClient.buildAnthropicPayload(body),
+          connectTimeout: CONNECT_TIMEOUT,
+          readTimeout: READ_TIMEOUT,
+          expectDataType: http.HttpDataType.ARRAY_BUFFER,
+          // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+          usingProtocol: http.HttpProtocol.HTTP1_1,
+          usingCache: false
+        });
+        if (code !== 200) {
+          return new LlmResult(false, '', 'HTTP_' + code.toString(),
+            LlmClient.anthropicErrorMessage(rawData, code));
+        }
+        // 等待流式数据全部接收完毕（dataEnd）
+        await streamDone;
+        // 流结束：处理尾部未完整解析的数据
+        if (buffer.trim().length > 0) {
+          const tailResult: SseParseResult = LlmClient.extractSseEvents(buffer);
+          const tailEvents: string[] = tailResult.events;
+          for (let i: number = 0; i < tailEvents.length; i++) {
+            const contentDelta: string = LlmClient.anthropicContentFromSse(tailEvents[i]);
+            if (contentDelta.length > 0) {
+              fullContent = fullContent + contentDelta;
+              if (onDelta !== undefined) onDelta(contentDelta);
+            }
+            const reasoningDelta: string = LlmClient.anthropicReasoningFromSse(tailEvents[i]);
+            if (reasoningDelta.length > 0) {
+              fullReasoning = fullReasoning + reasoningDelta;
+              if (onReasoning !== undefined) onReasoning(reasoningDelta);
+            }
+            LlmClient.updateAnthropicUsageFromSse(tokenUsage, tailEvents[i]);
+          }
+        }
+        if (!fullContent.trim() && !fullReasoning.trim()) {
+          return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+        }
+        return new LlmResult(true, fullContent, '', '', fullReasoning, tokenUsage);
+      }
+
+      const response = await httpRequest.request(url, {
+        method: http.RequestMethod.POST,
+        header: header,
+        extraData: LlmClient.buildAnthropicPayload(body),
+        connectTimeout: CONNECT_TIMEOUT,
+        readTimeout: READ_TIMEOUT_NON_STREAM,
+        expectDataType: http.HttpDataType.STRING,
+        // 强制 HTTP/1.1：netstack 的 HTTP/2 连接复用存在缺陷（复用连接时响应卡住直到超时）
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        usingCache: false
+      });
+      const code: number = response.responseCode;
+      if (code !== 200) {
+        return new LlmResult(false, '', 'HTTP_' + code.toString(),
+          LlmClient.anthropicErrorMessage(response.result, code));
+      }
+      const text: string = LlmClient.resultToString(response.result);
+      const content: string = LlmClient.anthropicContent(text);
+      if (!content) return new LlmResult(false, '', 'EMPTY_RESPONSE', '模型返回内容为空');
+      const reasoning: string = LlmClient.anthropicReasoning(text);
+      const usage: LlmTokenUsage | null = LlmClient.anthropicUsage(text);
+      return new LlmResult(true, content, '', '', reasoning,
+        usage !== null ? usage : new LlmTokenUsage());
+    } catch (e) {
+      return LlmClient.toResult(e);
+    } finally {
+      httpRequest.off('dataReceive');
+      // 外部传入的请求由调用方（取消函数）负责销毁
+      if (externalRequest === undefined) {
+        httpRequest.destroy();
+      }
+    }
+  }
+
+  private static async postAnthropicStream(config: LlmConfig, messages: ChatMessage[],
+    onDelta: (delta: string) => void, onReasoning?: (reasoning: string) => void): Promise<LlmResult> {
+    return LlmClient.postAnthropic(config, messages, true, onDelta, onReasoning);
+  }
+
+  private static async postAnthropicWith(config: LlmConfig, messages: ChatMessage[],
+    httpRequest: http.HttpRequest): Promise<LlmResult> {
+    return LlmClient.postAnthropic(config, messages, false, undefined, undefined, httpRequest);
+  }
+
+  // ---- URL 规范化 ----
+
+  private static openAIUrl(config: LlmConfig): string {
+    let url: string = config.baseUrl.trim();
+    if (config.useFullUrl) {
+      if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+      return url;
+    }
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    if (url.endsWith('/chat/completions')) return url;
+    if (url.endsWith('/v1')) return url + '/chat/completions';
+    return url + '/chat/completions';
+  }
+
+  private static anthropicUrl(config: LlmConfig): string {
+    let url: string = config.baseUrl.trim();
+    if (config.useFullUrl) {
+      if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+      return url;
+    }
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    if (url.endsWith('/v1/messages')) return url;
+    if (url.endsWith('/messages')) return url;
+    return url + '/v1/messages';
+  }
+
+  // ---- OpenAI 响应解析 ----
+
+  // 非流式正文提取
+  private static openAIContent(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const choices: Object = parsed.choices;
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const message: Object = first.message;
+        if (message !== undefined) {
+          const messageObj: Record<string, Object> = message as Record<string, Object>;
+          const content: Object = messageObj.content;
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 非流式思考提取（reasoning_content / reasoning）
+  private static openAIReasoning(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const choices: Object = parsed.choices;
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const message: Object = first.message;
+        if (message !== undefined) {
+          const messageObj: Record<string, Object> = message as Record<string, Object>;
+          const reasoningContent: Object = messageObj.reasoning_content;
+          if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
+            return String(reasoningContent);
+          }
+          const reasoning: Object = messageObj.reasoning;
+          if (reasoning !== undefined && reasoning !== null && String(reasoning).length > 0) return String(reasoning);
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---- Anthropic 响应解析 ----
+
+  // 非流式正文提取（text block）
+  private static anthropicContent(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const content: Object = parsed.content;
+      if (content !== undefined && Array.isArray(content)) {
+        const blocks: Object[] = content as Object[];
+        let text: string = '';
+        for (let i: number = 0; i < blocks.length; i++) {
+          const block: Record<string, Object> = blocks[i] as Record<string, Object>;
+          if (block.type === 'text' && block.text !== undefined) {
+            text = text + String(block.text);
+          }
+        }
+        return text;
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 非流式思考提取（thinking block）
+  private static anthropicReasoning(jsonText: string): string {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const content: Object = parsed.content;
+      if (content !== undefined && Array.isArray(content)) {
+        const blocks: Object[] = content as Object[];
+        let text: string = '';
+        for (let i: number = 0; i < blocks.length; i++) {
+          const block: Record<string, Object> = blocks[i] as Record<string, Object>;
+          if (block.type === 'thinking' && block.thinking !== undefined) {
+            text = text + String(block.thinking);
+          }
+        }
+        return text;
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---- SSE 通用解析 ----
+
+  private static extractSseEvents(buffer: string): SseParseResult {
+    const events: string[] = [];
+    let pos: number = 0;
+    while (pos < buffer.length) {
+      const rnIdx: number = buffer.indexOf('\r\n\r\n', pos);
+      const nIdx: number = buffer.indexOf('\n\n', pos);
+      let sepIdx: number = -1;
+      let sepLen: number = 0;
+      if (rnIdx >= 0 && (nIdx < 0 || rnIdx <= nIdx)) {
+        sepIdx = rnIdx;
+        sepLen = 4;
+      } else if (nIdx >= 0) {
+        sepIdx = nIdx;
+        sepLen = 2;
+      } else {
+        break;
+      }
+      events.push(buffer.substring(pos, sepIdx));
+      pos = sepIdx + sepLen;
+    }
+    return new SseParseResult(events, pos);
+  }
+
+  private static remainingBuffer(buffer: string, parseResult: SseParseResult): string {
+    return buffer.substring(parseResult.consumed);
+  }
+
+  // 提取 SSE 事件的 data 字段内容
+  private static sseDataFromEvent(event: string): string {
+    const lines: string[] = event.split(/\r?\n/);
+    let data: string = '';
+    for (let i: number = 0; i < lines.length; i++) {
+      const line: string = lines[i];
+      if (line.startsWith('data:')) {
+        const value: string = line.substring(5).trim();
+        if (data.length > 0) data = data + value;
+        else data = value;
+      }
+    }
+    return data;
+  }
+
+  // ---- OpenAI SSE 增量提取 ----
+
+  // 流式正文增量：仅取 delta.content / message.content
+  private static openAIContentFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0 || data === '[DONE]') return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const choices: Object = parsed.choices;
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const delta: Object = first.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          const content: Object = deltaObj.content;
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+        }
+        const message: Object = first.message;
+        if (message !== undefined) {
+          const messageObj: Record<string, Object> = message as Record<string, Object>;
+          const content: Object = messageObj.content;
+          if (content !== undefined && content !== null && String(content).length > 0) return String(content);
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 流式思考增量：仅取 delta.reasoning_content / delta.reasoning / delta.thinking
+  private static openAIReasoningFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0 || data === '[DONE]') return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const choices: Object = parsed.choices;
+      if (choices !== undefined && Array.isArray(choices) && (choices as Object[]).length > 0) {
+        const first: Record<string, Object> = (choices as Object[])[0] as Record<string, Object>;
+        const delta: Object = first.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          const reasoningContent: Object = deltaObj.reasoning_content;
+          if (reasoningContent !== undefined && reasoningContent !== null && String(reasoningContent).length > 0) {
+            return String(reasoningContent);
+          }
+          const reasoning: Object = deltaObj.reasoning;
+          if (reasoning !== undefined && reasoning !== null && String(reasoning).length > 0) return String(reasoning);
+          const thinking: Object = deltaObj.thinking;
+          if (thinking !== undefined && thinking !== null && String(thinking).length > 0) return String(thinking);
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---- Anthropic SSE 增量提取 ----
+
+  // 流式正文增量：text_delta
+  private static anthropicContentFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0) return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const eventType: string = typeof parsed.type === 'string' ? parsed.type : '';
+      if (eventType === 'content_block_delta') {
+        const delta: Object = parsed.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          if (deltaObj.type === 'text_delta') {
+            const text: Object = deltaObj.text;
+            if (text !== undefined) return String(text);
+          }
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // 流式思考增量：thinking_delta
+  private static anthropicReasoningFromSse(event: string): string {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0) return '';
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const eventType: string = typeof parsed.type === 'string' ? parsed.type : '';
+      if (eventType === 'content_block_delta') {
+        const delta: Object = parsed.delta;
+        if (delta !== undefined) {
+          const deltaObj: Record<string, Object> = delta as Record<string, Object>;
+          if (deltaObj.type === 'thinking_delta') {
+            // extended thinking：思考内容增量
+            const thinking: Object = deltaObj.thinking;
+            if (thinking !== undefined) return String(thinking);
+          }
+        }
+      }
+      return '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ---- Token 用量解析 ----
+
+  // 将任意值安全转为数字（非数字视为 0）
+  private static usageNum(val: Object): number {
+    if (typeof val === 'number') return val as number;
+    return 0;
+  }
+
+  // 从 OpenAI 非流式响应的 usage 字段提取 token 统计
+  private static openAIUsage(jsonText: string): LlmTokenUsage | null {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const usage: Object = parsed.usage;
+      if (usage === undefined || usage === null) return null;
+      const tokenUsage: LlmTokenUsage = new LlmTokenUsage();
+      LlmClient.applyOpenAIUsage(tokenUsage, usage as Record<string, Object>);
+      return tokenUsage;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // OpenAI 流式增量：usage 位于最后一个 chunk（可能带空 choices），每次出现都覆盖更新
+  private static updateOpenAIUsageFromSse(tokenUsage: LlmTokenUsage, event: string): void {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0 || data === '[DONE]') return;
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const usage: Object = parsed.usage;
+      if (usage !== undefined && usage !== null) {
+        LlmClient.applyOpenAIUsage(tokenUsage, usage as Record<string, Object>);
+      }
+    } catch (e) {
+    }
+  }
+
+  // 应用 OpenAI usage 对象（prompt_tokens / completion_tokens / total_tokens / prompt_tokens_details.cached_tokens）
+  private static applyOpenAIUsage(tokenUsage: LlmTokenUsage, usageObj: Record<string, Object>): void {
+    tokenUsage.inputTokens = LlmClient.usageNum(usageObj.prompt_tokens);
+    tokenUsage.outputTokens = LlmClient.usageNum(usageObj.completion_tokens);
+    tokenUsage.totalTokens = LlmClient.usageNum(usageObj.total_tokens);
+    tokenUsage.cachedTokens = 0;
+    const details: Object = usageObj.prompt_tokens_details;
+    if (details !== undefined && details !== null) {
+      tokenUsage.cachedTokens = LlmClient.usageNum((details as Record<string, Object>).cached_tokens);
+    }
+  }
+
+  // 从 Anthropic 非流式响应的 usage 字段提取 token 统计
+  private static anthropicUsage(jsonText: string): LlmTokenUsage | null {
+    try {
+      const parsed: Record<string, Object> = JSON.parse(jsonText) as Record<string, Object>;
+      const usage: Object = parsed.usage;
+      if (usage === undefined || usage === null) return null;
+      const tokenUsage: LlmTokenUsage = new LlmTokenUsage();
+      LlmClient.mergeAnthropicUsage(tokenUsage, usage as Record<string, Object>);
+      return tokenUsage;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Anthropic 流式增量：input 用量在 message_start，output 用量在 message_delta，增量合并
+  private static updateAnthropicUsageFromSse(tokenUsage: LlmTokenUsage, event: string): void {
+    const data: string = LlmClient.sseDataFromEvent(event);
+    if (data.length === 0) return;
+    try {
+      const parsed: Record<string, Object> = JSON.parse(data) as Record<string, Object>;
+      const eventType: string = typeof parsed.type === 'string' ? parsed.type : '';
+      if (eventType === 'message_start') {
+        const message: Object = parsed.message;
+        if (message !== undefined && message !== null) {
+          const usage: Object = (message as Record<string, Object>).usage;
+          if (usage !== undefined && usage !== null) {
+            LlmClient.mergeAnthropicUsage(tokenUsage, usage as Record<string, Object>);
+          }
+        }
+      } else if (eventType === 'message_delta') {
+        const usage: Object = parsed.usage;
+        if (usage !== undefined && usage !== null) {
+          LlmClient.mergeAnthropicUsage(tokenUsage, usage as Record<string, Object>);
+        }
+      }
+    } catch (e) {
+    }
+  }
+
+  // 应用/合并 Anthropic usage 对象（input_tokens / output_tokens / cache_creation_input_tokens / cache_read_input_tokens）
+  // Anthropic 不返回 total_tokens，总数按 输入 + 输出 计算
+  private static mergeAnthropicUsage(tokenUsage: LlmTokenUsage, usageObj: Record<string, Object>): void {
+    const inputTokens: number = LlmClient.usageNum(usageObj.input_tokens);
+    const outputTokens: number = LlmClient.usageNum(usageObj.output_tokens);
+    const cacheCreation: number = LlmClient.usageNum(usageObj.cache_creation_input_tokens);
+    const cacheRead: number = LlmClient.usageNum(usageObj.cache_read_input_tokens);
+    if (inputTokens > 0) tokenUsage.inputTokens = inputTokens;
+    if (outputTokens > 0) tokenUsage.outputTokens = outputTokens;
+    if (cacheCreation + cacheRead > 0) tokenUsage.cachedTokens = cacheCreation + cacheRead;
+    tokenUsage.totalTokens = tokenUsage.inputTokens + tokenUsage.outputTokens;
+  }
+
+  // ---- 工具方法 ----
+
+  private static arrayBufferToString(buffer: ArrayBuffer): string {
+    try {
+      const decoder: util.TextDecoder = new util.TextDecoder();
+      return decoder.decodeToString(new Uint8Array(buffer));
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // response.result 可能是 string、ArrayBuffer 或对象，统一转字符串
+  private static resultToString(result: Object): string {
+    if (typeof result === 'string') return result as string;
+    if (result instanceof ArrayBuffer) {
+      return LlmClient.arrayBufferToString(result as ArrayBuffer);
+    }
+    try {
+      return JSON.stringify(result);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  private static errorMessageFromBody(body: Object, code: number): string {
+    try {
+      if (typeof body === 'string' && (body as string).length > 0) {
+        const parsed: Record<string, Object> = JSON.parse(body as string) as Record<string, Object>;
+        const error: Object = parsed.error;
+        if (error !== undefined) {
+          const errorObj: Record<string, Object> = error as Record<string, Object>;
+          const message: Object = errorObj.message;
+          if (message !== undefined) return String(message);
+        }
+      }
+    } catch (e) {
+    }
+    if (code === 401) return 'API Key 无效或未授权，请检查配置';
+    if (code === 403) return '访问被拒绝，请检查 API Key 权限';
+    if (code === 404) return '接口地址或模型名称错误';
+    if (code === 429) return '请求过于频繁或额度不足';
+    return '服务返回错误（HTTP ' + code.toString() + '）';
+  }
+
+  private static anthropicErrorMessage(body: Object, code: number): string {
+    try {
+      if (typeof body === 'string' && (body as string).length > 0) {
+        const parsed: Record<string, Object> = JSON.parse(body as string) as Record<string, Object>;
+        const error: Object = parsed.error;
+        if (error !== undefined) {
+          const errorObj: Record<string, Object> = error as Record<string, Object>;
+          const message: Object = errorObj.message;
+          if (message !== undefined) return String(message);
+        }
+      }
+    } catch (e) {
+    }
+    if (code === 401) return 'API Key 无效或未授权，请检查 x-api-key';
+    if (code === 403) return '访问被拒绝，请检查 API Key 权限';
+    if (code === 404) return '接口地址或模型名称错误';
+    if (code === 429) return '请求过于频繁或额度不足';
+    return '服务返回错误（HTTP ' + code.toString() + '）';
+  }
+
+  private static toResult(e: Object): LlmResult {
+    const err: BusinessError = e as BusinessError;
+    const message: string = (err && typeof err.message === 'string' && err.message.length > 0)
+      ? err.message : '网络请求失败';
+    if (message.indexOf('timeout') >= 0) return new LlmResult(false, '', 'TIMEOUT', '请求超时，请检查网络或接口地址');
+    if (message.indexOf('connect') >= 0 || message.indexOf('resolve') >= 0) {
+      return new LlmResult(false, '', 'NETWORK', '网络连接失败，请检查网络与接口地址');
+    }
+    return new LlmResult(false, '', 'REQUEST_FAILED', message);
+  }
+}
+
+// SSE 解析结果：包含已切分的事件和已消费的字符数
+class SseParseResult {
+  events: string[];
+  consumed: number;
+
+  constructor(events: string[], consumed: number) {
+    this.events = events;
+    this.consumed = consumed;
+  }
+}

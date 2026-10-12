@@ -1,7 +1,7 @@
 // 智子 - BettaFish 引擎状态卡
+// v10：状态点/状态字用语义色（success / warning / textTertiary），卡内小块用对应淡底 + 发丝边框。
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle } from './GlassEffect';
 import { BettaEngineStatus } from '../common/BettaFishModels';
 
 @ComponentV2
@@ -10,9 +10,16 @@ export struct BettaEngineStatusCard {
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   private statusColor(): string {
-    if (this.engine.status === 'running') return '#22C55E';
-    if (this.engine.status === 'starting') return '#F59E0B';
-    return '#9CA3AF';
+    if (this.engine.status === 'running') return this.themeState.palette.success;
+    if (this.engine.status === 'starting') return this.themeState.palette.warning;
+    return this.themeState.palette.textTertiary;
+  }
+
+  // 状态淡底（运行中/启动中/已停止）
+  private statusBg(): string {
+    if (this.engine.status === 'running') return this.themeState.palette.successBg;
+    if (this.engine.status === 'starting') return this.themeState.palette.warningBg;
+    return this.themeState.palette.bgSurface2;
   }
 
   private statusLabel(): string {
@@ -23,16 +30,18 @@ export struct BettaEngineStatusCard {
 
   build() {
     Column({ space: 6 }) {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         Circle()
-          .width(10)
-          .height(10)
+          .width(8)
+          .height(8)
           .fill(this.statusColor())
         Text(this.engine.appName.toUpperCase())
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .width('100%')
       Text(this.statusLabel())
@@ -42,16 +51,17 @@ export struct BettaEngineStatusCard {
         .width('100%')
       if (this.engine.port > 0) {
         Text('端口 ' + this.engine.port.toString())
-          .fontSize(this.themeState.palette.fsXs - 1)
+          .fontSize(this.themeState.palette.fsXs)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
           .width('100%')
       }
     }
     .layoutWeight(1)
-    .padding(12)
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+    .padding(this.themeState.palette.sp3)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.statusBg())
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(HorizontalAlign.Start)
   }
 }

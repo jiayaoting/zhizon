@@ -1,5 +1,5 @@
 // 智子 - AI 角色模板（内置 8 个 + 自定义持久化）
-import { DataRepository } from '../service/DataRepository';
+import { DataRepository } from '../service/platform/DataRepository';
 
 // AI 角色模板：id 稳定（内置 'role-xxx'，自定义 'role-custom-xxx'），prompt 为 system prompt
 export class AiRoleTemplate {

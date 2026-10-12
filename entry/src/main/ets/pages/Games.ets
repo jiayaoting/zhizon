@@ -1,10 +1,11 @@
-// 智子 - 游戏中心
+// 智子 - 游戏中心（v10 华为原生拟物白：图标大卡网格 + 数据入口行）
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { CARD_RADIUS } from '../common/Constants';
+import { AppNavigator } from '../common/AppNavigator';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 import { DifficultyDefinition, DifficultyLevel, DIFFICULTY_DEFINITIONS, GameId, GameLaunchFacade,
-  GameLaunchRequest, GameLaunchResult } from '../common/Difficulty';
+  GameLaunchRequest, GameLaunchResult, difficultyLabel } from '../common/Difficulty';
 import { DifficultyOption } from '../components/DifficultyOption';
 import { PageKey } from '../common/Navigation';
 
@@ -16,9 +17,24 @@ interface GameEntry {
   color: string;
 }
 
+// 游戏数据入口行（战绩统计 / 对局回放 / 排行榜 / 成就 / 游戏设置）
+class GameToolEntry {
+  title: string;
+  icon: Resource;
+  iconEmoji: string;
+  route: string;
+
+  constructor(title: string, icon: Resource, iconEmoji: string, route: string) {
+    this.title = title;
+    this.icon = icon;
+    this.iconEmoji = iconEmoji;
+    this.route = route;
+  }
+}
+
 @ComponentV2
 export struct GamesPage {
-            @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Local showHelpFor: GameId | null = null;
   // 待选难度的游戏（点击游戏卡片后弹出该游戏专属难度选择）
   @Local pendingGame: GameEntry | null = null;
@@ -76,6 +92,17 @@ export struct GamesPage {
       color: this.themeState.palette.primary
     }
   ];
+  }
+
+  // 数据入口：导航目标与 Profile / 设置页保持一致
+  private get tools(): GameToolEntry[] {
+    return [
+      new GameToolEntry('战绩统计', AppIcons.chart, AppIcons.chartEmoji, 'pages/GameStats'),
+      new GameToolEntry('对局回放', AppIcons.play, AppIcons.playEmoji, 'pages/ReplayList'),
+      new GameToolEntry('排行榜', AppIcons.trophy, AppIcons.trophyEmoji, 'pages/Leaderboard'),
+      new GameToolEntry('成就', AppIcons.starFill, AppIcons.starFillEmoji, 'pages/Achievements'),
+      new GameToolEntry('游戏设置', AppIcons.settings, AppIcons.settingsEmoji, 'pages/GameSettings')
+    ];
   }
 
   private gameHelpText(gameId: GameId): string {
@@ -191,6 +218,39 @@ export struct GamesPage {
     return this.pendingGame as GameEntry;
   }
 
+  // 左右安全边距：手机 16vp / 大屏 24vp
+  private horizontalPadding(): string {
+    return this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg;
+  }
+
+  // 卡片元信息：当前选择的难度（页面既有状态，不新增数据来源）
+  private tileMeta(): string {
+    return '默认难度 · ' + difficultyLabel(this.pendingDifficulty);
+  }
+
+  // 2 列网格：每行 2 个游戏卡（避免在 Scroll 内嵌 Grid 的高度问题）
+  private gameRows(): GameEntry[][] {
+    const all: GameEntry[] = this.games;
+    const rows: GameEntry[][] = [];
+    for (let i: number = 0; i < all.length; i += 2) {
+      const row: GameEntry[] = [all[i]];
+      if (i + 1 < all.length) row.push(all[i + 1]);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  // 长按快捷菜单（主流程仍由点击进入难度选择）
+  private tileMenu(game: GameEntry): MenuElement[] {
+    const helpIcon: ResourceStr = USE_SYMBOL_ICONS ? AppIcons.doc : AppIcons.docEmoji;
+    const playIcon: ResourceStr = USE_SYMBOL_ICONS ? AppIcons.play : AppIcons.playEmoji;
+    const items: MenuElement[] = [
+      { value: '查看帮助', icon: helpIcon, action: (): void => { this.showHelpFor = game.gameId; } },
+      { value: '选择难度', icon: playIcon, action: (): void => { this.pendingGame = game; } }
+    ];
+    return items;
+  }
+
   @Builder
   difficultyDialog() {
     if (this.pendingGame !== null) {
@@ -207,17 +267,30 @@ export struct GamesPage {
                 .fontFamily(this.themeState.palette.fontSans)
                 .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
-                .margin({ left: 8 })
+                .margin({ left: this.themeState.palette.sp2 })
               Blank()
-              Text('✕')
-                .fontSize(this.themeState.palette.fsLg)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.themeState.palette.textTertiary)
-                .padding(8)
-                .onClick(() => { this.pendingGame = null; })
+              Row() {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.close)
+                    .fontSize(20)
+                    .fontColor([this.themeState.palette.textTertiary])
+                } else {
+                  Text(AppIcons.closeEmoji)
+                    .fontSize(this.themeState.palette.fsLg)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
+                }
+              }
+              .width(this.themeState.palette.touchTarget)
+              .height(this.themeState.palette.touchTarget)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .accessibilityText('关闭')
+              .onClick(() => { this.pendingGame = null; })
             }
             .width('100%')
-            .padding({ left: 4, top: 4 })
+            .padding({ left: this.themeState.palette.sp1, top: this.themeState.palette.sp1 })
 
             Text('选择难度')
               .fontSize(this.themeState.palette.fsSm)
@@ -225,10 +298,10 @@ export struct GamesPage {
               .fontColor(this.themeState.palette.textTertiary)
               .fontWeight(FontWeight.Medium)
               .width('100%')
-              .margin({ top: 8, bottom: 4 })
+              .margin({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp1 })
 
             Scroll() {
-              Column({ space: 8 }) {
+              Column({ space: this.themeState.palette.sp2 }) {
                 ForEach(DIFFICULTY_DEFINITIONS, (definition: DifficultyDefinition) => {
                   DifficultyOption({
                     definition: definition,
@@ -245,12 +318,12 @@ export struct GamesPage {
             Button('开始游戏')
               .fontSize(this.themeState.palette.fsMd)
               .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(Color.White)
+              .fontColor(this.themeState.palette.primaryOnColor)
               .width('100%')
-              .height(44)
-              .borderRadius(12)
-              .backgroundColor(this.pendingGameEntry().color)
-              .margin({ top: 12 })
+              .height(this.themeState.palette.touchTarget)
+              .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.primary)
+              .margin({ top: this.themeState.palette.sp3 })
               .onClick(() => {
                 const game: GameEntry = this.pendingGameEntry();
                 this.pendingGame = null;
@@ -258,9 +331,10 @@ export struct GamesPage {
               })
           }
           .width('100%')
-          .borderRadius(16)
-          .backgroundColor(this.themeState.palette.bgBase)
-          .padding({ left: 20, right: 20, bottom: Math.max(16, this.themeState.navBarHeight) })
+          .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+          .backgroundColor(this.themeState.palette.bgElevated)
+          .padding({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5,
+            bottom: Math.max(16, this.themeState.navBarHeight) })
           .onClick(() => {})
         }
         .width('100%')
@@ -269,68 +343,221 @@ export struct GamesPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.35)')
+      .backgroundColor(this.themeState.palette.maskOverlay)
       .onClick(() => { this.pendingGame = null; })
     }
   }
 
   @Builder
-  gameCard(game: GameEntry, index: number) {
-    Column() {
-      Row({ space: 12 }) {
-        // 游戏图标
+  gameTile(game: GameEntry, index: number) {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      Column({ space: this.themeState.palette.sp2 }) {
+        // 图标大卡区（保留各游戏原有 emoji / 字形）
         Stack() {
           Column()
-            .width(48)
-            .height(48)
-            .borderRadius(12)
+            .width(60)
+            .height(60)
+            .borderRadius(this.themeState.palette.radiusMd)
             .backgroundColor(game.color + '1A')
-            .alignItems(HorizontalAlign.Center)
-            .justifyContent(FlexAlign.Center)
           Text(game.icon)
-            .fontSize(24)
+            .fontSize(36)
             .fontFamily(this.themeState.palette.fontSans)
         }
 
-        Column({ space: 4 }) {
-          Text(game.name)
-            .fontSize(this.themeState.palette.fsLg)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textPrimary)
-            .fontWeight(FontWeight.Medium)
-          Text(game.desc)
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textSecondary)
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-
-        // 使用说明按钮
-        Row() {
-          Text('📖')
-            .fontSize(this.themeState.palette.fsLg)
-            .fontFamily(this.themeState.palette.fontSans)
-        }
-        .width(36)
-        .height(36)
-        .borderRadius(8)
-        .backgroundColor(this.themeState.palette.bgSurface2)
-        .justifyContent(FlexAlign.Center)
-        .onClick(() => { this.showHelpFor = game.gameId; })
+        Text(game.name)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.tileMeta())
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .width('100%')
-      .padding(16)
+      .alignItems(HorizontalAlign.Center)
+      .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3,
+        top: this.themeState.palette.sp4, bottom: this.themeState.palette.sp4 })
+
+      // 使用说明入口（保留原有 📖 行为）
+      Row() {
+        if (USE_SYMBOL_ICONS) {
+          SymbolGlyph(AppIcons.doc)
+            .fontSize(18)
+            .fontColor([this.themeState.palette.textTertiary])
+        } else {
+          Text(AppIcons.docEmoji)
+            .fontSize(14)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
+        }
+      }
+      .width(this.themeState.palette.touchTarget)
+      .height(this.themeState.palette.touchTarget)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .accessibilityText('使用说明')
+      .onClick(() => { this.showHelpFor = game.gameId; })
     }
-    .width('100%')
+    .layoutWeight(1)
     .backgroundColor(this.themeState.palette.bgSurface)
-    .borderRadius(CARD_RADIUS)
-    .border({ width: 1, color: this.themeState.palette.borderSubtle })
+    .borderRadius(this.themeState.palette.radiusLg)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
+    .clip(true)
+    .stateStyles({
+      pressed: {
+        .backgroundColor(this.themeState.palette.bgHover)
+      }
+    })
     .onClick(() => { this.pendingGame = game; })
+    .bindMenu(this.tileMenu(game))
     .focusable(true)
     .tabIndex(index)
+    .accessibilityText(game.name + '，' + game.desc)
+  }
+
+  @Builder
+  gameGrid() {
+    Column({ space: this.themeState.palette.cardGap }) {
+      ForEach(this.gameRows(), (row: GameEntry[], rowIndex: number) => {
+        Row({ space: this.themeState.palette.cardGap }) {
+          ForEach(row, (game: GameEntry, colIndex: number) => {
+            this.gameTile(game, rowIndex * 2 + colIndex)
+          }, (game: GameEntry) => game.gameId)
+          // 奇数个游戏时右侧占位，保持两列等宽
+          if (row.length === 1) {
+            Column().layoutWeight(1)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Top)
+      }, (row: GameEntry[], rowIndex: number) => 'gameRow_' + rowIndex.toString())
+    }
+    .width('100%')
+  }
+
+  // 注册表为空时的兜底空态（原因 + 下一步）
+  @Builder
+  emptyGames() {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Text('🎮')
+        .fontSize(44)
+        .fontFamily(this.themeState.palette.fontSans)
+      Text('暂无可玩游戏')
+        .fontSize(this.themeState.palette.fsLg)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+      Text('游戏注册表未就绪，可能是版本数据未加载完成')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+        .textAlign(TextAlign.Center)
+      Button('前往游戏设置')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primaryOnColor)
+        .height(this.themeState.palette.touchTarget)
+        .padding({ left: this.themeState.palette.sp6, right: this.themeState.palette.sp6 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.primary)
+        .margin({ top: this.themeState.palette.sp2 })
+        .onClick(() => { AppNavigator.push('pages/GameSettings'); })
+    }
+    .width('100%')
+    .padding(this.themeState.palette.sp6)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .borderRadius(this.themeState.palette.radiusLg)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
+    .justifyContent(FlexAlign.Center)
+  }
+
+  // 数据入口列表（56vp 行 + 发丝分割线 + 右箭头）
+  @Builder
+  toolsSection() {
+    Column({ space: this.themeState.palette.sp2 }) {
+      Text('游戏数据')
+        .fontSize(this.themeState.palette.fsLg)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+        .width('100%')
+
+      Column() {
+        ForEach(this.tools, (tool: GameToolEntry, index: number) => {
+          Column() {
+            Row({ space: this.themeState.palette.sp3 }) {
+              Row() {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(tool.icon)
+                    .fontSize(20)
+                    .fontColor([this.themeState.palette.primary])
+                } else {
+                  Text(tool.iconEmoji)
+                    .fontSize(16)
+                    .fontFamily(this.themeState.palette.fontSans)
+                }
+              }
+              .width(32)
+              .height(32)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .backgroundColor(this.themeState.palette.primaryBg)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+
+              Text(tool.title)
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+              if (USE_SYMBOL_ICONS) {
+                SymbolGlyph(AppIcons.forward)
+                  .fontSize(20)
+                  .fontColor([this.themeState.palette.textTertiary])
+              } else {
+                Text(AppIcons.forwardEmoji)
+                  .fontSize(18)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
+              }
+            }
+            .width('100%')
+            .height(this.themeState.palette.rowHeight)
+            .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+            .stateStyles({
+              pressed: {
+                .backgroundColor(this.themeState.palette.bgHover)
+              }
+            })
+            .accessibilityText(tool.title)
+            .onClick(() => { AppNavigator.push(tool.route); })
+
+            if (index < this.tools.length - 1) {
+              Divider()
+                .strokeWidth(0.5)
+                .color(this.themeState.palette.divider)
+                .margin({ left: this.themeState.palette.dividerIndent })
+            }
+          }
+          .width('100%')
+        }, (tool: GameToolEntry) => tool.route)
+      }
+      .width('100%')
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusLg)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .clip(true)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -342,31 +569,45 @@ export struct GamesPage {
           Column() {
             Row() {
               Blank()
-              Text('✕')
-                .fontSize(this.themeState.palette.fsLg)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.themeState.palette.textTertiary)
-                .padding(8)
-                .onClick(() => { this.showHelpFor = null; })
+              Row() {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.close)
+                    .fontSize(20)
+                    .fontColor([this.themeState.palette.textTertiary])
+                } else {
+                  Text(AppIcons.closeEmoji)
+                    .fontSize(this.themeState.palette.fsLg)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
+                }
+              }
+              .width(this.themeState.palette.touchTarget)
+              .height(this.themeState.palette.touchTarget)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .accessibilityText('关闭')
+              .onClick(() => { this.showHelpFor = null; })
             }
             .width('100%')
-            .padding({ right: 4, top: 4 })
+            .padding({ right: this.themeState.palette.sp1, top: this.themeState.palette.sp1 })
 
             Scroll() {
               Text(this.gameHelpText(this.showHelpFor as GameId))
                 .fontSize(this.themeState.palette.fsSm)
                 .fontFamily(this.themeState.palette.fontSans)
                 .fontColor(this.themeState.palette.textPrimary)
-                .lineHeight(22)
+                .lineHeight(this.themeState.palette.fsXl)
                 .width('100%')
             }
             .scrollBar(BarState.Off)
             .constraintSize({ maxHeight: 400 })
-            .padding({ left: 20, right: 20, bottom: 16 })
+            .padding({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5,
+              bottom: this.themeState.palette.sp4 })
           }
           .width('100%')
-          .borderRadius(16)
-          .backgroundColor(this.themeState.palette.bgBase)
+          .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+          .backgroundColor(this.themeState.palette.bgElevated)
           .padding({ bottom: Math.max(16, this.themeState.navBarHeight) })
         }
         .width('100%')
@@ -375,7 +616,7 @@ export struct GamesPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.35)')
+      .backgroundColor(this.themeState.palette.maskOverlay)
       .onClick(() => { this.showHelpFor = null; })
     }
   }
@@ -383,28 +624,39 @@ export struct GamesPage {
   build() {
     Stack() {
       Column() {
-        TopBar({ title: '游戏中心', subtitle: '休闲娱乐' })
+        TopBar({ title: '游戏', subtitle: '休闲娱乐' })
 
         Scroll() {
-          Column({ space: 12 }) {
-            // 标题区
-            Text('可用游戏')
-              .fontSize(this.themeState.palette.fsSm)
+          Column() {
+            // 可用游戏：2 列图标大卡
+            Text('全部游戏')
+              .fontSize(this.themeState.palette.fsLg)
               .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.textTertiary)
-              .fontWeight(FontWeight.Medium)
-              .padding({ left: 4, top: 8, bottom: 4 })
+              .fontColor(this.themeState.palette.textPrimary)
+              .fontWeight(FontWeight.Bold)
               .width('100%')
+              .margin({ top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp2 })
 
-            ForEach(this.games, (game: GameEntry, index: number) => {
-              this.gameCard(game, index)
-            }, (game: GameEntry) => game.gameId)
+            if (this.games.length === 0) {
+              this.emptyGames()
+            } else {
+              this.gameGrid()
+            }
+
+            // 数据与工具入口
+            Column() {
+              this.toolsSection()
+            }
+            .width('100%')
+            .margin({ top: this.themeState.palette.sectionGap })
+
+            Column().height(this.themeState.palette.sp6)
           }
           .width('100%')
           .padding({
-            left: this.themeState.isSm ? 16 : 24,
-            right: this.themeState.isSm ? 16 : 24,
-            bottom: 24
+            left: this.horizontalPadding(),
+            right: this.horizontalPadding(),
+            bottom: this.themeState.palette.sp6
           })
         }
         .layoutWeight(1)
@@ -418,12 +670,13 @@ export struct GamesPage {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(Color.Transparent)
+      .backgroundColor(this.themeState.palette.bgBase)
 
       this.helpDialog()
       this.difficultyDialog()
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(this.themeState.palette.bgBase)
   }
 }

@@ -23,32 +23,27 @@ export class FxBudget {
   }
 }
 
-// 封装：对组件根容器有条件地应用玻璃 blur 样式
-// - 开启时: backgroundBlurStyle + 半透明玻璃色 + 玻璃边框
-// - 关闭时: 使用 palette 原色作为 fallback
+// 封装：v10 起玻璃材质**仅用于 P0 级**（底栏/侧边栏/悬浮条）；
+// P1/P2 内容卡一律返回纯色面（白底上玻璃会显脏），边框使用发丝分割线。
 export class GlassStyle {
-  // 返回该级别应使用的背景色（考虑开关）
+  // 返回该级别应使用的背景色（考虑玻璃开关）
   static backgroundColor(enabled: boolean, level: GlassLevel, palette: ThemePalette): string {
-    if (!enabled) {
-      if (level === GlassLevel.P0_BAR) return palette.bgSurface;
-      if (level === GlassLevel.P1_CARD) return palette.bgSurface;
-      return palette.bgSurface;
+    if (level === GlassLevel.P0_BAR) {
+      return enabled ? palette.bgGlassBar : palette.bgSurface;
     }
-    if (level === GlassLevel.P0_BAR) return palette.bgGlassBar;
-    if (level === GlassLevel.P1_CARD) return palette.bgGlassCard;
-    return palette.bgGlassCard;
+    // 内容卡不再使用玻璃
+    return palette.bgSurface;
   }
 
-  // 返回该级别应使用的边框色（考虑开关）
+  // 返回该级别应使用的边框色（考虑玻璃开关）
   static borderColor(enabled: boolean, level: GlassLevel, palette: ThemePalette): string {
-    if (!enabled) return palette.borderSubtle;
-    return palette.borderGlass;
+    if (level === GlassLevel.P0_BAR && enabled) return palette.borderGlass;
+    return palette.divider;
   }
 
   // 返回卡内次级元素背景色（如 card 内的 badge、btn）
   static innerBackgroundColor(enabled: boolean, palette: ThemePalette): string {
-    if (!enabled) return palette.bgSurface2;
-    return palette.bgGlassCard2;
+    return palette.bgSurface2;
   }
 }
 
@@ -64,10 +59,9 @@ export class GlassStyle {
 //     .backgroundBlurStyle(this.glassEnabled ? BlurStyle.Component_Thick : BlurStyle.None)
 // ============================================================
 
-// GlassBlur 映射：不同级别对应不同 BlurStyle preset
+// GlassBlur 映射：v10 仅 P0（底栏/侧边栏/悬浮条）允许模糊
 export function glassBlurStyle(enabled: boolean, level: GlassLevel): BlurStyle {
   if (!enabled) return BlurStyle.NONE;
   if (level === GlassLevel.P0_BAR) return BlurStyle.COMPONENT_THICK;
-  if (level === GlassLevel.P1_CARD) return BlurStyle.COMPONENT_THIN;
-  return BlurStyle.COMPONENT_THIN;
+  return BlurStyle.NONE;
 }

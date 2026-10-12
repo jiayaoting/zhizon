@@ -1,21 +1,21 @@
 // 智子 - 贪吃蛇
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { DataRepository } from '../service/DataRepository';
+import { DataRepository } from '../service/platform/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
-import { GameAIService, GameAction, AI_SPEED_DELAYS, SnakePoint } from '../service/GameAIService';
+import { GameAIService, GameAction, AI_SPEED_DELAYS, SnakePoint } from '../service/game/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
-import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/ReplayService';
-import { SoundService } from '../service/SoundService';
+import { ReplayService, ReplayRecorder, ReplayEvent, ReplayRecord } from '../service/game/ReplayService';
+import { SoundService } from '../service/platform/SoundService';
 
 const COLS: number = 16;
 const ROWS: number = 16;
@@ -32,49 +32,47 @@ enum Direction {
   RIGHT
 }
 
-@Component
+@ComponentV2
 @Entry
 export struct SnakePage {
-  @State snake: Point[] = [];
-  @State food: Point = { x: 0, y: 0 };
-  @State foodBonus: boolean = false;
-  @State wrapEnabled: boolean = false;
-  @State obstacleEnabled: boolean = false;
-  @State obstacles: Point[] = [];
-  @State boardDisplay: number[][] = [];
-  @State snakeDirection: Direction = Direction.RIGHT;
-  @State nextDirection: Direction = Direction.RIGHT;
-  @State score: number = 0;
-  @State bestScore: number = 0;
-  @State level: number = 1;
-  @State isGameOver: boolean = false;
-  @State isPaused: boolean = false;
-  @State isStarted: boolean = false;
-  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
-  @State gameStarted: boolean = false; // 是否已选择难度开始
-  @State autoPaused: boolean = false;
-  @State floatScore: string = '';
-  @State showFloatScore: boolean = false;
-  @State showHelp: boolean = false;
-  @State newRecord: boolean = false;
-  @State playSeconds: number = 0;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @Local snake: Point[] = [];
+  @Local food: Point = { x: 0, y: 0 };
+  @Local foodBonus: boolean = false;
+  @Local wrapEnabled: boolean = false;
+  @Local obstacleEnabled: boolean = false;
+  @Local obstacles: Point[] = [];
+  @Local boardDisplay: number[][] = [];
+  @Local snakeDirection: Direction = Direction.RIGHT;
+  @Local nextDirection: Direction = Direction.RIGHT;
+  @Local score: number = 0;
+  @Local bestScore: number = 0;
+  @Local level: number = 1;
+  @Local isGameOver: boolean = false;
+  @Local isPaused: boolean = false;
+  @Local isStarted: boolean = false;
+  @Local difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @Local gameStarted: boolean = false; // 是否已选择难度开始
+  @Local autoPaused: boolean = false;
+  @Local floatScore: string = '';
+  @Local showFloatScore: boolean = false;
+  @Local showHelp: boolean = false;
+  @Local newRecord: boolean = false;
+  @Local playSeconds: number = 0;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   // ---- AI 托管 ----
-  @State aiRunning: boolean = false;
-  @State aiStatus: string = '';
-  @State aiModelNames: string[] = [];
-  @State aiModelIndex: number = 0;
-  @State aiSpeedIndex: number = 2;
-  @State aiModelsConfigured: boolean = true;
+  @Local aiRunning: boolean = false;
+  @Local aiStatus: string = '';
+  @Local aiModelNames: string[] = [];
+  @Local aiModelIndex: number = 0;
+  @Local aiSpeedIndex: number = 2;
+  @Local aiModelsConfigured: boolean = true;
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  @State aiFailCount: number = 0;
-  @State aiThinkCount: number = 0;
-  @State aiThinkTimeMs: number = 0;
-  @State aiThinkTotalMs: number = 0;
+  @Local aiFailCount: number = 0;
+  @Local aiThinkCount: number = 0;
+  @Local aiThinkTimeMs: number = 0;
+  @Local aiThinkTotalMs: number = 0;
   private aiThinkTimer: number = -1;
   private aiThinkStart: number = 0;
   private aiHosted: boolean = false;
@@ -87,8 +85,8 @@ export struct SnakePage {
   private lastLevel: number = 1;
 
   // ---- 对局回放 ----
-  @State replayMode: boolean = false;
-  @State replaySpeed: number = 1;
+  @Local replayMode: boolean = false;
+  @Local replaySpeed: number = 1;
   private recorder: ReplayRecorder = new ReplayRecorder();
   private replayEvents: ReplayEvent[] = [];
   private replayIndex: number = 0;
@@ -114,7 +112,7 @@ export struct SnakePage {
 
   // 自适应棋盘格子尺寸
   private boardCellSize(): number {
-    if (this.isSm) {
+    if (this.themeState.isSm) {
       // 手机端：TopBar + 方向键(3行) + 信息栏 + 间距 + 安全区
       return DeviceMetrics.fitCellSize(COLS, ROWS, 370, 12, 24);
     }
@@ -865,7 +863,7 @@ export struct SnakePage {
           .width(this.boardCellSize())
           .height(this.boardCellSize())
           .borderRadius(3)
-          .backgroundColor(index === 0 ? this.palette.primary : this.palette.primaryDim)
+          .backgroundColor(index === 0 ? this.themeState.palette.primary : this.themeState.palette.primaryBgStrong)
           .position({ x: seg.x * this.boardCellSize(), y: seg.y * this.boardCellSize() })
           .animation({ duration: 120, curve: Curve.EaseInOut })
       }, (seg: Point, index: number) => index.toString())
@@ -875,7 +873,7 @@ export struct SnakePage {
           .width(this.boardCellSize())
           .height(this.boardCellSize())
           .borderRadius(2)
-          .backgroundColor(this.foodBonus ? '#FBBF24' : this.palette.danger)
+          .backgroundColor(this.foodBonus ? '#FBBF24' : this.themeState.palette.danger)
           .position({ x: this.food.x * this.boardCellSize(), y: this.food.y * this.boardCellSize() })
           .scale({ x: 1.12, y: 1.12 })
           .animation({ duration: 600, curve: Curve.EaseInOut, iterations: -1, playMode: PlayMode.Alternate })
@@ -883,30 +881,30 @@ export struct SnakePage {
     }
     .width('100%')
     .aspectRatio(1)
-    .border({ width: 2, color: this.palette.borderDefault })
+    .border({ width: 2, color: this.themeState.palette.borderDefault })
     .borderRadius(6)
     .padding(2)
-    .backgroundColor(this.palette.bgSurface)
+    .backgroundColor(this.themeState.palette.bgSurface)
   }
 
   private cellColor(cell: number, x: number, y: number): string {
     if (cell === 1) {
       // 蛇头
-      return this.palette.primary;
+      return this.themeState.palette.primary;
     }
     if (cell === 2) {
       // 蛇身 - 渐变效果
-      return this.palette.primaryDim;
+      return this.themeState.palette.primaryBgStrong;
     }
     if (cell === 3) {
       // 食物：金色为加分食物
-      return this.foodBonus ? '#FBBF24' : this.palette.danger;
+      return this.foodBonus ? '#FBBF24' : this.themeState.palette.danger;
     }
     if (cell === 4) {
       // 障碍物
-      return this.palette.textTertiary;
+      return this.themeState.palette.textTertiary;
     }
-    return this.palette.bgSurface2;
+    return this.themeState.palette.bgSurface2;
   }
 
   private syncBoardDisplay(): void {
@@ -954,15 +952,15 @@ export struct SnakePage {
       Row() {
         Text('▲')
           .fontSize(20)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
       }
-      .width(this.isSm ? 48 : 56)
-      .height(this.isSm ? 48 : 56)
-      .borderRadius(12)
-      .backgroundColor(this.palette.bgSurface2)
+      .width(this.themeState.isSm ? 48 : 56)
+      .height(this.themeState.isSm ? 48 : 56)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .border({ width: 0.5, color: this.themeState.palette.divider })
       .onClick(() => { this.changeDirection(Direction.UP); })
 
       // 左右下
@@ -970,43 +968,43 @@ export struct SnakePage {
         Row() {
           Text('◀')
             .fontSize(20)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
         }
-        .width(this.isSm ? 48 : 56)
-        .height(this.isSm ? 48 : 56)
-        .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface2)
+        .width(this.themeState.isSm ? 48 : 56)
+        .height(this.themeState.isSm ? 48 : 56)
+        .borderRadius(this.themeState.palette.radiusMd)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .border({ width: 0.5, color: this.themeState.palette.divider })
         .onClick(() => { this.changeDirection(Direction.LEFT); })
 
         Row() {
           Text('▼')
             .fontSize(20)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
         }
-        .width(this.isSm ? 48 : 56)
-        .height(this.isSm ? 48 : 56)
-        .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface2)
+        .width(this.themeState.isSm ? 48 : 56)
+        .height(this.themeState.isSm ? 48 : 56)
+        .borderRadius(this.themeState.palette.radiusMd)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .border({ width: 0.5, color: this.themeState.palette.divider })
         .onClick(() => { this.changeDirection(Direction.DOWN); })
 
         Row() {
           Text('▶')
             .fontSize(20)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
         }
-        .width(this.isSm ? 48 : 56)
-        .height(this.isSm ? 48 : 56)
-        .borderRadius(12)
-        .backgroundColor(this.palette.bgSurface2)
+        .width(this.themeState.isSm ? 48 : 56)
+        .height(this.themeState.isSm ? 48 : 56)
+        .borderRadius(this.themeState.palette.radiusMd)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .justifyContent(FlexAlign.Center)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .border({ width: 0.5, color: this.themeState.palette.divider })
         .onClick(() => { this.changeDirection(Direction.RIGHT); })
       }
       .justifyContent(FlexAlign.Center)
@@ -1021,59 +1019,59 @@ export struct SnakePage {
       // 分数
       Column({ space: 2 }) {
         Text('分数')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.score.toString())
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       // 等级
       Column({ space: 2 }) {
         Text('等级')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.level.toString())
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       // 最佳
       Column({ space: 2 }) {
         Text('最佳')
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text(this.bestScore.toString())
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.info)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.info)
           .fontWeight(FontWeight.Bold)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
     }
     .width('100%')
   }
@@ -1084,49 +1082,49 @@ export struct SnakePage {
     Stack() {
       Column({ space: 12 }) {
         Text('游戏结束')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.danger)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.danger)
           .fontWeight(FontWeight.Bold)
         if (this.newRecord) {
           Text('🎉 新纪录！')
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.warning)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.warning)
             .fontWeight(FontWeight.Bold)
         }
         Text('最终得分：' + this.score.toString())
-          .fontSize(this.palette.fsMd)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
         Text('蛇身长度：' + this.snake.length.toString() + ' · 历史最高：' + this.bestScore.toString())
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Text('用时 ' + this.formatDuration(this.playSeconds))
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
         Row({ space: 12 }) {
           // 重新开始
           Column({ space: 6 }) {
             Row() {
             Text('↺')
               .fontSize(22)
-              .fontFamily(this.palette.fontSans)
-              .fontColor('#0A0E1A')
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primaryOnColor)
               .fontWeight(FontWeight.Bold)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.restartGame(); })
@@ -1136,18 +1134,18 @@ export struct SnakePage {
             Row() {
             Text('←')
               .fontSize(22)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('返回')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { AppNavigator.pop(); })
@@ -1155,11 +1153,16 @@ export struct SnakePage {
         .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.85)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -1169,80 +1172,80 @@ export struct SnakePage {
     Stack() {
       Column({ space: 12 }) {
         Text('已暂停')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Row({ space: 10 }) {
           Text('难度')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
           Text(difficultyLabel(this.difficulty))
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.primary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primary)
             .fontWeight(FontWeight.Medium)
           Text('›')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         .onClick(() => { this.cycleDifficulty(); })
         Row() {
           Text('穿墙模式')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.wrapEnabled })
-            .selectedColor(this.palette.primary)
+            .selectedColor(this.themeState.palette.primary)
             .onChange((v: boolean) => {
               this.wrapEnabled = v;
               promptAction.showToast({ message: v ? '已开启穿墙模式' : '已关闭穿墙模式' });
             })
         }
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         Row() {
           Text('障碍物模式')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.obstacleEnabled })
-            .selectedColor(this.palette.primary)
+            .selectedColor(this.themeState.palette.primary)
             .onChange((v: boolean) => {
               this.obstacleEnabled = v;
               promptAction.showToast({ message: v ? '已开启障碍物模式' : '已关闭障碍物模式' });
               this.restartGame();
             })
         }
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.bgSurface2)
         Row({ space: 12 }) {
           // 继续
           Column({ space: 6 }) {
             Row() {
             Text('▶')
               .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-              .fontColor('#0A0E1A')
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primaryOnColor)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.primary)
             .justifyContent(FlexAlign.Center)
             Text('继续')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.togglePause(); })
@@ -1252,18 +1255,18 @@ export struct SnakePage {
             Row() {
             Text('↺')
               .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('重新开始')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { this.restartGame(); })
@@ -1273,18 +1276,18 @@ export struct SnakePage {
             Row() {
             Text('←')
               .fontSize(20)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
             }
             .width(48)
             .height(48)
-            .borderRadius(24)
-              .backgroundColor(this.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
             .justifyContent(FlexAlign.Center)
             Text('返回')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
           }
           .alignItems(HorizontalAlign.Center)
           .onClick(() => { AppNavigator.pop(); })
@@ -1292,11 +1295,16 @@ export struct SnakePage {
         .margin({ top: 4 })
       }
       .alignItems(HorizontalAlign.Center)
+      .padding(this.themeState.palette.sp6)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
+      .margin({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
     }
     .width('100%')
     .height('100%')
     .position({ x: 0, y: 0 })
-    .backgroundColor('rgba(10, 14, 26, 0.7)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .alignContent(Alignment.Center)
   }
 
@@ -1308,12 +1316,12 @@ export struct SnakePage {
       Row() {
         Text('📖')
           .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.showHelp = true; })
 
@@ -1321,12 +1329,12 @@ export struct SnakePage {
       Row() {
         Text('🏆')
           .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
          AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('Snake'));
@@ -1336,13 +1344,13 @@ export struct SnakePage {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.togglePause(); })
 
@@ -1350,13 +1358,13 @@ export struct SnakePage {
       Row() {
         Text('↺')
           .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.restartGame(); })
     }
@@ -1506,8 +1514,8 @@ export struct SnakePage {
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showHelp = false; })
           }
@@ -1525,9 +1533,9 @@ export struct SnakePage {
               '• 蛇头撞到墙壁或自己的身体则游戏结束\n' +
               '• 每吃一个食物得 10 分，蛇身长度 +1\n' +
               '• 难度越高，蛇的移动速度越快')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .lineHeight(22)
               .width('100%')
           }
@@ -1536,9 +1544,9 @@ export struct SnakePage {
           .padding({ left: 20, right: 20, bottom: 16 })
         }
         .width('100%')
-        .borderRadius(16)
-        .backgroundColor(this.palette.bgBase)
-        .padding({ bottom: Math.max(16, this.navBarHeight) })
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .padding({ bottom: Math.max(16, this.themeState.navBarHeight) })
       }
       .width('100%')
       .height('100%')
@@ -1546,7 +1554,7 @@ export struct SnakePage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showHelp = false; })
   }
 
@@ -1564,28 +1572,28 @@ export struct SnakePage {
         if (this.replayMode) {
           Row({ space: 10 }) {
             Text('🎬 回放中 · 速度 x' + this.replaySpeed.toString())
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .layoutWeight(1)
             Button('速度')
-              .fontSize(this.palette.fsSm)
+              .fontSize(this.themeState.palette.fsSm)
               .height(30)
-              .backgroundColor(this.palette.bgSurface)
-              .fontColor(this.palette.textPrimary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .fontColor(this.themeState.palette.textPrimary)
               .onClick(() => { this.cycleReplaySpeed(); })
             Button('退出')
-              .fontSize(this.palette.fsSm)
+              .fontSize(this.themeState.palette.fsSm)
               .height(30)
-              .backgroundColor(this.palette.danger)
-              .fontColor('#FFFFFF')
+              .backgroundColor(this.themeState.palette.danger)
+              .fontColor(this.themeState.palette.primaryOnColor)
               .onClick(() => { this.exitReplay(); })
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 8, bottom: 8 })
         }
 
-      if (this.isSm) {
+      if (this.themeState.isSm) {
         // 手机端布局：棋盘 + 按钮 + 信息
         if (this.gameStarted) {
           Column() {
@@ -1718,8 +1726,8 @@ export struct SnakePage {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
-      .padding({ bottom: Math.max(0, this.navBarHeight) })
+      .backgroundColor(this.themeState.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.themeState.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {
@@ -1749,9 +1757,9 @@ export struct SnakePage {
       // 得分飘字
       if (this.showFloatScore) {
         Text(this.floatScore)
-          .fontSize(this.palette.fsXl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fsXl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
           .position({ x: '50%', y: '12%' })
           .translate({ x: '-50%' })

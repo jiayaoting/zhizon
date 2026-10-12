@@ -5,11 +5,10 @@ import { common } from '@kit.AbilityKit';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { HotEntry, HotItem, HotDetailRouteParams } from '../common/HotModels';
-import { HotFeedStore } from '../service/HotFeedStore';
-import { NewsRepository, HotSearchHit } from '../service/NewsRepository';
-import { NewsAiService } from '../service/NewsAiService';
+import { HotFeedStore } from '../service/hot/HotFeedStore';
+import { NewsRepository, HotSearchHit } from '../service/hot/NewsRepository';
+import { NewsAiService } from '../service/hot/NewsAiService';
 import { ChatMarkdownText } from '../components/ChatMarkdownText';
 import { LlmConfig, LlmResult } from '../common/LlmModels';
 
@@ -156,7 +155,7 @@ export struct NewsSearchPage {
         }
         .padding({ left: 10, right: 10, top: 5, bottom: 5 })
         .borderRadius(14)
-        .backgroundColor(this.themeState.palette.primary + '1A')
+        .backgroundColor(this.themeState.palette.primaryBg)
         .onClick(() => {
           this.summarize();
         })
@@ -177,7 +176,7 @@ export struct NewsSearchPage {
       .height(32)
       .padding({ left: 14, right: 14 })
       .borderRadius(16)
-      .backgroundColor(this.scope === key ? this.themeState.palette.primary + '2A' : this.themeState.palette.bgSurface2)
+      .backgroundColor(this.scope === key ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface2)
       .textAlign(TextAlign.Center)
       .onClick(() => {
         this.scope = key;
@@ -204,7 +203,7 @@ export struct NewsSearchPage {
             .fontColor(this.themeState.palette.primary)
             .padding({ left: 6, right: 6, top: 1, bottom: 1 })
             .borderRadius(6)
-            .backgroundColor(this.themeState.palette.primary + '1A')
+            .backgroundColor(this.themeState.palette.primaryBg)
           Text(row.entry.sourceName +
             (row.entry.item.info.length > 0 ? ' · ' + row.entry.item.info : ''))
             .fontSize(this.themeState.palette.fsXs)
@@ -230,8 +229,8 @@ export struct NewsSearchPage {
     .width('100%')
     .padding(12)
     .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(VerticalAlign.Center)
   }
 

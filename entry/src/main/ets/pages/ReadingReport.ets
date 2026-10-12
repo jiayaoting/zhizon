@@ -2,8 +2,7 @@
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { DatabaseHelper, WeeklyReadingStats } from '../service/DatabaseHelper';
+import { DatabaseHelper, WeeklyReadingStats } from '../service/platform/DatabaseHelper';
 
 @ComponentV2
 @Entry
@@ -85,7 +84,7 @@ export struct ReadingReportPage {
     }
     .layoutWeight(1)
     .padding(10)
-    .borderRadius(10)
+    .borderRadius(this.themeState.palette.radiusSm)
     .backgroundColor(this.themeState.palette.bgSurface)
   }
 
@@ -103,13 +102,13 @@ export struct ReadingReportPage {
         .height(200)
         .onReady(() => { this.drawChart(); })
         .backgroundColor(this.themeState.palette.bgSurface)
-        .borderRadius(10)
+        .borderRadius(this.themeState.palette.radiusSm)
     }
     .width('100%')
     .padding(14)
     .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
   @Builder
@@ -139,8 +138,8 @@ export struct ReadingReportPage {
     .width('100%')
     .padding(14)
     .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(HorizontalAlign.Start)
   }
 

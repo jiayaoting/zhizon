@@ -1,10 +1,12 @@
 // 智子 - 游戏历史战绩
 import { AppNavigator } from '../common/AppNavigator';
-import { DataRepository } from '../service/DataRepository';
-import { ScoreEntry } from '../service/DatabaseHelper';
+import { DataRepository } from '../service/platform/DataRepository';
+import { ScoreEntry } from '../service/platform/DatabaseHelper';
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
+import { ThemePalette } from '../common/Theme';
 import { TopBar } from '../components/TopBar';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { LazyListDataSource } from '../common/LazyDataSource';
 
@@ -35,13 +37,13 @@ function gameName(key: string): string {
   return '2048';
 }
 
-function difficultyColor(difficulty: string, fallback: string): string {
-  if (difficulty === '超简单') return '#10B981';
-  if (difficulty === '简单') return '#3B82F6';
-  if (difficulty === '中等') return '#F59E0B';
-  if (difficulty === '困难') return '#F97316';
-  if (difficulty === '地狱') return '#EF4444';
-  return fallback;
+function difficultyColor(difficulty: string, palette: ThemePalette): string {
+  if (difficulty === '超简单') return palette.success;
+  if (difficulty === '简单') return palette.info;
+  if (difficulty === '中等') return palette.warning;
+  if (difficulty === '困难') return palette.purple;
+  if (difficulty === '地狱') return palette.danger;
+  return palette.textSecondary;
 }
 
 function formatTime(ts: number): string {
@@ -114,31 +116,35 @@ export struct GameHistoryPage {
 
       // 游戏切换标签（横向滚动，避免内容超出屏幕宽度）
       Scroll() {
-        Row({ space: 8 }) {
+        Row({ space: this.themeState.palette.sp2 }) {
           ForEach(this.gameKeys, (key: string) => {
-            Row({ space: 4 }) {
+            Row({ space: this.themeState.palette.sp1 }) {
               Text(gameIcon(key))
                 .fontSize(this.themeState.palette.fsMd)
                 .fontFamily(this.themeState.palette.fontSans)
               Text(gameName(key))
                 .fontSize(this.themeState.palette.fsSm)
                 .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.gameKey === key ? this.themeState.palette.textPrimary : this.themeState.palette.textTertiary)
+                .fontColor(this.gameKey === key ? this.themeState.palette.textPrimary : this.themeState.palette.textSecondary)
                 .fontWeight(this.gameKey === key ? FontWeight.Bold : FontWeight.Normal)
             }
             .height(36)
-            .padding({ left: 12, right: 12 })
+            .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3 })
             .justifyContent(FlexAlign.Center)
-            .borderRadius(8)
-            .backgroundColor(this.gameKey === key ? this.themeState.palette.primary + '20' : Color.Transparent)
-            .border({ width: this.gameKey === key ? 1.5 : 0, color: this.gameKey === key ? this.themeState.palette.primary : Color.Transparent })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.gameKey === key ? this.themeState.palette.primaryBg :
+              this.themeState.palette.bgSurface)
+            .border({ width: 0.5, color: this.gameKey === key ? this.themeState.palette.primary :
+              this.themeState.palette.divider })
             .onClick(() => {
               this.gameKey = key;
               this.loadScores();
             })
           })
         }
-        .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+        .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp2 })
       }
       .width('100%')
       .scrollable(ScrollDirection.Horizontal)
@@ -146,27 +152,41 @@ export struct GameHistoryPage {
 
       // 排行列表
       if (this.scores.length === 0 && !this.loading) {
-        Column({ space: 8 }) {
+        Column({ space: this.themeState.palette.sp3 }) {
           Text('📋')
             .fontSize(48)
             .fontFamily(this.themeState.palette.fontSans)
-          Text('暂无战绩')
+          Text('还没有战绩记录')
             .fontSize(this.themeState.palette.fsLg)
             .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textTertiary)
-          Text('快去玩一局吧！')
+            .fontColor(this.themeState.palette.textPrimary)
+            .fontWeight(FontWeight.Medium)
+          Text('完成一局' + gameName(this.gameKey) + '后，分数、难度与用时会自动记录在这里')
             .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
+            .textAlign(TextAlign.Center)
+          Button('去玩一局')
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .height(this.themeState.palette.touchTarget)
+            .padding({ left: this.themeState.palette.sp6, right: this.themeState.palette.sp6 })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .backgroundColor(this.themeState.palette.primary)
+            .margin({ top: this.themeState.palette.sp1 })
+            .onClick(() => { AppNavigator.pop(); })
         }
         .layoutWeight(1)
         .width('100%')
         .justifyContent(FlexAlign.Center)
+        .padding({ left: this.themeState.palette.sp8, right: this.themeState.palette.sp8 })
       } else {
-        List({ space: 6 }) {
-          LazyForEach(this.scoreSource, (entry: ScoreEntry, idx: number) => {
-            ListItem() {
-              Row({ space: 10 }) {
+        Column() {
+          List() {
+            LazyForEach(this.scoreSource, (entry: ScoreEntry, idx: number) => {
+              ListItem() {
+                Row({ space: 10 }) {
                 // 排名
                 Text(medalIcon(idx))
                   .fontSize(this.themeState.palette.fsXl)
@@ -181,7 +201,7 @@ export struct GameHistoryPage {
                     .fontSize(this.themeState.palette.fsXl)
                     .fontFamily(this.themeState.palette.fontSans)
                     .fontColor(this.gameKey === 'ChineseChess' ?
-                      (entry.score > 0 ? '#10B981' : this.themeState.palette.danger) : this.themeState.palette.textPrimary)
+                      (entry.score > 0 ? this.themeState.palette.success : this.themeState.palette.danger) : this.themeState.palette.textPrimary)
                     .fontWeight(FontWeight.Bold)
                   Text(this.gameKey === 'ChineseChess' ? '结果' : '分数')
                     .fontSize(this.themeState.palette.fsXs)
@@ -211,7 +231,7 @@ export struct GameHistoryPage {
                   Text(entry.difficulty)
                     .fontSize(this.themeState.palette.fsSm)
                     .fontFamily(this.themeState.palette.fontSans)
-                    .fontColor(difficultyColor(entry.difficulty, this.themeState.palette.textSecondary))
+                    .fontColor(difficultyColor(entry.difficulty, this.themeState.palette))
                     .fontWeight(FontWeight.Medium)
                   Text('难度')
                     .fontSize(this.themeState.palette.fsXs)
@@ -265,34 +285,66 @@ export struct GameHistoryPage {
                   .fontColor(this.themeState.palette.textTertiary)
               }
               .width('100%')
-              .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-              .backgroundColor(idx % 2 === 0 ? this.themeState.palette.bgSurface : this.themeState.palette.bgSurface2)
-              .borderRadius(8)
+              .constraintSize({ minHeight: this.themeState.palette.rowHeight })
+              .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4,
+                top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
             }
           }, (entry: ScoreEntry) => entry.id)
         }
-        .layoutWeight(1)
         .width('100%')
-        .padding({ left: 12, right: 12 })
+        .layoutWeight(1)
+        .divider({
+          strokeWidth: 0.5,
+          color: this.themeState.palette.divider,
+          startMargin: this.themeState.palette.dividerIndent,
+          endMargin: 0
+        })
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .borderRadius(this.themeState.palette.radiusLg)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
+        .clip(true)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .padding({
+        left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        top: this.themeState.palette.sp1,
+        bottom: this.themeState.palette.sp4
+      })
       }
 
       // 底部操作栏
-      Row({ space: 12 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
         Row() {
-          Text('🗑 清空战绩')
+          if (USE_SYMBOL_ICONS) {
+            SymbolGlyph(AppIcons.trash)
+              .fontSize(18)
+              .fontColor([this.themeState.palette.danger])
+          } else {
+            Text(AppIcons.trashEmoji)
+              .fontSize(14)
+              .fontFamily(this.themeState.palette.fontSans)
+          }
+          Text('清空战绩')
             .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textTertiary)
+            .fontColor(this.themeState.palette.danger)
+            .margin({ left: this.themeState.palette.sp1 })
         }
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-        .backgroundColor(this.themeState.palette.bgSurface2)
-        .borderRadius(8)
-        .border({ width: 1, color: this.themeState.palette.borderSubtle })
+        .height(this.themeState.palette.touchTarget)
+        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
+        .accessibilityText('清空战绩')
         .onClick(() => { this.clearScores(); })
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
-      .padding({ bottom: 12 })
+      .padding({ bottom: this.themeState.palette.sp4 })
     }
     .width('100%')
     .height('100%')

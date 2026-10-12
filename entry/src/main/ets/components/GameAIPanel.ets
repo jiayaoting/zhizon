@@ -1,7 +1,7 @@
 // 智子 - 游戏 AI 托管面板（模型选择 / 速度控制 / 启停）
 import { LengthMetrics, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { AI_SPEED_OPTIONS } from '../service/GameAIService';
+import { AI_SPEED_OPTIONS } from '../service/game/GameAIService';
 
 @ComponentV2
 export struct GameAIPanel {
@@ -95,7 +95,7 @@ export struct GameAIPanel {
             .fontColor(index === this.speedIndex ? Color.White : this.themeState.palette.textSecondary)
             .fontWeight(index === this.speedIndex ? FontWeight.Bold : FontWeight.Normal)
             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-            .borderRadius(8)
+            .borderRadius(this.themeState.palette.radiusSm)
             .backgroundColor(index === this.speedIndex ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
             .onClick(() => {
               if (this.running) return;
@@ -160,14 +160,14 @@ export struct GameAIPanel {
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.primary)
                   .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-                  .borderRadius(8)
-                  .backgroundColor(this.themeState.palette.primaryDim)
+                  .borderRadius(this.themeState.palette.radiusSm)
+                  .backgroundColor(this.themeState.palette.primaryBg)
               }
             }
             .width('100%')
             .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-            .borderRadius(8)
-            .backgroundColor(index === this.selectedModelIndex ? this.themeState.palette.primaryDim : this.themeState.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(index === this.selectedModelIndex ? this.themeState.palette.primaryBg : this.themeState.palette.bgSurface2)
             .onClick(() => {
               this.onSelectModel(index);
               this.showModelSheet = false;

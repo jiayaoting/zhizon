@@ -15,7 +15,7 @@ import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { FontRegistry } from '../components/FontRegistry';
 import { PrivacyDialog } from '../components/PrivacyDialog';
 import { LockOverlay } from '../components/LockOverlay';
-import { SecurityService } from '../service/SecurityService';
+import { SecurityService } from '../service/platform/SecurityService';
 import { StartupState } from '../entryability/EntryAbility';
 import { TetrisPage } from './Tetris';
 import { Game2048Page } from './Game2048';
@@ -67,20 +67,16 @@ struct AppShell {
   onPageShow(): void {
     if (this.navigation.currentPage === PageKey.Chat) {
       this.bumpChatRefresh();
+      PageRefreshBus.emitChatShow();
     }
     // 热榜 Tab：从详情/设置/登录等子页返回时刷新已读与关注态
     if (this.navigation.currentPage === PageKey.Index) {
       PageRefreshBus.emitHotShow();
     }
-    // 微舆 Hub：从服务器配置/系统管理等子页返回时刷新连接状态
+    // 微舆 Hub：从服务器配置/系统管理等子页返回时刷新连接状态（v10 统一走总线，V2 组件无法用 @Watch）
     if (this.navigation.currentPage === PageKey.BettaFish) {
-      this.bumpBettaRefresh();
+      PageRefreshBus.emitBettaShow();
     }
-  }
-
-  private bumpBettaRefresh(): void {
-    const current: number = AppStorage.get<number>('bettaRefreshToken') ?? 0;
-    AppStorage.setOrCreate('bettaRefreshToken', current + 1);
   }
 
   // 返回键拦截：子页返回所属 Tab，Tab 首页才退出到桌面
@@ -129,6 +125,10 @@ struct AppShell {
     this.handleNavigationResult(key, result);
     if (key === MainNavKey.Chat) {
       this.bumpChatRefresh();
+      PageRefreshBus.emitChatShow();
+    }
+    if (key === MainNavKey.BettaFish) {
+      PageRefreshBus.emitBettaShow();
     }
   }
 

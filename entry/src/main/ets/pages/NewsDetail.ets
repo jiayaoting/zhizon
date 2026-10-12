@@ -1,5 +1,7 @@
-// 智子 - 热榜条目详情页（ArkWeb 原文 + 收藏/已读 + AI 摘要/翻译/问AI + 朗读）
-// 设计文档：doc/newsnow-redesign.md §9.3
+// 智子 - 热榜条目详情页（v10 华为原生拟物白）
+// 顶栏：‹ 返回 + 标题（2 行截断）+ ⭐ 收藏 + 分享 + ⋯（离线缓存 / 字号 / 浏览器打开 / 复制链接）
+// 正文：白卡 ArkWeb；底部 AI 工具条（摘要/翻译/问AI/朗读）；AI 面板用底部半模态卡承载
+// 设计文档：doc/v10-redesign.md §4.3；数据流沿用 doc/newsnow-redesign.md §9.3
 import { webview } from '@kit.ArkWeb';
 import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { systemShare } from '@kit.ShareKit';
@@ -8,13 +10,14 @@ import { common } from '@kit.AbilityKit';
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
-import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { GlassStyle, GlassLevel, glassBlurStyle } from '../components/GlassEffect';
+import { AiModelPicker } from '../components/AiModelPicker';
 import { HotEntry, HotItem, HotDetailRouteParams } from '../common/HotModels';
-import { NewsRepository } from '../service/NewsRepository';
-import { HotArticleCacheEntry } from '../service/DatabaseHelper';
-import { NewsAiService } from '../service/NewsAiService';
-import { SpeechService } from '../service/SpeechService';
+import { NewsRepository } from '../service/hot/NewsRepository';
+import { HotArticleCacheEntry } from '../service/platform/DatabaseHelper';
+import { NewsAiService } from '../service/hot/NewsAiService';
+import { SpeechService } from '../service/chat/SpeechService';
 import { LlmConfig, LlmModelEntry, ChatMessage, LlmResult } from '../common/LlmModels';
 
 enum AiPanelKind {
@@ -143,10 +146,11 @@ export struct NewsDetailPage {
     }
   }
 
-  // 深色模式：向原文注入反色 CSS
+  // 深色模式：向原文注入反色 CSS（底色取 token，避免与全局色板错位）
   private injectDarkCss(): void {
     if (!this.themeState.isDark) return;
-    const css: string = 'html{filter:invert(0.9) hue-rotate(180deg)!important;background:#0a0e1a}img,video{filter:invert(1) hue-rotate(180deg)!important}';
+    const css: string = 'html{filter:invert(0.9) hue-rotate(180deg)!important;background:' +
+      this.themeState.palette.bgBase + '}img,video{filter:invert(1) hue-rotate(180deg)!important}';
     const script: string = '(function(){var s=document.createElement("style");s.id="zhizon-dark";s.textContent="' + css + '";document.head.appendChild(s);})()';
     try {
       this.controller.runJavaScript(script, (err: BusinessError, result: string): void => {
@@ -181,9 +185,9 @@ export struct NewsDetailPage {
   // ==================== AI 能力 ====================
 
   private panelTitle(): string {
-    if (this.aiPanel === AiPanelKind.SUMMARY) return '🤖 AI 摘要';
-    if (this.aiPanel === AiPanelKind.TRANSLATE) return '🌐 AI 翻译';
-    if (this.aiPanel === AiPanelKind.ASK) return '💬 问 AI';
+    if (this.aiPanel === AiPanelKind.SUMMARY) return 'AI 摘要';
+    if (this.aiPanel === AiPanelKind.TRANSLATE) return 'AI 翻译';
+    if (this.aiPanel === AiPanelKind.ASK) return '问 AI';
     return '';
   }
 
@@ -298,6 +302,23 @@ export struct NewsDetailPage {
     return m.displayName.length > 0 ? m.displayName : m.model;
   }
 
+  // 是否使用热榜专属模型（跟随全局时为 false）
+  private modelActive(): boolean {
+    return this.modelName.length > 0 && this.modelName !== '跟随全局' && this.modelName !== '未配置模型';
+  }
+
+  private isCurrentModel(m: LlmModelEntry): boolean {
+    return this.modelLabel(m) === this.modelName;
+  }
+
+  // 当前生效模型的 id（供共享模型选择器高亮；跟随全局时为空串）
+  private currentModelId(): string {
+    for (let i: number = 0; i < this.models.length; i++) {
+      if (this.isCurrentModel(this.models[i])) return this.models[i].id;
+    }
+    return '';
+  }
+
   private async openModelSheet(): Promise<void> {
     try {
       this.models = await NewsAiService.listModels();
@@ -322,23 +343,37 @@ export struct NewsDetailPage {
 
   // 页面加载完成：抓取当前页面 HTML 存入缓存（供离线/弱网时回退阅读）
   private cacheArticleHtml(): void {
+    this.requestArticleHtml(false);
+  }
+
+  private requestArticleHtml(notify: boolean): void {
     if (this.url.length === 0) return;
     try {
       this.controller.runJavaScript('document.documentElement.outerHTML',
         (error: BusinessError, result: string): void => {
-          if (error !== null && error !== undefined) return;
+          if (error !== null && error !== undefined) {
+            if (notify) promptAction.showToast({ message: '缓存失败，请重试' });
+            return;
+          }
           const html: string = result === undefined ? '' : result;
           // 空页/过小页面不缓存；过大页面截断，避免数据库膨胀
-          if (html.length < 500 || html.length > 800 * 1024) return;
-          NewsRepository.saveArticleCache(this.url, this.title, html).catch(() => {
+          if (html.length < 500 || html.length > 800 * 1024) {
+            if (notify) promptAction.showToast({ message: '本页暂不支持离线缓存' });
+            return;
+          }
+          NewsRepository.saveArticleCache(this.url, this.title, html).then(() => {
+            if (notify) promptAction.showToast({ message: '已缓存离线正文' });
+          }).catch(() => {
+            if (notify) promptAction.showToast({ message: '缓存失败，请重试' });
           });
         });
     } catch (e) {
+      if (notify) promptAction.showToast({ message: '缓存失败，请重试' });
     }
   }
 
-  // 加载失败：尝试用缓存 HTML 回退（离线阅读）
-  private useCachedArticle(): void {
+  // 加载失败：尝试用缓存 HTML 回退（离线阅读）；notify=true 时（用户主动选「离线缓存」）给出反馈
+  private useCachedArticle(notify: boolean = false): void {
     if (this.url.length === 0) {
       this.webFailed = true;
       return;
@@ -352,15 +387,49 @@ export struct NewsDetailPage {
             if (text.length > 0) this.bodyText = NewsAiService.truncate(text);
           }
           this.controller.loadData(cached.html, 'text/html', 'UTF-8', this.url);
+          if (notify) promptAction.showToast({ message: '已切换离线正文' });
         } catch (e) {
           this.webFailed = true;
+          if (notify) promptAction.showToast({ message: '离线正文打开失败' });
         }
       } else {
         this.webFailed = true;
+        if (notify) promptAction.showToast({ message: '暂无离线正文' });
       }
     }).catch(() => {
       this.webFailed = true;
+      if (notify) promptAction.showToast({ message: '暂无离线正文' });
     });
+  }
+
+  // ⋯ 菜单：离线缓存（有缓存则切离线，无缓存则抓取当前页）
+  private async onOfflineCache(): Promise<void> {
+    if (this.url.length === 0) {
+      promptAction.showToast({ message: '该条目没有原文链接' });
+      return;
+    }
+    if (this.offlineMode) {
+      promptAction.showToast({ message: '当前已是离线正文' });
+      return;
+    }
+    const cached: HotArticleCacheEntry | null = await NewsRepository.getArticleCache(this.url);
+    if (cached !== null && cached.html.length > 0 && !this.webFailed) {
+      this.useCachedArticle(true);
+      return;
+    }
+    if (this.webFailed) {
+      // Web 未挂载：重新挂载（在线成功则读原文，失败会自动回退缓存）
+      this.webFailed = false;
+      promptAction.showToast({ message: cached !== null ? '正在打开离线正文…' : '暂无离线正文' });
+      return;
+    }
+    this.requestArticleHtml(true);
+  }
+
+  // 原文加载失败后的重试（重新挂载 ArkWeb）
+  private retryLoad(): void {
+    this.webFailed = false;
+    this.offlineMode = false;
   }
 
   // ==================== 分享 / 朗读 / 复制 ====================
@@ -387,6 +456,34 @@ export struct NewsDetailPage {
     }
   }
 
+  // 用系统浏览器打开原文
+  private openInBrowser(): void {
+    if (this.url.length === 0) {
+      promptAction.showToast({ message: '该条目没有原文链接' });
+      return;
+    }
+    try {
+      const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+      context.startAbility({
+        action: 'ohos.want.action.viewData',
+        entities: ['entity.system.browsable'],
+        uri: this.url
+      }).catch((e: Object) => {
+        promptAction.showToast({ message: '无法打开链接' });
+      });
+    } catch (e) {
+      promptAction.showToast({ message: '无法打开链接' });
+    }
+  }
+
+  private copyLink(): void {
+    if (this.url.length === 0) {
+      promptAction.showToast({ message: '该条目没有原文链接' });
+      return;
+    }
+    this.copyText(this.url, '已复制链接');
+  }
+
   // 朗读标题 + 正文（复用 SpeechService TTS）
   private async toggleSpeak(): Promise<void> {
     if (this.speaking) {
@@ -410,112 +507,502 @@ export struct NewsDetailPage {
     });
   }
 
-  private async copyAiText(): Promise<void> {
-    if (this.aiText.length === 0) return;
+  private async copyText(text: string, okMessage: string): Promise<void> {
+    if (text.length === 0) return;
     try {
-      const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.aiText);
+      const data: pasteboard.PasteData = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
       await pasteboard.getSystemPasteboard().setData(data);
-      promptAction.showToast({ message: '已复制' });
+      promptAction.showToast({ message: okMessage });
     } catch (e) {
       promptAction.showToast({ message: '复制失败' });
     }
   }
 
-  // ==================== UI ====================
-
-  @Builder
-  actionButton(icon: string, label: string, onClick: () => void) {
-    Column({ space: 2 }) {
-      Text(icon)
-        .fontSize(this.themeState.palette.fsLg)
-        .fontFamily(this.themeState.palette.fontSans)
-      Text(label)
-        .fontSize(this.themeState.palette.fsXs - 1)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textSecondary)
-    }
-    .layoutWeight(1)
-    .height(44)
-    .justifyContent(FlexAlign.Center)
-    .onClick(onClick)
+  private async copyAiText(): Promise<void> {
+    await this.copyText(this.aiText, '已复制');
   }
 
-  // 当前模型 chip（点击切换热榜专属模型）
+  // ==================== 顶栏 ====================
+
+  // 页边距：手机 pagePadding(16vp) / 大屏 pagePaddingLg(24vp)
+  private pagePad(): string {
+    return this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg;
+  }
+
+  // 顶栏图标动作：≥44vp 触控区（icon/emoji 为固定入参；状态在各自 builder 内读取，避免按值传参不刷新）
   @Builder
-  modelChip(chipWidth: number) {
-    Row({ space: 4 }) {
-      Text('🤖')
-        .fontSize(11)
+  barIcon(icon: Resource, emoji: string, onTap: () => void) {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(icon)
+          .fontSize(22)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(emoji)
+          .fontSize(18)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(this.themeState.palette.touchTarget)
+    .height(this.themeState.palette.touchTarget)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .onClick(onTap)
+  }
+
+  // 收藏：已收藏用主色实心星（在 builder 内直接读状态，保证选中态刷新）
+  @Builder
+  starButton() {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(this.favorited ? AppIcons.starFill : AppIcons.star)
+          .fontSize(22)
+          .fontColor([this.favorited ? this.themeState.palette.primary : this.themeState.palette.textSecondary])
+      } else {
+        Text(this.favorited ? AppIcons.starFillEmoji : AppIcons.starEmoji)
+          .fontSize(18)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.favorited ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+      }
+    }
+    .width(this.themeState.palette.touchTarget)
+    .height(this.themeState.palette.touchTarget)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .accessibilityText(this.favorited ? '取消收藏' : '收藏')
+    .onClick(() => {
+      this.toggleFavorite();
+    })
+  }
+
+  // overflow 菜单：离线缓存 / 字号 / 浏览器打开 / 复制链接（文字菜单，危险项无）
+  private overflowMenu(): MenuElement[] {
+    const items: MenuElement[] = [
+      { value: '离线缓存', action: (): void => { this.onOfflineCache(); } },
+      { value: '字号 A-', action: (): void => { this.adjustZoom(-0.15); } },
+      { value: '字号 A+', action: (): void => { this.adjustZoom(0.15); } },
+      { value: '在浏览器打开', action: (): void => { this.openInBrowser(); } },
+      { value: '复制链接', action: (): void => { this.copyLink(); } }
+    ];
+    return items;
+  }
+
+  @Builder
+  moreButton() {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.more)
+          .fontSize(22)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(AppIcons.moreEmoji)
+          .fontSize(20)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(this.themeState.palette.touchTarget)
+    .height(this.themeState.palette.touchTarget)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .accessibilityText('更多操作')
+    .bindMenu(this.overflowMenu())
+  }
+
+  // 华为式顶栏：返回 + 标题（2 行截断）+ 收藏 + 分享 + ⋯（操作区 3 个图标）
+  @Builder
+  topBar() {
+    Row({ space: this.themeState.palette.sp1 }) {
+      this.barIcon(AppIcons.back, AppIcons.backEmoji, (): void => {
+        AppNavigator.pop();
+      })
+
+      Text(this.title.length > 0 ? this.title : '文章详情')
+        .fontSize(this.themeState.palette.fsLg)
         .fontFamily(this.themeState.palette.fontSans)
-      Text(this.modelName)
-        .fontSize(11)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textSecondary)
-        .maxLines(1)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Bold)
+        .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
-      Text('▾')
-        .fontSize(10)
+        .textAlign(TextAlign.Start)
+
+      this.starButton()
+
+      this.barIcon(AppIcons.share, AppIcons.shareEmoji, (): void => {
+        this.shareNews();
+      })
+
+      this.moreButton()
+    }
+    .width('100%')
+    .padding({
+      left: this.pagePad(), right: this.pagePad(),
+      top: Math.max(this.themeState.statusBarHeight, 44) + 6, bottom: 6
+    })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR,
+      this.themeState.palette))
+    .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
+    .border({
+      width: { bottom: 0.5 },
+      color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette)
+    })
+  }
+
+  // ==================== 正文区 ====================
+
+  // 正文元信息条：来源 · 热度描述 · 离线标记
+  @Builder
+  metaStrip() {
+    Row({ space: this.themeState.palette.sp2 }) {
+      Text(this.sourceName.length > 0 ? this.sourceName : '热榜')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primary)
+        .fontWeight(FontWeight.Medium)
+        .maxLines(1)
+      if (this.info.length > 0) {
+        Text('· ' + this.info)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      } else {
+        Blank()
+      }
+      if (this.offlineMode) {
+        Text('离线缓存')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.warning)
+          .padding({ left: this.themeState.palette.sp2, right: this.themeState.palette.sp2, top: 2, bottom: 2 })
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.warningBg)
+      }
+    }
+    .width('100%')
+    .padding({
+      left: this.themeState.palette.sp4, right: this.themeState.palette.sp4,
+      top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp3
+    })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  // 无原文链接：仅标题可用（空态给原因 + 下一步）
+  @Builder
+  noUrlState() {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Text('🔗')
+        .fontSize(52)
+      Text('该条目没有原文链接，仅标题可用')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+        .textAlign(TextAlign.Center)
+      Text(this.sourceName.length > 0 ? '来源 · ' + this.sourceName : '来自热榜')
+        .fontSize(this.themeState.palette.fsSm)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textTertiary)
+      if (this.title.length > 0) {
+        Button('复制标题')
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(this.themeState.palette.primary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .height(this.themeState.palette.touchTarget)
+          .padding({ left: 28, right: 28 })
+          .margin({ top: this.themeState.palette.sp1 })
+          .onClick(() => {
+            this.copyText(this.title, '已复制标题');
+          })
+      }
     }
-    .width(chipWidth)
-    .height(30)
-    .padding({ left: 8, right: 8 })
-    .borderRadius(8)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .layoutWeight(1)
+    .width('100%')
+    .padding({ left: this.themeState.palette.sp8, right: this.themeState.palette.sp8 })
+    .justifyContent(FlexAlign.Center)
+  }
+
+  // 原文加载失败且无缓存：插画式空态 + 重试 / 浏览器打开
+  @Builder
+  fallbackContent() {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Text('📄')
+        .fontSize(52)
+      Text('原文加载失败，且暂无离线缓存')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+        .textAlign(TextAlign.Center)
+      Text('可以重新加载，或到浏览器中打开原文')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+        .textAlign(TextAlign.Center)
+      Row({ space: this.themeState.palette.sp3 }) {
+        Button('重新加载')
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
+          .fontWeight(FontWeight.Medium)
+          .backgroundColor(this.themeState.palette.primary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .height(this.themeState.palette.touchTarget)
+          .padding({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
+          .onClick(() => {
+            this.retryLoad();
+          })
+        Button('浏览器打开')
+          .fontSize(this.themeState.palette.fsMd)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .height(this.themeState.palette.touchTarget)
+          .padding({ left: this.themeState.palette.sp5, right: this.themeState.palette.sp5 })
+          .onClick(() => {
+            this.openInBrowser();
+          })
+      }
+      .margin({ top: this.themeState.palette.sp1 })
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .padding({ left: this.themeState.palette.sp6, right: this.themeState.palette.sp6 })
+    .justifyContent(FlexAlign.Center)
+  }
+
+  // ==================== AI 工具条 / 面板 ====================
+
+  private chipActive(kind: string): boolean {
+    if (kind === 'translate') return this.aiPanel === AiPanelKind.TRANSLATE;
+    if (kind === 'ask') return this.aiPanel === AiPanelKind.ASK;
+    if (kind === 'speak') return this.speaking;
+    return false;
+  }
+
+  private chipLabel(kind: string): string {
+    if (kind === 'translate') return '翻译';
+    if (kind === 'ask') return '问 AI';
+    if (kind === 'speak') return this.speaking ? '停止' : '朗读';
+    return '';
+  }
+
+  // 主操作：主色填充胶囊（primaryOnColor 文字）
+  @Builder
+  primaryAction(icon: Resource, emoji: string, label: string, onTap: () => void) {
+    Row({ space: this.themeState.palette.sp1 }) {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(icon)
+          .fontSize(18)
+          .fontColor([this.themeState.palette.primaryOnColor])
+      } else {
+        Text(emoji)
+          .fontSize(15)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
+      }
+      Text(label)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primaryOnColor)
+        .fontWeight(FontWeight.Medium)
+    }
+    .height(this.themeState.palette.touchTarget)
+    .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp5 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.themeState.palette.primary)
     .alignItems(VerticalAlign.Center)
-    .onClick(() => { this.openModelSheet(); })
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .onClick(onTap)
+  }
+
+  // 次级动作：胶囊 chip（选中态 primaryBgStrong + 主色文字）
+  // kind: 'translate' | 'ask' | 'speak' —— 选中态/文案在 builder 内直接读状态，避免按值传参不刷新
+  @Builder
+  aiChip(kind: string, icon: Resource, emoji: string, onTap: () => void) {
+    Row({ space: this.themeState.palette.sp1 }) {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(icon)
+          .fontSize(18)
+          .fontColor([this.chipActive(kind) ? this.themeState.palette.primary : this.themeState.palette.textSecondary])
+      } else {
+        Text(emoji)
+          .fontSize(15)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.chipActive(kind) ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+      }
+      Text(this.chipLabel(kind))
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.chipActive(kind) ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+        .fontWeight(this.chipActive(kind) ? FontWeight.Medium : FontWeight.Normal)
+    }
+    .height(this.themeState.palette.touchTarget)
+    .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.chipActive(kind) ? this.themeState.palette.primaryBgStrong :
+      this.themeState.palette.bgSurface2)
+    .border({
+      width: 0.5,
+      color: this.chipActive(kind) ? this.themeState.palette.primary : this.themeState.palette.divider
+    })
+    .alignItems(VerticalAlign.Center)
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .onClick(onTap)
+  }
+
+  // 底部 AI 工具条（悬浮条：保留 P0 级玻璃）
+  @Builder
+  aiToolbar() {
+    Row({ space: this.themeState.palette.sp2 }) {
+      this.primaryAction(AppIcons.doc, AppIcons.docEmoji, 'AI 摘要', (): void => {
+        this.onSummary();
+      })
+
+      Scroll() {
+        Row({ space: this.themeState.palette.sp2 }) {
+          this.aiChip('translate', AppIcons.globe, AppIcons.globeEmoji, (): void => {
+            this.onTranslate();
+          })
+          this.aiChip('ask', AppIcons.navChat, AppIcons.navChatEmoji, (): void => {
+            this.aiPanel = AiPanelKind.ASK;
+            this.aiText = '';
+            this.aiError = '';
+          })
+          this.aiChip('speak', AppIcons.speaker, AppIcons.speakerEmoji, (): void => {
+            this.toggleSpeak();
+          })
+        }
+      }
+      .layoutWeight(1)
+      .height(this.themeState.palette.touchTarget)
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .padding({
+      left: this.pagePad(), right: this.pagePad(), top: this.themeState.palette.sp2,
+      bottom: Math.max(8, this.themeState.navBarHeight)
+    })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR,
+      this.themeState.palette))
+    .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
+    .border({
+      width: { top: 0.5 },
+      color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette)
+    })
+  }
+
+  // 当前模型 chip（点击切换热榜专属模型；使用专属模型时点亮主色）
+  @Builder
+  modelChip() {
+    Row({ space: this.themeState.palette.sp1 }) {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.navChat)
+          .fontSize(14)
+          .fontColor([this.modelActive() ? this.themeState.palette.primary : this.themeState.palette.textSecondary])
+      } else {
+        Text('🤖')
+          .fontSize(12)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.modelActive() ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+      }
+      Text(this.modelName)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.modelActive() ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .constraintSize({ maxWidth: 150 })
+    .height(32)
+    .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.modelActive() ? this.themeState.palette.primaryBg : this.themeState.palette.bgSurface2)
+    .border({
+      width: 0.5,
+      color: this.modelActive() ? this.themeState.palette.primary : this.themeState.palette.divider
+    })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.openModelSheet();
+    })
   }
 
   @Builder
   aiPanelContent() {
     Column() {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         Text(this.panelTitle())
           .fontSize(this.themeState.palette.fsLg)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Blank()
-        this.modelChip(160)
-        Text('✕')
-          .fontSize(this.themeState.palette.fsLg)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textTertiary)
-          .padding(8)
-          .onClick(() => { this.closePanel(); })
+        this.modelChip()
+        this.barIcon(AppIcons.close, AppIcons.closeEmoji, (): void => {
+          this.closePanel();
+        })
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       if (this.aiPanel === AiPanelKind.ASK) {
-        Row({ space: 8 }) {
+        Row({ space: this.themeState.palette.sp2 }) {
           TextInput({ placeholder: '输入你的问题，回车发送', text: this.askInput })
             .layoutWeight(1)
-            .height(40)
+            .height(this.themeState.palette.touchTarget)
             .fontSize(this.themeState.palette.fsMd)
             .fontFamily(this.themeState.palette.fontSans)
-            .onChange((value: string) => { this.askInput = value; })
-            .onSubmit(() => { this.onAskSend(); })
+            .fontColor(this.themeState.palette.textPrimary)
+            .placeholderColor(this.themeState.palette.textTertiary)
+            .backgroundColor(this.themeState.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+            .onChange((value: string) => {
+              this.askInput = value;
+            })
+            .onSubmit(() => {
+              this.onAskSend();
+            })
           Button('发送')
             .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(Color.White)
+            .fontColor(this.themeState.palette.primaryOnColor)
             .backgroundColor(this.themeState.palette.primary)
-            .borderRadius(8)
-            .height(40)
-            .onClick(() => { this.onAskSend(); })
+            .borderRadius(this.themeState.palette.radiusCapsule)
+            .height(this.themeState.palette.touchTarget)
+            .width(76)
+            .onClick(() => {
+              this.onAskSend();
+            })
         }
         .width('100%')
-        .margin({ top: 4, bottom: 8 })
+        .margin({ top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp3 })
+        .alignItems(VerticalAlign.Center)
       }
 
       if (this.aiBusy && this.aiText.length === 0) {
-        Row({ space: 8 }) {
+        Row({ space: this.themeState.palette.sp2 }) {
           LoadingProgress()
             .width(18)
             .height(18)
+            .color(this.themeState.palette.primary)
           Text('AI 思考中…')
             .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
@@ -541,28 +1028,32 @@ export struct NewsDetailPage {
         .align(Alignment.Top)
       }
 
-      Row({ space: 10 }) {
+      Row({ space: this.themeState.palette.sp3 }) {
         Button('复制')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
           .backgroundColor(this.themeState.palette.bgSurface2)
-          .borderRadius(8)
-          .height(36)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .height(this.themeState.palette.touchTarget)
           .layoutWeight(1)
-          .onClick(() => { this.copyAiText(); })
+          .onClick(() => {
+            this.copyAiText();
+          })
         Button('关闭')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(Color.White)
+          .fontColor(this.themeState.palette.primaryOnColor)
           .backgroundColor(this.themeState.palette.primary)
-          .borderRadius(8)
-          .height(36)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .height(this.themeState.palette.touchTarget)
           .layoutWeight(1)
-          .onClick(() => { this.closePanel(); })
+          .onClick(() => {
+            this.closePanel();
+          })
       }
       .width('100%')
-      .margin({ top: 8 })
+      .margin({ top: this.themeState.palette.sp4 })
 
       if (this.lastTokens > 0) {
         Text('本次调用消耗 ' + this.lastTokens.toString() + ' tokens')
@@ -570,13 +1061,17 @@ export struct NewsDetailPage {
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
           .width('100%')
-          .margin({ top: 6 })
+          .margin({ top: this.themeState.palette.sp2 })
       }
     }
     .width('100%')
-    .padding(16)
-    .borderRadius(16)
-    .backgroundColor(this.themeState.palette.bgBase)
+    .padding({
+      left: this.themeState.palette.sp5, right: this.themeState.palette.sp5, top: this.themeState.palette.sp4,
+      bottom: Math.max(20, this.themeState.navBarHeight)
+    })
+    .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+    .backgroundColor(this.themeState.palette.bgElevated)
+    .constraintSize({ maxWidth: 820 })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -595,271 +1090,28 @@ export struct NewsDetailPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.35)')
-      .onClick(() => { this.closePanel(); })
+      .backgroundColor(this.themeState.palette.maskOverlay)
+      .onClick(() => {
+        this.closePanel();
+      })
     }
-  }
-
-  @Builder
-  modelOverlay() {
-    if (this.modelSheet) {
-      Stack() {
-        Column() {
-          Blank()
-          Column({ space: 4 }) {
-            Row() {
-              Text('选择模型')
-                .fontSize(this.themeState.palette.fsMd)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.themeState.palette.textPrimary)
-                .fontWeight(FontWeight.Bold)
-              Blank()
-              Text('✕')
-                .fontSize(this.themeState.palette.fsLg)
-                .fontFamily(this.themeState.palette.fontSans)
-                .fontColor(this.themeState.palette.textTertiary)
-                .padding(8)
-                .onClick(() => { this.modelSheet = false; })
-            }
-            .width('100%')
-            .padding({ left: 4, right: 4, bottom: 6 })
-
-            Scroll() {
-              Column({ space: 4 }) {
-                Row({ space: 10 }) {
-                  Column({ space: 2 }) {
-                    Text('跟随全局')
-                      .fontSize(this.themeState.palette.fsSm)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.textPrimary)
-                    Text('使用「我的 → AI 模型」中的默认模型')
-                      .fontSize(10)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.textTertiary)
-                  }
-                  .alignItems(HorizontalAlign.Start)
-                  .layoutWeight(1)
-                }
-                .width('100%')
-                .padding(12)
-                .borderRadius(8)
-                .backgroundColor(this.themeState.palette.bgSurface)
-                .onClick(() => { this.pickModel(''); })
-
-                ForEach(this.models, (m: LlmModelEntry) => {
-                  Row({ space: 10 }) {
-                    Column({ space: 2 }) {
-                      Text(this.modelLabel(m))
-                        .fontSize(this.themeState.palette.fsSm)
-                        .fontFamily(this.themeState.palette.fontSans)
-                        .fontColor(this.themeState.palette.textPrimary)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text(m.model)
-                        .fontSize(10)
-                        .fontFamily(this.themeState.palette.fontSans)
-                        .fontColor(this.themeState.palette.textTertiary)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    }
-                    .alignItems(HorizontalAlign.Start)
-                    .layoutWeight(1)
-                  }
-                  .width('100%')
-                  .padding(12)
-                  .borderRadius(8)
-                  .backgroundColor(this.themeState.palette.bgSurface)
-                  .onClick(() => { this.pickModel(m.id); })
-                }, (m: LlmModelEntry) => m.id)
-
-                if (this.models.length === 0) {
-                  Text('没有已启用的模型，请到「我的 → AI 模型」中启用')
-                    .fontSize(this.themeState.palette.fsSm)
-                    .fontFamily(this.themeState.palette.fontSans)
-                    .fontColor(this.themeState.palette.textTertiary)
-                    .padding({ top: 12, bottom: 12 })
-                }
-              }
-              .width('100%')
-            }
-            .width('100%')
-            .scrollBar(BarState.Off)
-            .constraintSize({ maxHeight: 360 })
-          }
-          .width('100%')
-          .padding(16)
-          .borderRadius(16)
-          .backgroundColor(this.themeState.palette.bgBase)
-          .alignItems(HorizontalAlign.Start)
-          .onClick(() => {})
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.End)
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor('rgba(0,0,0,0.35)')
-      .onClick(() => { this.modelSheet = false; })
-    }
-  }
-
-  @Builder
-  fallbackContent() {
-    Column({ space: 12 }) {
-      Text(this.title)
-        .fontSize(this.themeState.palette.fsXl)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textPrimary)
-        .fontWeight(FontWeight.Bold)
-      if (this.info.length > 0) {
-        Text(this.info)
-          .fontSize(this.themeState.palette.fsMd)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textSecondary)
-          .lineHeight(24)
-      }
-      Text('原文加载失败，且暂无离线缓存')
-        .fontSize(this.themeState.palette.fsSm)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textTertiary)
-    }
-    .width('100%')
-    .padding(20)
-    .alignItems(HorizontalAlign.Start)
   }
 
   build() {
     Stack() {
       Column() {
-        TopBar({ title: '热榜详情', showBack: true }) {
-          Row({ space: 10 }) {
-            Text('A-')
-              .fontSize(this.themeState.palette.fsSm)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.primary)
-              .fontWeight(FontWeight.Medium)
-              .onClick(() => { this.adjustZoom(-0.15); })
-            Text('A+')
-              .fontSize(this.themeState.palette.fsSm)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.primary)
-              .fontWeight(FontWeight.Medium)
-              .onClick(() => { this.adjustZoom(0.15); })
-            Text('📤')
-              .fontSize(this.themeState.palette.fsLg)
-              .fontFamily(this.themeState.palette.fontSans)
-              .padding(6)
-              .onClick(() => { this.shareNews(); })
-          }
-        }
+        this.topBar()
 
         if (this.url.length === 0) {
-          Column({ space: 12 }) {
-            Text('未找到文章内容')
-              .fontSize(this.themeState.palette.fsMd)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.textTertiary)
-          }
-          .layoutWeight(1)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
+          this.noUrlState()
         } else {
+          // 正文区：外层页边距（手机 16vp / 大屏 24vp），内层白卡（无阴影 + 发丝边 + 圆角）
           Column() {
-            // 文章头部：宽屏（平板/折叠展开/横屏）字号更大，手机紧凑
-            if (this.themeState.isLg || this.themeState.isMd) {
-              Column({ space: 6 }) {
-                Text(this.title)
-                  .fontSize(this.themeState.palette.fsXl)
-                  .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.themeState.palette.textPrimary)
-                  .fontWeight(FontWeight.Bold)
-                  .maxLines(3)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .width('100%')
-                Row({ space: 8 }) {
-                  Text(this.sourceName)
-                    .fontSize(this.themeState.palette.fsSm)
-                    .fontFamily(this.themeState.palette.fontSans)
-                    .fontColor(this.themeState.palette.primary)
-                  if (this.info.length > 0) {
-                    Text('· ' + this.info)
-                      .fontSize(this.themeState.palette.fsSm)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.textTertiary)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .layoutWeight(1)
-                  }
-                  if (this.offlineMode) {
-                    Text('· 离线缓存')
-                      .fontSize(this.themeState.palette.fsXs)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.warning)
-                  }
-                }
-                .width('100%')
-              }
-              .width('100%')
-              .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 12, bottom: 12 })
-              .alignItems(HorizontalAlign.Start)
-            } else {
-              Column({ space: 6 }) {
-                Text(this.title)
-                  .fontSize(this.themeState.palette.fsLg)
-                  .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.themeState.palette.textPrimary)
-                  .fontWeight(FontWeight.Bold)
-                  .maxLines(3)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .width('100%')
-                Row({ space: 8 }) {
-                  Text(this.sourceName)
-                    .fontSize(this.themeState.palette.fsSm)
-                    .fontFamily(this.themeState.palette.fontSans)
-                    .fontColor(this.themeState.palette.primary)
-                  if (this.info.length > 0) {
-                    Text('· ' + this.info)
-                      .fontSize(this.themeState.palette.fsSm)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.textTertiary)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .layoutWeight(1)
-                  }
-                  if (this.offlineMode) {
-                    Text('· 离线缓存')
-                      .fontSize(this.themeState.palette.fsXs)
-                      .fontFamily(this.themeState.palette.fontSans)
-                      .fontColor(this.themeState.palette.warning)
-                  }
-                }
-                .width('100%')
-              }
-              .width('100%')
-              .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 8, bottom: 8 })
-              .alignItems(HorizontalAlign.Start)
-            }
-
-            // 操作条：收藏 / 摘要 / 翻译 / 问AI / 朗读
-            Row() {
-              this.actionButton(this.favorited ? '⭐' : '☆', this.favorited ? '已收藏' : '收藏', () => { this.toggleFavorite(); })
-              this.actionButton('🤖', '摘要', () => { this.onSummary(); })
-              this.actionButton('🌐', '翻译', () => { this.onTranslate(); })
-              this.actionButton('💬', '问AI', () => {
-                this.aiPanel = AiPanelKind.ASK;
-                this.aiText = '';
-                this.aiError = '';
-              })
-              this.actionButton(this.speaking ? '⏹' : '🔊', this.speaking ? '停止' : '朗读', () => { this.toggleSpeak(); })
-            }
-            .width('100%')
-            .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24 })
-            .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-            .borderRadius(12)
-
-            // 正文（ArkWeb 加载原文；成功时缓存正文并抽取正文文本，失败时回退缓存）
             Column() {
+              this.metaStrip()
+              Divider()
+                .color(this.themeState.palette.divider)
+                .strokeWidth(0.5)
               if (!this.webFailed) {
                 Web({ src: this.url, controller: this.controller })
                   .width('100%')
@@ -878,18 +1130,35 @@ export struct NewsDetailPage {
             }
             .width('100%')
             .layoutWeight(1)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusMd)
+            .border({ width: 0.5, color: this.themeState.palette.divider })
+            .clip(true)
           }
           .width('100%')
-          .height('100%')
-          .constraintSize({ maxWidth: 820 })
+          .layoutWeight(1)
+          .padding({
+            left: this.pagePad(), right: this.pagePad(), top: this.themeState.palette.sp2
+          })
+
+          this.aiToolbar()
         }
       }
       .width('100%')
       .height('100%')
+      .constraintSize({ maxWidth: 820 })
 
       this.aiPanelOverlay()
 
-      this.modelOverlay()
+      AiModelPicker({
+        visible: this.modelSheet,
+        models: this.models,
+        followGlobal: !this.modelActive(),
+        activeModelId: this.currentModelId(),
+        currentName: this.modelName,
+        onSelect: (id: string): void => { this.pickModel(id); },
+        onClose: (): void => { this.modelSheet = false; }
+      })
     }
     .width('100%')
     .height('100%')

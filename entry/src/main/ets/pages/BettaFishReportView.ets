@@ -1,4 +1,5 @@
 // 智子 - 微舆 报告查看页：WebView 渲染 HTML 报告 + 导出（HTML/MD/PDF）+ 复制链接
+// v10：ArkWeb 容器收进 bgSurface 圆角卡（radiusMd，发丝边框）；顶栏动作改矢量图标 + 44vp 触控目标。
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { webview } from '@kit.ArkWeb';
@@ -6,9 +7,10 @@ import { common } from '@kit.AbilityKit';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 import { AppNavigator } from '../common/AppNavigator';
-import { BettaFishStore } from '../service/BettaFishStore';
-import { BettaFishApiClient } from '../service/BettaFishApiClient';
+import { BettaFishStore } from '../service/betta/BettaFishStore';
+import { BettaFishApiClient } from '../service/betta/BettaFishApiClient';
 import { BettaServerConfig, BettaHistoryItem } from '../common/BettaFishModels';
 import { BettaFishReportRouteParams } from '../common/Navigation';
 
@@ -156,86 +158,148 @@ export struct BettaFishReportViewPage {
     }
   }
 
+  // 顶栏动作：复制链接（矢量图标 + 44vp 触控目标）
+  @Builder
+  copyLinkAction() {
+    Row({ space: this.themeState.palette.sp1 }) {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.link)
+          .fontSize(18)
+          .fontColor([this.themeState.palette.primary])
+      } else {
+        Text(AppIcons.linkEmoji)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+      }
+      Text('复制链接')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primary)
+    }
+    .height(44)
+    .padding({ left: this.themeState.palette.sp2, right: this.themeState.palette.sp2 })
+    .alignItems(VerticalAlign.Center)
+    .accessibilityText('复制链接')
+    .onClick(() => { this.onCopyLink(); })
+  }
+
+  // 加载失败：插画 + 原因 + CTA
+  @Builder
+  errorState() {
+    Column({ space: this.themeState.palette.sp3 }) {
+      Text('⚠️')
+        .fontSize(48)
+        .fontFamily(this.themeState.palette.fontSans)
+      Text('报告加载失败')
+        .fontSize(this.themeState.palette.fsLg)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
+        .fontWeight(FontWeight.Medium)
+      Text('请确认服务器可达，或从历史列表重新打开')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
+        .textAlign(TextAlign.Center)
+      Text('重试')
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primaryOnColor)
+        .fontWeight(FontWeight.Medium)
+        .height(44)
+        .padding({ left: 24, right: 24 })
+        .borderRadius(this.themeState.palette.radiusCapsule)
+        .backgroundColor(this.themeState.palette.primary)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          this.loadFailed = false;
+          this.loadReport();
+        })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .padding(this.themeState.palette.sp5)
+  }
+
+  private horizontalPadding(): string {
+    return this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg;
+  }
+
   build() {
     Column() {
       TopBar({ title: '舆情报告', subtitle: this.query.length > 0 ? this.query : this.taskId, showBack: true }) {
-        Text('🔗 复制链接')
-          .fontSize(this.themeState.palette.fsSm)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.primary)
-          .onClick(() => { this.onCopyLink(); })
+        this.copyLinkAction()
       }
       if (this.loadFailed) {
-        Column({ space: 10 }) {
-          Text('⚠️')
-            .fontSize(32)
-            .fontFamily(this.themeState.palette.fontSans)
-          Text('报告加载失败')
-            .fontSize(this.themeState.palette.fsLg)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textPrimary)
-            .fontWeight(FontWeight.Bold)
-          Text('请确认服务器可达，或从历史列表重新打开')
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .fontColor(this.themeState.palette.textTertiary)
-          Button('重试')
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-            .backgroundColor(this.themeState.palette.primary)
-            .height(36)
-            .onClick(() => {
-              this.loadFailed = false;
-              this.loadReport();
+        Column() {
+          this.errorState()
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .margin({ left: this.horizontalPadding(), right: this.horizontalPadding(), top: this.themeState.palette.sp3,
+          bottom: this.themeState.palette.sp3 })
+        .borderRadius(this.themeState.palette.radiusMd)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
+      } else {
+        Column() {
+          Web({ src: '', controller: this.controller })
+            .javaScriptAccess(true)
+            .domStorageAccess(true)
+            .width('100%')
+            .layoutWeight(1)
+            .onErrorReceive(() => {
+              this.loadFailed = true;
             })
         }
         .width('100%')
         .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-      } else {
-        Web({ src: '', controller: this.controller })
-          .javaScriptAccess(true)
-          .domStorageAccess(true)
-          .width('100%')
-          .layoutWeight(1)
-          .onErrorReceive(() => {
-            this.loadFailed = true;
-          })
+        .margin({ left: this.horizontalPadding(), right: this.horizontalPadding(), top: this.themeState.palette.sp3,
+          bottom: this.themeState.palette.sp3 })
+        .borderRadius(this.themeState.palette.radiusMd)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
+        .clip(true)
       }
 
       // 底部导出栏
-      Row({ space: 10 }) {
-        Button(this.exporting ? '导出中…' : '⬇ 下载 HTML')
+      Row({ space: this.themeState.palette.sp3 }) {
+        Button(this.exporting ? '导出中…' : '下载 HTML')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
-          .backgroundColor(Color.Transparent)
-          .fontColor(this.themeState.palette.primary)
-          .border({ width: 1, color: this.themeState.palette.primary })
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .fontColor(this.themeState.palette.textPrimary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .layoutWeight(1)
-          .height(38)
+          .height(44)
           .enabled(!this.exporting)
           .onClick(() => { this.onExport('html'); })
         Button('导出 MD')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
-          .backgroundColor(Color.Transparent)
-          .fontColor(this.themeState.palette.primary)
-          .border({ width: 1, color: this.themeState.palette.primary })
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .fontColor(this.themeState.palette.textPrimary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .layoutWeight(1)
-          .height(38)
+          .height(44)
           .enabled(!this.exporting)
           .onClick(() => { this.onExport('md'); })
         Button('导出 PDF')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
           .backgroundColor(this.themeState.palette.primary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
           .layoutWeight(1)
-          .height(38)
+          .height(44)
           .enabled(!this.exporting)
           .onClick(() => { this.onExport('pdf'); })
       }
       .width('100%')
-      .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 8, bottom: 12 })
+      .padding({ left: this.horizontalPadding(), right: this.horizontalPadding(),
+        top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp3 })
+      .border({ width: { top: 0.5 }, color: this.themeState.palette.divider })
+      .backgroundColor(this.themeState.palette.bgSurface)
     }
     .width('100%')
     .height('100%')

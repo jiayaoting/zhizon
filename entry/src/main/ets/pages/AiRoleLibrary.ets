@@ -2,9 +2,8 @@
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { AiRoleTemplate, BUILTIN_ROLE_TEMPLATES, loadCustom, saveCustom } from '../common/RoleTemplates';
-import { ChatRepository } from '../service/ChatRepository';
+import { ChatRepository } from '../service/chat/ChatRepository';
 
 @ComponentV2
 @Entry
@@ -135,8 +134,8 @@ export struct AiRoleLibraryPage {
           .width(40)
           .height(40)
           .textAlign(TextAlign.Center)
-          .borderRadius(10)
-          .backgroundColor(this.themeState.palette.primaryDim)
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.primaryBg)
         Column({ space: 2 }) {
           Row({ space: 6 }) {
             Text(role.name)
@@ -153,7 +152,7 @@ export struct AiRoleLibraryPage {
                 .fontColor(this.themeState.palette.primary)
                 .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                 .borderRadius(6)
-                .backgroundColor(this.themeState.palette.primaryDim)
+                .backgroundColor(this.themeState.palette.primaryBg)
             }
           }
           .width('100%')
@@ -208,8 +207,8 @@ export struct AiRoleLibraryPage {
     .width('100%')
     .padding(14)
     .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -238,7 +237,7 @@ export struct AiRoleLibraryPage {
           .fontColor(this.themeState.palette.textPrimary)
           .placeholderColor(this.themeState.palette.textTertiary)
           .backgroundColor(this.themeState.palette.bgSurface2)
-          .borderRadius(8)
+          .borderRadius(this.themeState.palette.radiusSm)
           .border({ width: 1, color: this.themeState.palette.borderSubtle })
           .height(40)
           .width('100%')
@@ -250,7 +249,7 @@ export struct AiRoleLibraryPage {
           .fontColor(this.themeState.palette.textPrimary)
           .placeholderColor(this.themeState.palette.textTertiary)
           .backgroundColor(this.themeState.palette.bgSurface2)
-          .borderRadius(8)
+          .borderRadius(this.themeState.palette.radiusSm)
           .border({ width: 1, color: this.themeState.palette.borderSubtle })
           .height(40)
           .width('100%')
@@ -328,8 +327,8 @@ export struct AiRoleLibraryPage {
                 .width('100%')
                 .padding(20)
                 .borderRadius(12)
-                .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-                .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               } else {
                 ForEach(this.customRoles, (role: AiRoleTemplate) => {
                   this.roleCard(role, true)

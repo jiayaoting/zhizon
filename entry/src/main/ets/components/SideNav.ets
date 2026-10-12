@@ -1,44 +1,52 @@
-// 智子 - 大屏侧边导航（2in1 / 平板横屏 / isLg 时替代底部导航）
+// 智子 - 大屏侧边导航（v10 华为原生拟物白 · 2in1 / 平板横屏 / isLg 时替代底部导航）
+// 条目与底部导航完全一致（同 5 项、同图标）；选中态 = primaryBg 胶囊 + primary 文字/图标。
+// 玻璃材质仅此级（P0_BAR）保留。
 import { AppConstants, NavItem, SIDEBAR_WIDTH } from '../common/Constants';
 import { MainNavKey } from '../common/Navigation';
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from './GlassEffect';
+import { GlassStyle, GlassLevel, glassBlurStyle } from './GlassEffect';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
 
 @ComponentV2
 export struct SideNav {
   @Param selectedKey: MainNavKey = MainNavKey.Index;
-        @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   @Event onSelect: (key: MainNavKey) => void = () => {};
+
+  // Tab 键 → 矢量图标：统一走 AppIcons（与底部导航一对一，同一图标同一含义）
+  private itemColor(key: MainNavKey): string {
+    return key === this.selectedKey ? this.themeState.palette.primary : this.themeState.palette.textSecondary;
+  }
 
   @Builder
   navItem(item: NavItem) {
-    Row({ space: 12 }) {
-      Text(item.icon)
-        .fontSize(this.themeState.palette.fsXl)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(item.key === this.selectedKey ? this.themeState.palette.primary : this.themeState.palette.textTertiary)
+    Row({ space: this.themeState.palette.sp3 }) {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.navIcon(item.key))
+          .fontSize(22)
+          .fontColor([this.itemColor(item.key)])
+      } else {
+        Text(AppIcons.navEmoji(item.key))
+          .fontSize(20)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.itemColor(item.key))
+      }
       Text(item.label)
         .fontSize(this.themeState.palette.fsBase)
         .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(item.key === this.selectedKey ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+        .fontColor(this.itemColor(item.key))
         .fontWeight(item.key === this.selectedKey ? FontWeight.Medium : FontWeight.Regular)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Blank()
-      if (item.key === this.selectedKey) {
-        Text('●')
-          .fontSize(this.themeState.palette.fsXs)
-          .fontColor(this.themeState.palette.primary)
-      }
     }
     .width('100%')
-    .height(48)
-    .padding({ left: 16, right: 16 })
-    .borderRadius(10)
-    .backgroundColor(item.key === this.selectedKey ? this.themeState.palette.primaryDim : Color.Transparent)
+    .height(this.themeState.palette.rowHeightCompact)
+    .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+    .borderRadius(this.themeState.palette.radiusMd)
+    .backgroundColor(item.key === this.selectedKey ? this.themeState.palette.primaryBg : Color.Transparent)
     .alignItems(VerticalAlign.Center)
-    .animation({ duration: 250, curve: Curve.EaseInOut })
     .accessibilityText(item.label + (item.key === this.selectedKey ? '，已选中' : ''))
     .onClick(() => {
       this.onSelect(item.key);
@@ -59,6 +67,7 @@ export struct SideNav {
             .fontWeight(FontWeight.Bold)
         }
         .alignItems(VerticalAlign.Center)
+
         Text('全网热榜 · 智能对话 · 休闲游戏')
           .fontSize(this.themeState.palette.fsXs)
           .fontFamily(this.themeState.palette.fontSans)
@@ -68,7 +77,17 @@ export struct SideNav {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding({ left: 16, right: 16, top: this.themeState.statusBarHeight + 16, bottom: 20 })
+      .padding({
+        left: this.themeState.palette.sp4,
+        right: this.themeState.palette.sp4,
+        top: this.themeState.statusBarHeight + 16,
+        bottom: this.themeState.palette.sp5
+      })
+
+      Divider()
+        .strokeWidth(0.5)
+        .color(this.themeState.palette.divider)
+        .margin({ bottom: this.themeState.palette.sp3 })
 
       // 导航项
       Column({ space: 6 }) {
@@ -77,7 +96,7 @@ export struct SideNav {
         }, (item: NavItem) => item.key)
       }
       .width('100%')
-      .padding({ left: 10, right: 10 })
+      .padding({ left: this.themeState.palette.sp2, right: this.themeState.palette.sp2 })
 
       Blank()
 
@@ -86,11 +105,12 @@ export struct SideNav {
         .fontSize(this.themeState.palette.fsXs)
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textTertiary)
-        .padding({ bottom: 16 })
+        .padding({ bottom: this.themeState.palette.sp4 })
     }
     .width(SIDEBAR_WIDTH)
     .height('100%')
     .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette))
-    .border({ width: { right: 1 }, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P0_BAR, this.themeState.palette) })
+    .backgroundBlurStyle(glassBlurStyle(this.themeState.glassEnabled, GlassLevel.P0_BAR))
+    .border({ width: { right: 1 }, color: this.themeState.palette.divider })
   }
 }

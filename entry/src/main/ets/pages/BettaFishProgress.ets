@@ -1,13 +1,13 @@
 // 智子 - 微舆 分析进度页：引擎状态轮询 → 生成报告 → SSE 实时进度 → 终态
+// v10：内容卡改纯色面（bgSurface + 发丝边框），状态区用语义淡底，日志用 fontMono token，按钮 ≥44vp。
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { BettaEngineStatusCard } from '../components/BettaEngineStatusCard';
 import { AppNavigator } from '../common/AppNavigator';
-import { BettaFishStore } from '../service/BettaFishStore';
-import { BettaFishApiClient } from '../service/BettaFishApiClient';
-import { BettaFishSseClient } from '../service/BettaFishSseClient';
+import { BettaFishStore } from '../service/betta/BettaFishStore';
+import { BettaFishApiClient } from '../service/betta/BettaFishApiClient';
+import { BettaFishSseClient } from '../service/betta/BettaFishSseClient';
 import { BettaServerConfig, BettaEngineStatus, BettaReportStatus, BettaReportEvent,
   BettaReportTask, BettaHistoryItem } from '../common/BettaFishModels';
 import { BettaFishProgressRouteParams, BettaFishReportRouteParams } from '../common/Navigation';
@@ -233,8 +233,8 @@ export struct BettaFishProgressPage {
       title: '报告生成完成',
       message: '点击查看生成的舆情分析报告',
       buttons: [
-        { text: '稍后看', color: '#888888' },
-        { text: '查看报告', color: '#22C55E' }
+        { text: '稍后看', color: this.themeState.palette.textSecondary },
+        { text: '查看报告', color: this.themeState.palette.success }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse) => {
       if (result.index === 1) {
@@ -278,7 +278,7 @@ export struct BettaFishProgressPage {
         .width('100%')
     }
     if (this.engines.length > 0) {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         BettaEngineStatusCard({ engine: this.engines[0] })
           .layoutWeight(1)
         if (this.engines.length > 1) {
@@ -289,10 +289,10 @@ export struct BettaFishProgressPage {
         }
       }
       .width('100%')
-      .margin({ bottom: 8 })
+      .margin({ bottom: this.themeState.palette.sp2 })
     }
     if (this.engines.length > 2) {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         BettaEngineStatusCard({ engine: this.engines[2] })
           .layoutWeight(1)
         if (this.engines.length > 3) {
@@ -303,7 +303,7 @@ export struct BettaFishProgressPage {
         }
       }
       .width('100%')
-      .margin({ bottom: 8 })
+      .margin({ bottom: this.themeState.palette.sp2 })
     }
   }
 
@@ -313,7 +313,7 @@ export struct BettaFishProgressPage {
         Column()
       }
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: this.themeState.palette.cardGap }) {
           // 查询信息
           Column({ space: 6 }) {
             Text('分析主题')
@@ -322,19 +322,19 @@ export struct BettaFishProgressPage {
               .fontColor(this.themeState.palette.textTertiary)
               .width('100%')
             Text(this.query.length > 0 ? this.query : '（未提供主题）')
-              .fontSize(this.themeState.palette.fsBase)
+              .fontSize(this.themeState.palette.fsMd)
               .fontFamily(this.themeState.palette.fontSans)
               .fontColor(this.themeState.palette.textPrimary)
               .width('100%')
           }
           .width('100%')
-          .padding(14)
-          .borderRadius(14)
-          .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+          .padding(this.themeState.palette.sp4)
+          .borderRadius(this.themeState.palette.radiusLg)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
 
           // 引擎状态
-          Column({ space: 8 }) {
+          Column({ space: this.themeState.palette.sp2 }) {
             Row() {
               Text('引擎状态')
                 .fontSize(this.themeState.palette.fsMd)
@@ -351,60 +351,79 @@ export struct BettaFishProgressPage {
             this.engineRows()
           }
           .width('100%')
-          .padding(14)
-          .borderRadius(14)
-          .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+          .padding(this.themeState.palette.sp4)
+          .borderRadius(this.themeState.palette.radiusLg)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
 
-          // 报告就绪状态
+          // 报告就绪状态（淡色底状态区）
           if (this.reportStatus !== null) {
             Column({ space: 6 }) {
               Row() {
-                Text(this.reportStatus.enginesReady ? '✅ 引擎已就绪，可生成报告' : '⏳ 引擎研究中，等待就绪')
-                  .fontSize(this.themeState.palette.fsBase)
-                  .fontFamily(this.themeState.palette.fontSans)
-                  .fontColor(this.reportStatus.enginesReady ? this.themeState.palette.primary :
-                    this.themeState.palette.textSecondary)
-                  .fontWeight(FontWeight.Medium)
-                Blank()
+                Row({ space: this.themeState.palette.sp2 }) {
+                  Circle()
+                    .width(8)
+                    .height(8)
+                    .fill(this.reportStatus.enginesReady ? this.themeState.palette.success :
+                      this.themeState.palette.warning)
+                  Text(this.reportStatus.enginesReady ? '引擎已就绪，可生成报告' : '引擎研究中，等待就绪')
+                    .fontSize(this.themeState.palette.fsMd)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.reportStatus.enginesReady ? this.themeState.palette.success :
+                      this.themeState.palette.textPrimary)
+                    .fontWeight(FontWeight.Medium)
+                }
+                .layoutWeight(1)
+                .alignItems(VerticalAlign.Center)
                 if (this.reportStatus.currentTask.length > 0) {
                   Text('当前任务存在')
                     .fontSize(this.themeState.palette.fsXs)
                     .fontFamily(this.themeState.palette.fontSans)
                     .fontColor(this.themeState.palette.danger)
+                    .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                    .borderRadius(this.themeState.palette.radiusSm)
+                    .backgroundColor(this.themeState.palette.bgSurface)
                 }
               }
               .width('100%')
+              .alignItems(VerticalAlign.Center)
               if (this.reportStatus.missingFiles.length > 0) {
                 Text('缺少输入文件：' + this.reportStatus.missingFiles.join('、'))
                   .fontSize(this.themeState.palette.fsXs)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.danger)
                   .width('100%')
+                  .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+                  .borderRadius(this.themeState.palette.radiusSm)
+                  .backgroundColor(this.themeState.palette.bgSurface)
               }
             }
             .width('100%')
-            .padding(14)
-            .borderRadius(14)
-            .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+            .padding(this.themeState.palette.sp4)
+            .borderRadius(this.themeState.palette.radiusLg)
+            .backgroundColor(this.reportStatus.enginesReady ? this.themeState.palette.successBg :
+              this.themeState.palette.warningBg)
+            .border({ width: 0.5, color: this.themeState.palette.divider })
           }
 
           // 生成/进度区
           if (this.taskId.length === 0) {
-            Button(this.generating ? '正在生成…' : '📄 生成报告')
+            Button(this.generating ? '正在生成…' : '生成报告')
               .width('100%')
-              .height(42)
-              .fontSize(this.themeState.palette.fsBase)
+              .height(44)
+              .fontSize(this.themeState.palette.fsMd)
               .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primaryOnColor)
+              .fontWeight(FontWeight.Medium)
+              .borderRadius(this.themeState.palette.radiusCapsule)
               .backgroundColor(this.themeState.palette.primary)
               .enabled(!this.generating && this.reportStatus !== null && this.reportStatus.enginesReady)
               .onClick(() => { this.onGenerate(); })
           } else {
-            Column({ space: 10 }) {
+            Column({ space: this.themeState.palette.sp3 }) {
               Row() {
                 Text(this.phaseText.length > 0 ? this.phaseText : '任务进行中…')
-                  .fontSize(this.themeState.palette.fsBase)
+                  .fontSize(this.themeState.palette.fsMd)
                   .fontFamily(this.themeState.palette.fontSans)
                   .fontColor(this.themeState.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
@@ -418,8 +437,9 @@ export struct BettaFishProgressPage {
               Progress({ value: this.progress, total: 100, type: ProgressType.Linear })
                 .width('100%')
                 .color(this.themeState.palette.primary)
+                .backgroundColor(this.themeState.palette.primaryBg)
               if (this.logs.length > 0) {
-                Column() {
+                Column({ space: this.themeState.palette.sp1 }) {
                   Text('实时日志')
                     .fontSize(this.themeState.palette.fsSm)
                     .fontFamily(this.themeState.palette.fontSans)
@@ -428,41 +448,45 @@ export struct BettaFishProgressPage {
                   ForEach(this.logs, (line: string) => {
                     Text(line)
                       .fontSize(this.themeState.palette.fsXs)
-                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontFamily(this.themeState.palette.fontMono)
                       .fontColor(this.themeState.palette.textSecondary)
                       .width('100%')
-                      .margin({ top: 2 })
                   }, (line: string) => line)
                 }
                 .width('100%')
+                .padding(this.themeState.palette.sp3)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .backgroundColor(this.themeState.palette.bgSurface2)
               }
-              Row({ space: 10 }) {
+              Row({ space: this.themeState.palette.sp3 }) {
                 Button('取消任务')
                   .fontSize(this.themeState.palette.fsSm)
                   .fontFamily(this.themeState.palette.fontSans)
-                  .backgroundColor(Color.Transparent)
                   .fontColor(this.themeState.palette.danger)
-                  .border({ width: 1, color: this.themeState.palette.danger })
+                  .backgroundColor(this.themeState.palette.dangerBg)
+                  .borderRadius(this.themeState.palette.radiusCapsule)
                   .layoutWeight(1)
-                  .height(38)
+                  .height(44)
                   .enabled(this.taskState === 'running' || this.taskState === '')
                   .onClick(() => { this.onCancel(); })
                 Button('查看报告')
                   .fontSize(this.themeState.palette.fsSm)
                   .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.primaryOnColor)
                   .backgroundColor(this.themeState.palette.primary)
+                  .borderRadius(this.themeState.palette.radiusCapsule)
                   .layoutWeight(1)
-                  .height(38)
+                  .height(44)
                   .enabled(this.taskState === 'completed')
                   .onClick(() => { this.openReport(); })
               }
               .width('100%')
             }
             .width('100%')
-            .padding(14)
-            .borderRadius(14)
-            .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+            .padding(this.themeState.palette.sp4)
+            .borderRadius(this.themeState.palette.radiusLg)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .border({ width: 0.5, color: this.themeState.palette.divider })
           }
 
           if (this.errorText.length > 0) {
@@ -471,15 +495,17 @@ export struct BettaFishProgressPage {
               .fontFamily(this.themeState.palette.fontSans)
               .fontColor(this.themeState.palette.danger)
               .width('100%')
-              .padding(12)
-              .borderRadius(12)
-              .backgroundColor(this.themeState.palette.primaryDim)
+              .padding(this.themeState.palette.sp3)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .backgroundColor(this.themeState.palette.dangerBg)
           }
-          Column().height(20)
+          Column().height(this.themeState.palette.sp5)
         }
         .width('100%')
         .constraintSize({ maxWidth: 720 })
-        .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 14 })
+        .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+          top: this.themeState.palette.sp3 })
       }
       .layoutWeight(1)
       .scrollBar(BarState.Auto)

@@ -2,8 +2,8 @@
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
-import { SoundService } from '../service/SoundService';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { SoundService } from '../service/platform/SoundService';
 
 @ComponentV2
 @Entry
@@ -27,8 +27,27 @@ export struct GameSettingsPage {
 
       Scroll() {
         Row() {
-          Column({ space: 12 }) {
-            Row() {
+          Column({ space: this.themeState.palette.sp3 }) {
+            Row({ space: this.themeState.palette.sp3 }) {
+              // 左侧矢量图标（音效），与游戏中心列表行一致
+              Row() {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.speaker)
+                    .fontSize(20)
+                    .fontColor([this.themeState.palette.primary])
+                } else {
+                  Text(AppIcons.speakerEmoji)
+                    .fontSize(16)
+                    .fontFamily(this.themeState.palette.fontSans)
+                }
+              }
+              .width(32)
+              .height(32)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .backgroundColor(this.themeState.palette.primaryBg)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+
               Text('游戏音效')
                 .fontSize(this.themeState.palette.fsMd)
                 .fontFamily(this.themeState.palette.fontSans)
@@ -39,23 +58,28 @@ export struct GameSettingsPage {
                 .onChange((v: boolean) => { this.onSoundToggle(v); })
             }
             .width('100%')
-            .padding(14)
-            .borderRadius(12)
-            .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+            .height(this.themeState.palette.rowHeight)
+            .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusLg)
+            .border({ width: 0.5, color: this.themeState.palette.divider })
 
             Text('开启后，消除/吃食物/胜利/失败等场景播放短音效（可随时关闭）。')
               .fontSize(this.themeState.palette.fsXs)
               .fontFamily(this.themeState.palette.fontSans)
               .fontColor(this.themeState.palette.textTertiary)
               .width('100%')
-              .padding({ left: 4, right: 4 })
+              .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4 })
 
-            Column().height(20)
+            Column().height(this.themeState.palette.sp5)
           }
           .width('100%')
           .constraintSize({ maxWidth: 720 })
-          .padding({ left: this.themeState.isSm ? 16 : 24, right: this.themeState.isSm ? 16 : 24, top: 12 })
+          .padding({
+            left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            top: this.themeState.palette.sp3
+          })
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)

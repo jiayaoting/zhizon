@@ -1,21 +1,21 @@
 // 智子 - 中国象棋（人机 / 人对AI / AI对AI）
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { DifficultyLevel, GameId, GameLaunchFacade, GameLaunchResult, GameRouteParams } from '../common/Difficulty';
 import {
   AI_SPEED_DELAYS, AI_SPEED_OPTIONS, CHESS_KIND_AI, CHESS_KIND_BLACK, CHESS_KIND_RED,
   GameAIService, GameAction, ChineseChessMoveOption
-} from '../service/GameAIService';
-import { ChineseChessEngine, ChineseChessMove, CHESS_COLS, CHESS_ROWS } from '../service/ChineseChessEngine';
-import { ChineseChessBook } from '../service/ChineseChessBook';
-import { ChineseChessNotation } from '../service/ChineseChessNotation';
-import { DataRepository } from '../service/DataRepository';
+} from '../service/game/GameAIService';
+import { ChineseChessEngine, ChineseChessMove, CHESS_COLS, CHESS_ROWS } from '../service/game/ChineseChessEngine';
+import { ChineseChessBook } from '../service/game/ChineseChessBook';
+import { ChineseChessNotation } from '../service/game/ChineseChessNotation';
+import { DataRepository } from '../service/platform/DataRepository';
 import { GameHistoryRouteParams } from '../common/Navigation';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
-import { SoundService } from '../service/SoundService';
+import { SoundService } from '../service/platform/SoundService';
 
 // 对弈方类型
 type PlayerMode = 'human' | 'engine' | 'llm';
@@ -35,50 +35,48 @@ class BoardSnapshot {
   }
 }
 
-@Component
+@ComponentV2
 @Entry
 export struct ChineseChessPage {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   // 棋盘状态
-  @State board: string[][] = [];
-  @State redTurn: boolean = true;
-  @State gameOver: boolean = false;
-  @State winner: string = ''; // 'red' | 'black' | 'draw' | ''
-  @State selR: number = -1;
-  @State selC: number = -1;
-  @State legalTargets: number[][] = [];
+  @Local board: string[][] = [];
+  @Local redTurn: boolean = true;
+  @Local gameOver: boolean = false;
+  @Local winner: string = ''; // 'red' | 'black' | 'draw' | ''
+  @Local selR: number = -1;
+  @Local selC: number = -1;
+  @Local legalTargets: number[][] = [];
 
   // 对弈配置与进行
-  @State matchMode: MatchMode = 'hvE';
-  @State humanSide: string = 'red';
-  @State redPlayer: string = 'human';
-  @State blackPlayer: string = 'engine';
-  @State undoLimit: number = 3;
-  @State undoUsed: number = 0;
-  @State running: boolean = false;
-  @State thinkingSide: string = ''; // 'red' | 'black' | ''
-  @State thinkingText: string = '';
-  @State moveHistory: string[] = [];
-  @State setupOpen: boolean = true;
+  @Local matchMode: MatchMode = 'hvE';
+  @Local humanSide: string = 'red';
+  @Local redPlayer: string = 'human';
+  @Local blackPlayer: string = 'engine';
+  @Local undoLimit: number = 3;
+  @Local undoUsed: number = 0;
+  @Local running: boolean = false;
+  @Local thinkingSide: string = ''; // 'red' | 'black' | ''
+  @Local thinkingText: string = '';
+  @Local moveHistory: string[] = [];
+  @Local setupOpen: boolean = true;
 
   // 模型
-  @State aiModelNames: string[] = [];
-  @State modelsConfigured: boolean = false;
-  @State showModelPicker: boolean = false;
+  @Local aiModelNames: string[] = [];
+  @Local modelsConfigured: boolean = false;
+  @Local showModelPicker: boolean = false;
   private pickSide: ModelSide = 'ai';
   private aiModels: LlmModelEntry[] = [];
-  @State redModelIndex: number = 0;
-  @State blackModelIndex: number = 0;
-  @State aiModelIndex: number = 0;
+  @Local redModelIndex: number = 0;
+  @Local blackModelIndex: number = 0;
+  @Local aiModelIndex: number = 0;
   private redConfig: LlmConfig | null = null;
   private blackConfig: LlmConfig | null = null;
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
   private aiFailCount: number = 0;
-  @State aiThinkCount: number = 0;
+  @Local aiThinkCount: number = 0;
   private moveStack: BoardSnapshot[] = [];
   private configSeq: number = 0;
 
@@ -86,41 +84,41 @@ export struct ChineseChessPage {
   private gameStartTime: number = 0;
 
   // AI vs AI 对弈节奏：0慢 1中 2快 3极速
-  @State aiSpeedIndex: number = 1;
+  @Local aiSpeedIndex: number = 1;
   // 落子停顿 timer（AI vs AI 每步展示停顿），统一清理避免泄漏
   private stepDelayTimer: number = -1;
 
   // 开局库开关（持久化；开启时引擎走子前先查经典开局）
-  @State bookEnabled: boolean = true;
+  @Local bookEnabled: boolean = true;
   private static readonly BOOK_KEY: string = 'chineseChess_bookEnabled';
 
   // 最近一步走法（用于走子动画高亮来源/目标格）
-  @State lastFromR: number = -1;
-  @State lastFromC: number = -1;
-  @State lastToR: number = -1;
-  @State lastToC: number = -1;
+  @Local lastFromR: number = -1;
+  @Local lastFromC: number = -1;
+  @Local lastToR: number = -1;
+  @Local lastToC: number = -1;
   // 是否处于将军状态（红/黑）
-  @State redInCheck: boolean = false;
-  @State blackInCheck: boolean = false;
+  @Local redInCheck: boolean = false;
+  @Local blackInCheck: boolean = false;
   // 对局是否已正式启动（用户点了「开始对局」）；用于防止 onPageShow 提前启动 AI 对局
   private gameStarted: boolean = false;
 
   // 棋盘版本号：每次 board 更新自增，ForEach 的 key 含版本号强制重建，
-  // 规避 ArkUI @State 二维数组整体赋值不触发 UI 刷新的限制
-  @State boardVersion: number = 0;
+  // 规避 ArkUI @Local 二维数组整体赋值不触发 UI 刷新的限制
+  @Local boardVersion: number = 0;
 
   // AI 落子提示
-  @State suggestionOn: boolean = false;
-  @State suggestFromR: number = -1;
-  @State suggestFromC: number = -1;
-  @State suggestToR: number = -1;
-  @State suggestToC: number = -1;
+  @Local suggestionOn: boolean = false;
+  @Local suggestFromR: number = -1;
+  @Local suggestFromC: number = -1;
+  @Local suggestToR: number = -1;
+  @Local suggestToC: number = -1;
   private suggestSeq: number = 0;
 
   private difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
   private engineDepth: number = 3;
   // 弹窗内引擎难度选择：0简单 1中等 2困难
-  @State engineDiffIndex: number = 1;
+  @Local engineDiffIndex: number = 1;
   // AI 思考等待计时（每秒刷新 thinkingText，避免界面长时间无变化）
   private thinkTimer: number = -1;
   private thinkStart: number = 0;
@@ -429,7 +427,7 @@ export struct ChineseChessPage {
       (type === 'engine' ? '（本地引擎）' : '（' + this.aiModelLabel(side) + '）');
     let move: ChineseChessMove | null = null;
     if (type === 'engine') {
-      // 本地引擎：深拷贝棋盘，避免在搜索中修改 @State
+      // 本地引擎：深拷贝棋盘，避免在搜索中修改 @Local
       try {
         const snapshot: string[][] = ChineseChessEngine.cloneBoard(this.board);
         move = ChineseChessEngine.searchBest(snapshot, side === 'red', this.engineDepth, this.moveHistory.length);
@@ -579,7 +577,7 @@ export struct ChineseChessPage {
     nb[move.toRow][move.toCol] = piece;
     nb[move.fromRow][move.fromCol] = '.';
     this.board = nb;
-    // 自增版本号强制 UI 重建棋盘（规避 @State 二维数组整体赋值不刷新的限制）
+    // 自增版本号强制 UI 重建棋盘（规避 @Local 二维数组整体赋值不刷新的限制）
     this.boardVersion += 1;
     this.selR = -1;
     this.selC = -1;
@@ -789,7 +787,7 @@ export struct ChineseChessPage {
   }
 
   // ---- 尺寸 ----
-  @State boardWidth: number = 360;
+  @Local boardWidth: number = 360;
   private boardCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
 
   private cellSize(): number {
@@ -810,12 +808,12 @@ export struct ChineseChessPage {
             LoadingProgress()
               .width(16)
               .height(16)
-              .color(this.palette.primary)
+              .color(this.themeState.palette.primary)
           }
           Text(this.statusTitle())
-            .fontSize(this.palette.fsMd)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -824,9 +822,9 @@ export struct ChineseChessPage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
         Text(this.statusSubtitle())
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: 3 })
@@ -841,25 +839,25 @@ export struct ChineseChessPage {
             .height(8)
             .fill(this.redTurn ? '#C0392B' : '#2C3E50')
           Text(this.redTurn ? '红方' : '黑方')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
         }
         Text('悔棋 ' + this.undoUsed.toString() + '/' +
           (this.undoUnlimited ? '∞' : this.undoLimit.toString()))
-          .fontSize(this.palette.fsXs)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .margin({ top: 3 })
       }
       .alignItems(HorizontalAlign.End)
     }
     .width('100%')
     .padding(12)
-    .backgroundColor(this.palette.bgSurface2)
-    .borderRadius(this.palette.radiusLg)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .backgroundColor(this.themeState.palette.bgSurface2)
+    .borderRadius(this.themeState.palette.radiusLg)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
   @Builder
@@ -878,14 +876,14 @@ export struct ChineseChessPage {
           Blank()
           Text('楚  河')
             .fontSize(this.cellSize() * 0.74)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontColor('#7A4A21')
             .fontWeight(FontWeight.Bold)
           Blank()
           Blank()
           Text('汉  界')
             .fontSize(this.cellSize() * 0.74)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontColor('#7A4A21')
             .fontWeight(FontWeight.Bold)
           Blank()
@@ -897,10 +895,10 @@ export struct ChineseChessPage {
       }
       .width(this.boardWidth)
       .height(this.boardHeight())
-      .borderRadius(10)
+      .borderRadius(this.themeState.palette.radiusSm)
       .clip(true)
 
-      // 棋子层。key 含 boardVersion：每次落子强制重建全部棋子，规避 @State 二维数组不刷新
+      // 棋子层。key 含 boardVersion：每次落子强制重建全部棋子，规避 @Local 二维数组不刷新
       Column() {
         ForEach(this.board, (row: string[], r: number) => {
           Row() {
@@ -1011,7 +1009,7 @@ export struct ChineseChessPage {
         .strokeWidth(1)
       Text(this.pieceName(p))
         .fontSize(this.cellSize() * 0.42)
-        .fontFamily(this.palette.fontSans)
+        .fontFamily(this.themeState.palette.fontSans)
         .fontColor(ChineseChessEngine.isRed(p) ? '#B71C1C' : '#263238')
         .fontWeight(FontWeight.Bold)
     }
@@ -1136,33 +1134,33 @@ export struct ChineseChessPage {
   controlPanel() {
     Column({ space: 10 }) {
       Row({ space: 10 }) {
-        this.actionBtn('↩', '悔棋', this.palette.bgSurface2, this.palette.textPrimary,
+        this.actionBtn('↩', '悔棋', this.themeState.palette.bgSurface2, this.themeState.palette.textPrimary,
           () => { this.undo(); })
-        this.actionBtn('💡', 'AI 提示', this.palette.primary, Color.White,
+        this.actionBtn('💡', 'AI 提示', this.themeState.palette.primary, this.themeState.palette.primaryOnColor,
           () => { this.suggestMove(); })
-        this.actionBtn('🏆', '战绩', this.palette.bgSurface2, this.palette.textPrimary,
+        this.actionBtn('🏆', '战绩', this.themeState.palette.bgSurface2, this.themeState.palette.textPrimary,
           () => {
             AppNavigator.push('pages/GameHistory', new GameHistoryRouteParams('ChineseChess'));
           })
-        this.actionBtn('✕', '结束', this.palette.danger, Color.White,
+        this.actionBtn('✕', '结束', this.themeState.palette.danger, this.themeState.palette.primaryOnColor,
           () => { this.stopGame(); this.setupOpen = true; })
       }
       .width('100%')
       if (this.matchMode === 'LvL') {
         Row({ space: 6 }) {
           Text('⚡ 节奏')
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
           ForEach(AI_SPEED_OPTIONS, (label: string, i: number) => {
             Text(label)
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.aiSpeedIndex === i ? Color.White : this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.aiSpeedIndex === i ? this.themeState.palette.primaryOnColor : this.themeState.palette.textSecondary)
               .fontWeight(this.aiSpeedIndex === i ? FontWeight.Bold : FontWeight.Normal)
-              .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-              .borderRadius(8)
-              .backgroundColor(this.aiSpeedIndex === i ? this.palette.primary : this.palette.bgSurface2)
+              .padding({ left: this.themeState.palette.sp3, right: this.themeState.palette.sp3, top: this.themeState.palette.sp1, bottom: this.themeState.palette.sp1 })
+              .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.aiSpeedIndex === i ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
               .onClick(() => { this.aiSpeedIndex = i; })
           }, (label: string) => label)
           Blank()
@@ -1173,41 +1171,41 @@ export struct ChineseChessPage {
         Row({ space: 10 }) {
           Column() {
             Text('💡 建议走法')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
             Text(this.suggestFromR.toString() + ',' + this.suggestFromC.toString() +
               ' → ' + this.suggestToR.toString() + ',' + this.suggestToC.toString())
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
               .margin({ top: 2 })
           }
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
-          this.miniBtn('✓ 采纳', this.palette.primary, Color.White, () => { this.applySuggestion(); })
-          this.miniBtn('取消', this.palette.bgSurface2, this.palette.textSecondary,
+          this.miniBtn('✓ 采纳', this.themeState.palette.primary, this.themeState.palette.primaryOnColor, () => { this.applySuggestion(); })
+          this.miniBtn('取消', this.themeState.palette.bgSurface2, this.themeState.palette.textSecondary,
             () => { this.suggestionOn = false; })
         }
         .width('100%')
         .padding(10)
-        .backgroundColor(this.palette.bgSurface2)
-        .borderRadius(this.palette.radiusLg)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(this.themeState.palette.bgSurface2)
+        .borderRadius(this.themeState.palette.radiusLg)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
       }
       if (this.moveHistory.length > 0) {
         Column({ space: 6 }) {
           Row() {
             Text('📜 对局记录')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
             Blank()
             Text(this.moveHistory.length.toString() + ' 步')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
           }
           .width('100%')
           // 多行自动换行展示，充分利用屏幕宽度与下方空白，避免横向滑动
@@ -1215,28 +1213,28 @@ export struct ChineseChessPage {
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.moveHistory, (item: string, i: number) => {
                 Text((i + 1).toString() + '. ' + item)
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textSecondary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textSecondary)
                   .padding({ left: 8, right: 8, top: 4, bottom: 4 })
                   .margin({ right: 6, bottom: 6 })
                   .borderRadius(6)
-                  .backgroundColor(this.palette.bgSurface2)
+                  .backgroundColor(this.themeState.palette.bgSurface2)
               }, (item: string, i: number) => i.toString())
             }
             .width('100%')
           }
           .width('100%')
           // 高度自适应内容；小屏上限 104，平板/大屏上限 150，避免超出屏幕
-          .constraintSize({ maxHeight: this.isSm ? 104 : 150 })
+          .constraintSize({ maxHeight: this.themeState.isSm ? 104 : 150 })
           .scrollBar(BarState.Auto)
           .align(Alignment.Top)
         }
         .width('100%')
         .padding(10)
-        .backgroundColor(this.palette.bgSurface2)
-        .borderRadius(this.palette.radiusLg)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .backgroundColor(this.themeState.palette.bgSurface2)
+        .borderRadius(this.themeState.palette.radiusLg)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
       }
     }
     .width('100%')
@@ -1246,18 +1244,18 @@ export struct ChineseChessPage {
   actionBtn(icon: string, label: string, bg: ResourceColor, fg: ResourceColor, onTap: () => void) {
     Row({ space: 6 }) {
       Text(icon)
-        .fontSize(this.palette.fsBase)
+        .fontSize(this.themeState.palette.fsBase)
         .fontColor(fg)
       Text(label)
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
         .fontColor(fg)
         .fontWeight(FontWeight.Medium)
     }
     .layoutWeight(1)
     .justifyContent(FlexAlign.Center)
     .padding({ top: 12, bottom: 12 })
-    .borderRadius(this.palette.radiusLg)
+    .borderRadius(this.themeState.palette.radiusLg)
     .backgroundColor(bg)
     .onClick(() => { onTap(); })
   }
@@ -1265,12 +1263,12 @@ export struct ChineseChessPage {
   @Builder
   miniBtn(label: string, bg: ResourceColor, fg: ResourceColor, onTap: () => void) {
     Text(label)
-      .fontSize(this.palette.fsSm)
-      .fontFamily(this.palette.fontSans)
+      .fontSize(this.themeState.palette.fsSm)
+      .fontFamily(this.themeState.palette.fontSans)
       .fontColor(fg)
       .fontWeight(FontWeight.Medium)
       .padding({ left: 14, right: 14, top: 9, bottom: 9 })
-      .borderRadius(9)
+      .borderRadius(this.themeState.palette.radiusCapsule)
       .backgroundColor(bg)
       .onClick(() => { onTap(); })
   }
@@ -1284,7 +1282,7 @@ export struct ChineseChessPage {
         Column()
           .width('100%')
           .layoutWeight(1)
-          .backgroundColor('rgba(0, 0, 0, 0.45)')
+          .backgroundColor(this.themeState.palette.maskOverlay)
           .onClick(() => { this.setupOpen = false; })
           .transition({ type: TransitionType.All, opacity: 0 })
 
@@ -1293,9 +1291,9 @@ export struct ChineseChessPage {
           Row() {
             Blank()
             Text('✕')
-              .fontSize(this.palette.fsLg)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsLg)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.setupOpen = false; })
           }
@@ -1304,15 +1302,15 @@ export struct ChineseChessPage {
 
           Column({ space: 4 }) {
             Text('对局设置')
-              .fontSize(this.palette.fsLg)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsLg)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
               .width('100%')
             Text('选择对弈模式与规则，AI 对 AI 模式可分别为双方选择模型')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .width('100%')
           }
           .alignItems(HorizontalAlign.Start)
@@ -1331,9 +1329,9 @@ export struct ChineseChessPage {
               }
               .width('100%')
               .padding(12)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(this.palette.radiusLg)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusLg)
+              .border({ width: 0.5, color: this.themeState.palette.divider })
 
               // 执子方
               if (this.matchMode !== 'LvL') {
@@ -1348,9 +1346,9 @@ export struct ChineseChessPage {
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(this.palette.radiusLg)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusLg)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               }
 
               // 悔棋次数
@@ -1366,9 +1364,9 @@ export struct ChineseChessPage {
               }
               .width('100%')
               .padding(12)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(this.palette.radiusLg)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusLg)
+              .border({ width: 0.5, color: this.themeState.palette.divider })
 
               // 开局库（可开关，持久化）
               Column({ space: 8 }) {
@@ -1376,19 +1374,19 @@ export struct ChineseChessPage {
                 Row() {
                   Column({ space: 2 }) {
                     Text('启用经典开局库')
-                      .fontSize(this.palette.fsSm)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textPrimary)
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textPrimary)
                       .fontWeight(FontWeight.Medium)
                     Text('开局阶段走经典谱着，开局更专业')
-                      .fontSize(this.palette.fsXs)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textTertiary)
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textTertiary)
                   }
                   .alignItems(HorizontalAlign.Start)
                   .layoutWeight(1)
                   Toggle({ type: ToggleType.Switch, isOn: this.bookEnabled })
-                    .selectedColor(this.palette.primary)
+                    .selectedColor(this.themeState.palette.primary)
                     .onChange((isOn: boolean) => {
                       this.bookEnabled = isOn;
                       ChineseChessBook.enabled = isOn;
@@ -1399,9 +1397,9 @@ export struct ChineseChessPage {
               }
               .width('100%')
               .padding(12)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(this.palette.radiusLg)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusLg)
+              .border({ width: 0.5, color: this.themeState.palette.divider })
 
               // 引擎难度
               if (this.matchMode === 'hvE') {
@@ -1416,9 +1414,9 @@ export struct ChineseChessPage {
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(this.palette.radiusLg)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusLg)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               }
 
               // AI 模型
@@ -1429,9 +1427,9 @@ export struct ChineseChessPage {
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(this.palette.radiusLg)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusLg)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               } else if (this.matchMode === 'LvL') {
                 Column({ space: 8 }) {
                   this.settingLabel('AI 模型')
@@ -1440,9 +1438,9 @@ export struct ChineseChessPage {
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(this.palette.radiusLg)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusLg)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               }
 
               // AI vs AI 对弈节奏
@@ -1452,13 +1450,13 @@ export struct ChineseChessPage {
                   Row({ space: 8 }) {
                     ForEach(AI_SPEED_OPTIONS, (label: string, i: number) => {
                       Text(label)
-                        .fontSize(this.palette.fsSm)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.aiSpeedIndex === i ? Color.White : this.palette.textSecondary)
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.aiSpeedIndex === i ? this.themeState.palette.primaryOnColor : this.themeState.palette.textSecondary)
                         .fontWeight(this.aiSpeedIndex === i ? FontWeight.Bold : FontWeight.Normal)
-                        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-                        .borderRadius(10)
-                        .backgroundColor(this.aiSpeedIndex === i ? this.palette.primary : this.palette.bgSurface2)
+                        .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+                        .borderRadius(this.themeState.palette.radiusCapsule)
+                        .backgroundColor(this.aiSpeedIndex === i ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
                         .onClick(() => { this.aiSpeedIndex = i; })
                     }, (label: string) => label)
                   }
@@ -1466,9 +1464,9 @@ export struct ChineseChessPage {
                 }
                 .width('100%')
                 .padding(12)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(this.palette.radiusLg)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusLg)
+                .border({ width: 0.5, color: this.themeState.palette.divider })
               }
             }
             .width('100%')
@@ -1479,9 +1477,9 @@ export struct ChineseChessPage {
           this.startBtn()
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 8, bottom: Math.max(20, this.navBarHeight) })
-        .backgroundColor(this.palette.bgBase)
-        .borderRadius({ topLeft: 24, topRight: 24 })
+        .padding({ left: 20, right: 20, top: 8, bottom: Math.max(20, this.themeState.navBarHeight) })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
         .shadow({ radius: 24, color: '#33000000', offsetY: -4 })
         .transition({ type: TransitionType.All, translate: { y: '100%' }, opacity: 0 })
       }
@@ -1494,9 +1492,9 @@ export struct ChineseChessPage {
   @Builder
   settingLabel(text: string) {
     Text(text)
-      .fontSize(this.palette.fsSm)
-      .fontFamily(this.palette.fontSans)
-      .fontColor(this.palette.textSecondary)
+      .fontSize(this.themeState.palette.fsSm)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(this.themeState.palette.textSecondary)
       .fontWeight(FontWeight.Medium)
       .width('100%')
   }
@@ -1506,37 +1504,37 @@ export struct ChineseChessPage {
     Column({ space: 4 }) {
       Text(icon)
         .fontSize(22)
-        .fontFamily(this.palette.fontSans)
+        .fontFamily(this.themeState.palette.fontSans)
       Text(label)
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.matchMode === mode ? this.palette.primary : this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.matchMode === mode ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
       Text(this.modeDesc(mode))
-        .fontSize(this.palette.fsXs)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
         .maxLines(2)
         .textAlign(TextAlign.Center)
       if (this.matchMode === mode) {
         Text('✓')
           .fontSize(13)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(Color.White)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
           .fontWeight(FontWeight.Bold)
           .padding({ left: 9, right: 9, top: 1, bottom: 1 })
-          .borderRadius(9)
-          .backgroundColor(this.palette.primary)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .backgroundColor(this.themeState.palette.primary)
           .margin({ top: 2 })
       }
     }
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Center)
     .padding({ top: 12, bottom: 10, left: 4, right: 4 })
-    .borderRadius(12)
-    .border({ width: this.matchMode === mode ? 2 : 1,
-      color: this.matchMode === mode ? this.palette.primary : this.palette.borderDefault })
-    .backgroundColor(this.matchMode === mode ? this.palette.primaryDim : this.palette.bgSurface2)
+    .borderRadius(this.themeState.palette.radiusMd)
+    .border({ width: this.matchMode === mode ? 2 : 0.5,
+      color: this.matchMode === mode ? this.themeState.palette.primary : this.themeState.palette.divider })
+    .backgroundColor(this.matchMode === mode ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface2)
     .onClick(() => { this.matchMode = mode as MatchMode; })
   }
 
@@ -1549,13 +1547,13 @@ export struct ChineseChessPage {
   @Builder
   chip(label: string, value: string) {
     Text(label)
-      .fontSize(this.palette.fsSm)
-      .fontFamily(this.palette.fontSans)
-      .fontColor(this.segActive(value) ? Color.White : this.palette.textSecondary)
+      .fontSize(this.themeState.palette.fsSm)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(this.segActive(value) ? this.themeState.palette.primaryOnColor : this.themeState.palette.textSecondary)
       .fontWeight(this.segActive(value) ? FontWeight.Bold : FontWeight.Normal)
-      .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-      .borderRadius(10)
-      .backgroundColor(this.segActive(value) ? this.palette.primary : this.palette.bgSurface2)
+      .padding({ left: this.themeState.palette.sp4, right: this.themeState.palette.sp4, top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.segActive(value) ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
       .onClick(() => { this.segTap(value); })
   }
 
@@ -1563,20 +1561,20 @@ export struct ChineseChessPage {
   startBtn() {
     Row() {
       Text('🚀')
-        .fontSize(this.palette.fsBase)
-        .fontFamily(this.palette.fontSans)
+        .fontSize(this.themeState.palette.fsBase)
+        .fontFamily(this.themeState.palette.fontSans)
       Text('开始对局')
-        .fontSize(this.palette.fsMd)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(Color.White)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.primaryOnColor)
         .fontWeight(FontWeight.Bold)
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .padding({ top: 14, bottom: 14 })
-    .borderRadius(12)
-    .backgroundColor(this.palette.primary)
-    .shadow({ radius: 12, color: this.palette.primary + '55', offsetX: 0, offsetY: 4 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.themeState.palette.primary)
+    .shadow({ radius: 12, color: this.themeState.palette.primaryBgMedium, offsetX: 0, offsetY: 4 })
     .onClick(() => { this.onSetupConfirm(); })
   }
 
@@ -1615,27 +1613,27 @@ export struct ChineseChessPage {
   modelPicker(title: string, index: number, onOpen: () => void) {
     Row({ space: 10 }) {
       Text(title)
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textSecondary)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textSecondary)
         .layoutWeight(1)
       Row({ space: 6 }) {
         Text(this.aiModelNames.length > index ? this.aiModelNames[index] : '未配置')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.modelsConfigured ? this.palette.textPrimary : this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.modelsConfigured ? this.themeState.palette.textPrimary : this.themeState.palette.textTertiary)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text('›')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
       .constraintSize({ maxWidth: '62%' })
       .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .borderRadius(9)
-      .backgroundColor(this.palette.bgSurface2)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.themeState.palette.bgSurface2)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
       .onClick(() => {
         if (!this.modelsConfigured || this.aiModels.length === 0) return;
         onOpen();
@@ -1682,7 +1680,7 @@ export struct ChineseChessPage {
                 .width(36)
                 .height(4)
                 .borderRadius(2)
-                .backgroundColor(this.palette.borderSubtle)
+                .backgroundColor(this.themeState.palette.borderDefault)
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
@@ -1691,15 +1689,15 @@ export struct ChineseChessPage {
             Row() {
               Text(this.pickSide === 'red' ? '选择红方模型' :
                 this.pickSide === 'black' ? '选择黑方模型' : '选择 AI 方模型')
-                .fontSize(this.palette.fsMd)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontSize(this.themeState.palette.fsMd)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
               Blank()
               Text('✕')
                 .fontSize(16)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .padding(8)
                 .onClick(() => { this.showModelPicker = false; })
             }
@@ -1713,16 +1711,16 @@ export struct ChineseChessPage {
                     Row({ space: 10 }) {
                       Column({ space: 2 }) {
                         Text(GameAIService.modelLabel(m))
-                          .fontSize(this.palette.fsSm)
-                          .fontFamily(this.palette.fontSans)
-                          .fontColor(this.palette.textPrimary)
+                          .fontSize(this.themeState.palette.fsSm)
+                          .fontFamily(this.themeState.palette.fontSans)
+                          .fontColor(this.themeState.palette.textPrimary)
                           .fontWeight(index === this.currentSideModelIndex() ? FontWeight.Bold : FontWeight.Medium)
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                         Text(m.model)
-                          .fontSize(10)
-                          .fontFamily(this.palette.fontSans)
-                          .fontColor(this.palette.textTertiary)
+                          .fontSize(this.themeState.palette.fsXs)
+                          .fontFamily(this.themeState.palette.fontSans)
+                          .fontColor(this.themeState.palette.textTertiary)
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                       }
@@ -1731,17 +1729,17 @@ export struct ChineseChessPage {
                       if (index === this.currentSideModelIndex()) {
                         Text('✓')
                           .fontSize(16)
-                          .fontFamily(this.palette.fontSans)
-                          .fontColor(this.palette.primary)
+                          .fontFamily(this.themeState.palette.fontSans)
+                          .fontColor(this.themeState.palette.primary)
                           .fontWeight(FontWeight.Bold)
                       }
                     }
                     .width('100%')
                     .padding(12)
-                    .borderRadius(8)
-                    .backgroundColor(index === this.currentSideModelIndex() ? this.palette.primaryDim : this.palette.bgSurface)
-                    .border({ width: index === this.currentSideModelIndex() ? 1 : 0,
-                      color: index === this.currentSideModelIndex() ? this.palette.primary : Color.Transparent })
+                    .borderRadius(this.themeState.palette.radiusMd)
+                    .backgroundColor(index === this.currentSideModelIndex() ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface)
+                    .border({ width: index === this.currentSideModelIndex() ? 0.5 : 0,
+                      color: index === this.currentSideModelIndex() ? this.themeState.palette.primary : Color.Transparent })
                     .onClick(() => { this.selectModelForSide(index); })
                   }, (m: LlmModelEntry) => m.id)
                 }
@@ -1751,16 +1749,16 @@ export struct ChineseChessPage {
               .constraintSize({ maxHeight: 360 })
             } else {
               Text('没有已配置的模型，请到 AI 对话中配置')
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .padding({ top: 16, bottom: 16 })
             }
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
-          .backgroundColor(this.palette.bgBase)
-          .borderRadius({ topLeft: 16, topRight: 16 })
+          .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.themeState.navBarHeight) })
+          .backgroundColor(this.themeState.palette.bgElevated)
+          .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
         }
         .width('100%')
         .height('100%')
@@ -1768,7 +1766,7 @@ export struct ChineseChessPage {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor('rgba(0,0,0,0.35)')
+      .backgroundColor(this.themeState.palette.maskOverlay)
       .onClick(() => { this.showModelPicker = false; })
     }
   }
@@ -1796,13 +1794,13 @@ export struct ChineseChessPage {
           .width('100%')
           .alignItems(HorizontalAlign.Center)
           .padding({
-            left: this.isSm ? 10 : 24,
-            right: this.isSm ? 10 : 24,
+            left: this.themeState.isSm ? 10 : 24,
+            right: this.themeState.isSm ? 10 : 24,
             top: 10,
             bottom: 16
           })
           .onAreaChange((oldValue: Area, newValue: Area) => {
-            const pad: number = this.isSm ? 20 : 48;
+            const pad: number = this.themeState.isSm ? 20 : 48;
             const w: number = Math.floor(Number(newValue.width) - pad);
             const target: number = Math.min(Math.max(w, 270), 430);
             if (target > 0 && Math.abs(target - this.boardWidth) > 1) {
@@ -1818,7 +1816,7 @@ export struct ChineseChessPage {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(Color.Transparent)
+      .backgroundColor(this.themeState.palette.bgBase)
 
       this.setupDialog()
       this.modelPickerDialog()

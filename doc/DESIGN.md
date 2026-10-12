@@ -17,7 +17,7 @@
 - 🎮 **游戏中心**：俄罗斯方块、2048、贪吃蛇、扫雷、数独、中国象棋，5 级难度可选，支持 AI 托管
 - 💬 **AI 对话**：接入多家大模型，本地保存对话，Markdown 富文本渲染
 - 📱 **全设备自适应**：手机（底部 Tab）、平板、折叠屏自动适配
-- 🎨 **多主题系统**：6 套配色 + 亮/暗模式 + 自定义背景 + 毛玻璃效果开关 + 全局字号档位
+- 🎨 **外观系统**：华为拟物白（默认）/ 深色两套色板 + 自定义背景 + 底栏毛玻璃 + 全局字号档位 + 矢量图标中心 AppIcons
 - 📊 **游戏战绩**：分数记录与历史排行
 
 ### 1.2 用户画像
@@ -76,7 +76,7 @@
 | 网络后端 | NewsNow 实例（热榜 HTTP API）+ 各家大模型 API（SSE/非流式） | ✅ |
 | 凭据加密 | HUKS 硬件密钥库 AES-256-GCM（API Key 与 NewsNow JWT） | ✅ |
 | 响应式 | @StorageLink / AppStorageV2 + display API | ✅ |
-| 多主题系统 | ThemePalette + 6 配色 + 亮/暗模式 | ✅ |
+| 外观系统 | ThemePalette token 体系（拟物白 / 深色双套）+ 自定义背景 + 字号档位（v10） | ✅ |
 | 毛玻璃效果 | GlassEffect 半透明背景 + 边框 | ✅ |
 | 全局字号系统 | palette.fs* 8 级字号，受设置档位控制 | ✅ |
 | 热榜 | NewsNow 后端 + 52 条源目录 + 视图 Tabs + 源关注同步 | ✅ |
@@ -139,7 +139,8 @@ zhizon/
         │       ├── entryability/EntryAbility.ets   # 入口：加密/数据库/主题初始化 + 热榜启动同步 + 退后台 flush
         │       │
         │       ├── common/（26）           # 主题、导航、模型与工具
-        │       │   ├── Theme.ets / ThemeState.ets / ThemeContracts.ets  # 多主题系统（ThemePalette + 6 配色 + 亮/暗）
+        │       │   ├── Theme.ets / ThemeState.ets / ThemeContracts.ets  # 外观系统（ThemePalette token + 拟物白/深色双套）
+        │       │   ├── AppIcons.ets                                     # 图标中心（矢量 SymbolGlyph + emoji 回退）
         │       │   ├── Navigation.ets / AppNavigator.ets                # 导航门面 + 页面注册表
         │       │   ├── Constants.ets                                    # 底部 5 Tab + 全局常量
         │       │   ├── HotModels.ets / HotSources.ets / HotFormat.ets   # 热榜模型 / 52 条源目录 / 时间格式化
@@ -149,21 +150,24 @@ zhizon/
         │       │
         │       ├── model/（2）             # GovernanceModels（AppFailure/RecoverableResult/DefectRecord）+ Models
         │       │
-        │       ├── service/（42）          # 业务服务层
-        │       │   ├── NewsNowClient.ets / NewsNowAuth.ets / NewsNowSync.ets  # 热榜后端 HTTP / 登录凭证 / 关注同步
-        │       │   ├── HotFeedStore.ets                                 # 榜单内存槽位 + 加载编排
-        │       │   ├── NewsRepository.ets / NewsAiService.ets           # 热榜本地数据 / 热榜 AI 能力
-        │       │   ├── DatabaseHelper.ets                               # RDB v18 + 全表 CRUD + 迁移与保留策略
-        │       │   ├── LlmClient.ets / ChatRepository.ets / ToolRegistry.ets / AgentOrchestrator.ets
-        │       │   ├── GameAIService.ets / ChineseChessEngine.ets / GomokuEngine.ets / SudokuSolver.ets / AchievementService.ets / ReplayService.ets / LeaderboardService.ets
-        │       │   ├── BettaFishApiClient.ets / BettaFishSseClient.ets / BettaFishStore.ets
-        │       │   ├── HuaweiAccountService.ets / CloudSyncService.ets   # 账号与云备份
-        │       │   └── SecurityService.ets / DataRepository.ets / SoundService.ets / SpeechService.ets / OnDeviceAiService.ets 等
+        │       ├── service/（43，v10 按域分层）  # 业务服务层
+        │       │   ├── hot/（7）     NewsNowClient / NewsNowAuth / NewsNowSync / HotFeedStore /
+        │       │   │                 NewsRepository / NewsAiService / HotDataProvider（可注入数据源接缝）
+        │       │   ├── chat/（10）   LlmClient / ChatRepository / ChatViewModel / ChatExporter / ToolRegistry /
+        │       │   │                 AgentOrchestrator / WebSearchService / SpeechService / OnDeviceAiService / ImageAttachment
+        │       │   ├── game/（9）    GameAIService / ChineseChessEngine / ChineseChessBook / ChineseChessNotation /
+        │       │   │                 GomokuEngine / SudokuSolver / AchievementService / ReplayService / LeaderboardService
+        │       │   ├── betta/（3）   BettaFishApiClient / BettaFishSseClient / BettaFishStore
+        │       │   └── platform/（14）DatabaseHelper（RDB v18 + 全表 CRUD + 迁移与保留策略）/ DataRepository /
+        │       │                     SecurityService / BiometricHelper / BackgroundImporter / PickerAdapter /
+        │       │                     CloudSyncService / HuaweiAccountService / WindowEnvironmentProvider /
+        │       │                     SoundService / LiveViewService / AiCallLogger / DefectClassifier / DefectWorkflow
         │       │
-        │       ├── components/（25）       # 通用组件
-        │       │   ├── HotSourceCard.ets / HotItemRow.ets / HotSourceBadge.ets   # 热榜卡片 / 条目行 / 源徽标
+        │       ├── components/（27）       # 通用组件
+        │       │   ├── HotSourceCard.ets / HotItemRow.ets / HotSourceBadge.ets / HotSourcePicker.ets   # 热榜卡片族 + 源选择器
+        │       │   ├── AiModelPicker.ets                                # 模型切换半模态（对话/详情复用）
         │       │   ├── TopBar.ets / FixedBottomNav.ets / SideNav.ets / SettingGroupCard.ets / SettingRow.ets
-        │       │   └── GlassEffect.ets / GlobalBackgroundLayer.ets / LockOverlay.ets / ChatMessageList.ets / GameAIPanel.ets 等
+        │       │   └── GlassEffect.ets / GlobalBackgroundLayer.ets / LockOverlay.ets / Chat* 系列 / Betta* 系列 / GameAIPanel.ets 等
         │       │
         │       └── pages/（38）            # 页面
         │           ├── AppShell.ets                                     # 自适应主框架
@@ -174,11 +178,13 @@ zhizon/
         │           ├── Profile.ets / Settings.ets / AppearanceSettings.ets / Achievements.ets / ReadingReport.ets / LegalDoc.ets
         │           └── BettaFishPage.ets / BettaFishProgress.ets / BettaFishReportView.ets / BettaFishServerConfig.ets / BettaFishSystem.ets
         │
-        └── test/（10）                     # 单元测试
-            ├── HotModuleTest.ets / NewsNowAuthTest.ets / NewsRepositoryTest.ets
+        └── test/（11）                     # 单元测试
+            ├── HotModuleTest.ets / NewsNowAuthTest.ets / HotDataProviderTest.ets / NewsRepositoryTest.ets
             ├── DefectClassifierTest.ets / DefectWorkflowTest.ets / GameLaunchFacadeTest.ets / NavigationFacadeTest.ets
             ├── SudokuSolverTest.ets / WindowEnvironmentProviderTest.ets / WindowEnvironmentSnapshotTest.ets
 ```
+
+> v10 工程收敛：全部 38 页面 + 27 组件已统一为 `@ComponentV2` 状态管理；`service/` 按域分层（hot / chat / game / betta / platform），域之间只允许经 platform 的公共能力交互；热榜取数经 `HotDataProvider` 注册表可注入 Fake（见 `test/HotDataProviderTest.ets`）。
 
 ---
 
@@ -220,7 +226,7 @@ zhizon/
 │   └── 系统状态与任务历史
 │
 ├── 4. 多主题系统
-│   ├── 6 套配色（终端青绿/海洋蓝/日落橙/极光紫/樱花粉/自然绿）
+│   ├── 两套色板（华为拟物白（默认）/ 深色）
 │   ├── 亮/暗模式（跟随系统或手动）
 │   ├── 自定义背景图（沙箱导入 + 强度调节）
 │   ├── 毛玻璃效果（开关控制）
@@ -270,7 +276,7 @@ zhizon/
 
 | 功能 | 实现状态 |
 |------|---------|
-| 6 套配色 | ✅ CYAN/OCEAN/SUNSET/AURORA/SAKORA/FOREST |
+| 两套色板 | ✅ 华为拟物白（默认）/ 深色（v10 收敛，6 套配色下架） |
 | 亮/暗模式 | ✅ 跟随系统或手动切换 |
 | ThemePalette 接口 | ✅ 30+ 颜色字段 + 8 级字号 |
 | 全局字号档位 | ✅ 全站统一使用 palette.fs* 系列，受设置档位控制 |
@@ -445,7 +451,7 @@ aboutToAppear() {
 ### 7.1 设计风格
 
 - **风格**：tech-dark（深色终端科技风），支持多主题系统切换
-- **多主题系统**：6 套配色（ColorThemeId 枚举：CYAN/OCEAN/SUNSET/AURORA/SAKURA/FOREST），亮/暗模式（跟随系统或手动）
+- **外观系统（v10）**：拟物白（默认）/ 深色两套 token 色板 + 亮暗跟随系统或手动；自定义背景、底栏毛玻璃、全局字号档位；矢量化图标中心 `AppIcons`
 - **毛玻璃效果**：通过 GlassEffect 组件实现半透明背景 + 边框，支持开关控制
 - **主色（终端青绿主题，默认）**：`#00D9A3`
 - **字体**：系统字体 + JetBrains Mono（代码/数字）
@@ -519,6 +525,8 @@ aboutToAppear() {
 | HotSourceCard | [components/HotSourceCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/HotSourceCard.ets) | 热榜源卡片（源徽标 + 更新态 + ⭐关注 + Top5 + 查看全部） |
 | HotItemRow | [components/HotItemRow.ets](file:///workspace/zhizon/entry/src/main/ets/components/HotItemRow.ets) | 榜单条目行（序号配色 + 标题 + 热度/时间 + 已读态） |
 | HotSourceBadge | [components/HotSourceBadge.ets](file:///workspace/zhizon/entry/src/main/ets/components/HotSourceBadge.ets) | 源徽标（首字 + 源配色） |
+| HotSourcePicker | components/HotSourcePicker.ets | 源选择器（分组 + ⭐ 关注切换；供热榜设置复用） |
+| AiModelPicker | components/AiModelPicker.ets | 模型切换半模态（含「跟随全局模型」；供对话页与详情页复用） |
 | GlassEffect | [components/GlassEffect.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlassEffect.ets) | 毛玻璃效果工具（背景色/边框/模糊级别 + 低电降级） |
 | GlobalBackgroundLayer | [components/GlobalBackgroundLayer.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlobalBackgroundLayer.ets) | 全局背景层（自定义背景图 + 强度调节） |
 | SettingGroupCard / SettingRow | [components/SettingGroupCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/SettingGroupCard.ets) | 设置分组卡与行控件 |
@@ -680,6 +688,7 @@ AppShell (主框架)
 | **M10** | 微舆（BettaFish）集成（服务器配置 + SSE 进度 + 报告查看 + 任务历史，RDB v17） | ✅ |
 | **M11** | 华为账号 + 云同步、对局回放、成就系统、游戏音效、端侧 OCR、战绩可视化、排行榜、Agent 工具化 | ✅ |
 | **M12** | 资讯域重构为 NewsNow 后端热榜（源目录/视图 Tabs/单源榜页/关注多端同步；RDB v18 丢弃旧新闻域） | ✅ |
+| **M13** | v10 视觉重构：拟物白+深色双套 token、毛玻璃降级、矢量图标中心、IA 与入口去重、设置边界归位、V2 状态管理收敛 | ✅ |
 
 ### 11.2 关键修复记录
 
@@ -734,6 +743,7 @@ AppShell (主框架)
 | v7.1.0 | 2026-08-13 | 新增 AI 调用记录（摘要日志 + ai_call_logs 表 + 查看/清空 + 我的页入口） |
 | v8.0.0 | 2026-08-19 | 新闻资讯主功能（资讯首页 + 多源聚合 + 收藏/已读 + AI 摘要/翻译/问AI + AI 今日要闻 + 为你推荐，RDB v14） |
 | v9.0.0 | 2026-10-10 | 资讯域重构为 NewsNow 后端热榜：52 条源目录 / 视图 Tabs / 单源榜页 / 源关注 + GitHub 登录多端同步 / Cloudflare 403 修复；删除旧抓取-推荐-画像模块（15 个源文件，RDB v18 丢弃 11 张旧表） |
+| v10.0.0 | 2026-10-11 | 视觉与架构重构（华为原生拟物白）：设计令牌双套化、毛玻璃降级、矢量图标中心、首页/榜单/详情/对话/游戏/我的/设置 IA 重排与入口去重、@ComponentV2 状态收敛；设计见 doc/v10-redesign.md |
 
 ---
 

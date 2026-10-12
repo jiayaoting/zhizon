@@ -1,21 +1,21 @@
 // 智子 - 数独
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { vibrator } from '@kit.SensorServiceKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { DataRepository } from '../service/DataRepository';
+import { DataRepository } from '../service/platform/DataRepository';
 import { DifficultyLevel, difficultyLabel, GameId, GameLaunchFacade, GameLaunchResult,
   GameRouteParams } from '../common/Difficulty';
 import { GameHistoryRouteParams } from '../common/Navigation';
-import { SUDOKU_SIZE, copyBoard, countSolutions, generateSolution } from '../service/SudokuSolver';
+import { SUDOKU_SIZE, copyBoard, countSolutions, generateSolution } from '../service/game/SudokuSolver';
 import { DeviceMetrics } from '../common/DeviceMetrics';
 import { GameAIPanel } from '../components/GameAIPanel';
-import { GameAIService, GameAction, AI_SPEED_DELAYS, SudokuCellInfo } from '../service/GameAIService';
+import { GameAIService, GameAction, AI_SPEED_DELAYS, SudokuCellInfo } from '../service/game/GameAIService';
 import { LlmConfig, LlmModelEntry } from '../common/LlmModels';
 import { ScreenKeepAlive } from '../common/ScreenKeepAlive';
-import { SoundService } from '../service/SoundService';
+import { SoundService } from '../service/platform/SoundService';
 
 // ============================================================
 // 页面组件
@@ -27,43 +27,41 @@ interface SudokuCell extends SudokuCellInfo {
   notes: number[];   // 笔记候选数
   conflict: boolean; // 冲突标记
 }
-@Component
+@ComponentV2
 @Entry
 export struct SudokuPage {
-  @State cells: SudokuCell[][] = [];
-  @State selectedR: number = -1;
-  @State selectedC: number = -1;
-  @State noteMode: boolean = false;
-  @State difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
-  @State currentLevel: number = 1;
-  @State bestLevel: number = 1;
-  @State timeLimit: number = 0;
-  @State gameStarted: boolean = false;
-  @State isPaused: boolean = false;
-  @State isWin: boolean = false;
-  @State playSeconds: number = 0;
-  @State bestTime: number = 0;
-  @State newRecord: boolean = false;
-  @State showHintTip: boolean = false;
-  @State showHelp: boolean = false;
-  @State flashWin: boolean = false;
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  @Local cells: SudokuCell[][] = [];
+  @Local selectedR: number = -1;
+  @Local selectedC: number = -1;
+  @Local noteMode: boolean = false;
+  @Local difficulty: DifficultyLevel = DifficultyLevel.MEDIUM;
+  @Local currentLevel: number = 1;
+  @Local bestLevel: number = 1;
+  @Local timeLimit: number = 0;
+  @Local gameStarted: boolean = false;
+  @Local isPaused: boolean = false;
+  @Local isWin: boolean = false;
+  @Local playSeconds: number = 0;
+  @Local bestTime: number = 0;
+  @Local newRecord: boolean = false;
+  @Local showHintTip: boolean = false;
+  @Local showHelp: boolean = false;
+  @Local flashWin: boolean = false;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
   // ---- AI 托管 ----
-  @State aiRunning: boolean = false;
-  @State aiStatus: string = '';
-  @State aiModelNames: string[] = [];
-  @State aiModelIndex: number = 0;
-  @State aiSpeedIndex: number = 2;
-  @State aiModelsConfigured: boolean = true;
+  @Local aiRunning: boolean = false;
+  @Local aiStatus: string = '';
+  @Local aiModelNames: string[] = [];
+  @Local aiModelIndex: number = 0;
+  @Local aiSpeedIndex: number = 2;
+  @Local aiModelsConfigured: boolean = true;
   private aiModels: LlmModelEntry[] = [];
   private aiConfig: LlmConfig | null = null;
   private aiLoopActive: boolean = false;
-  @State aiFailCount: number = 0;
-  @State aiThinkCount: number = 0;
-  @State aiThinkTimeMs: number = 0;
-  @State aiThinkTotalMs: number = 0;
+  @Local aiFailCount: number = 0;
+  @Local aiThinkCount: number = 0;
+  @Local aiThinkTimeMs: number = 0;
+  @Local aiThinkTotalMs: number = 0;
   private aiThinkTimer: number = -1;
   private aiThinkStart: number = 0;
   private aiHosted: boolean = false;
@@ -76,7 +74,7 @@ export struct SudokuPage {
 
   // 自适应棋盘格子尺寸
   private boardCellSize(): number {
-    if (this.isSm) {
+    if (this.themeState.isSm) {
       // 手机端：TopBar + 提示条 + 信息栏 + 操作栏 + 数字键盘(160) + 间距 + 安全区
       return DeviceMetrics.fitCellSize(SUDOKU_SIZE, SUDOKU_SIZE, 442, 16, 40);
     }
@@ -670,23 +668,23 @@ export struct SudokuPage {
   }
 
   private cellFontSize(): number {
-    if (this.isSm) return 20;
+    if (this.themeState.isSm) return 20;
     return 24;
   }
 
   private cellTextColor(r: number, c: number): string {
     const cell: SudokuCell = this.cells[r][c];
-    if (cell.fixed) return this.palette.textPrimary;
-    if (cell.conflict) return this.palette.danger;
-    return this.palette.primary;
+    if (cell.fixed) return this.themeState.palette.textPrimary;
+    if (cell.conflict) return this.themeState.palette.danger;
+    return this.themeState.palette.primary;
   }
 
   private cellBackground(r: number, c: number): string {
     const cell: SudokuCell = this.cells[r][c];
-    if (this.selectedR === r && this.selectedC === c) return this.palette.primaryDim;
-    if (cell.conflict) return this.palette.danger + '22';
-    if (cell.value !== 0 && this.isRelated(r, c)) return this.palette.bgSurface2;
-    return this.palette.bgSurface;
+    if (this.selectedR === r && this.selectedC === c) return this.themeState.palette.primaryBgStrong;
+    if (cell.conflict) return this.themeState.palette.dangerBg;
+    if (cell.value !== 0 && this.isRelated(r, c)) return this.themeState.palette.bgSurface2;
+    return this.themeState.palette.bgSurface;
   }
 
   private cellBorderWidth(r: number, c: number): number {
@@ -698,9 +696,9 @@ export struct SudokuPage {
   }
 
   private cellBorderColor(r: number, c: number): string {
-    if (this.selectedR === r && this.selectedC === c) return this.palette.primary;
-    if (c === 0 || c === 3 || c === 6) return this.palette.borderStrong;
-    return this.palette.borderDefault;
+    if (this.selectedR === r && this.selectedC === c) return this.themeState.palette.primary;
+    if (c === 0 || c === 3 || c === 6) return this.themeState.palette.borderStrong;
+    return this.themeState.palette.borderDefault;
   }
 
   // 选中格子的同行/同列/同宫
@@ -730,75 +728,75 @@ export struct SudokuPage {
     Row({ space: 8 }) {
       Column({ space: 2 }) {
         Text('关卡')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.currentLevel.toString())
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.primary)
           .fontWeight(FontWeight.Bold)
-          .fontFamily(this.palette.fontMono)
+          .fontFamily(this.themeState.palette.fontMono)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Column({ space: 2 }) {
         Text('用时')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.formatDuration(this.playSeconds))
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.info)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.info)
           .fontWeight(FontWeight.Bold)
-          .fontFamily(this.palette.fontMono)
+          .fontFamily(this.themeState.palette.fontMono)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Column({ space: 2 }) {
         Text('最佳')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.bestTime > 0 ? this.formatDuration(this.bestTime) : '--')
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.warning)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.warning)
           .fontWeight(FontWeight.Bold)
-          .fontFamily(this.palette.fontMono)
+          .fontFamily(this.themeState.palette.fontMono)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Column({ space: 2 }) {
         Text('剩余格')
-          .fontSize(this.palette.fsXs)
-          .fontColor(this.palette.textTertiary)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontColor(this.themeState.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
         Text(this.emptyCount().toString())
-          .fontSize(this.palette.fsLg)
-          .fontColor(this.palette.success)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontColor(this.themeState.palette.success)
           .fontWeight(FontWeight.Bold)
-          .fontFamily(this.palette.fontMono)
+          .fontFamily(this.themeState.palette.fontMono)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Center)
       .padding(8)
-      .backgroundColor(this.palette.bgSurface)
-      .borderRadius(8)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
     }
     .width('100%')
   }
@@ -819,20 +817,20 @@ export struct SudokuPage {
     Row({ space: 8 }) {
       Row({ space: 6 }) {
         Text(this.noteMode ? '✏️' : '🔢')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
         Text('笔记')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.noteMode ? this.palette.primary : this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.noteMode ? this.themeState.palette.primary : this.themeState.palette.textPrimary)
           .fontWeight(this.noteMode ? FontWeight.Bold : FontWeight.Medium)
       }
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
-      .borderRadius(8)
-      .backgroundColor(this.noteMode ? this.palette.primaryDim : this.palette.bgSurface)
-      .border({ width: 1, color: this.noteMode ? this.palette.primary : this.palette.borderSubtle })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.noteMode ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.noteMode ? this.themeState.palette.primary : this.themeState.palette.divider })
       .onClick(() => {
         this.noteMode = !this.noteMode;
         this.vibrate(10);
@@ -840,20 +838,20 @@ export struct SudokuPage {
 
       Row({ space: 6 }) {
         Text('🧹')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
         Text('清除')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
       }
       .layoutWeight(1)
       .justifyContent(FlexAlign.Center)
       .padding({ top: 8, bottom: 8 })
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .borderRadius(this.themeState.palette.radiusCapsule)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
       .onClick(() => { this.clearCell(); })
     }
     .width('100%')
@@ -866,16 +864,16 @@ export struct SudokuPage {
       Row({ space: 8 }) {
         ForEach([1, 2, 3, 4, 5, 6, 7], (num: number) => {
           Text(num.toString())
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontMono)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontMono)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Bold)
             .layoutWeight(1)
             .height(48)
             .textAlign(TextAlign.Center)
-            .borderRadius(8)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .border({ width: 0.5, color: this.themeState.palette.divider })
             .onClick(() => { this.inputNumber(num); })
         }, (num: number) => num.toString())
       }
@@ -883,40 +881,40 @@ export struct SudokuPage {
 
       Row({ space: 8 }) {
         Text('8')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontMono)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontMono)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
           .height(48)
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
           .onClick(() => { this.inputNumber(8); })
         Text('9')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontMono)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontMono)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
           .height(48)
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
           .onClick(() => { this.inputNumber(9); })
         Text('⌫')
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.danger)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.danger)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
           .height(48)
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusSm)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
           .onClick(() => { this.clearCell(); })
       }
       .width('100%')
@@ -935,16 +933,16 @@ export struct SudokuPage {
               if (cell.value !== 0) {
                 Text(this.cellText(r, c))
                   .fontSize(this.cellFontSize())
-                  .fontFamily(this.palette.fontMono)
+                  .fontFamily(this.themeState.palette.fontMono)
                   .fontColor(this.cellTextColor(r, c))
                   .fontWeight(cell.fixed ? FontWeight.Bold : FontWeight.Medium)
               } else if (cell.notes.length > 0) {
                 Text(this.noteText(r, c))
-                  .fontSize(this.isSm ? 8 : 10)
-                  .fontFamily(this.palette.fontMono)
-                  .fontColor(this.palette.textSecondary)
+                  .fontSize(this.themeState.isSm ? 8 : 10)
+                  .fontFamily(this.themeState.palette.fontMono)
+                  .fontColor(this.themeState.palette.textSecondary)
                   .textAlign(TextAlign.Center)
-                  .lineHeight(this.isSm ? 8 : 10)
+                  .lineHeight(this.themeState.isSm ? 8 : 10)
               }
             }
             .layoutWeight(1)
@@ -959,14 +957,14 @@ export struct SudokuPage {
           }, (cell: SudokuCell, c: number) => c.toString())
         }
         .layoutWeight(1)
-        .border({ width: { bottom: r === 2 || r === 5 ? 2 : 0.5 }, color: this.palette.borderStrong })
+        .border({ width: { bottom: r === 2 || r === 5 ? 2 : 0.5 }, color: this.themeState.palette.borderStrong })
       }, (row: SudokuCell[], r: number) => r.toString())
     }
     .width('100%')
     .height('100%')
-    .border({ width: 2, color: this.palette.borderStrong })
+    .border({ width: 2, color: this.themeState.palette.borderStrong })
     .borderRadius(6)
-    .backgroundColor(this.palette.bgSurface)
+    .backgroundColor(this.themeState.palette.bgSurface)
   }
 
   // ==================== 覆盖层 ====================
@@ -976,53 +974,53 @@ export struct SudokuPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => {})
 
       Column({ space: 12 }) {
         Text('🎉')
           .fontSize(40)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
           .scale({ x: this.flashWin ? 1.15 : 1, y: this.flashWin ? 1.15 : 1 })
         Text('数独完成！')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text(`用时 ${this.formatDuration(this.playSeconds)}`)
-          .fontSize(this.palette.fsLg)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.primary)
+          .fontSize(this.themeState.palette.fsLg)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primary)
           .fontWeight(FontWeight.Medium)
         if (this.newRecord) {
           Text('🏆 新纪录！')
-            .fontSize(this.palette.fsLg)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.warning)
+            .fontSize(this.themeState.palette.fsLg)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.warning)
             .fontWeight(FontWeight.Bold)
         }
         Row({ space: 10 }) {
           Button('下一关')
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(Color.White)
-            .backgroundColor(this.palette.primary)
-            .borderRadius(18)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .backgroundColor(this.themeState.palette.primary)
+            .borderRadius(this.themeState.palette.radiusCapsule)
             .height(36)
             .onClick(() => { this.nextLevel(); })
           Button('历史记录')
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .backgroundColor(this.palette.bgSurface2)
-            .borderRadius(18)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .backgroundColor(this.themeState.palette.bgSurface2)
+            .borderRadius(this.themeState.palette.radiusCapsule)
             .height(36)
             .onClick(() => { this.openHistory(); })
         }
       }
-      .padding(24)
-      .borderRadius(16)
-      .backgroundColor(this.palette.bgElevated)
+      .padding(this.themeState.palette.sp6)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .backgroundColor(this.themeState.palette.bgElevated)
       .alignItems(HorizontalAlign.Center)
     }
     .width('100%')
@@ -1035,33 +1033,33 @@ export struct SudokuPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0, 0, 0, 0.45)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => { this.togglePause(); })
 
       Column({ space: 12 }) {
         Text('已暂停')
-          .fontSize(this.palette.fs2xl)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fs2xl)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Bold)
         Text('点击任意处继续')
-          .fontSize(this.palette.fsBase)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textSecondary)
+          .fontSize(this.themeState.palette.fsBase)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
         Row({ space: 10 }) {
           Button('重新开始')
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(Color.White)
-            .backgroundColor(this.palette.danger)
-            .borderRadius(18)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .backgroundColor(this.themeState.palette.danger)
+            .borderRadius(this.themeState.palette.radiusCapsule)
             .height(36)
             .onClick(() => { this.restartGame(); })
         }
       }
-      .padding(24)
-      .borderRadius(16)
-      .backgroundColor(this.palette.bgElevated)
+      .padding(this.themeState.palette.sp6)
+      .borderRadius(this.themeState.palette.radiusXl)
+      .backgroundColor(this.themeState.palette.bgElevated)
       .alignItems(HorizontalAlign.Center)
     }
     .width('100%')
@@ -1072,18 +1070,18 @@ export struct SudokuPage {
   hintTip() {
     Row({ space: 6 }) {
       Text('💡')
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
       Text('先填确定的数字；打开笔记记录候选数，逐个排除。')
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textSecondary)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textSecondary)
     }
     .width('100%')
     .padding(10)
-    .borderRadius(8)
-    .backgroundColor(this.palette.primaryDim)
-    .border({ width: 1, color: this.palette.primary })
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.primaryBgStrong)
+    .border({ width: 0.5, color: this.themeState.palette.primary })
   }
 
   @Builder
@@ -1093,13 +1091,13 @@ export struct SudokuPage {
       Row() {
         Text(this.isPaused ? '▶' : '⏸')
           .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.togglePause(); })
 
@@ -1107,12 +1105,12 @@ export struct SudokuPage {
       Row() {
         Text('📖')
           .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+          .fontFamily(this.themeState.palette.fontSans)
       }
       .width(32)
       .height(32)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusSm)
+      .backgroundColor(this.themeState.palette.bgSurface2)
       .justifyContent(FlexAlign.Center)
       .onClick(() => { this.showHelp = true; })
     }
@@ -1129,8 +1127,8 @@ export struct SudokuPage {
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showHelp = false; })
           }
@@ -1151,9 +1149,9 @@ export struct SudokuPage {
               '• 每个 3×3 宫格 1-9 不重复\n' +
               '• 题目中给定的数字不可修改\n' +
               '• 填完所有空格即为胜利')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .lineHeight(22)
               .width('100%')
           }
@@ -1162,9 +1160,9 @@ export struct SudokuPage {
           .padding({ left: 20, right: 20, bottom: 16 })
         }
         .width('100%')
-        .borderRadius(16)
-        .backgroundColor(this.palette.bgBase)
-        .padding({ bottom: Math.max(16, this.navBarHeight) })
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .padding({ bottom: Math.max(16, this.themeState.navBarHeight) })
       }
       .width('100%')
       .height('100%')
@@ -1172,7 +1170,7 @@ export struct SudokuPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showHelp = false; })
   }
 
@@ -1188,7 +1186,7 @@ export struct SudokuPage {
         }
 
         if (this.gameStarted) {
-          if (this.isSm) {
+          if (this.themeState.isSm) {
             // 手机端
             Column({ space: 8 }) {
               if (this.showHintTip) { this.hintTip() }
@@ -1263,27 +1261,27 @@ export struct SudokuPage {
                 this.numPad()
                 Column({ space: 6 }) {
                   Text('操作提示')
-                    .fontSize(this.palette.fsXs)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textTertiary)
+                    .fontSize(this.themeState.palette.fsXs)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textTertiary)
                   Column({ space: 4 }) {
                     Text('点选格子，再用数字键盘填入')
-                      .fontSize(this.palette.fsSm)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textSecondary)
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textSecondary)
                     Text('笔记模式：同一格可记多个候选数')
-                      .fontSize(this.palette.fsSm)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textSecondary)
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textSecondary)
                     Text('数字冲突时格子会标红')
-                      .fontSize(this.palette.fsSm)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.primary)
+                      .fontSize(this.themeState.palette.fsSm)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.primary)
                   }
                   .padding(16)
-                  .backgroundColor(this.palette.bgSurface)
-                  .borderRadius(10)
-                  .border({ width: 1, color: this.palette.borderSubtle })
+                  .backgroundColor(this.themeState.palette.bgSurface)
+                  .borderRadius(this.themeState.palette.radiusMd)
+                  .border({ width: 0.5, color: this.themeState.palette.divider })
                 }
                 .width('100%')
                 .alignItems(HorizontalAlign.Start)
@@ -1301,8 +1299,8 @@ export struct SudokuPage {
       }
       .layoutWeight(1)
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
-      .padding({ bottom: Math.max(0, this.navBarHeight) })
+      .backgroundColor(this.themeState.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.themeState.navBarHeight) })
       .focusable(true)
       .defaultFocus(true)
       .onKeyEvent((event: KeyEvent) => {

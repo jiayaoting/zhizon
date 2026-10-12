@@ -6,10 +6,10 @@ import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
-import { NewsNowAuth, HotLoginCallback } from '../service/NewsNowAuth';
-import { NewsNowClient, NEWSNOW_UA } from '../service/NewsNowClient';
-import { NewsNowSync } from '../service/NewsNowSync';
-import { HotFeedStore } from '../service/HotFeedStore';
+import { NewsNowAuth, HotLoginCallback } from '../service/hot/NewsNowAuth';
+import { NewsNowClient, NEWSNOW_UA } from '../service/hot/NewsNowClient';
+import { NewsNowSync } from '../service/hot/NewsNowSync';
+import { HotFeedStore } from '../service/hot/HotFeedStore';
 
 @Entry
 @ComponentV2

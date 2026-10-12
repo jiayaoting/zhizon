@@ -9,11 +9,10 @@ import { AppNavigator } from '../common/AppNavigator';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { ChatMarkdownText } from '../components/ChatMarkdownText';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { HotEntry, HotDigestEntry, HotViewKey, HotDetailRouteParams } from '../common/HotModels';
-import { HotFeedStore } from '../service/HotFeedStore';
-import { NewsRepository } from '../service/NewsRepository';
-import { NewsAiService } from '../service/NewsAiService';
+import { HotFeedStore } from '../service/hot/HotFeedStore';
+import { NewsRepository } from '../service/hot/NewsRepository';
+import { NewsAiService } from '../service/hot/NewsAiService';
 import { LlmConfig, LlmModelEntry, LlmResult } from '../common/LlmModels';
 
 // 每个源参与 prompt 的候选条数（跨源均衡，避免单源刷屏）
@@ -395,7 +394,7 @@ export struct NewsDigestPage {
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textPrimary)
             .backgroundColor(this.themeState.palette.bgSurface2)
-            .borderRadius(8)
+            .borderRadius(this.themeState.palette.radiusSm)
             .height(38)
             .layoutWeight(1)
             .onClick(() => { this.copy(); })
@@ -404,7 +403,7 @@ export struct NewsDigestPage {
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(Color.White)
             .backgroundColor(this.themeState.palette.primary)
-            .borderRadius(8)
+            .borderRadius(this.themeState.palette.radiusSm)
             .height(38)
             .layoutWeight(1)
             .onClick(() => { this.generate(); })
@@ -451,8 +450,8 @@ export struct NewsDigestPage {
               }
               .width('100%')
               .padding(10)
-              .borderRadius(8)
-              .backgroundColor(GlassStyle.innerBackgroundColor(this.themeState.glassEnabled, this.themeState.palette))
+              .borderRadius(this.themeState.palette.radiusSm)
+              .backgroundColor(this.themeState.palette.bgSurface2)
               .onClick(() => { this.openEntry(entry); })
             }, (entry: HotEntry) => entry.key)
           }
@@ -563,9 +562,9 @@ export struct NewsDigestPage {
     .width(chipWidth)
     .height(30)
     .padding({ left: 8, right: 8 })
-    .borderRadius(8)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+    .borderRadius(this.themeState.palette.radiusSm)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
     .alignItems(VerticalAlign.Center)
     .onClick(() => { this.openModelSheet(); })
   }
@@ -612,7 +611,7 @@ export struct NewsDigestPage {
                 }
                 .width('100%')
                 .padding(12)
-                .borderRadius(8)
+                .borderRadius(this.themeState.palette.radiusSm)
                 .backgroundColor(this.themeState.palette.bgSurface)
                 .onClick(() => { this.pickModel(''); })
 
@@ -637,7 +636,7 @@ export struct NewsDigestPage {
                   }
                   .width('100%')
                   .padding(12)
-                  .borderRadius(8)
+                  .borderRadius(this.themeState.palette.radiusSm)
                   .backgroundColor(this.themeState.palette.bgSurface)
                   .onClick(() => { this.pickModel(m.id); })
                 }, (m: LlmModelEntry) => m.id)
@@ -715,8 +714,8 @@ export struct NewsDigestPage {
           .width('100%')
           .padding(14)
           .borderRadius(12)
-          .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
 
           // 模式切换：主体分段标签（4 个模式均分，选中高亮）
           Row({ space: 4 }) {
@@ -736,10 +735,10 @@ export struct NewsDigestPage {
               .borderRadius(12)
               .justifyContent(FlexAlign.Center)
               .backgroundColor(this.mode === m ? this.themeState.palette.primary :
-                GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette))
+                this.themeState.palette.bgSurface)
               .border({ width: this.mode === m ? 0 : 1,
                 color: this.mode === m ? Color.Transparent :
-                  GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P2_LIST, this.themeState.palette) })
+                  this.themeState.palette.divider })
               .onClick(() => { this.switchMode(m); })
             }, (m: string) => m)
           }

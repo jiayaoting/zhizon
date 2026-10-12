@@ -42,9 +42,9 @@ export struct DifficultyOption {
     .width('100%')
     .constraintSize({ minHeight: 64 })
     .padding({ left: 14, right: 14, top: 10, bottom: 10 })
-    .borderRadius(8)
+    .borderRadius(this.themeState.palette.radiusSm)
     .border({ width: this.selected ? 2 : 1, color: this.selected ? this.themeState.palette.primary : this.themeState.palette.borderDefault })
-    .backgroundColor(this.selected ? this.themeState.palette.primaryDim : this.themeState.palette.bgSurface)
+    .backgroundColor(this.selected ? this.themeState.palette.primaryBg : this.themeState.palette.bgSurface)
     .opacity(this.disabled ? 0.5 : 1)
     .accessibilityText(this.definition.label + (this.selected ? '，已选中' : ''))
     .onClick(() => {

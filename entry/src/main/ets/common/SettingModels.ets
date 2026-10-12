@@ -1,4 +1,7 @@
 // 智子 - 设置项数据模型（数据驱动渲染 + 搜索过滤）
+// v10：行图标改为「矢量优先 + emoji 回退」（与 AppIcons 一致）；
+// 枚举按 §3.4.4 边界收敛：数据操作（清空阅读记录 / 清空热榜缓存）已收敛到
+// 热榜设置 → 数据，阅读周报主入口收敛到 我的 → 阅读周报，均已从本枚举移除。
 export enum SettingRowKind {
   NAV = 'NAV',
   SWITCH = 'SWITCH'
@@ -8,30 +11,29 @@ export enum SettingActionId {
   NONE = 0,
   ACCOUNT = 1,
   AUTO_BACKUP = 2,
-  APPEARANCE = 3,
-  NEWS = 4,
-  GAME = 5,
-  AGENT = 6,
-  MASTER_PASSWORD = 7,
-  BIOMETRIC = 8,
-  AUTO_LOCK = 9,
-  CLEAR_READ = 10,
-  CLEAR_CACHE = 11,
-  ABOUT_UPDATE = 12,
-  ABOUT_AGREEMENT = 13,
-  ABOUT_PRIVACY = 14,
-  ABOUT_LICENSE = 15,
-  ABOUT_FEEDBACK = 16,
-  READING_REPORT = 17,
-  AI_ROLES = 18,
-  BETTA_SERVER = 19,
-  BETTA_SYSTEM = 20
+  BACKUP_NOW = 3,
+  RESTORE_NOW = 4,
+  APPEARANCE = 5,
+  NEWS = 6,
+  GAME = 7,
+  AGENT = 8,
+  MASTER_PASSWORD = 9,
+  BIOMETRIC = 10,
+  AUTO_LOCK = 11,
+  BETTA_SERVER = 12,
+  BETTA_SYSTEM = 13,
+  ABOUT_UPDATE = 14,
+  ABOUT_AGREEMENT = 15,
+  ABOUT_PRIVACY = 16,
+  ABOUT_LICENSE = 17,
+  ABOUT_FEEDBACK = 18
 }
 
 export class SettingItem {
   key: string;
   title: string;
-  icon: string;
+  symbol: Resource;   // 左矢量图标（SymbolGlyph）
+  icon: string;       // 矢量不可用时的 emoji 回退
   value: string;
   desc: string;
   kind: SettingRowKind;
@@ -39,10 +41,11 @@ export class SettingItem {
   action: SettingActionId;
   showArrow: boolean;
 
-  constructor(key: string, title: string, icon: string, value: string, desc: string,
+  constructor(key: string, title: string, symbol: Resource, icon: string, value: string, desc: string,
     kind: SettingRowKind, danger: boolean, action: SettingActionId, showArrow: boolean = true) {
     this.key = key;
     this.title = title;
+    this.symbol = symbol;
     this.icon = icon;
     this.value = value;
     this.desc = desc;

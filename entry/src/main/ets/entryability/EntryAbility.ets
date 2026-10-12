@@ -2,14 +2,14 @@ import { UIAbility, AbilityConstant, Want, Configuration, ConfigurationConstant 
 import { window, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { DatabaseHelper } from '../service/DatabaseHelper';
+import { DatabaseHelper } from '../service/platform/DatabaseHelper';
 import { CryptoHelper } from '../common/CryptoHelper';
 import { ThemeManager, ThemePalette, PreferenceFailureReason } from '../common/Theme';
-import { WindowEnvironmentProvider } from '../service/WindowEnvironmentProvider';
-import { SecurityService } from '../service/SecurityService';
-import { SoundService } from '../service/SoundService';
-import { HotFeedStore } from '../service/HotFeedStore';
-import { NewsNowSync } from '../service/NewsNowSync';
+import { WindowEnvironmentProvider } from '../service/platform/WindowEnvironmentProvider';
+import { SecurityService } from '../service/platform/SecurityService';
+import { SoundService } from '../service/platform/SoundService';
+import { HotFeedStore } from '../service/hot/HotFeedStore';
+import { NewsNowSync } from '../service/hot/NewsNowSync';
 
 const DOMAIN = 0x9201;
 

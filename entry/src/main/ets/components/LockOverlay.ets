@@ -1,8 +1,8 @@
 // 智子 - 锁屏覆盖层（主密码 + 生物识别解锁）
 import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { SecurityService } from '../service/SecurityService';
-import { BiometricHelper } from '../service/BiometricHelper';
+import { SecurityService } from '../service/platform/SecurityService';
+import { BiometricHelper } from '../service/platform/BiometricHelper';
 
 @ComponentV2
 export struct LockOverlay {
@@ -80,7 +80,7 @@ export struct LockOverlay {
           .fontColor(this.themeState.palette.textPrimary)
           .placeholderColor(this.themeState.palette.textTertiary)
           .backgroundColor(this.themeState.palette.bgSurface)
-          .borderRadius(10)
+          .borderRadius(this.themeState.palette.radiusSm)
           .border({ width: 1, color: this.themeState.palette.borderSubtle })
           .height(46)
           .type(InputType.Password)
@@ -102,7 +102,7 @@ export struct LockOverlay {
           .width(this.themeState.isSm ? '80%' : '60%')
           .backgroundColor(this.themeState.palette.primary)
           .fontColor('#FFFFFF')
-          .borderRadius(10)
+          .borderRadius(this.themeState.palette.radiusSm)
           .enabled(!this.authenticating)
           .onClick(() => { this.tryUnlock(); })
 
@@ -117,7 +117,7 @@ export struct LockOverlay {
             .fontWeight(FontWeight.Medium)
         }
         .padding({ left: 18, right: 18, top: 10, bottom: 10 })
-        .borderRadius(10)
+        .borderRadius(this.themeState.palette.radiusSm)
         .backgroundColor(this.themeState.palette.bgSurface)
         .border({ width: 1, color: this.themeState.palette.borderSubtle })
         .onClick(() => { this.tryBiometric(); })

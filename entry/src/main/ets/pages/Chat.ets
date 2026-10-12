@@ -1,5 +1,7 @@
 // 智子 - AI 对话页
-import { promptAction } from '@kit.ArkUI';
+// P4（V2 状态迁移）：组件改 ComponentV2，状态变量改 @Local；主题色/断点/导航栏高度改由
+// ThemeState（AppStorageV2）提供；宿主可见性刷新由存储令牌改走 PageRefreshBus 总线。
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { AppNavigator } from '../common/AppNavigator';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { http } from '@kit.NetworkKit';
@@ -9,99 +11,102 @@ import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { fileIo as fs, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { ThemeState } from '../common/ThemeState';
+import { PageRefreshBus } from '../common/PageRefreshBus';
 import { TopBar } from '../components/TopBar';
-import { GlassStyle, GlassLevel } from '../components/GlassEffect';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
-import { ChatRepository } from '../service/ChatRepository';
-import { DatabaseHelper } from '../service/DatabaseHelper';
-import { LlmClient } from '../service/LlmClient';
-import { SpeechService } from '../service/SpeechService';
-import { LiveViewService } from '../service/LiveViewService';
-import { WebSearchService, WebSearchResult } from '../service/WebSearchService';
-import { DataRepository } from '../service/DataRepository';
+import { ChatRepository } from '../service/chat/ChatRepository';
+import { DatabaseHelper } from '../service/platform/DatabaseHelper';
+import { LlmClient } from '../service/chat/LlmClient';
+import { SpeechService } from '../service/chat/SpeechService';
+import { LiveViewService } from '../service/platform/LiveViewService';
+import { WebSearchService, WebSearchResult } from '../service/chat/WebSearchService';
+import { DataRepository } from '../service/platform/DataRepository';
 import { PromptPreset, presetMatches, applyPreset } from '../common/PromptPresets';
-import { AiCallContext } from '../service/AiCallLogger';
-import { ChatExporter, ImportedChat } from '../service/ChatExporter';
-import { ImageAttachment, AttachmentResult } from '../service/ImageAttachment';
-import { ChatViewModel, ChatPhase } from '../service/ChatViewModel';
-import { OnDeviceAiService } from '../service/OnDeviceAiService';
-import { AgentOrchestrator } from '../service/AgentOrchestrator';
+import { AiCallContext } from '../service/platform/AiCallLogger';
+import { ChatExporter, ImportedChat } from '../service/chat/ChatExporter';
+import { ImageAttachment, AttachmentResult } from '../service/chat/ImageAttachment';
+import { ChatViewModel, ChatPhase } from '../service/chat/ChatViewModel';
+import { OnDeviceAiService } from '../service/chat/OnDeviceAiService';
+import { AgentOrchestrator } from '../service/chat/AgentOrchestrator';
 import { AgentStep, LlmAgentResult } from '../common/AgentModels';
-import { ChatMessage, ChatSession, entryToConfig, LlmConfig, LlmModelEntry, LlmResult,
+import { ChatMessage, ChatSession, LlmConfig, LlmModelEntry, LlmResult,
   modelDisplayName, modelDisplayNameFromConfig } from '../common/LlmModels';
+import { NewsAiService } from '../service/hot/NewsAiService';
 import { MarkdownConverter } from '../common/MarkdownConverter';
 import { ChatMessageList } from '../components/ChatMessageList';
+import { AiModelPicker } from '../components/AiModelPicker';
 import { ChatInputBar } from '../components/ChatInputBar';
 import { ChatSessionDrawer } from '../components/ChatSessionDrawer';
 import { LazyListDataSource } from '../common/LazyDataSource';
 
-@Component
+@ComponentV2
 export struct ChatTab {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
-  @StorageLink('glassEffectEnabled') glassEnabled: boolean = false;
-  @StorageLink('isDarkMode') isDark: boolean = false;
-  // 宿主（AppShell）在 Chat 子页返回/切换 Tab 时递增该 token，驱动本组件刷新模型配置
-  @StorageLink('chatRefreshToken') @Watch('onRefreshToken') chatRefreshToken: number = 0;
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
+  // 宿主可见性刷新：AppShell 在 Chat 子页返回/切换 Tab 时广播总线事件
+  // （V2 组件禁用存储令牌 + 监听装饰器，无法直接观察 AppStorage 刷新令牌）
+  private onHostShow = (): void => {
+    this.refreshModels();
+    setTimeout(() => { this.scrollToBottom(); }, 100);
+  };
 
-  @State messages: ChatMessage[] = [];
-  @State inputText: string = '';
-  @State sending: boolean = false;
-  @State configReady: boolean = false;
-  @State configHint: string = '未配置';
-  @State streamingContent: string = '';
-  @State streamingReasoning: string = '';
-  @State streaming: boolean = false;
+  @Local messages: ChatMessage[] = [];
+  @Local inputText: string = '';
+  @Local sending: boolean = false;
+  @Local configReady: boolean = false;
+  @Local configHint: string = '未配置';
+  @Local streamingContent: string = '';
+  @Local streamingReasoning: string = '';
+  @Local streaming: boolean = false;
 
   // 多会话
-  @State sessions: ChatSession[] = [];
-  @State activeSessionId: string = '';
-  @State showSessionDrawer: boolean = false;
-  @State drawerRenameId: string = '';
-  @State drawerRenameText: string = '';
-  @State drawerSessions: ChatSession[] = [];
-  @State drawerSearch: string = '';
+  @Local sessions: ChatSession[] = [];
+  @Local activeSessionId: string = '';
+  @Local showSessionDrawer: boolean = false;
+  @Local drawerRenameId: string = '';
+  @Local drawerRenameText: string = '';
+  @Local drawerSessions: ChatSession[] = [];
+  @Local drawerSearch: string = '';
   // 生成阶段与计时（idle / connecting / streaming）
-  @State chatPhase: string = 'idle';
-  @State elapsedSeconds: number = 0;
+  @Local chatPhase: string = 'idle';
+  @Local elapsedSeconds: number = 0;
   // 流式渲染节流：同一时刻最多一次定时刷新
   private renderScheduled: boolean = false;
   // 当前待触发的流式刷新定时器（流结束时需取消，防止用清空后的 streamingContent 覆盖最终内容）
   private flushTimer: number = -1;
   // 消息分页（LazyForEach 渲染窗口）：只渲染最近 MESSAGE_PAGE_SIZE 条，上滑到顶补载更早消息
   private readonly MESSAGE_PAGE_SIZE: number = 50;
-  @State loadingOlder: boolean = false;
+  @Local loadingOlder: boolean = false;
   // 无痕模式：全局开关（设置页）与会话级标记（会话抽屉）；开启后消息不写入数据库
-  @State incognitoEnabled: boolean = false;
-  @State activeSessionIncognito: boolean = false;
+  @Local incognitoEnabled: boolean = false;
+  @Local activeSessionIncognito: boolean = false;
   // 会话内全文搜索结果（FTS/LIKE 搜索整个会话，而非仅已加载窗口）
-  @State searchResults: ChatMessage[] = [];
+  @Local searchResults: ChatMessage[] = [];
   private searchSeq: number = 0;
   private sessionTotalCount: number = 0;
   private hasMoreOlder: boolean = false;
   // 消息数据源：仅在消息增删/分页/搜索/多选模式变化时 replace，输入等高频状态不触发
   private messageSource: LazyListDataSource<ChatMessage> = new LazyListDataSource<ChatMessage>([]);
-  // 输入区高度（TextArea 动态增高）
-  @State inputHeight: number = 44;
+  // 输入区高度（TextArea 动态增高；v10 华为输入胶囊最小 48vp）
+  @Local inputHeight: number = 48;
   // 图片附件（vision 模型）
-  @State attachmentDataUrl: string = '';
-  @State attachmentName: string = '';
+  @Local attachmentDataUrl: string = '';
+  @Local attachmentName: string = '';
   // 语音输入（Speech Kit）
-  @State voiceRecognizing: boolean = false;
-  @State ocrBusy: boolean = false;
+  @Local voiceRecognizing: boolean = false;
+  @Local ocrBusy: boolean = false;
   // Agent 化（P0：工具闭环）
-  @State agentEnabled: boolean = false;
-  @State agentRunning: boolean = false;
-  @State agentSteps: AgentStep[] = [];
-  @State agentMaxSteps: number = 5;
+  @Local agentEnabled: boolean = false;
+  @Local agentRunning: boolean = false;
+  @Local agentSteps: AgentStep[] = [];
+  @Local agentMaxSteps: number = 5;
   // 正在朗读的助手消息 id（空表示未朗读）
-  @State speakingMessageId: string = '';
+  @Local speakingMessageId: string = '';
   // 联网搜索开关（配置在 模型管理 → 联网搜索）
-  @State webSearchEnabled: boolean = false;
+  @Local webSearchEnabled: boolean = false;
   // 搜索进行中标记（发送按钮显示加载态）
-  @State webSearchBusy: boolean = false;
+  @Local webSearchBusy: boolean = false;
   // 编辑重发目标索引（-1 表示普通发送）
   private editTargetIndex: number = -1;
   // 用户主动停止标记：停止后保留已生成内容
@@ -112,30 +117,33 @@ export struct ChatTab {
   private liveViewEvent: string = '';
   private liveViewTick: number = 0;
 
-  // 模型切换
-  @State models: LlmModelEntry[] = [];
-  @State activeModelId: string = '';
-  @State showModelPicker: boolean = false;
-  @State activeConfig: LlmConfig | null = null;
+  // 模型切换（顶部 chip：只做切换，不做配置；配置入口在「我的 → AI 模型」）
+  @Local models: LlmModelEntry[] = [];
+  @Local activeModelId: string = '';
+  @Local showModelPicker: boolean = false;
+  @Local activeConfig: LlmConfig | null = null;
+  // chip 展示名（NewsAiService.getActiveModelName）与"是否跟随全局模型"（热榜域未单独指定）
+  @Local modelChipLabel: string = '未选择模型';
+  @Local followGlobalModel: boolean = true;
   // 当前流式请求的 httpRequest 引用，停止按钮调用 destroy() 中断
   private streamRequest: http.HttpRequest | null = null;
   // 上次失败时缓存的 user 消息，用于重试
   private lastUserText: string = '';
 
   // 搜索
-  @State showSearch: boolean = false;
-  @State searchQuery: string = '';
-  @State searchRole: string = 'all';
+  @Local showSearch: boolean = false;
+  @Local searchQuery: string = '';
+  @Local searchRole: string = 'all';
 
   // 多选删除
-  @State selectionMode: boolean = false;
-  @State selectedIds: string[] = [];
+  @Local selectionMode: boolean = false;
+  @Local selectedIds: string[] = [];
 
   // 长按操作面板：显示单条消息的复制/分享/多选/删除
-  @State actionSheetIndex: number = -1;
+  @Local actionSheetIndex: number = -1;
 
   // 全屏 markdown 查看
-  @State fullscreenIndex: number = -1;
+  @Local fullscreenIndex: number = -1;
   private fullscreenController: webview.WebviewController = new webview.WebviewController();
 
   private readonly scrollController: Scroller = new Scroller();
@@ -153,24 +161,18 @@ export struct ChatTab {
         }
       }
     };
+    PageRefreshBus.onChatShow(this.onHostShow);
     this.load();
   }
 
   aboutToDisappear(): void {
+    PageRefreshBus.offChatShow(this.onHostShow);
     this.chatVm.dispose();
     // 页面销毁时取消未触发的流式刷新定时器，避免回调在组件销毁后仍写入消息对象
     this.cancelRenderFlush();
     // 停止语音识别与朗读，释放语音引擎
     SpeechService.stopRecognition();
     SpeechService.releaseTts();
-  }
-
-  // 作为 Tab 嵌入后无 onPageShow，改为监听宿主递增的刷新 token（ChatConfig 返回/切回本 Tab 时触发）
-  onRefreshToken(): void {
-    if (this.chatRefreshToken > 0) {
-      this.refreshModels();
-      setTimeout(() => { this.scrollToBottom(); }, 100);
-    }
   }
 
   private async load(): Promise<void> {
@@ -190,7 +192,7 @@ export struct ChatTab {
       ? await ChatRepository.loadMessagesWindow(activeId, this.MESSAGE_PAGE_SIZE, 0) : [];
     if (this.messages.length === 0) {
       const welcome: ChatMessage = ChatMessage.create('assistant',
-        '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
+        '你好，我是智子 AI 助手。请先在「我的 → AI 模型」完成大模型 API 配置，然后就可以开始对话了。');
       this.messages = [welcome];
       this.sessionTotalCount = 0;
       this.hasMoreOlder = false;
@@ -307,20 +309,22 @@ export struct ChatTab {
     }
   }
 
+  // 刷新模型：可切换列表与当前生效模型统一经 NewsAiService 解析
+  // （热榜域未单独指定模型时自动回退到全局激活模型），保证 chip 展示名与实际请求所用模型一致。
   private async refreshModels(): Promise<void> {
-    this.models = await ChatRepository.loadModels();
-    this.activeModelId = await ChatRepository.loadActiveModelId();
-    this.activeConfig = await ChatRepository.loadActiveConfig();
-    // 激活 id 与现有模型不匹配时（如已删除），同步为当前生效模型，保证列表高亮与状态一致
-    if (this.activeConfig !== null && this.activeModelId !== this.activeConfig.id) {
-      this.activeModelId = this.activeConfig.id;
-    }
+    this.models = await NewsAiService.listModels();
+    this.activeConfig = await NewsAiService.getActiveConfig();
+    this.activeModelId = this.activeConfig !== null
+      ? this.activeConfig.id : await ChatRepository.loadActiveModelId();
     this.configReady = this.activeConfig !== null && this.activeConfig.configured;
     if (this.configReady && this.activeConfig !== null) {
       this.configHint = modelDisplayNameFromConfig(this.activeConfig);
     } else {
       this.configHint = '请先完成配置';
     }
+    this.modelChipLabel = await NewsAiService.getActiveModelName();
+    const rememberedId: string = await DataRepository.getSetting('hotModelId', '');
+    this.followGlobalModel = rememberedId.trim().length === 0;
   }
 
   private currentModelName(): string {
@@ -333,30 +337,26 @@ export struct ChatTab {
     return '未选择模型';
   }
 
-  // 仅启用状态的模型可用于对话
-  private enabledModels(): LlmModelEntry[] {
-    const result: LlmModelEntry[] = [];
-    for (let i: number = 0; i < this.models.length; i++) {
-      if (this.models[i].enabled !== false) result.push(this.models[i]);
+  // 顶部模型 chip：打开半模态切换列表（切换 ≠ 配置）
+  private openModelSheet(): void {
+    if (this.models.length === 0) {
+      promptAction.showToast({ message: '暂无可用模型，请到「我的 → AI 模型」配置' });
+      return;
     }
-    return result;
+    this.showModelPicker = true;
   }
 
-  private async selectModel(index: number): Promise<void> {
-    const enabled: LlmModelEntry[] = this.enabledModels();
-    if (index < 0 || index >= enabled.length) return;
-    const m: LlmModelEntry = enabled[index];
+  // 切换到指定模型；id 为空串 = 「跟随全局模型」（清除热榜域单独指定）
+  private async selectModel(id: string): Promise<void> {
     try {
-      await ChatRepository.setActiveModelId(m.id);
+      await NewsAiService.selectModel(id);
     } catch (e) {
       promptAction.showToast({ message: '切换失败，请重试' });
       return;
     }
-    this.activeModelId = m.id;
-    this.activeConfig = entryToConfig(m);
-    this.configReady = this.activeConfig.configured;
-    this.configHint = modelDisplayName(m);
     this.showModelPicker = false;
+    await this.refreshModels();
+    promptAction.showToast({ message: '当前模型：' + this.currentModelName() });
   }
 
   private openConfig(): void {
@@ -555,7 +555,7 @@ export struct ChatTab {
     this.flushTimer = setTimeout(() => {
       this.renderScheduled = false;
       this.flushTimer = -1;
-      // 内容未变化时跳过赋值，避免无意义的整条重渲染（@ObjectLink 监听赋值）
+      // 内容未变化时跳过赋值，避免无意义的整条重渲染（V1 ObjectLink 监听赋值）
       if (assistantMessage.content !== this.streamingContent ||
         assistantMessage.reasoning !== this.streamingReasoning) {
         assistantMessage.content = this.streamingContent;
@@ -598,7 +598,7 @@ export struct ChatTab {
           await ChatRepository.clearSessionMessages(this.activeSessionId);
           // 清空后恢复欢迎语，保持一致体验
           const welcome: ChatMessage = ChatMessage.create('assistant',
-            '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
+            '你好，我是智子 AI 助手。请先在「我的 → AI 模型」完成大模型 API 配置，然后就可以开始对话了。');
           this.messages = [welcome];
           this.sessionTotalCount = 0;
           this.hasMoreOlder = false;
@@ -610,11 +610,11 @@ export struct ChatTab {
 
   private onInputChange(value: string): void {
     this.inputText = value;
-    // 多行输入：按字符数估算行数，44~120 之间动态增高
+    // 多行输入：按字符数估算行数，48~120 之间动态增高（48vp = 华为输入胶囊最小高度）
     const len: number = value.length;
     const lines: number = Math.max(1, Math.ceil(len / 24));
-    const h: number = Math.min(120, 44 + (lines - 1) * 20);
-    this.inputHeight = Math.max(44, h);
+    const h: number = Math.min(120, 48 + (lines - 1) * 20);
+    this.inputHeight = Math.max(48, h);
   }
 
   // 输入框下方提示：Token 估算 / 上下文接近预警
@@ -651,20 +651,111 @@ export struct ChatTab {
     this.onInputChange(this.inputText);
   }
 
+  // ==================== 顶栏（v10 华为式：会话抽屉 + 标题 + 模型切换 chip） ====================
+
+  // 顶栏图标动作：≥44vp 触控区，选中态用主色
+  @Builder
+  barIcon(icon: Resource, emoji: string, active: boolean, onTap: () => void) {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(icon)
+          .fontSize(22)
+          .fontColor([active ? this.themeState.palette.primary : this.themeState.palette.textSecondary])
+      } else {
+        Text(emoji)
+          .fontSize(18)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(active ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+      }
+    }
+    .width(this.themeState.palette.touchTarget)
+    .height(this.themeState.palette.touchTarget)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .onClick(onTap)
+  }
+
+  // overflow 菜单：顶栏只留 ≤3 个动作，次级动作（清空会话 / 模型配置）收进 ⋯
+  private overflowMenu(): MenuElement[] {
+    const trashIcon: ResourceStr = USE_SYMBOL_ICONS ? AppIcons.trash : AppIcons.trashEmoji;
+    const settingIcon: ResourceStr = USE_SYMBOL_ICONS ? AppIcons.settings : AppIcons.settingsEmoji;
+    const items: MenuElement[] = [
+      { value: '清空会话', icon: trashIcon, action: (): void => { this.clearChat(); } },
+      { value: '模型配置', icon: settingIcon, action: (): void => { this.openConfig(); } }
+    ];
+    return items;
+  }
+
+  @Builder
+  moreButton() {
+    Row() {
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.more)
+          .fontSize(22)
+          .fontColor([this.themeState.palette.textSecondary])
+      } else {
+        Text(AppIcons.moreEmoji)
+          .fontSize(20)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textSecondary)
+      }
+    }
+    .width(this.themeState.palette.touchTarget)
+    .height(this.themeState.palette.touchTarget)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(this.themeState.palette.radiusSm)
+    .accessibilityText('更多操作')
+    .bindMenu(this.overflowMenu())
+  }
+
+  // 模型 chip（胶囊 + bgSurface2）：只做切换，点击打开半模态模型列表
+  @Builder
+  modelChip() {
+    Row({ space: this.themeState.palette.sp1 }) {
+      Text(this.modelChipLabel)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.configReady ? this.themeState.palette.textSecondary : this.themeState.palette.warning)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: this.themeState.isSm ? 92 : 168 })
+      if (USE_SYMBOL_ICONS) {
+        SymbolGlyph(AppIcons.forward)
+          .fontSize(14)
+          .fontColor([this.themeState.palette.textTertiary])
+      } else {
+        Text('▾')
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
+      }
+    }
+    .height(36)
+    .padding({ left: 12, right: 10 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.themeState.palette.bgSurface2)
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .accessibilityText('切换模型')
+    .onClick(() => { this.openModelSheet(); })
+  }
+
   @Builder
   presetPanel() {
     if (this.matchedPresets().length > 0) {
       Column({ space: 4 }) {
         Row() {
           Text('⌘ 斜杠命令')
-            .fontSize(10)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
           Blank()
           Text('点击填入模板')
-            .fontSize(10)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .width('100%')
 
@@ -673,18 +764,18 @@ export struct ChatTab {
             ForEach(this.matchedPresets(), (preset: PromptPreset) => {
               Row({ space: 4 }) {
                 Text(preset.icon)
-                  .fontSize(12)
-                  .fontFamily(this.palette.fontSans)
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
                 Text(preset.name)
-                  .fontSize(11)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textPrimary)
                   .fontWeight(FontWeight.Medium)
               }
-              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .borderRadius(14)
-              .backgroundColor(this.palette.bgSurface)
-              .border({ width: 1, color: this.palette.borderSubtle })
+              .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+              .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.themeState.palette.bgSurface2)
+              .clickEffect({ level: ClickEffectLevel.LIGHT })
               .onClick(() => { this.choosePreset(preset); })
             }, (preset: PromptPreset) => preset.id)
           }
@@ -1022,22 +1113,28 @@ export struct ChatTab {
 
   @Builder
   agentStepsPanel() {
-    Column({ space: 6 }) {
+    Column({ space: this.themeState.palette.sp2 }) {
       ForEach(this.agentSteps, (step: AgentStep) => {
-        Row({ space: 8 }) {
-          Text(step.status === 'done' ? '🔧' : '⚠️')
-            .fontSize(14)
-            .fontFamily(this.palette.fontSans)
+        Row({ space: this.themeState.palette.sp2 }) {
+          if (USE_SYMBOL_ICONS) {
+            SymbolGlyph(step.status === 'done' ? AppIcons.check : AppIcons.warning)
+              .fontSize(20)
+              .fontColor([step.status === 'done' ? this.themeState.palette.success : this.themeState.palette.warning])
+          } else {
+            Text(step.status === 'done' ? AppIcons.checkEmoji : AppIcons.warningEmoji)
+              .fontSize(this.themeState.palette.fsMd)
+              .fontFamily(this.themeState.palette.fontSans)
+          }
           Column({ space: 2 }) {
             Text(step.toolName + (step.status === 'done' ? ' · 完成' : ' · 失败'))
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textSecondary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textSecondary)
               .fontWeight(FontWeight.Medium)
             Text(step.result.length > 80 ? step.result.substring(0, 80) + '…' : step.result)
-              .fontSize(10)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .maxLines(2)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
@@ -1045,13 +1142,15 @@ export struct ChatTab {
           .layoutWeight(1)
         }
         .width('100%')
-        .padding(8)
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface2)
+        .padding(10)
+        .borderRadius(this.themeState.palette.radiusSm)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
       }, (step: AgentStep) => step.stepIndex.toString() + '_' + step.startedAt.toString())
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8 })
+    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp2 })
   }
 
   // 生成结束：实况窗标记完成并关闭
@@ -1596,7 +1695,7 @@ export struct ChatTab {
           this.exitSelectionMode();
           if (this.messages.length === 0) {
             const welcome: ChatMessage = ChatMessage.create('assistant',
-              '你好，我是智子 AI 助手。请先点击右上角完成大模型 API 配置，然后就可以开始对话了。');
+              '你好，我是智子 AI 助手。请先在「我的 → AI 模型」完成大模型 API 配置，然后就可以开始对话了。');
             this.messages = [welcome];
             this.sessionTotalCount = 0;
             this.hasMoreOlder = false;
@@ -1655,31 +1754,37 @@ export struct ChatTab {
   filterChip(label: string, role: string) {
     Row() {
       Text(label)
-        .fontSize(11)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.searchRole === role ? '#FFFFFF' : this.palette.textPrimary)
-        .fontWeight(FontWeight.Medium)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.searchRole === role ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+        .fontWeight(this.searchRole === role ? FontWeight.Medium : FontWeight.Normal)
     }
-    .height(28)
-    .padding({ left: 12, right: 12 })
-    .borderRadius(14)
-    .backgroundColor(this.searchRole === role ? this.palette.primary : this.palette.bgSurface2)
-    .border({ width: 1, color: this.searchRole === role ? this.palette.primary : this.palette.borderSubtle })
+    .height(32)
+    .padding({ left: 14, right: 14 })
+    .borderRadius(this.themeState.palette.radiusCapsule)
+    .backgroundColor(this.searchRole === role ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface2)
+    .clickEffect({ level: ClickEffectLevel.LIGHT })
     .onClick(() => { this.searchRole = role; this.syncMessageSource(); })
   }
 
   @Builder
   searchBar() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        Text('🔍')
-          .fontSize(14)
-          .fontFamily(this.palette.fontSans)
+    Column({ space: this.themeState.palette.sp2 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
+        if (USE_SYMBOL_ICONS) {
+          SymbolGlyph(AppIcons.search)
+            .fontSize(18)
+            .fontColor([this.themeState.palette.textTertiary])
+        } else {
+          Text(AppIcons.searchEmoji)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+        }
         TextInput({ text: this.searchQuery, placeholder: '搜索对话记录…' })
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
-          .placeholderColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .placeholderColor(this.themeState.palette.textTertiary)
           .backgroundColor(Color.Transparent)
           .height(40)
           .layoutWeight(1)
@@ -1687,20 +1792,30 @@ export struct ChatTab {
             this.searchQuery = value;
             this.loadSearchResults();
           })
-        Text('✕')
-          .fontSize(16)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
-          .padding(8)
-          .onClick(() => { this.exitSearch(); })
+        Row() {
+          if (USE_SYMBOL_ICONS) {
+            SymbolGlyph(AppIcons.close)
+              .fontSize(18)
+              .fontColor([this.themeState.palette.textTertiary])
+          } else {
+            Text(AppIcons.closeEmoji)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
+          }
+        }
+        .width(40)
+        .height(40)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .accessibilityText('退出搜索')
+        .onClick(() => { this.exitSearch(); })
       }
       .width('100%')
       .padding({ left: 12, right: 4 })
       .height(44)
-      .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-      .borderRadius(10)
-      .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-      .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+      .backgroundColor(this.themeState.palette.bgSurface2)
+      .borderRadius(this.themeState.palette.radiusCapsule)
 
       Row({ space: 6 }) {
         this.filterChip('全部', 'all')
@@ -1708,31 +1823,32 @@ export struct ChatTab {
         this.filterChip('助手', 'assistant')
         Blank()
         Text('共 ' + this.searchResultCount().toString() + ' 条')
-          .fontSize(10)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontSize(this.themeState.palette.fsXs)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
       .width('100%')
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8 })
+    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp2 })
   }
 
   @Builder
   emptyWelcome() {
-    Column({ space: 12 }) {
+    Column({ space: this.themeState.palette.sp3 }) {
       Text('🗨️')
         .fontSize(44)
-        .fontFamily(this.palette.fontSans)
+        .fontFamily(this.themeState.palette.fontSans)
       Text('智子 AI 助手')
-        .fontSize(this.palette.fsXl)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsXl)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Bold)
-      Text('配置你自己的大模型 API Key，开始对话')
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+      Text('到「我的 → AI 模型」完成 API 配置后开始对话')
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)
@@ -1742,122 +1858,22 @@ export struct ChatTab {
   // 搜索无结果
   @Builder
   searchEmpty() {
-    Column({ space: 8 }) {
+    Column({ space: this.themeState.palette.sp2 }) {
       Text('🔍')
         .fontSize(36)
-        .fontFamily(this.palette.fontSans)
+        .fontFamily(this.themeState.palette.fontSans)
       Text('未找到匹配的对话')
-        .fontSize(this.palette.fsBase)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textSecondary)
+        .fontSize(this.themeState.palette.fsMd)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textSecondary)
       Text('试试其他关键词或筛选条件')
-        .fontSize(this.palette.fsXs)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+        .fontSize(this.themeState.palette.fsXs)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
     }
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .padding({ top: 60, bottom: 40 })
-  }
-
-  @Builder
-  modelPicker() {
-    Stack() {
-      Column() {
-        Blank()
-        Column() {
-          Row() {
-            Row()
-              .width(36)
-              .height(4)
-              .borderRadius(2)
-              .backgroundColor(this.palette.borderSubtle)
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .padding({ top: 10, bottom: 4 })
-
-          Row() {
-            Text('选择模型')
-              .fontSize(this.palette.fsMd)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .fontWeight(FontWeight.Bold)
-            Blank()
-            Text('✕')
-              .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .padding(8)
-              .onClick(() => { this.showModelPicker = false; })
-          }
-          .width('100%')
-          .padding({ left: 4, right: 4, bottom: 8 })
-
-          if (this.enabledModels().length > 0) {
-            Scroll() {
-              Column({ space: 4 }) {
-                ForEach(this.enabledModels(), (m: LlmModelEntry, index: number) => {
-                  Row({ space: 10 }) {
-                    Column({ space: 2 }) {
-                      Text(modelDisplayName(m))
-                        .fontSize(this.palette.fsSm)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textPrimary)
-                        .fontWeight(m.id === this.activeModelId ? FontWeight.Bold : FontWeight.Medium)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      Text(m.model)
-                        .fontSize(10)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textTertiary)
-                        .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    }
-                    .alignItems(HorizontalAlign.Start)
-                    .layoutWeight(1)
-                    if (m.id === this.activeModelId) {
-                      Text('✓')
-                        .fontSize(16)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.primary)
-                        .fontWeight(FontWeight.Bold)
-                    }
-                  }
-                  .width('100%')
-                  .padding(12)
-                  .borderRadius(8)
-                  .backgroundColor(m.id === this.activeModelId ? this.palette.primaryDim : this.palette.bgSurface)
-                  .border({ width: m.id === this.activeModelId ? 1 : 0,
-                    color: m.id === this.activeModelId ? this.palette.primary : Color.Transparent })
-                  .onClick(() => { this.selectModel(index); })
-                }, (m: LlmModelEntry) => m.id)
-              }
-              .width('100%')
-            }
-            .scrollBar(BarState.Off)
-            .constraintSize({ maxHeight: 360 })
-          } else {
-            Text('没有已启用的模型，请到模型管理中启用')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
-              .padding({ top: 16, bottom: 16 })
-          }
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
-        .backgroundColor(this.palette.bgBase)
-        .borderRadius({ topLeft: 16, topRight: 16 })
-      }
-      .width('100%')
-      .height('100%')
-      .justifyContent(FlexAlign.End)
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
-    .onClick(() => { this.showModelPicker = false; })
   }
 
   build() {
@@ -1866,51 +1882,45 @@ export struct ChatTab {
       GlobalBackgroundLayer()
       Column() {
         TopBar({
-          title: this.selectionMode ? '已选 ' + this.selectedIds.length.toString() + ' 条' : 'AI 对话',
-          subtitle: this.selectionMode ? '长按消息进入多选' : (this.showSearch ? '搜索模式' : this.configHint),
+          // 标题即当前会话名（搜索/多选时切换为模式标题），模型名由右侧 chip 承载
+          title: this.selectionMode ? '已选 ' + this.selectedIds.length.toString() + ' 条' :
+            (this.showSearch ? '搜索对话' : this.activeSessionTitle()),
+          subtitle: this.selectionMode ? '长按消息进入多选' :
+            (this.showSearch ? '搜索模式' : (this.configReady ? '' : this.configHint)),
           showLeading: true,
           onLeadingTap: (): void => { this.openSessionDrawer(); }
         }) {
           if (this.selectionMode) {
             Row({ space: 16 }) {
               Text('删除')
-                .fontSize(14)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.danger)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.danger)
                 .fontWeight(FontWeight.Medium)
                 .onClick(() => { this.deleteSelected(); })
               Text('取消')
-                .fontSize(14)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textSecondary)
                 .onClick(() => { this.exitSelectionMode(); })
             }
           } else {
-            Row({ space: 12 }) {
-              Text('🔍')
-                .fontSize(16)
-                .fontFamily(this.palette.fontSans)
-                .opacity(this.showSearch ? 0.5 : 1)
-                .onClick(() => {
-                  if (this.messages.length > 0) {
-                    this.showSearch = !this.showSearch;
-                    if (!this.showSearch) {
-                      this.searchQuery = '';
-                      this.searchRole = 'all';
-                    }
-                    this.syncMessageSource();
-                  } else {
-                    promptAction.showToast({ message: '暂无对话记录可搜索' });
+            // 顶栏操作区 ≤3：模型切换 chip + 搜索 + overflow（清空会话 / 模型配置）
+            Row({ space: this.themeState.palette.sp1 }) {
+              this.modelChip()
+              this.barIcon(AppIcons.search, AppIcons.searchEmoji, this.showSearch, (): void => {
+                if (this.messages.length > 0) {
+                  this.showSearch = !this.showSearch;
+                  if (!this.showSearch) {
+                    this.searchQuery = '';
+                    this.searchRole = 'all';
                   }
-                })
-              Text('🧹')
-                .fontSize(18)
-                .fontFamily(this.palette.fontSans)
-                .onClick(() => { this.clearChat(); })
-              Text('⚙️')
-                .fontSize(18)
-                .fontFamily(this.palette.fontSans)
-                .onClick(() => { this.openConfig(); })
+                  this.syncMessageSource();
+                } else {
+                  promptAction.showToast({ message: '暂无对话记录可搜索' });
+                }
+              })
+              this.moreButton()
             }
           }
         }
@@ -1952,15 +1962,15 @@ export struct ChatTab {
 
         // 底部区域
         if (this.selectionMode) {
-          Row({ space: 8 }) {
+          Row({ space: this.themeState.palette.sp2 }) {
             Button(this.selectedIds.length === 0 ? '全选' : '取消全选')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .height(40)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .height(this.themeState.palette.touchTarget)
               .layoutWeight(1)
-              .backgroundColor(this.palette.bgSurface)
-              .fontColor(this.palette.textPrimary)
-              .borderRadius(8)
+              .backgroundColor(this.themeState.palette.bgSurface2)
+              .fontColor(this.themeState.palette.textPrimary)
+              .borderRadius(this.themeState.palette.radiusCapsule)
               .onClick(() => {
                 if (this.selectedIds.length === this.messages.length) {
                   this.selectedIds = [];
@@ -1969,143 +1979,146 @@ export struct ChatTab {
                 }
               })
             Button('复制')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .height(40)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .height(this.themeState.palette.touchTarget)
               .layoutWeight(1)
-              .backgroundColor(this.palette.bgSurface)
-              .fontColor(this.palette.textPrimary)
-              .borderRadius(8)
+              .backgroundColor(this.themeState.palette.bgSurface2)
+              .fontColor(this.themeState.palette.textPrimary)
+              .borderRadius(this.themeState.palette.radiusCapsule)
               .onClick(() => { this.copySelected(); })
             Button('分享')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .height(40)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .height(this.themeState.palette.touchTarget)
               .layoutWeight(1)
-              .backgroundColor(this.palette.bgSurface)
-              .fontColor(this.palette.textPrimary)
-              .borderRadius(8)
+              .backgroundColor(this.themeState.palette.bgSurface2)
+              .fontColor(this.themeState.palette.textPrimary)
+              .borderRadius(this.themeState.palette.radiusCapsule)
               .onClick(() => { this.shareSelected(); })
             Button('删除 (' + this.selectedIds.length.toString() + ')')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .height(40)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .height(this.themeState.palette.touchTarget)
               .layoutWeight(1)
-              .backgroundColor(this.palette.danger)
-              .fontColor('#FFFFFF')
-              .borderRadius(8)
+              .backgroundColor(this.themeState.palette.danger)
+              .fontColor(this.themeState.palette.primaryOnColor)
+              .borderRadius(this.themeState.palette.radiusCapsule)
               .onClick(() => { this.deleteSelected(); })
           }
           .width('100%')
-          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8,
-            bottom: Math.max(8, this.navBarHeight) })
+          .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp2,
+            bottom: Math.max(8, this.themeState.navBarHeight) })
         } else if (this.showSearch) {
           // 搜索模式下显示退出按钮
           Row() {
             Text('退出搜索，返回对话')
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.primary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primary)
               .fontWeight(FontWeight.Medium)
           }
           .width('100%')
-          .height(44)
+          .height(this.themeState.palette.touchTarget)
           .justifyContent(FlexAlign.Center)
-          .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-          .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-          .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
-          .borderRadius(10)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .borderRadius(this.themeState.palette.radiusCapsule)
+          .clickEffect({ level: ClickEffectLevel.LIGHT })
           .onClick(() => { this.exitSearch(); })
-          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24,
-            bottom: Math.max(8, this.navBarHeight) })
+          .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp2,
+            bottom: Math.max(8, this.themeState.navBarHeight) })
         } else {
-          Column({ space: 8 }) {
+          Column({ space: this.themeState.palette.sp2 }) {
+            // 未配置提示条（warningBg 淡底）：说明原因 + 「去配置」下一步
             if (!this.configReady) {
-              Row() {
-                Text('⚠️ 尚未配置大模型 API，点击去配置')
-                  .fontSize(11)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.warning)
+              Row({ space: this.themeState.palette.sp2 }) {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.warning)
+                    .fontSize(16)
+                    .fontColor([this.themeState.palette.warning])
+                } else {
+                  Text(AppIcons.warningEmoji)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                }
+                Text('尚未配置大模型 API')
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.warning)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .layoutWeight(1)
-                Text('去配置 ›')
-                  .fontSize(11)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.primary)
+                Text('去配置')
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.primary)
                   .fontWeight(FontWeight.Medium)
               }
               .width('100%')
-              .padding(10)
-              .borderRadius(8)
-              .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-              .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-              .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
+              .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+              .borderRadius(this.themeState.palette.radiusSm)
+              .backgroundColor(this.themeState.palette.warningBg)
+              .clickEffect({ level: ClickEffectLevel.LIGHT })
               .onClick(() => { this.openConfig(); })
             }
-            // 当前模型切换
-            Row({ space: 6 }) {
-              Text('🤖')
-                .fontSize(12)
-                .fontFamily(this.palette.fontSans)
-              Text(this.currentModelName())
-                .fontSize(11)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text('▾')
-                .fontSize(10)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
-              Blank()
-              // 联网搜索开关
-              Row({ space: 4 }) {
-                Text('🌐')
-                  .fontSize(12)
-                  .fontFamily(this.palette.fontSans)
+            // 快捷操作条：联网搜索开关（胶囊 chip；选中 primaryBgStrong + primary 文字）
+            Row({ space: this.themeState.palette.sp2 }) {
+              Row({ space: this.themeState.palette.sp1 }) {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.globe)
+                    .fontSize(16)
+                    .fontColor([this.webSearchEnabled ? this.themeState.palette.primary : this.themeState.palette.textSecondary])
+                } else {
+                  Text(AppIcons.globeEmoji)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                }
                 Text('联网搜索')
-                  .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.webSearchEnabled ? '#FFFFFF' : this.palette.textSecondary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.webSearchEnabled ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
                   .fontWeight(this.webSearchEnabled ? FontWeight.Medium : FontWeight.Normal)
               }
-              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-              .borderRadius(10)
-              .backgroundColor(this.webSearchEnabled ? this.palette.primary : this.palette.bgSurface2)
+              .padding({ left: 12, right: 14, top: 8, bottom: 8 })
+              .borderRadius(this.themeState.palette.radiusCapsule)
+              .backgroundColor(this.webSearchEnabled ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface2)
+              .clickEffect({ level: ClickEffectLevel.LIGHT })
+              .accessibilityText('联网搜索开关')
               .onClick(() => {
                 this.webSearchEnabled = !this.webSearchEnabled;
                 DataRepository.setSetting('webSearchEnabled', this.webSearchEnabled ? 'true' : 'false');
                 promptAction.showToast({ message: this.webSearchEnabled ? '已开启联网搜索' : '已关闭联网搜索' });
               })
+              Blank()
             }
             .width('100%')
-            .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-            .borderRadius(8)
-            .backgroundColor(GlassStyle.backgroundColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette))
-            .border({ width: 1, color: GlassStyle.borderColor(this.glassEnabled, GlassLevel.P2_LIST, this.palette) })
-            .backgroundBlurStyle(this.glassEnabled ? BlurStyle.COMPONENT_THIN : BlurStyle.NONE)
-            .onClick(() => {
-              if (this.enabledModels().length > 0) {
-                this.showModelPicker = true;
-              } else if (this.models.length > 0) {
-                promptAction.showToast({ message: '所有模型均已禁用，请先启用' });
-              } else {
-                promptAction.showToast({ message: '请先配置模型' });
-              }
-            })
             this.presetPanel()
             // 无痕模式提示条：全局开关或会话级标记任一开启时显示
             if (this.incognitoActive()) {
               Row({ space: 6 }) {
-                Text('🕶️')
-                  .fontSize(11)
-                  .fontFamily(this.palette.fontSans)
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.lock)
+                    .fontSize(14)
+                    .fontColor([this.themeState.palette.warning])
+                } else {
+                  Text(AppIcons.lockEmoji)
+                    .fontSize(this.themeState.palette.fsXs)
+                    .fontFamily(this.themeState.palette.fontSans)
+                }
                 Text('无痕模式：本次对话内容不会保存到本地')
-                  .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.warning)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.warning)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
               }
               .width('100%')
-              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+              .borderRadius(this.themeState.palette.radiusSm)
+              .backgroundColor(this.themeState.palette.warningBg)
             }
             ChatInputBar({
               inputText: this.inputText,
@@ -2133,14 +2146,24 @@ export struct ChatTab {
             })
           }
           .width('100%')
-          .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8, bottom: Math.max(8, this.navBarHeight) })
+          .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+            right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp2,
+            bottom: Math.max(8, this.themeState.navBarHeight) })
         }
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
+      .backgroundColor(this.themeState.palette.bgBase)
 
-      if (this.showModelPicker) { this.modelPicker() }
+      AiModelPicker({
+        visible: this.showModelPicker,
+        models: this.models,
+        followGlobal: this.followGlobalModel,
+        activeModelId: this.activeModelId,
+        currentName: this.modelChipLabel,
+        onSelect: (id: string): void => { this.selectModel(id); },
+        onClose: (): void => { this.showModelPicker = false; }
+      })
       if (this.showSessionDrawer) {
         ChatSessionDrawer({
           sessions: this.drawerSessions,
@@ -2174,9 +2197,9 @@ export struct ChatTab {
             Column({ space: 0 }) {
               // 消息预览（截取前 80 字）
               Text(this.actionSheetPreviewText())
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .lineHeight(18)
                 .maxLines(3)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2188,109 +2211,109 @@ export struct ChatTab {
                   Column({ space: 4 }) {
                     Text('✏️')
                       .fontSize(22)
-                      .fontFamily(this.palette.fontSans)
+                      .fontFamily(this.themeState.palette.fontSans)
                     Text('编辑')
-                      .fontSize(11)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textSecondary)
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textSecondary)
                   }
                   .layoutWeight(1)
-                  .padding({ top: 8, bottom: 8 })
+                  .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
                   .onClick(() => { this.editUserMessage(this.actionSheetIndex); })
                 } else {
                   Column({ space: 4 }) {
                     Text('🔄')
                       .fontSize(22)
-                      .fontFamily(this.palette.fontSans)
+                      .fontFamily(this.themeState.palette.fontSans)
                     Text('重新生成')
-                      .fontSize(11)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.textSecondary)
+                      .fontSize(this.themeState.palette.fsXs)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.textSecondary)
                   }
                   .layoutWeight(1)
-                  .padding({ top: 8, bottom: 8 })
+                  .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
                   .onClick(() => { this.regenerateAssistant(this.actionSheetIndex); })
                 }
 
                 Column({ space: 4 }) {
                   Text('📋')
                     .fontSize(22)
-                    .fontFamily(this.palette.fontSans)
+                    .fontFamily(this.themeState.palette.fontSans)
                   Text('复制')
                     .fontSize(11)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                 }
                 .layoutWeight(1)
-                .padding({ top: 8, bottom: 8 })
+                .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
                 .onClick(() => { this.copyMessage(this.actionSheetIndex); })
 
                 Column({ space: 4 }) {
                   Text('📤')
                     .fontSize(22)
-                    .fontFamily(this.palette.fontSans)
+                    .fontFamily(this.themeState.palette.fontSans)
                   Text('分享')
                     .fontSize(11)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                 }
                 .layoutWeight(1)
-                .padding({ top: 8, bottom: 8 })
+                .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
                 .onClick(() => { this.shareMessage(this.actionSheetIndex); })
 
                 Column({ space: 4 }) {
                   Text('☑️')
                     .fontSize(22)
-                    .fontFamily(this.palette.fontSans)
+                    .fontFamily(this.themeState.palette.fontSans)
                   Text('多选')
                     .fontSize(11)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                 }
                 .layoutWeight(1)
-                .padding({ top: 8, bottom: 8 })
+                .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
                 .onClick(() => { this.enterMultiSelectFromSheet(); })
 
                 Column({ space: 4 }) {
                   Text('🗑️')
                     .fontSize(22)
-                    .fontFamily(this.palette.fontSans)
+                    .fontFamily(this.themeState.palette.fontSans)
                   Text('删除')
                     .fontSize(11)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textSecondary)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
                 }
                 .layoutWeight(1)
-                .padding({ top: 8, bottom: 8 })
+                .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
                 .onClick(() => { this.deleteSingle(this.actionSheetIndex); })
               }
               .width('100%')
-              .padding({ top: 8, bottom: 8 })
+              .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2 })
 
               // 取消
               Text('取消')
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textSecondary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textSecondary)
                 .fontWeight(FontWeight.Medium)
                 .width('100%')
-                .height(44)
+                .height(this.themeState.palette.touchTarget)
                 .textAlign(TextAlign.Center)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(10)
+                .backgroundColor(this.themeState.palette.bgSurface2)
+                .borderRadius(this.themeState.palette.radiusCapsule)
                 .onClick(() => { this.closeActionSheet(); })
             }
             .width('100%')
-            .padding(12)
-            .backgroundColor(this.palette.bgBase)
-            .borderRadius({ topLeft: 16, topRight: 16 })
+            .padding(this.themeState.palette.sp3)
+            .backgroundColor(this.themeState.palette.bgElevated)
+            .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
           }
           .width('100%')
           .justifyContent(FlexAlign.End)
         }
         .width('100%')
         .height('100%')
-        .backgroundColor('rgba(0,0,0,0.35)')
+        .backgroundColor(this.themeState.palette.maskOverlay)
         .onClick(() => { this.closeActionSheet(); })
       }
 
@@ -2298,22 +2321,35 @@ export struct ChatTab {
       if (this.fullscreenIndex >= 0) {
         Stack() {
           Column() {
-            Row() {
+            Row({ space: this.themeState.palette.sp2 }) {
               Text('Markdown 预览')
-                .fontSize(this.palette.fsMd)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontSize(this.themeState.palette.fsLg)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
                 .fontWeight(FontWeight.Bold)
               Blank()
-              Text('✕')
-                .fontSize(16)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
-                .padding(8)
-                .onClick(() => { this.closeFullscreen(); })
+              Row() {
+                if (USE_SYMBOL_ICONS) {
+                  SymbolGlyph(AppIcons.close)
+                    .fontSize(20)
+                    .fontColor([this.themeState.palette.textSecondary])
+                } else {
+                  Text(AppIcons.closeEmoji)
+                    .fontSize(this.themeState.palette.fsMd)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textSecondary)
+                }
+              }
+              .width(this.themeState.palette.touchTarget)
+              .height(this.themeState.palette.touchTarget)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .accessibilityText('关闭预览')
+              .onClick(() => { this.closeFullscreen(); })
             }
             .width('100%')
-            .padding({ left: 16, right: 8, top: 12, bottom: 8 })
+            .padding({ left: this.themeState.palette.pagePadding, right: this.themeState.palette.sp1,
+              top: this.themeState.palette.sp3, bottom: this.themeState.palette.sp2 })
 
             // 全屏 markdown 渲染（Web 组件，带滚动）
             Scroll() {
@@ -2329,7 +2365,7 @@ export struct ChatTab {
                       const content: string = m.reasoning.trim().length > 0 ?
                         '💭 思考过程\n\n' + m.reasoning.trim() + '\n\n---\n\n' + m.content : m.content;
                       this.fullscreenController.loadData(
-                        MarkdownConverter.toHtml(content, this.isDark), 'text/html', 'UTF-8', 'data');
+                        MarkdownConverter.toHtml(content, this.themeState.isDark), 'text/html', 'UTF-8', 'data');
                     })
                 }
               }
@@ -2341,8 +2377,8 @@ export struct ChatTab {
           }
           .width('100%')
           .height('100%')
-          .backgroundColor(this.palette.bgBase)
-          .padding({ bottom: Math.max(0, this.navBarHeight) })
+          .backgroundColor(this.themeState.palette.bgBase)
+          .padding({ bottom: Math.max(0, this.themeState.navBarHeight) })
         }
         .width('100%')
         .height('100%')

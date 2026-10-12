@@ -1,8 +1,8 @@
 // 智子 - 响应式多主题系统（沉浸光感版）
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { AppStorageV2 } from '@kit.ArkUI';
-import { DataRepository } from '../service/DataRepository';
-import { BackgroundImporter, BackgroundImportResult } from '../service/BackgroundImporter';
+import { DataRepository } from '../service/platform/DataRepository';
+import { BackgroundImporter, BackgroundImportResult } from '../service/platform/BackgroundImporter';
 import { PreferenceSnapshot, PreferencePersistenceResult } from '../model/GovernanceModels';
 import { ThemeMode, ThemePreference, GlobalBackgroundPreference } from './ThemeContracts';
 import { ThemeState } from './ThemeState';
@@ -23,24 +23,6 @@ export enum ColorThemeId {
   FOREST = 'forest'    // 自然绿
 }
 
-export function colorThemeName(themeId: ColorThemeId): string {
-  if (themeId === ColorThemeId.CYAN) return '终端青绿';
-  if (themeId === ColorThemeId.OCEAN) return '海洋蓝';
-  if (themeId === ColorThemeId.SUNSET) return '日落橙';
-  if (themeId === ColorThemeId.AURORA) return '极光紫';
-  if (themeId === ColorThemeId.SAKURA) return '樱花粉';
-  return '自然绿';
-}
-
-export function colorThemeColor(themeId: ColorThemeId): string {
-  if (themeId === ColorThemeId.CYAN) return '#00D9A3';
-  if (themeId === ColorThemeId.OCEAN) return '#3B82F6';
-  if (themeId === ColorThemeId.SUNSET) return '#F59E0B';
-  if (themeId === ColorThemeId.AURORA) return '#8B5CF6';
-  if (themeId === ColorThemeId.SAKURA) return '#EC4899';
-  return '#10B981';
-}
-
 // ============================================================
 // 完整色板接口
 // ============================================================
@@ -51,15 +33,16 @@ export interface ThemePalette {
   bgSurface2: string;
   bgElevated: string;
   bgHover: string;
-  // 玻璃材质背景（毛玻璃效果使用）
+  // 玻璃材质背景（仅底栏/侧边栏/悬浮条使用；内容卡不再使用玻璃）
   bgGlassBar: string;      // 顶栏/底栏玻璃色
-  bgGlassCard: string;     // 指标卡/列表卡玻璃色
-  bgGlassCard2: string;    // 卡片内次级元素玻璃色
-  borderGlass: string;     // 玻璃边框色
-  // 边框
+  bgGlassCard: string;     // 保留字段：等于 bgSurface（内容卡不再用玻璃）
+  bgGlassCard2: string;    // 保留字段：等于 bgSurface2
+  borderGlass: string;     // 玻璃/发丝边框色
+  // 边框与分割
   borderSubtle: string;
   borderDefault: string;
   borderStrong: string;
+  divider: string;         // 列表发丝分割线（含透明度）
   // 文字
   textPrimary: string;
   textSecondary: string;
@@ -68,17 +51,26 @@ export interface ThemePalette {
   primary: string;
   primaryHover: string;
   primaryDim: string;
+  primaryBg: string;       // 主色淡底（选中态/标签背景，含透明度）
+  primaryBgStrong: string; // 主色淡底加强（选中胶囊/强调块）
+  primaryBgMedium: string; // 主色淡底中等（棋盘/画布高亮等需较强对比处）
+  primaryOnColor: string;  // 主色上的文字色
   // 状态色
   success: string;
   warning: string;
   danger: string;
   info: string;
   purple: string;
+  successBg: string;
+  warningBg: string;
+  dangerBg: string;
+  // 遮罩
+  maskOverlay: string;
   // 系统
   statusBarContentColor: string;
   navBarContentColor: string;
   isDark: boolean;
-  // 字号
+  // 字号（v10 重调：正文基准 16，标题上限 22）
   fsXs: number;
   fsSm: number;
   fsBase: number;
@@ -100,48 +92,68 @@ export interface ThemePalette {
   radiusMd: string;
   radiusLg: string;
   radiusXl: string;
+  radiusCapsule: string;
+  // 布局尺寸（v10 华为规范）
+  pagePadding: string;
+  pagePaddingLg: string;
+  rowHeight: string;
+  rowHeightCompact: string;
+  titleBarHeight: string;
+  cardGap: string;
+  sectionGap: string;
+  dividerIndent: string;
+  touchTarget: string;
   // 字体
   fontSans: string;
   fontMono: string;
 }
 
 // ============================================================
-// 辅助：构建深色色板
+// 辅助：构建深色色板（v10 华为规范 · 深色）
 // ============================================================
 function darkPalette(primary: string, primaryHover: string, primaryDim: string): ThemePalette {
   return {
-    bgBase: '#0A0E1A',
-    bgSurface: '#131826',
-    bgSurface2: '#1A2030',
-    bgElevated: '#232A3D',
-    bgHover: '#2A3349',
-    bgGlassBar: 'rgba(19, 24, 38, 0.35)',
-    bgGlassCard: 'rgba(19, 24, 38, 0.30)',
-    bgGlassCard2: 'rgba(26, 32, 48, 0.35)',
-    borderGlass: 'rgba(61, 74, 99, 0.40)',
-    borderSubtle: '#1E293B',
-    borderDefault: '#2D3748',
-    borderStrong: '#3D4A63',
-    textPrimary: '#E2E8F0',
-    textSecondary: '#94A3B8',
-    textTertiary: '#8B95A7',
+    bgBase: '#101418',
+    bgSurface: '#1B2128',
+    bgSurface2: '#232B34',
+    bgElevated: '#28303A',
+    bgHover: '#2E3742',
+    bgGlassBar: 'rgba(16, 20, 24, 0.72)',
+    bgGlassCard: '#1B2128',
+    bgGlassCard2: '#232B34',
+    borderGlass: 'rgba(255, 255, 255, 0.08)',
+    borderSubtle: 'rgba(255, 255, 255, 0.07)',
+    borderDefault: 'rgba(255, 255, 255, 0.12)',
+    borderStrong: 'rgba(255, 255, 255, 0.20)',
+    divider: 'rgba(255, 255, 255, 0.07)',
+    textPrimary: '#F0F3F6',
+    textSecondary: '#A7B1BB',
+    textTertiary: '#67727D',
     primary: primary,
     primaryHover: primaryHover,
     primaryDim: primaryDim,
-    success: '#10B981',
-    warning: '#F59E0B',
-    danger: '#EF4444',
-    info: '#3B82F6',
-    purple: '#8B5CF6',
-    statusBarContentColor: '#E2E8F0',
-    navBarContentColor: '#E2E8F0',
+    primaryBg: 'rgba(74, 156, 255, 0.14)',
+    primaryBgStrong: 'rgba(74, 156, 255, 0.22)',
+    primaryBgMedium: 'rgba(74, 156, 255, 0.32)',
+    primaryOnColor: '#FFFFFF',
+    success: '#34C759',
+    warning: '#FFCC00',
+    danger: '#FF5A3C',
+    info: '#4A9CFF',
+    purple: '#A78BFA',
+    successBg: 'rgba(52, 199, 89, 0.14)',
+    warningBg: 'rgba(255, 204, 0, 0.14)',
+    dangerBg: 'rgba(255, 90, 60, 0.14)',
+    maskOverlay: 'rgba(0, 0, 0, 0.40)',
+    statusBarContentColor: '#F0F3F6',
+    navBarContentColor: '#F0F3F6',
     isDark: true,
-    fsXs: 10,
-    fsSm: 12,
-    fsBase: 13,
-    fsMd: 14,
-    fsLg: 16,
-    fsXl: 20,
+    fsXs: 12,
+    fsSm: 14,
+    fsBase: 15,
+    fsMd: 16,
+    fsLg: 18,
+    fsXl: 22,
     fs2xl: 26,
     fs3xl: 32,
     sp1: '4vp',
@@ -151,52 +163,71 @@ function darkPalette(primary: string, primaryHover: string, primaryDim: string):
     sp5: '20vp',
     sp6: '24vp',
     sp8: '32vp',
-    radiusSm: '4vp',
-    radiusMd: '6vp',
-    radiusLg: '10vp',
-    radiusXl: '14vp',
+    radiusSm: '12vp',
+    radiusMd: '16vp',
+    radiusLg: '20vp',
+    radiusXl: '28vp',
+    radiusCapsule: '24vp',
+    pagePadding: '16vp',
+    pagePaddingLg: '24vp',
+    rowHeight: '56vp',
+    rowHeightCompact: '48vp',
+    titleBarHeight: '64vp',
+    cardGap: '12vp',
+    sectionGap: '24vp',
+    dividerIndent: '16vp',
+    touchTarget: '44vp',
     fontSans: 'HarmonyOS Sans, sans-serif',
     fontMono: 'JetBrains Mono, Fira Code, Consolas, Courier New, monospace'
   };
 }
 
 // ============================================================
-// 辅助：构建浅色色板
+// 辅助：构建浅色色板（v10 华为原生拟物白 · 默认）
 // ============================================================
 function lightPalette(primary: string, primaryHover: string, primaryDim: string): ThemePalette {
   return {
-    bgBase: '#F5F6FA',
+    bgBase: '#F2F4F7',
     bgSurface: '#FFFFFF',
-    bgSurface2: '#F0F1F5',
+    bgSurface2: '#F7F8FA',
     bgElevated: '#FFFFFF',
-    bgHover: '#EBEDF2',
-    bgGlassBar: 'rgba(255, 255, 255, 0.35)',
-    bgGlassCard: 'rgba(255, 255, 255, 0.30)',
-    bgGlassCard2: 'rgba(240, 241, 245, 0.35)',
-    borderGlass: 'rgba(209, 213, 219, 0.40)',
-    borderSubtle: '#E5E7EB',
-    borderDefault: '#D1D5DB',
-    borderStrong: '#9CA3AF',
-    textPrimary: '#1A202C',
-    textSecondary: '#64748B',
-    textTertiary: '#94A3B8',
+    bgHover: '#EDEFF3',
+    bgGlassBar: 'rgba(255, 255, 255, 0.78)',
+    bgGlassCard: '#FFFFFF',
+    bgGlassCard2: '#F7F8FA',
+    borderGlass: 'rgba(15, 22, 32, 0.08)',
+    borderSubtle: 'rgba(15, 22, 32, 0.07)',
+    borderDefault: 'rgba(15, 22, 32, 0.12)',
+    borderStrong: 'rgba(15, 22, 32, 0.20)',
+    divider: 'rgba(15, 22, 32, 0.07)',
+    textPrimary: '#0F1620',
+    textSecondary: '#5B6570',
+    textTertiary: '#98A1AA',
     primary: primary,
     primaryHover: primaryHover,
     primaryDim: primaryDim,
-    success: '#059669',
-    warning: '#D97706',
-    danger: '#DC2626',
-    info: '#2563EB',
+    primaryBg: 'rgba(0, 125, 255, 0.08)',
+    primaryBgStrong: 'rgba(0, 125, 255, 0.14)',
+    primaryBgMedium: 'rgba(0, 125, 255, 0.24)',
+    primaryOnColor: '#FFFFFF',
+    success: '#16A34A',
+    warning: '#F59E0B',
+    danger: '#E84026',
+    info: '#007DFF',
     purple: '#7C3AED',
-    statusBarContentColor: '#1A202C',
-    navBarContentColor: '#1A202C',
+    successBg: 'rgba(22, 163, 74, 0.10)',
+    warningBg: 'rgba(245, 158, 11, 0.12)',
+    dangerBg: 'rgba(232, 64, 38, 0.10)',
+    maskOverlay: 'rgba(0, 0, 0, 0.30)',
+    statusBarContentColor: '#0F1620',
+    navBarContentColor: '#0F1620',
     isDark: false,
-    fsXs: 10,
-    fsSm: 12,
-    fsBase: 13,
-    fsMd: 14,
-    fsLg: 16,
-    fsXl: 20,
+    fsXs: 12,
+    fsSm: 14,
+    fsBase: 15,
+    fsMd: 16,
+    fsLg: 18,
+    fsXl: 22,
     fs2xl: 26,
     fs3xl: 32,
     sp1: '4vp',
@@ -206,51 +237,45 @@ function lightPalette(primary: string, primaryHover: string, primaryDim: string)
     sp5: '20vp',
     sp6: '24vp',
     sp8: '32vp',
-    radiusSm: '4vp',
-    radiusMd: '6vp',
-    radiusLg: '10vp',
-    radiusXl: '14vp',
+    radiusSm: '12vp',
+    radiusMd: '16vp',
+    radiusLg: '20vp',
+    radiusXl: '28vp',
+    radiusCapsule: '24vp',
+    pagePadding: '16vp',
+    pagePaddingLg: '24vp',
+    rowHeight: '56vp',
+    rowHeightCompact: '48vp',
+    titleBarHeight: '64vp',
+    cardGap: '12vp',
+    sectionGap: '24vp',
+    dividerIndent: '16vp',
+    touchTarget: '44vp',
     fontSans: 'HarmonyOS Sans, sans-serif',
     fontMono: 'JetBrains Mono, Fira Code, Consolas, Courier New, monospace'
   };
 }
 
 // ============================================================
-// 6 种颜色主题 × 深色/浅色 = 12 套色板
+// v10：主题收敛为「华为拟物白 / 深色」两套（6 套配色下架）
+// 保留 buildPalette(themeId, isDark) 签名以兼容既有设置键与调用方，
+// 但忽略 themeId —— 品牌主色统一为华为蓝。
 // ============================================================
+const HUAWEI_PRIMARY_DARK = '#4A9CFF';
+const HUAWEI_PRIMARY_DARK_HOVER = '#5FA8FF';
+const HUAWEI_PRIMARY_DARK_DIM = 'rgba(74, 156, 255, 0.18)';
+const HUAWEI_PRIMARY_LIGHT = '#007DFF';
+const HUAWEI_PRIMARY_LIGHT_HOVER = '#2B93FF';
+const HUAWEI_PRIMARY_LIGHT_DIM = 'rgba(0, 125, 255, 0.14)';
+
 function buildPalette(themeId: ColorThemeId, isDark: boolean): ThemePalette {
-  switch (themeId) {
-    case ColorThemeId.CYAN:
-      return isDark
-        ? darkPalette('#00D9A3', '#00F0B5', 'rgba(0, 217, 163, 0.15)')
-        : lightPalette('#00A67D', '#00C090', 'rgba(0, 166, 125, 0.12)');
-    case ColorThemeId.OCEAN:
-      return isDark
-        ? darkPalette('#3B82F6', '#60A5FA', 'rgba(59, 130, 246, 0.15)')
-        : lightPalette('#2563EB', '#3B82F6', 'rgba(37, 99, 235, 0.12)');
-    case ColorThemeId.SUNSET:
-      return isDark
-        ? darkPalette('#F59E0B', '#FBBF24', 'rgba(245, 158, 11, 0.15)')
-        : lightPalette('#D97706', '#F59E0B', 'rgba(217, 119, 6, 0.12)');
-    case ColorThemeId.AURORA:
-      return isDark
-        ? darkPalette('#8B5CF6', '#A78BFA', 'rgba(139, 92, 246, 0.15)')
-        : lightPalette('#7C3AED', '#8B5CF6', 'rgba(124, 58, 237, 0.12)');
-    case ColorThemeId.SAKURA:
-      return isDark
-        ? darkPalette('#EC4899', '#F472B6', 'rgba(236, 72, 153, 0.15)')
-        : lightPalette('#DB2777', '#EC4899', 'rgba(219, 39, 119, 0.12)');
-    case ColorThemeId.FOREST:
-      return isDark
-        ? darkPalette('#10B981', '#34D399', 'rgba(16, 185, 129, 0.15)')
-        : lightPalette('#059669', '#10B981', 'rgba(5, 150, 105, 0.12)');
-    default:
-      return darkPalette('#00D9A3', '#00F0B5', 'rgba(0, 217, 163, 0.15)');
-  }
+  return isDark
+    ? darkPalette(HUAWEI_PRIMARY_DARK, HUAWEI_PRIMARY_DARK_HOVER, HUAWEI_PRIMARY_DARK_DIM)
+    : lightPalette(HUAWEI_PRIMARY_LIGHT, HUAWEI_PRIMARY_LIGHT_HOVER, HUAWEI_PRIMARY_LIGHT_DIM);
 }
 
 // ============================================================
-// 默认浅色色板（用于组件初始化兜底）
+// 默认色板（用于组件初始化兜底）
 // ============================================================
 export const defaultLightPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, false);
 export const defaultDarkPalette: ThemePalette = buildPalette(ColorThemeId.CYAN, true);
@@ -595,15 +620,20 @@ export class ThemeManager {
     }
   }
 
-  private publishInitialBackground(): void {
-    AppStorage.setOrCreate('backgroundCandidateUri', '');
-    AppStorage.setOrCreate('backgroundDisplayState', this.backgroundPreference.globalUri.length > 0 ?
-      BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
+  // v10：背景显示状态必须同时写入 AppStorage（V1 组件）与 ThemeState（V2 组件），
+  // 否则 V2 页面读到过期值（「正在应用 / 背景失效」提示无法更新）。
+  private publishBackgroundState(candidateUri: string, state: BackgroundDisplayState): void {
+    AppStorage.setOrCreate('backgroundCandidateUri', candidateUri);
+    AppStorage.setOrCreate('backgroundDisplayState', state);
     if (this.themeState !== null) {
-      this.themeState.backgroundCandidateUri = '';
-      this.themeState.backgroundDisplayState = this.backgroundPreference.globalUri.length > 0 ?
-        BackgroundDisplayState.READY : BackgroundDisplayState.INVALID;
+      this.themeState.backgroundCandidateUri = candidateUri;
+      this.themeState.backgroundDisplayState = state;
     }
+  }
+
+  private publishInitialBackground(): void {
+    this.publishBackgroundState('', this.backgroundPreference.globalUri.length > 0 ?
+      BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
   }
 
   getThemeState(): EffectiveThemeState {
@@ -627,8 +657,7 @@ export class ThemeManager {
   }
 
   beginBackgroundCandidate(uri: string): void {
-    AppStorage.setOrCreate('backgroundCandidateUri', '');
-    AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.LOADING);
+    this.publishBackgroundState('', BackgroundDisplayState.LOADING);
   }
 
   async importBackgroundCandidate(sourceUri: string): Promise<PreferenceMutationResult> {
@@ -705,14 +734,12 @@ export class ThemeManager {
     if (uri !== this.backgroundPreference.globalUri) return;
     hilog.warn(DOMAIN, 'Theme', '背景加载失败 reason=%{public}s fallback=%{public}s',
       PreferenceFailureReason.BACKGROUND_LOAD_FAILED, 'true');
-    AppStorage.setOrCreate('backgroundCandidateUri', '');
-    AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.INVALID);
+    this.publishBackgroundState('', BackgroundDisplayState.INVALID);
   }
 
   reportBackgroundReady(uri: string): void {
     if (uri === this.backgroundPreference.globalUri && this.backgroundPreference.globalUri.length > 0) {
-      AppStorage.setOrCreate('backgroundCandidateUri', '');
-      AppStorage.setOrCreate('backgroundDisplayState', BackgroundDisplayState.READY);
+      this.publishBackgroundState('', BackgroundDisplayState.READY);
     }
   }
 
@@ -814,8 +841,7 @@ export class ThemeManager {
     this.lastSuccessfulBackground = this.copyBackground(this.backgroundPreference);
     this.applyFontSize(this.fontSizeScale);
     this.applyTheme();
-    AppStorage.setOrCreate('backgroundCandidateUri', '');
-    AppStorage.setOrCreate('backgroundDisplayState', snapshot.backgroundUri.length > 0 ?
+    this.publishBackgroundState('', snapshot.backgroundUri.length > 0 ?
       BackgroundDisplayState.READY : BackgroundDisplayState.INVALID);
   }
 
@@ -862,8 +888,12 @@ export class ThemeManager {
   private restoreBackground(snapshot: GlobalBackgroundPreference, state: BackgroundDisplayState): void {
     this.backgroundPreference = this.copyBackground(snapshot);
     AppStorage.setOrCreate('globalBackgroundUri', snapshot.globalUri);
-    AppStorage.setOrCreate('backgroundCandidateUri', '');
     AppStorage.setOrCreate('backgroundVisibleStrength', snapshot.visibleStrength);
-    AppStorage.setOrCreate('backgroundDisplayState', state);
+    // v10：全局背景 URI 与强度同样需要镜像到 ThemeState（V2 页面读取）
+    if (this.themeState !== null) {
+      this.themeState.globalBackgroundUri = snapshot.globalUri;
+      this.themeState.backgroundVisibleStrength = snapshot.visibleStrength;
+    }
+    this.publishBackgroundState('', state);
   }
 }

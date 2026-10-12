@@ -1,11 +1,13 @@
-// 智子 - 热榜源卡片（源徽标 + 时间 + ⭐关注 + 条目列表 + 查看全部）
+// 智子 - 热榜源卡片（v10：华为拟物白白卡 + 矢量操作图标）
+// 契约保持不变：@Param sourceId / starred / limit / readKeys / tick，
+// @Event onToggleStar / onOpenEntry / onOpenBoard / onRefresh
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
-import { GlassStyle, GlassLevel } from './GlassEffect';
 import { HotEntry } from '../common/HotModels';
 import { HotSources } from '../common/HotSources';
 import { hotClockTime } from '../common/HotFormat';
-import { BoardSlot, SlotStatus, HotFeedStore } from '../service/HotFeedStore';
+import { AppIcons, USE_SYMBOL_ICONS } from '../common/AppIcons';
+import { BoardSlot, SlotStatus, HotFeedStore } from '../service/hot/HotFeedStore';
 import { HotSourceBadge } from './HotSourceBadge';
 import { HotItemRow } from './HotItemRow';
 
@@ -43,9 +45,10 @@ export struct HotSourceCard {
     return (slot.data.fromCache ? '更新于 ' : '刚刚更新 ') + t;
   }
 
+  // 卡片头：源徽标 + 源名/更新时间 + ⭐ + ↻
   @Builder
   cardHeader() {
-    Row({ space: 10 }) {
+    Row({ space: this.themeState.palette.sp2 }) {
       HotSourceBadge({ sourceId: this.sourceId, badgeSize: 28 })
 
       Column({ space: 2 }) {
@@ -53,7 +56,7 @@ export struct HotSourceCard {
           .fontSize(this.themeState.palette.fsMd)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textPrimary)
-          .fontWeight(FontWeight.Bold)
+          .fontWeight(FontWeight.Medium)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
@@ -69,22 +72,44 @@ export struct HotSourceCard {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      // 关注星
-      Text(this.starred ? '⭐' : '☆')
-        .fontSize(this.themeState.palette.fsLg)
-        .padding(6)
-        .onClick(() => {
-          this.onToggleStar(this.sourceId);
-        })
+      // 关注（已关注用主色实心星）
+      Row() {
+        if (USE_SYMBOL_ICONS) {
+          SymbolGlyph(this.starred ? AppIcons.starFill : AppIcons.star)
+            .fontSize(20)
+            .fontColor([this.starred ? this.themeState.palette.primary : this.themeState.palette.textTertiary])
+        } else {
+          Text(this.starred ? AppIcons.starFillEmoji : AppIcons.starEmoji)
+            .fontSize(this.themeState.palette.fsMd)
+        }
+      }
+      .width(36)
+      .height(36)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.onToggleStar(this.sourceId);
+      })
 
       // 单源刷新
-      Text('↻')
-        .fontSize(this.themeState.palette.fsLg)
-        .fontColor(this.themeState.palette.textSecondary)
-        .padding(6)
-        .onClick(() => {
-          this.onRefresh(this.sourceId);
-        })
+      Row() {
+        if (USE_SYMBOL_ICONS) {
+          SymbolGlyph(AppIcons.refresh)
+            .fontSize(19)
+            .fontColor([this.themeState.palette.textSecondary])
+        } else {
+          Text(AppIcons.refreshEmoji)
+            .fontSize(this.themeState.palette.fsMd)
+            .fontColor(this.themeState.palette.textSecondary)
+        }
+      }
+      .width(36)
+      .height(36)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.onRefresh(this.sourceId);
+      })
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
@@ -93,31 +118,35 @@ export struct HotSourceCard {
   @Builder
   body() {
     if (this.slot().status === SlotStatus.Loading && this.slot().data === null) {
-      Row({ space: 8 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         LoadingProgress()
           .width(18)
           .height(18)
+          .color(this.themeState.palette.primary)
         Text('加载中…')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
       }
       .width('100%')
-      .height(60)
+      .height(64)
       .justifyContent(FlexAlign.Center)
     } else if (this.slot().data === null) {
-      Column({ space: 8 }) {
+      Column({ space: this.themeState.palette.sp1 }) {
         Text(this.slot().error.length > 0 ? this.slot().error : '暂无数据')
           .fontSize(this.themeState.palette.fsSm)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.textTertiary)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.Center)
         Text('点击重试')
           .fontSize(this.themeState.palette.fsXs)
           .fontFamily(this.themeState.palette.fontSans)
           .fontColor(this.themeState.palette.primary)
       }
       .width('100%')
-      .height(70)
+      .height(76)
       .justifyContent(FlexAlign.Center)
       .onClick(() => {
         this.onRefresh(this.sourceId);
@@ -135,15 +164,25 @@ export struct HotSourceCard {
 
       // 查看全部（仅首页限流时显示）
       if (this.limit > 0 && HotFeedStore.entriesOf(this.sourceId).length > this.limit) {
-        Row() {
+        Row({ space: 4 }) {
           Text('查看全部 ' + HotFeedStore.entriesOf(this.sourceId).length.toString() + ' 条')
-            .fontSize(this.themeState.palette.fsXs)
+            .fontSize(this.themeState.palette.fsSm)
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.primary)
+          if (USE_SYMBOL_ICONS) {
+            SymbolGlyph(AppIcons.forward)
+              .fontSize(14)
+              .fontColor([this.themeState.palette.primary])
+          } else {
+            Text(AppIcons.forwardEmoji)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontColor(this.themeState.palette.primary)
+          }
         }
         .width('100%')
-        .height(32)
+        .height(44)
         .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.onOpenBoard(this.sourceId);
         })
@@ -152,14 +191,14 @@ export struct HotSourceCard {
   }
 
   build() {
-    Column({ space: 4 }) {
+    Column({ space: 2 }) {
       this.cardHeader()
       this.body()
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .borderRadius(12)
-    .backgroundColor(GlassStyle.backgroundColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette))
-    .border({ width: 1, color: GlassStyle.borderColor(this.themeState.glassEnabled, GlassLevel.P1_CARD, this.themeState.palette) })
+    .padding({ left: 14, right: 14, top: 12, bottom: 8 })
+    .borderRadius(this.themeState.palette.radiusLg)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 }

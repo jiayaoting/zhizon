@@ -1,11 +1,11 @@
 // 智子 - AI 对话配置页（多模型管理：列表 + 编辑）
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, AppStorageV2 } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { ThemePalette, defaultLightPalette } from '../common/Theme';
+import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
-import { ChatRepository } from '../service/ChatRepository';
-import { LlmClient } from '../service/LlmClient';
-import { DataRepository } from '../service/DataRepository';
+import { ChatRepository } from '../service/chat/ChatRepository';
+import { LlmClient } from '../service/chat/LlmClient';
+import { DataRepository } from '../service/platform/DataRepository';
 import { API_FORMAT_LABELS, ApiFormat, LLM_PROVIDER_TEMPLATES, LlmConfig, LlmModelEntry,
   LlmProviderTemplate, LlmResult, modelDisplayName, providerTemplateById } from '../common/LlmModels';
 
@@ -21,54 +21,53 @@ class ContextChipItem {
   }
 }
 
-@Component
+@ComponentV2
 @Entry
 export struct ChatConfig {
-  @StorageLink('isSm') isSm: boolean = false;
-  @StorageLink('themePalette') palette: ThemePalette = defaultLightPalette;
-  @StorageLink('navBarHeight') navBarHeight: number = 12;
+  // 全局 UI 状态统一走 AppStorageV2（P4 · §5.1 状态管理统一）
+  @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
   // 模型列表
-  @State models: LlmModelEntry[] = [];
-  @State editing: boolean = false;
-  @State editingIndex: number = -1;
+  @Local models: LlmModelEntry[] = [];
+  @Local editing: boolean = false;
+  @Local editingIndex: number = -1;
   // 当前激活模型 id（用于列表高亮）
-  @State activeModelId: string = '';
+  @Local activeModelId: string = '';
 
   // 编辑表单
-  @State displayName: string = '';
-  @State providerId: string = 'deepseek';
-  @State baseUrl: string = '';
-  @State apiKey: string = '';
-  @State model: string = '';
-  @State temperature: number = 0.7;
-  @State apiFormat: ApiFormat = 'openai';
-  @State maxTokens: number = 4096;
-  @State showKey: boolean = false;
-  @State testing: boolean = false;
-  @State showProviderSheet: boolean = false;
-  @State showModelSheet: boolean = false;
-  @State showFormatSheet: boolean = false;
-  @State maxTokensText: string = '4096';
-  @State customModelInput: string = '';
+  @Local displayName: string = '';
+  @Local providerId: string = 'deepseek';
+  @Local baseUrl: string = '';
+  @Local apiKey: string = '';
+  @Local model: string = '';
+  @Local temperature: number = 0.7;
+  @Local apiFormat: ApiFormat = 'openai';
+  @Local maxTokens: number = 4096;
+  @Local showKey: boolean = false;
+  @Local testing: boolean = false;
+  @Local showProviderSheet: boolean = false;
+  @Local showModelSheet: boolean = false;
+  @Local showFormatSheet: boolean = false;
+  @Local maxTokensText: string = '4096';
+  @Local customModelInput: string = '';
   // 自定义模型高级配置
-  @State useFullUrl: boolean = false;
-  @State advancedExpanded: boolean = false;
-  @State modelFamily: string = '';
-  @State contextTokensInText: string = '128000';
-  @State contextTokensOutText: string = '4096';
-  @State workersText: string = '1';
-  @State visionEnabled: boolean = false;
-  @State thinkingEnabled: boolean = false;
-  @State followDefaultConfig: boolean = true;
-  @State vllmCompat: boolean = false;
-  @State modelEnabled: boolean = true;
-  @State systemPrompt: string = '';
+  @Local useFullUrl: boolean = false;
+  @Local advancedExpanded: boolean = false;
+  @Local modelFamily: string = '';
+  @Local contextTokensInText: string = '128000';
+  @Local contextTokensOutText: string = '4096';
+  @Local workersText: string = '1';
+  @Local visionEnabled: boolean = false;
+  @Local thinkingEnabled: boolean = false;
+  @Local followDefaultConfig: boolean = true;
+  @Local vllmCompat: boolean = false;
+  @Local modelEnabled: boolean = true;
+  @Local systemPrompt: string = '';
   // 联网搜索配置（对话页 🌐 开关使用）
-  @State webSearchEnabled: boolean = false;
-  @State webSearchBaseUrl: string = '';
-  @State webSearchApiKey: string = '';
-  @State showSearchKey: boolean = false;
+  @Local webSearchEnabled: boolean = false;
+  @Local webSearchBaseUrl: string = '';
+  @Local webSearchApiKey: string = '';
+  @Local showSearchKey: boolean = false;
   // 进入编辑/复制时的原始快照：用于判断表单是否有实际修改
   private formSnapshot: LlmModelEntry | null = null;
 
@@ -203,7 +202,7 @@ export struct ChatConfig {
       },
       secondaryButton: {
         value: '删除',
-        fontColor: Color.Red,
+        fontColor: this.themeState.palette.danger,
         action: async () => {
           // 先从内存过滤，保证删除后列表立即刷新
           const list: LlmModelEntry[] = [];
@@ -516,7 +515,7 @@ export struct ChatConfig {
       },
       secondaryButton: {
         value: '清除',
-        fontColor: Color.Red,
+        fontColor: this.themeState.palette.danger,
         action: () => {
           this.apiKey = '';
         }
@@ -537,7 +536,7 @@ export struct ChatConfig {
               .width(36)
               .height(4)
               .borderRadius(2)
-              .backgroundColor(this.palette.borderSubtle)
+              .backgroundColor(this.themeState.palette.borderSubtle)
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -545,15 +544,15 @@ export struct ChatConfig {
 
           Row() {
             Text('选择服务商')
-              .fontSize(this.palette.fsMd)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsMd)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showProviderSheet = false; })
           }
@@ -567,33 +566,33 @@ export struct ChatConfig {
                   Column({ space: 2 }) {
                     Row({ space: 6 }) {
                       Text(template.name)
-                        .fontSize(this.palette.fsSm)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textPrimary)
+                        .fontSize(this.themeState.palette.fsSm)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textPrimary)
                         .fontWeight(template.id === this.providerId ? FontWeight.Bold : FontWeight.Medium)
                       if (template.id === 'custom') {
                         Text('+')
                           .fontSize(11)
-                          .fontFamily(this.palette.fontSans)
-                          .fontColor(this.palette.primary)
+                          .fontFamily(this.themeState.palette.fontSans)
+                          .fontColor(this.themeState.palette.primary)
                           .fontWeight(FontWeight.Bold)
                           .padding({ left: 4, right: 4, top: 1, bottom: 1 })
                           .borderRadius(4)
-                          .backgroundColor(this.palette.primaryDim)
+                          .backgroundColor(this.themeState.palette.primaryBg)
                       }
                     }
                     if (template.id !== 'custom' && template.baseUrl.length > 0) {
                       Text(template.baseUrl)
                         .fontSize(10)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textTertiary)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textTertiary)
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                     } else if (template.id === 'custom') {
                       Text('手动填写接口地址与模型')
                         .fontSize(10)
-                        .fontFamily(this.palette.fontSans)
-                        .fontColor(this.palette.textTertiary)
+                        .fontFamily(this.themeState.palette.fontSans)
+                        .fontColor(this.themeState.palette.textTertiary)
                     }
                   }
                   .alignItems(HorizontalAlign.Start)
@@ -601,17 +600,17 @@ export struct ChatConfig {
                   if (template.id === this.providerId) {
                     Text('✓')
                       .fontSize(16)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.primary)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.primary)
                       .fontWeight(FontWeight.Bold)
                   }
                 }
                 .width('100%')
                 .padding(12)
-                .borderRadius(8)
-                .backgroundColor(template.id === this.providerId ? this.palette.primaryDim : this.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .backgroundColor(template.id === this.providerId ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface)
                 .border({ width: template.id === this.providerId ? 1 : 0,
-                  color: template.id === this.providerId ? this.palette.primary : Color.Transparent })
+                  color: template.id === this.providerId ? this.themeState.palette.primary : Color.Transparent })
                 .onClick(() => { this.applyTemplate(template); })
               }, (template: LlmProviderTemplate) => template.id)
             }
@@ -621,9 +620,9 @@ export struct ChatConfig {
           .constraintSize({ maxHeight: 360 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
-        .backgroundColor(this.palette.bgBase)
-        .borderRadius({ topLeft: 16, topRight: 16 })
+        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.themeState.navBarHeight) })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
       }
       .width('100%')
       .height('100%')
@@ -631,7 +630,7 @@ export struct ChatConfig {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showProviderSheet = false; })
   }
 
@@ -646,7 +645,7 @@ export struct ChatConfig {
               .width(36)
               .height(4)
               .borderRadius(2)
-              .backgroundColor(this.palette.borderSubtle)
+              .backgroundColor(this.themeState.palette.borderSubtle)
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -654,15 +653,15 @@ export struct ChatConfig {
 
           Row() {
             Text('选择模型')
-              .fontSize(this.palette.fsMd)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsMd)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showModelSheet = false; })
           }
@@ -674,24 +673,24 @@ export struct ChatConfig {
               ForEach(this.modelOptions(), (modelName: string) => {
                 Row() {
                   Text(modelName)
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textPrimary)
                     .layoutWeight(1)
                   if (modelName === this.model) {
                     Text('✓')
                       .fontSize(16)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.primary)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.primary)
                       .fontWeight(FontWeight.Bold)
                   }
                 }
                 .width('100%')
                 .padding(12)
-                .borderRadius(8)
-                .backgroundColor(modelName === this.model ? this.palette.primaryDim : this.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .backgroundColor(modelName === this.model ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface)
                 .border({ width: modelName === this.model ? 1 : 0,
-                  color: modelName === this.model ? this.palette.primary : Color.Transparent })
+                  color: modelName === this.model ? this.themeState.palette.primary : Color.Transparent })
                 .onClick(() => {
                   this.model = modelName;
                   this.customModelInput = '';
@@ -708,43 +707,43 @@ export struct ChatConfig {
           Column({ space: 6 }) {
             Text('没有你需要的模型？手动输入模型名')
               .fontSize(10)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
             Row({ space: 8 }) {
               TextInput({ text: this.customModelInput, placeholder: '如 deepseek-r1-0528' })
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .placeholderColor(this.palette.textTertiary)
-                .backgroundColor(this.palette.bgSurface2)
-                .borderRadius(8)
-                .border({ width: 1, color: this.palette.borderSubtle })
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .placeholderColor(this.themeState.palette.textTertiary)
+                .backgroundColor(this.themeState.palette.bgSurface2)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .border({ width: 1, color: this.themeState.palette.borderSubtle })
                 .height(40)
                 .layoutWeight(1)
                 .onChange((value: string) => { this.customModelInput = value; })
               Text('确定')
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(Color.White)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.primaryOnColor)
                 .fontWeight(FontWeight.Medium)
                 .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-                .borderRadius(8)
-                .backgroundColor(this.palette.primary)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .backgroundColor(this.themeState.palette.primary)
                 .onClick(() => { this.applyCustomModel(); })
             }
             .width('100%')
           }
           .width('100%')
           .padding(10)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusMd)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
           .margin({ top: 8 })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
-        .backgroundColor(this.palette.bgBase)
-        .borderRadius({ topLeft: 16, topRight: 16 })
+        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.themeState.navBarHeight) })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
       }
       .width('100%')
       .height('100%')
@@ -752,7 +751,7 @@ export struct ChatConfig {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showModelSheet = false; })
   }
 
@@ -767,7 +766,7 @@ export struct ChatConfig {
               .width(36)
               .height(4)
               .borderRadius(2)
-              .backgroundColor(this.palette.borderSubtle)
+              .backgroundColor(this.themeState.palette.borderSubtle)
           }
           .width('100%')
           .justifyContent(FlexAlign.Center)
@@ -775,15 +774,15 @@ export struct ChatConfig {
 
           Row() {
             Text('选择 API 格式')
-              .fontSize(this.palette.fsMd)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsMd)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .fontWeight(FontWeight.Bold)
             Blank()
             Text('✕')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .padding(8)
               .onClick(() => { this.showFormatSheet = false; })
           }
@@ -794,31 +793,31 @@ export struct ChatConfig {
             Row({ space: 10 }) {
               Column({ space: 2 }) {
                 Text('OpenAI Chat Completions')
-                  .fontSize(this.palette.fsSm)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textPrimary)
                   .fontWeight(this.apiFormat === 'openai' ? FontWeight.Bold : FontWeight.Medium)
                 Text('适用于 OpenAI / DeepSeek / 通义千问 等兼容接口')
                   .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               if (this.apiFormat === 'openai') {
                 Text('✓')
                   .fontSize(16)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.primary)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.primary)
                   .fontWeight(FontWeight.Bold)
               }
             }
             .width('100%')
             .padding(12)
-            .borderRadius(8)
-            .backgroundColor(this.apiFormat === 'openai' ? this.palette.primaryDim : this.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(this.apiFormat === 'openai' ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface)
             .border({ width: this.apiFormat === 'openai' ? 1 : 0,
-              color: this.apiFormat === 'openai' ? this.palette.primary : Color.Transparent })
+              color: this.apiFormat === 'openai' ? this.themeState.palette.primary : Color.Transparent })
             .onClick(() => {
               this.apiFormat = 'openai';
               this.showFormatSheet = false;
@@ -827,31 +826,31 @@ export struct ChatConfig {
             Row({ space: 10 }) {
               Column({ space: 2 }) {
                 Text('Anthropic Messages')
-                  .fontSize(this.palette.fsSm)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textPrimary)
+                  .fontSize(this.themeState.palette.fsSm)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textPrimary)
                   .fontWeight(this.apiFormat === 'anthropic' ? FontWeight.Bold : FontWeight.Medium)
                 Text('适用于 Anthropic Claude 系列模型')
                   .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               if (this.apiFormat === 'anthropic') {
                 Text('✓')
                   .fontSize(16)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.primary)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.primary)
                   .fontWeight(FontWeight.Bold)
               }
             }
             .width('100%')
             .padding(12)
-            .borderRadius(8)
-            .backgroundColor(this.apiFormat === 'anthropic' ? this.palette.primaryDim : this.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .backgroundColor(this.apiFormat === 'anthropic' ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface)
             .border({ width: this.apiFormat === 'anthropic' ? 1 : 0,
-              color: this.apiFormat === 'anthropic' ? this.palette.primary : Color.Transparent })
+              color: this.apiFormat === 'anthropic' ? this.themeState.palette.primary : Color.Transparent })
             .onClick(() => {
               this.apiFormat = 'anthropic';
               this.showFormatSheet = false;
@@ -860,9 +859,9 @@ export struct ChatConfig {
           .width('100%')
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.navBarHeight) })
-        .backgroundColor(this.palette.bgBase)
-        .borderRadius({ topLeft: 16, topRight: 16 })
+        .padding({ left: 16, right: 16, top: 0, bottom: Math.max(16, this.themeState.navBarHeight) })
+        .backgroundColor(this.themeState.palette.bgElevated)
+        .borderRadius({ topLeft: this.themeState.palette.radiusXl, topRight: this.themeState.palette.radiusXl })
       }
       .width('100%')
       .height('100%')
@@ -870,7 +869,7 @@ export struct ChatConfig {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('rgba(0,0,0,0.35)')
+    .backgroundColor(this.themeState.palette.maskOverlay)
     .onClick(() => { this.showFormatSheet = false; })
   }
 
@@ -878,15 +877,15 @@ export struct ChatConfig {
   rowLabel(title: string, desc: string) {
     Column({ space: 2 }) {
       Text(title)
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Medium)
       if (desc.length > 0) {
         Text(desc)
           .fontSize(10)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
     }
     .alignItems(HorizontalAlign.Start)
@@ -898,29 +897,29 @@ export struct ChatConfig {
     Row({ space: 10 }) {
       Column({ space: 2 }) {
         Text(label)
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
           .fontWeight(FontWeight.Medium)
         if (desc.length > 0) {
           Text(desc)
             .fontSize(10)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: checked })
-        .selectedColor(this.palette.primary)
-        .switchPointColor(Color.White)
+        .selectedColor(this.themeState.palette.primary)
+        .switchPointColor(this.themeState.palette.primaryOnColor)
         .onChange(onChange)
     }
     .width('100%')
     .padding(12)
-    .borderRadius(8)
-    .backgroundColor(this.palette.bgSurface)
-    .border({ width: 1, color: this.palette.borderSubtle })
+    .borderRadius(this.themeState.palette.radiusMd)
+    .backgroundColor(this.themeState.palette.bgSurface)
+    .border({ width: 0.5, color: this.themeState.palette.divider })
   }
 
   private contextChipLabel(chip: number): string {
@@ -943,19 +942,19 @@ export struct ChatConfig {
     chips: number[], onChange: (value: string) => void, field: 'in' | 'out') {
     Column({ space: 8 }) {
       Text(label)
-        .fontSize(this.palette.fsSm)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textPrimary)
+        .fontSize(this.themeState.palette.fsSm)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textPrimary)
         .fontWeight(FontWeight.Medium)
       Row({ space: 8 }) {
         TextInput({ text: text, placeholder: placeholder })
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textPrimary)
-          .placeholderColor(this.palette.textTertiary)
-          .backgroundColor(this.palette.bgSurface2)
-          .borderRadius(8)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textPrimary)
+          .placeholderColor(this.themeState.palette.textTertiary)
+          .backgroundColor(this.themeState.palette.bgSurface2)
+          .borderRadius(this.themeState.palette.radiusSm)
+          .border({ width: 1, color: this.themeState.palette.borderSubtle })
           .height(40)
           .type(InputType.Number)
           .layoutWeight(1)
@@ -963,11 +962,11 @@ export struct ChatConfig {
         ForEach(this.buildContextChipItems(text, chips, field), (item: ContextChipItem) => {
           Text(this.contextChipLabel(item.value))
             .fontSize(10)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(item.selected ? Color.White : this.palette.textSecondary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(item.selected ? this.themeState.palette.primaryOnColor : this.themeState.palette.textSecondary)
             .padding({ left: 8, right: 8, top: 4, bottom: 4 })
             .borderRadius(6)
-            .backgroundColor(item.selected ? this.palette.primary : this.palette.bgSurface2)
+            .backgroundColor(item.selected ? this.themeState.palette.primary : this.themeState.palette.bgSurface2)
             .onClick(() => { this.applyContextChip(item.field, item.value); })
         }, (item: ContextChipItem) => item.value.toString())
       }
@@ -983,27 +982,27 @@ export struct ChatConfig {
       Row({ space: 10 }) {
         Column({ space: 2 }) {
           Text('高级配置')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
           Text('上下文窗口、特殊能力等')
             .fontSize(10)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         Text(this.advancedExpanded ? '▲' : '▼')
           .fontSize(12)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
       }
       .width('100%')
       .padding(12)
-      .borderRadius(8)
-      .backgroundColor(this.palette.bgSurface)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .borderRadius(this.themeState.palette.radiusMd)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
       .onClick(() => { this.advancedExpanded = !this.advancedExpanded; })
 
       if (this.advancedExpanded) {
@@ -1012,14 +1011,14 @@ export struct ChatConfig {
           Column({ space: 6 }) {
             this.rowLabel('max_tokens', '最大输出 Token 数（1-200000）')
             TextInput({ text: this.maxTokensText, placeholder: '4096' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
+              .placeholderColor(this.themeState.palette.textTertiary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .border({ width: 1, color: this.themeState.palette.borderSubtle })
+              .height(this.themeState.palette.touchTarget)
               .type(InputType.Number)
               .width('100%')
               .onChange((value: string) => { this.onMaxTokensChange(value); })
@@ -1039,14 +1038,14 @@ export struct ChatConfig {
         Column({ space: 6 }) {
           this.rowLabel('工作线程数', '并发请求数，通常保持 1')
           TextInput({ text: this.workersText, placeholder: '1' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .height(44)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .placeholderColor(this.themeState.palette.textTertiary)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .border({ width: 1, color: this.themeState.palette.borderSubtle })
+            .height(this.themeState.palette.touchTarget)
             .type(InputType.Number)
             .width('100%')
             .onChange((value: string) => { this.onWorkersChange(value); })
@@ -1070,13 +1069,13 @@ export struct ChatConfig {
         Column({ space: 6 }) {
           this.rowLabel('系统提示词', '注入 system 消息，定义该模型的角色与行为；留空则不注入')
           TextArea({ text: this.systemPrompt, placeholder: '例如：你是一位资深鸿蒙开发工程师，回答简洁准确…' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .placeholderColor(this.themeState.palette.textTertiary)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .border({ width: 1, color: this.themeState.palette.borderSubtle })
             .height(96)
             .width('100%')
             .onChange((value: string) => { this.systemPrompt = value; })
@@ -1100,14 +1099,14 @@ export struct ChatConfig {
               ? '在模型列表中展示的名称，未设置时默认显示模型 ID'
               : '对话中显示的模型名字，留空自动使用服务商 + 模型名')
           TextInput({ text: this.displayName, placeholder: this.isCustomProvider() ? '如我的自定义模型' : '如：我的 DeepSeek' })
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
-            .placeholderColor(this.palette.textTertiary)
-            .backgroundColor(this.palette.bgSurface)
-            .borderRadius(8)
-            .border({ width: 1, color: this.palette.borderSubtle })
-            .height(44)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
+            .placeholderColor(this.themeState.palette.textTertiary)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .borderRadius(this.themeState.palette.radiusSm)
+            .border({ width: 1, color: this.themeState.palette.borderSubtle })
+            .height(this.themeState.palette.touchTarget)
             .width('100%')
             .onChange((value: string) => { this.displayName = value; })
         }
@@ -1118,20 +1117,20 @@ export struct ChatConfig {
           this.rowLabel('服务商', '选择后自动填入接口地址与推荐模型')
           Row() {
             Text(this.providerLabel())
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
               .layoutWeight(1)
             Text('›')
               .fontSize(16)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
           }
           .width('100%')
           .padding(12)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusMd)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
           .onClick(() => { this.showProviderSheet = true; })
         }
         .width('100%')
@@ -1142,20 +1141,20 @@ export struct ChatConfig {
             this.rowLabel('API 格式', '选择接口协议类型')
             Row() {
               Text(this.formatLabel())
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
                 .layoutWeight(1)
               Text('›')
                 .fontSize(16)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
             }
             .width('100%')
             .padding(12)
-            .borderRadius(8)
-            .backgroundColor(this.palette.bgSurface)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .borderRadius(this.themeState.palette.radiusMd)
+            .backgroundColor(this.themeState.palette.bgSurface)
+            .border({ width: 0.5, color: this.themeState.palette.divider })
             .onClick(() => { this.showFormatSheet = true; })
           }
           .width('100%')
@@ -1167,25 +1166,25 @@ export struct ChatConfig {
             this.apiFormat === 'anthropic' ? '如 https://api.anthropic.com' : '如 https://api.deepseek.com/v1')
           Row({ space: 8 }) {
             TextInput({ text: this.baseUrl, placeholder: 'https://api.example.com' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
+              .placeholderColor(this.themeState.palette.textTertiary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .border({ width: 1, color: this.themeState.palette.borderSubtle })
+              .height(this.themeState.palette.touchTarget)
               .layoutWeight(1)
               .onChange((value: string) => { this.baseUrl = value; })
             if (this.isCustomProvider()) {
               Row({ space: 4 }) {
                 Text('完整 URL')
                   .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textSecondary)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textSecondary)
                 Toggle({ type: ToggleType.Switch, isOn: this.useFullUrl })
-                  .selectedColor(this.palette.primary)
-                  .switchPointColor(Color.White)
+                  .selectedColor(this.themeState.palette.primary)
+                  .switchPointColor(this.themeState.palette.primaryOnColor)
                   .onChange((value: boolean) => { this.useFullUrl = value; })
               }
             }
@@ -1196,8 +1195,8 @@ export struct ChatConfig {
               ? '已开启完整 URL，将不会自动补全 /chat/completions 或 /v1/messages 路径'
               : '关闭时系统会自动补全 /chat/completions 或 /v1/messages 路径')
               .fontSize(10)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textTertiary)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textTertiary)
               .width('100%')
           }
         }
@@ -1210,28 +1209,28 @@ export struct ChatConfig {
               (this.apiFormat === 'anthropic' ? '使用 x-api-key 请求头' : '仅加密保存在本机，不会上传'))
           Row({ space: 8 }) {
             TextInput({ text: this.apiKey, placeholder: 'sk-...' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
+              .placeholderColor(this.themeState.palette.textTertiary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .border({ width: 1, color: this.themeState.palette.borderSubtle })
+              .height(this.themeState.palette.touchTarget)
               .type(this.showKey ? InputType.Normal : InputType.Password)
               .layoutWeight(1)
               .onChange((value: string) => { this.apiKey = value; })
             Text(this.showKey ? '隐藏' : '显示')
-              .fontSize(this.palette.fsXs)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.primary)
+              .fontSize(this.themeState.palette.fsXs)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.primary)
               .padding(8)
               .onClick(() => { this.showKey = !this.showKey; })
             if (this.apiKey.length > 0) {
               Text('清除')
-                .fontSize(this.palette.fsXs)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.danger)
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.danger)
                 .padding(8)
                 .onClick(() => { this.clearKey(); })
             }
@@ -1246,38 +1245,38 @@ export struct ChatConfig {
             this.isCustomProvider() ? '输入模型 ID' : '推荐使用模板默认模型')
           if (this.isCustomProvider()) {
             TextInput({ text: this.model, placeholder: '如 deepseek-chat' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
+              .placeholderColor(this.themeState.palette.textTertiary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .border({ width: 1, color: this.themeState.palette.borderSubtle })
+              .height(this.themeState.palette.touchTarget)
               .width('100%')
               .onChange((value: string) => { this.model = value; })
           } else {
             Row() {
               TextInput({ text: this.model, placeholder: 'deepseek-chat' })
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .placeholderColor(this.palette.textTertiary)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(8)
-                .border({ width: 1, color: this.palette.borderSubtle })
-                .height(44)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .placeholderColor(this.themeState.palette.textTertiary)
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .border({ width: 1, color: this.themeState.palette.borderSubtle })
+                .height(this.themeState.palette.touchTarget)
                 .layoutWeight(1)
                 .onChange((value: string) => { this.model = value; })
                 .onClick(() => {})
               Text('∨')
                 .fontSize(16)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textTertiary)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textTertiary)
                 .padding(10)
             }
             .width('100%')
-            .borderRadius(8)
+            .borderRadius(this.themeState.palette.radiusSm)
             .onClick(() => { this.showModelSheet = true; })
           }
         }
@@ -1294,14 +1293,14 @@ export struct ChatConfig {
             Column({ space: 6 }) {
               this.rowLabel('max_tokens', '最大输出 Token 数（1-200000）')
               TextInput({ text: this.maxTokensText, placeholder: '4096' })
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .placeholderColor(this.palette.textTertiary)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(8)
-                .border({ width: 1, color: this.palette.borderSubtle })
-                .height(44)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .placeholderColor(this.themeState.palette.textTertiary)
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .border({ width: 1, color: this.themeState.palette.borderSubtle })
+                .height(this.themeState.palette.touchTarget)
                 .type(InputType.Number)
                 .width('100%')
                 .onChange((value: string) => { this.onMaxTokensChange(value); })
@@ -1313,25 +1312,25 @@ export struct ChatConfig {
         // 按钮
         Row({ space: 12 }) {
           Button('保存模型')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontWeight(FontWeight.Medium)
-            .height(44)
+            .height(this.themeState.palette.touchTarget)
             .layoutWeight(1)
-            .backgroundColor(this.palette.primary)
-            .fontColor('#FFFFFF')
-            .borderRadius(10)
+            .backgroundColor(this.themeState.palette.primary)
+            .fontColor(this.themeState.palette.primaryOnColor)
+            .borderRadius(this.themeState.palette.radiusMd)
             .onClick(() => { this.save(); })
           Button(this.testing ? '测试中…' : '测试连接')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
             .fontWeight(FontWeight.Medium)
-            .height(44)
+            .height(this.themeState.palette.touchTarget)
             .layoutWeight(1)
-            .backgroundColor(this.palette.bgSurface2)
-            .fontColor(this.palette.textPrimary)
-            .borderRadius(10)
-            .border({ width: 1, color: this.palette.borderSubtle })
+            .backgroundColor(this.themeState.palette.bgSurface2)
+            .fontColor(this.themeState.palette.textPrimary)
+            .borderRadius(this.themeState.palette.radiusMd)
+            .border({ width: 1, color: this.themeState.palette.borderSubtle })
             .enabled(!this.testing)
             .onClick(() => { this.test(); })
         }
@@ -1339,17 +1338,18 @@ export struct ChatConfig {
 
         Text('隐私说明：API Key 仅以 AES-256 加密形式保存在本机数据库，发送请求时直接携带给所选服务商，不经过任何第三方中转。')
           .fontSize(10)
-          .fontFamily(this.palette.fontSans)
-          .fontColor(this.palette.textTertiary)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.textTertiary)
           .lineHeight(16)
           .width('100%')
           .padding(12)
-          .borderRadius(8)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusMd)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
       }
       .width('100%')
-      .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8, bottom: 32 })
+      .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: 8, bottom: 32 })
     }
     .layoutWeight(1)
     .scrollBar(BarState.Off)
@@ -1363,8 +1363,8 @@ export struct ChatConfig {
       // 说明
       Text('配置多个大模型，在对话中可随时切换。每个模型可单独设置显示名称。')
         .fontSize(11)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
         .lineHeight(16)
         .width('100%')
 
@@ -1372,15 +1372,15 @@ export struct ChatConfig {
         Column({ space: 10 }) {
           Text('🤖')
             .fontSize(40)
-            .fontFamily(this.palette.fontSans)
+            .fontFamily(this.themeState.palette.fontSans)
           Text('还没有配置任何模型')
-            .fontSize(this.palette.fsBase)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textSecondary)
+            .fontSize(this.themeState.palette.fsBase)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textSecondary)
           Text('点击下方按钮添加你的第一个大模型')
-            .fontSize(this.palette.fsXs)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textTertiary)
+            .fontSize(this.themeState.palette.fsXs)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textTertiary)
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -1393,47 +1393,47 @@ export struct ChatConfig {
               Column({ space: 2 }) {
                 Row({ space: 8 }) {
                   Text(modelDisplayName(m))
-                    .fontSize(this.palette.fsSm)
-                    .fontFamily(this.palette.fontSans)
-                    .fontColor(this.palette.textPrimary)
+                    .fontSize(this.themeState.palette.fsSm)
+                    .fontFamily(this.themeState.palette.fontSans)
+                    .fontColor(this.themeState.palette.textPrimary)
                     .fontWeight(FontWeight.Medium)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   if (m.displayName.trim().length > 0) {
                     Text('自定义')
                       .fontSize(9)
-                      .fontFamily(this.palette.fontSans)
-                      .fontColor(this.palette.primary)
+                      .fontFamily(this.themeState.palette.fontSans)
+                      .fontColor(this.themeState.palette.primary)
                       .padding({ left: 4, right: 4, top: 1, bottom: 1 })
                       .borderRadius(4)
-                      .backgroundColor(this.palette.primaryDim)
+                      .backgroundColor(this.themeState.palette.primaryBg)
                   }
                 }
                 Text(m.model + ' · ' + m.baseUrl)
                   .fontSize(10)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.textTertiary)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.textTertiary)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
               Text('编辑')
-                .fontSize(this.palette.fsXs)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.primary)
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.primary)
                 .padding(6)
                 .onClick(() => { this.editModel(index); })
               Text('复制')
-                .fontSize(this.palette.fsXs)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.primary)
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.primary)
                 .padding(6)
                 .onClick(() => { this.copyModel(index); })
               Text('✕')
                 .fontSize(14)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.danger)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.danger)
                 .padding(6)
                 .onClick(() => { this.removeModel(index); })
             }
@@ -1442,67 +1442,67 @@ export struct ChatConfig {
             Row({ space: 8 }) {
               if (m.id === this.activeModelId) {
                 Text('✓ 当前使用')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.success)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.success)
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .borderRadius(12)
-                  .backgroundColor(this.palette.bgSurface2)
+                  .backgroundColor(this.themeState.palette.bgSurface2)
               } else {
                 Text('设为当前')
-                  .fontSize(this.palette.fsXs)
-                  .fontFamily(this.palette.fontSans)
-                  .fontColor(this.palette.primary)
+                  .fontSize(this.themeState.palette.fsXs)
+                  .fontFamily(this.themeState.palette.fontSans)
+                  .fontColor(this.themeState.palette.primary)
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .borderRadius(12)
-                  .backgroundColor(this.palette.primaryDim)
+                  .backgroundColor(this.themeState.palette.primaryBg)
                   .onClick(() => { this.activateModel(index); })
               }
               Text(m.enabled ? '启用' : '已禁用')
-                .fontSize(this.palette.fsXs)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(m.enabled ? this.palette.success : this.palette.textTertiary)
+                .fontSize(this.themeState.palette.fsXs)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(m.enabled ? this.themeState.palette.success : this.themeState.palette.textTertiary)
                 .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                 .borderRadius(12)
-                .backgroundColor(m.enabled ? this.palette.bgSurface2 : this.palette.bgSurface2)
+                .backgroundColor(m.enabled ? this.themeState.palette.bgSurface2 : this.themeState.palette.bgSurface2)
                 .onClick(() => { this.toggleEnabled(index, !m.enabled); })
             }
             .width('100%')
           }
           .width('100%')
           .padding(12)
-          .borderRadius(10)
-          .backgroundColor(this.palette.bgSurface)
-          .border({ width: 1, color: this.palette.borderSubtle })
+          .borderRadius(this.themeState.palette.radiusMd)
+          .backgroundColor(this.themeState.palette.bgSurface)
+          .border({ width: 0.5, color: this.themeState.palette.divider })
         }, (m: LlmModelEntry) => m.id)
       }
 
       // 添加按钮
       Row() {
         Text('＋ 添加模型')
-          .fontSize(this.palette.fsSm)
-          .fontFamily(this.palette.fontSans)
-          .fontColor('#FFFFFF')
+          .fontSize(this.themeState.palette.fsSm)
+          .fontFamily(this.themeState.palette.fontSans)
+          .fontColor(this.themeState.palette.primaryOnColor)
           .fontWeight(FontWeight.Medium)
       }
       .width('100%')
-      .height(44)
+      .height(this.themeState.palette.touchTarget)
       .justifyContent(FlexAlign.Center)
-      .borderRadius(10)
-      .backgroundColor(this.palette.primary)
+      .borderRadius(this.themeState.palette.radiusMd)
+      .backgroundColor(this.themeState.palette.primary)
       .onClick(() => { this.addModel(); })
 
       // ==================== 联网搜索配置 ====================
       Column({ space: 10 }) {
         Row({ space: 8 }) {
           Text('🌐 联网搜索')
-            .fontSize(this.palette.fsSm)
-            .fontFamily(this.palette.fontSans)
-            .fontColor(this.palette.textPrimary)
+            .fontSize(this.themeState.palette.fsSm)
+            .fontFamily(this.themeState.palette.fontSans)
+            .fontColor(this.themeState.palette.textPrimary)
             .fontWeight(FontWeight.Medium)
             .layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.webSearchEnabled })
-            .selectedColor(this.palette.primary)
+            .selectedColor(this.themeState.palette.primary)
             .onChange((isOn: boolean) => {
               this.webSearchEnabled = isOn;
               DataRepository.setSetting('webSearchEnabled', isOn ? 'true' : 'false');
@@ -1514,14 +1514,14 @@ export struct ChatConfig {
           Column({ space: 6 }) {
             this.rowLabel('搜索接口地址', 'GET 请求，{q} 会被替换为查询词；支持 DuckDuckGo Instant Answer / SerpAPI 等 JSON 接口')
             TextInput({ text: this.webSearchBaseUrl, placeholder: 'https://api.duckduckgo.com/?q={q}&format=json&no_html=1' })
-              .fontSize(this.palette.fsSm)
-              .fontFamily(this.palette.fontSans)
-              .fontColor(this.palette.textPrimary)
-              .placeholderColor(this.palette.textTertiary)
-              .backgroundColor(this.palette.bgSurface)
-              .borderRadius(8)
-              .border({ width: 1, color: this.palette.borderSubtle })
-              .height(44)
+              .fontSize(this.themeState.palette.fsSm)
+              .fontFamily(this.themeState.palette.fontSans)
+              .fontColor(this.themeState.palette.textPrimary)
+              .placeholderColor(this.themeState.palette.textTertiary)
+              .backgroundColor(this.themeState.palette.bgSurface)
+              .borderRadius(this.themeState.palette.radiusSm)
+              .border({ width: 1, color: this.themeState.palette.borderSubtle })
+              .height(this.themeState.palette.touchTarget)
               .width('100%')
               .onChange((value: string) => {
                 this.webSearchBaseUrl = value;
@@ -1534,14 +1534,14 @@ export struct ChatConfig {
             this.rowLabel('搜索 API Key（可选）', '需要鉴权的接口填写；留空表示无需 Key')
             Row({ space: 8 }) {
               TextInput({ text: this.webSearchApiKey, placeholder: '选填' })
-                .fontSize(this.palette.fsSm)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.textPrimary)
-                .placeholderColor(this.palette.textTertiary)
-                .backgroundColor(this.palette.bgSurface)
-                .borderRadius(8)
-                .border({ width: 1, color: this.palette.borderSubtle })
-                .height(44)
+                .fontSize(this.themeState.palette.fsSm)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.textPrimary)
+                .placeholderColor(this.themeState.palette.textTertiary)
+                .backgroundColor(this.themeState.palette.bgSurface)
+                .borderRadius(this.themeState.palette.radiusSm)
+                .border({ width: 1, color: this.themeState.palette.borderSubtle })
+                .height(this.themeState.palette.touchTarget)
                 .layoutWeight(1)
                 .type(this.showSearchKey ? InputType.Normal : InputType.Password)
                 .onChange((value: string) => {
@@ -1550,7 +1550,7 @@ export struct ChatConfig {
                 })
               Text(this.showSearchKey ? '🙈' : '👁️')
                 .fontSize(16)
-                .fontFamily(this.palette.fontSans)
+                .fontFamily(this.themeState.palette.fontSans)
                 .padding(8)
                 .onClick(() => { this.showSearchKey = !this.showSearchKey; })
             }
@@ -1561,23 +1561,24 @@ export struct ChatConfig {
       }
       .width('100%')
       .padding(12)
-      .borderRadius(10)
-      .backgroundColor(this.palette.bgSurface)
-      .border({ width: 1, color: this.palette.borderSubtle })
+      .borderRadius(this.themeState.palette.radiusMd)
+      .backgroundColor(this.themeState.palette.bgSurface)
+      .border({ width: 0.5, color: this.themeState.palette.divider })
 
       Text('隐私说明：API Key 仅以 AES-256 加密形式保存在本机数据库，发送请求时直接携带给所选服务商，不经过任何第三方中转。')
         .fontSize(10)
-        .fontFamily(this.palette.fontSans)
-        .fontColor(this.palette.textTertiary)
+        .fontFamily(this.themeState.palette.fontSans)
+        .fontColor(this.themeState.palette.textTertiary)
         .lineHeight(16)
         .width('100%')
         .padding(12)
-        .borderRadius(8)
-        .backgroundColor(this.palette.bgSurface)
-        .border({ width: 1, color: this.palette.borderSubtle })
+        .borderRadius(this.themeState.palette.radiusMd)
+        .backgroundColor(this.themeState.palette.bgSurface)
+        .border({ width: 0.5, color: this.themeState.palette.divider })
     }
     .width('100%')
-    .padding({ left: this.isSm ? 16 : 24, right: this.isSm ? 16 : 24, top: 8, bottom: 32 })
+    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
+        right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: 8, bottom: 32 })
   }
 
   build() {
@@ -1592,8 +1593,8 @@ export struct ChatConfig {
             Row() {
               Text('‹ 返回')
                 .fontSize(14)
-                .fontFamily(this.palette.fontSans)
-                .fontColor(this.palette.primary)
+                .fontFamily(this.themeState.palette.fontSans)
+                .fontColor(this.themeState.palette.primary)
                 .onClick(() => { this.backToList(); })
             }
           }
@@ -1611,8 +1612,8 @@ export struct ChatConfig {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.palette.bgBase)
-      .padding({ bottom: Math.max(0, this.navBarHeight) })
+      .backgroundColor(this.themeState.palette.bgBase)
+      .padding({ bottom: Math.max(0, this.themeState.navBarHeight) })
 
       if (this.showProviderSheet) { this.providerSheet() }
       if (this.showModelSheet) { this.modelSheet() }

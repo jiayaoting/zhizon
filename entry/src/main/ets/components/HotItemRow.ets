@@ -1,4 +1,5 @@
-// 智子 - 榜单条目行（序号 + 标题 + 热度/时间）
+// 智子 - 榜单条目行（v10：华为拟物白规范）
+// 契约保持不变：@Param entry / rank / read / showDivider，@Event onOpen
 import { AppStorageV2 } from '@kit.ArkUI';
 import { ThemeState } from '../common/ThemeState';
 import { HotEntry, HotItem } from '../common/HotModels';
@@ -13,9 +14,9 @@ export struct HotItemRow {
   @Event onOpen: (entry: HotEntry) => void = () => {};
   @Local themeState: ThemeState = AppStorageV2.connect(ThemeState, 'themeState', () => new ThemeState())!;
 
-  // Top3 序号配色（红/橙/黄），其余为三级文字色
+  // Top3 序号配色（内容强调色，保持不变）
   private rankColor(): string {
-    if (this.rank === 1) return '#EF4444';
+    if (this.rank === 1) return '#E84026';
     if (this.rank === 2) return '#F97316';
     if (this.rank === 3) return '#EAB308';
     return this.themeState.palette.textTertiary;
@@ -23,7 +24,7 @@ export struct HotItemRow {
 
   build() {
     Column() {
-      Row({ space: 10 }) {
+      Row({ space: this.themeState.palette.sp2 }) {
         if (this.rank > 0) {
           Text(this.rank.toString())
             .fontSize(this.themeState.palette.fsSm)
@@ -46,7 +47,7 @@ export struct HotItemRow {
             .textAlign(TextAlign.Start)
 
           if (this.entry.item.info.length > 0 || this.entry.item.pubDate > 0) {
-            Row({ space: 8 }) {
+            Row({ space: this.themeState.palette.sp2 }) {
               if (this.entry.item.info.length > 0) {
                 Text(this.entry.item.info)
                   .fontSize(this.themeState.palette.fsXs)
@@ -72,14 +73,14 @@ export struct HotItemRow {
         .layoutWeight(1)
       }
       .width('100%')
-      .padding({ top: 8, bottom: 8, left: 2, right: 2 })
+      .padding({ top: this.themeState.palette.sp2, bottom: this.themeState.palette.sp2, left: 2, right: 2 })
       .alignItems(VerticalAlign.Top)
 
       if (this.showDivider) {
         Divider()
-          .color(this.themeState.palette.borderSubtle)
+          .color(this.themeState.palette.divider)
           .strokeWidth(0.5)
-          .margin({ left: this.rank > 0 ? 30 : 0 })
+          .margin({ left: this.rank > 0 ? 28 : 0 })
       }
     }
     .width('100%')
