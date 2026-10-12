@@ -87,6 +87,7 @@ export struct HotSourceCard {
       .height(36)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .accessibilityText(this.starred ? '取消关注' : '关注')
       .onClick(() => {
         this.onToggleStar(this.sourceId);
       })
@@ -107,6 +108,7 @@ export struct HotSourceCard {
       .height(36)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
+      .accessibilityText('刷新')
       .onClick(() => {
         this.onRefresh(this.sourceId);
       })
@@ -173,6 +175,7 @@ export struct HotSourceCard {
             SymbolGlyph(AppIcons.forward)
               .fontSize(14)
               .fontColor([this.themeState.palette.primary])
+              .accessibilityLevel('no')
           } else {
             Text(AppIcons.forwardEmoji)
               .fontSize(this.themeState.palette.fsXs)

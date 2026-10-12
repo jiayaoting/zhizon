@@ -531,7 +531,7 @@ export struct NewsDetailPage {
 
   // 顶栏图标动作：≥44vp 触控区（icon/emoji 为固定入参；状态在各自 builder 内读取，避免按值传参不刷新）
   @Builder
-  barIcon(icon: Resource, emoji: string, onTap: () => void) {
+  barIcon(icon: Resource, emoji: string, label: string, onTap: () => void) {
     Row() {
       if (USE_SYMBOL_ICONS) {
         SymbolGlyph(icon)
@@ -550,6 +550,7 @@ export struct NewsDetailPage {
     .alignItems(VerticalAlign.Center)
     .borderRadius(this.themeState.palette.radiusSm)
     .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .accessibilityText(label)
     .onClick(onTap)
   }
 
@@ -619,7 +620,7 @@ export struct NewsDetailPage {
   @Builder
   topBar() {
     Row({ space: this.themeState.palette.sp1 }) {
-      this.barIcon(AppIcons.back, AppIcons.backEmoji, (): void => {
+      this.barIcon(AppIcons.back, AppIcons.backEmoji, '返回', (): void => {
         AppNavigator.pop();
       })
 
@@ -635,7 +636,7 @@ export struct NewsDetailPage {
 
       this.starButton()
 
-      this.barIcon(AppIcons.share, AppIcons.shareEmoji, (): void => {
+      this.barIcon(AppIcons.share, AppIcons.shareEmoji, '分享', (): void => {
         this.shareNews();
       })
 
@@ -955,7 +956,7 @@ export struct NewsDetailPage {
           .fontWeight(FontWeight.Bold)
         Blank()
         this.modelChip()
-        this.barIcon(AppIcons.close, AppIcons.closeEmoji, (): void => {
+        this.barIcon(AppIcons.close, AppIcons.closeEmoji, '关闭', (): void => {
           this.closePanel();
         })
       }

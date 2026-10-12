@@ -349,6 +349,7 @@ export struct BettaFishSystemPage {
                     SymbolGlyph(AppIcons.doc)
                       .fontSize(16)
                       .fontColor([this.themeState.palette.primary])
+                      .accessibilityLevel('no')
                   } else {
                     Text(AppIcons.docEmoji)
                       .fontSize(this.themeState.palette.fsXs)

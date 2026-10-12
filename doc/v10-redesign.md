@@ -433,13 +433,13 @@ service/
 
 静态类保留（简单可靠），但把**可替换的单例**改为可注入 Provider：
 
-| 单例 | 接口 | 默认实现 | 测试可注入 |
-|---|---|---|---|
-| NewsNowClient baseUrl / HTTP | `INewsNowClient` | NewsNowClient | FakeClient（返回桩数据） |
-| HotFeedStore | `IHotFeedStore` | HotFeedStore | FakeStore |
-| LlmClient | `ILlmClient` | LlmClient | FakeLlm |
+| 单例 | 接口 | 默认实现 | 测试可注入 | 状态 |
+|---|---|---|---|---|
+| 热榜取数（ping / fetchBoard / fetchBoards / pullMetadata / pushMetadata） | `IHotDataProvider` | `NewsNowHotDataProvider`（委托 `NewsNowClient`） | `FakeHotDataProvider` | ✅ 已实现（`service/hot/HotDataProvider.ets` + `test/HotDataProviderTest.ets`） |
+| 模型调用（testConnection / postCompletion / postCompletionAgent / postCompletionCancelable / postCompletionStream） | `ILlmClient` | `LlmClientProvider`（纯委托 `LlmClient`，签名逐字对齐） | `FakeLlmClient` | ✅ 已实现（`service/chat/LlmProvider.ets` + `test/LlmProviderTest.ets`）；5 个消费方（Chat / ChatConfig / AgentOrchestrator / GameAIService / NewsAiService）已全部改走注册表 |
+| 热榜内存态 | `IHotFeedStore` | `HotFeedStore` | `FakeStore` | ⏳ 未做：`HotFeedStore` 为静态类且持有内存槽位，抽接口成本高于收益；取数层已可注入，单测足以覆盖编排 |
 
-收益：现有 10 个单元测试可直接覆盖 Store/Repository 逻辑，不依赖网络。
+收益：单测可在不联网的前提下覆盖取数与模型调用两条链路（已由 `HotDataProviderTest` / `LlmProviderTest` 验证）。
 
 ### 5.4 超大页拆分（跟随 chat P2 路线图）
 
@@ -480,34 +480,34 @@ service/
 ## 七、验收标准（对齐华为规范逐项走查）
 
 ### 7.1 设计令牌
-- [ ] 色彩/圆角/间距/字体全部来自 token，全仓无硬编码 `Color.Black` / `#FFF` / `#FFFFFF`（除 token 定义处）
-- [ ] 列表行高 56vp、发丝分割线、左缩进线，视觉对齐华为阅读
-- [ ] 亮/深色两套 token 切换无错位、无闪白/闪黑
-- [ ] 毛玻璃只出现在底部导航/侧边栏/悬浮条，内容卡无玻璃态
+- [x] 色彩/圆角/间距/字体全部来自 token，全仓无硬编码 `Color.Black` / `#FFF` / `#FFFFFF`（除 token 定义处与品牌色目录 `HotSources`/`AvatarOptions`、棋类棋盘色）
+- [x] 列表行高 56vp、发丝分割线、左缩进线，视觉对齐华为阅读
+- [ ] 亮/深色两套 token 切换无错位、无闪白/闪黑（需真机确认）
+- [x] 毛玻璃只出现在底部导航/侧边栏/悬浮条，内容卡无玻璃态
 
 ### 7.2 信息架构
-- [ ] 核心动作路径符合 §3.3（≤2 步）
-- [ ] 首页/榜页/详情/对话/游戏/我的 符合 §4 规格
+- [x] 核心动作路径符合 §3.3（≤2 步）
+- [x] 首页/榜页/详情/对话/游戏/我的 符合 §4 规格
 
 ### 7.3 菜单与层级（合理性 · 易用性）
-- [ ] 任何功能 **≤3 步** 可达；无新增 >3 步路径
-- [ ] 每个功能**仅一处主入口**，入口去重审计表（§3.5）全部落实
-- [ ] 顶栏操作 ≤3 个矢量图标；超量进 overflow，无顶栏堆叠
-- [ ] 长按菜单仅作快捷，主流程必有点击可达路径；删除项置底 + danger
-- [ ] 同一动作在所有页**位置/图标/文案一致**（搜索/返回/设置/收藏语义唯一）
-- [ ] 数据操作、功能配置、账号、外观、关于 按 §3.4.4 边界归位，设置无"大杂烩"
-- [ ] Tab 内二级页返回键回 Tab 首页；路由子页回来源页；首页不显示返回键
-- [ ] 空态均含"原因 + 下一步"引导按钮
+- [x] 任何功能 **≤3 步** 可达；无新增 >3 步路径
+- [x] 每个功能**仅一处主入口**，入口去重审计表（§3.5）全部落实（实测见 §10.6）
+- [x] 顶栏操作 ≤3 个矢量图标；超量进 overflow，无顶栏堆叠
+- [x] 长按菜单仅作快捷，主流程必有点击可达路径；删除项置底 + danger
+- [x] 同一动作在所有页**位置/图标/文案一致**（搜索/返回/设置/收藏语义唯一）
+- [x] 数据操作、功能配置、账号、外观、关于 按 §3.4.4 边界归位，设置无"大杂烩"
+- [x] Tab 内二级页返回键回 Tab 首页；路由子页回来源页；首页不显示返回键
+- [x] 空态均含"原因 + 下一步"引导按钮
 
 ### 7.4 工程
-- [ ] 38 页面 + 25 组件全部 @ComponentV2，无 @State/@Prop/@Link/@StorageLink/@Watch 残留
-- [ ] service 分域目录，无跨域 import 实现
-- [ ] 单元测试覆盖 Store/Repository（注入 Fake Client 后可跑）
+- [x] 38 页面 + 27 组件全部 @ComponentV2，无 @State/@Prop/@Link/@StorageLink/@Watch 残留（实测 0）
+- [x] service 分域目录，无跨域 import 实现
+- [x] 单元测试接线可跑：`hvigorw test --mode module -p module=entry` → BUILD SUCCESSFUL，覆盖率 行 647/4887（见 §10.7）
 
 ### 7.5 自适应与兼容
-- [ ] 手机（底部 Tab）/ 平板（侧边栏）/ 折叠屏自适应无回归
-- [ ] 平板侧边栏选中态 = 当前主 Tab 高亮（primaryBg 药丸）
-- [ ] 真机走查：华为阅读/智慧助手·今天 并排对比，风格对齐
+- [ ] 手机（底部 Tab）/ 平板（侧边栏）/ 折叠屏自适应无回归（需真机确认）
+- [x] 平板侧边栏选中态 = 当前主 Tab 高亮（primaryBg 药丸）
+- [ ] 真机走查：华为阅读/智慧助手·今天 并排对比，风格对齐（需设备）
 
 ---
 
@@ -591,25 +591,49 @@ service/
 - **@ComponentV2 全量迁移 ✅**：38 个页面 + 27 个组件全部 `@ComponentV2`，全仓非注释 V1 装饰器残留 **0**（`@State/@Prop/@Link/@StorageLink/@StorageProp/@Watch/@ObjectLink/@Observed`）。含 7 个玩法页、`Chat.ets`（46 `@State` + 297 处 `palette` 引用）、5 个 Chat 子组件，以及 `ChatMessage` 的 `@Observed` → `@ObservedV2` + 12 个 `@Trace`（流式按字段原地更新仍可驱动重渲染）；`MineCell` 同样观测化。首个 **V2 → V1** 与 **V2 → V2** 混合边界均已编译验证通过。
 - **service 分域目录 ✅**：43 个服务文件迁入 `hot/(7) chat/(10) game/(9) betta/(3) platform/(14)`，service 根目录零残留；跨域引用统一 `../<domain>/X`，域内 `./X`，对 ets 级目录改为 `../../<dir>/`（共重写 180+ 导入语句）。
 - **超大页拆分 ✅（4 个目标页均已处理）**：
-  | 页面 | 处理 | 行数变化 |
-  |---|---|---|
-  | `NewsSettings.ets` | 抽出 `components/HotSourcePicker.ets`（源选择器：`@Param focusIds` + `@Event onToggleStar`） | 787 → 716 |
-  | `Chat.ets` | 抽出 `components/AiModelPicker.ets`（模型切换半模态，含「跟随全局模型」） | 2522 → 2186 |
-  | `Settings.ets` | 行渲染改用共享 `SettingRow`（升级支持矢量图标 + 开关行），删除页内 `rowIcon`/`forwardArrow`/`settingRow` 三个重复构建器 | 747 → 612 |
-  | `NewsDetail.ets` | 内联模型选择浮层改用共享 `AiModelPicker`（视觉同时对齐对话页：底栏半模态） | 1182 → 1066 |
-  新增可复用组件：`HotSourcePicker`、`AiModelPicker`；`SettingRow` 扩展 `useSymbol/symbol/isSwitch/switchValue/onSwitchChange` 四个参数（emoji 用法向后兼容，AppearanceSettings 无需改动）。
+  | 页面 | 抽取产物 | 产物行数 | 页面当前行数 |
+  |---|---|---|---|
+  | `NewsSettings.ets` | `components/HotSourcePicker.ets`（源选择器：`@Param focusIds` + `@Event onToggleStar`） | 99 | 791 |
+  | `Chat.ets` | `components/AiModelPicker.ets`（模型切换半模态）+ `components/ChatSearchBar.ets`（搜索栏 + 筛选胶囊 + 搜索空态，两个 struct） | 164 / 127 | 2300（仅 ChatSearchBar 抽取即净减 91 行，`git diff --numstat` 可查） |
+  | `Settings.ets` | 行渲染改用共享 `SettingRow`，删除页内 `rowIcon`/`forwardArrow`/`settingRow` 三个重复构建器 | — | 655 |
+  | `NewsDetail.ets` | 内联模型选择浮层改用共享 `AiModelPicker`（视觉同时对齐对话页：底栏半模态） | — | 1169 |
+
+  > 行数口径：以上为 UTF-8 精确行数。此前文档中的行数（如 Chat 2186）是 PowerShell 管道按 GBK 解码导致的**低估**，已作废；如需对比请以 `[IO.File]::ReadAllText(..., UTF8)` 或 `read` 工具为准。
+  `SettingRow` 扩展 `useSymbol/symbol/isSwitch/switchValue/onSwitchChange` 五个参数（emoji 用法向后兼容，AppearanceSettings 无需改动）；并新增 `ChatSearchEmpty`（无入参空态组件）。
 - **可注入单例 ✅**：见上（HotDataProvider 注册表 + Fake 注入测试）。
 
 ### 10.6 P5 状态
 
-- 已完成：按压反馈统一 `clickEffect`；主要按钮/图标补 `accessibilityText`；字号档位与 `fs*` 联动（P0）；全仓旧样式清理（`primaryDim` / 固定圆角 8/10 / 内容卡玻璃语义全部清零，`GlassLevel.P1/P2` 仅存于 `GlassEffect.ets` 定义处）；README / DESIGN / 本文档同步 v10（含 service 分层树与新增组件）。
+- **动效 ✅**：全局按压反馈统一 `clickEffect({ level: ClickEffectLevel.LIGHT })`；§2.5 要求的**视图 Tabs 下划线滑动**已实现——`Index.ets` 视图名均为 2 字，改为等宽（64vp）标签 + **单个指示器**按 `viewIndex()` 定位，切换时经 `animateTo({ duration: 200, curve: Curve.EaseOut })` 平滑移动（原先每个标签各画一条静态下划线）。
+- **无障碍 ✅**：全仓 `accessibilityText` **59 处**、装饰性图标 `accessibilityLevel('no')` **16 处**（本轮审计 44 个文件：图标型可点击控件 19 个，新增 15 处文本 + 16 处 no；共享 `@Builder`（`HotBoard.barIcon` / `Index.iconButton` / `NewsDetail.barIcon` / `NewsSettings.glyphTap`·`iconTap`）统一增加 `label` 参数以承载文案，调用点同步更新）。明确保留未处理的：`Profile` 账号头像（相邻昵称列已有同动作与文案，标签随登录态变化，避免误报）、以及"图标即控件唯一内容"但父节点已带文案的情形（沿用仓库既有约定）。
+- **字体自适 ✅**：字号档位（小/标准/大/特大）与 `fs*` token 联动（P0 落地）。
+- **旧样式清理 ✅**：`primaryDim` / 固定圆角 8·10 / 内容卡玻璃语义全部清零（`GlassLevel.P1/P2` 仅存于 `GlassEffect.ets` 定义处）。
 - **入口去重核查（§7.3）实测**：`NewsFavorites` / `NewsSearch` / `ReadingReport` / `AiModelPage` / `AppearanceSettings` 均**只有一处主入口**；`NewsSettings` 主入口为「设置 → 热榜」，另有首页 ⚙ 与离线横幅「去设置」两个受限快捷（符合 §3.5「看留门面、管收设置」）。游戏数据 5 页由游戏 Tab（`GameToolEntry.route`）与我的页双入口提供，属设计规定。
 - 待真机走查（本环境无设备，无法验证，故不作为阻塞项）：
   1. `sys.symbol` 矢量图标实际渲染效果 —— 若出现空白，将 `AppIcons.USE_SYMBOL_ICONS` 置 `false` 即可全站回退 emoji；
   2. 亮/深色切换、自定义背景透出（v10 起页面根背景为不透明 `bgBase`，自定义背景不再透出游戏/热榜 Tab，需确认是否符合预期）；
   3. 玩法页遮罩改 `maskOverlay` + 白卡后的浅色可读性；
   4. 列表滚动性能与手势（含会话抽屉左滑）；
-  5. `AiModelPicker` 在两个页面的半模态观感一致性。
+  5. `AiModelPicker` 在两个页面的半模态观感一致性；
+  6. 视图 Tabs 指示器滑动的实际手感（等宽 64vp 定位在长文案下若换成 3 字以上需同步调整 `TAB_WIDTH`）。
+
+### 10.7 单元测试接线（本轮补齐）
+
+分域重构后测试目录一度失效（`src/test` 不参与 `assembleHap`，故编译绿灯掩盖了问题）。本轮修复：
+
+1. **导入路径**：8 个测试文件仍指向分域前的平铺路径（`../main/ets/service/DefectClassifier` 等），已按同一映射表补齐域目录（`platform/` `hot/` `game/`）。
+2. **缺失入口**：新增 `entry/src/test/List.test.ets`，注册全部 12 个测试套件（此前 `hvigorw test` 报 `Could not resolve ".../src/test/List.test"`）。
+3. **潜伏编译错误 9 条**（测试文件从未被编译过，首次运行才暴露）：
+   - `NewsRepositoryTest`：hypium 断言名错误 `assertGreaterThan/assertLessThan`（5 处）→ 实测 API 为 `assertLarger` / `assertLess`；
+   - `AffectedFeature.REMOTE` 不存在（`DefectClassifier.ets` 与其测试各 1 处）→ 枚举补 `REMOTE = 'REMOTE'`（该分支语义即"远程/网络类缺陷"）；
+   - `DefectWorkflowTest` 枚举比较被 TS 判为"无重叠"（`NOT_REPRODUCED === CONFIRMED`）→ 改为字符串比较后断言。
+4. **首次运行暴露 4 个真实失败用例 → 现已全部修复（4 失败 → 0 失败）**：
+   - **`SudokuSolver.isValidSolution` 是真 bug**：它对每个格子调用 `isSafe(board, r, c, board[r][c])`，而 `isSafe` 会把该格子自身的值算作冲突 → **任何完整棋局都被判为非法（恒返回 false）**。已改为独立的行/列/宫去重校验，并补 2 条回归用例（接受合法终局、拒绝含行内重复的棋局）。该函数此前无生产调用方，故未造成线上影响。
+   - `SudokuSolverTest` 的 `isSafe(board, 1, 2, 5)` 断言本身有误：(1,2) 与 (0,0)=5 **同宫**，正确答案是 false → 断言改用不同行/列/宫的 (1,4)。
+   - `NewsNowAuth.expiryOf/subjectOf` 在**本地单测运行时**解析失败（`util.Base64Helper` 是原生实现，此处不抛异常但产出空串）→ 新增 `payloadTextOf()` 统一入口：原生解码成功且非空则采用，否则回退**纯 ArkTS base64 解码**（`decodeBase64Pure`）。同时把原先两处重复的原生解码代码合并为一条路径，并消除"异常环境下 token 过期校验静默失效"的隐患。
+5. **执行结果**：`hvigorw test --mode module -p module=entry` → **BUILD SUCCESSFUL，0 失败用例**；覆盖率 **行 691/4924、函数 99/636、分支 127/1386**（`entry/.test/default/outputs/test/reports/coverageReport.json`）。打包 `assembleHap` 同样 BUILD SUCCESSFUL、ArkTS 0 error。
+
+> 复现命令：`hvigorw test --mode module -p module=entry`（需 DevEco 的 node/hvigor 环境变量，见项目根 `build_temp.bat`）。
 
 ---
 
@@ -629,4 +653,4 @@ service/
 
 ---
 
-**文档版本**：v1.0（2026-10）· 状态：待实施 · 下一步：确认 §8 取舍项后启动 P0
+**文档版本**：v1.0（2026-10）· 状态：**已实施**（P0–P5 完成；§7 中 3 项需真机确认）· 实施记录见 §十

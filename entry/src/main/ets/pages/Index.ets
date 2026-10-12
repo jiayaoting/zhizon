@@ -84,7 +84,10 @@ export struct IndexPage {
 
   private async switchView(key: HotViewKey): Promise<void> {
     if (this.viewKey === key) return;
-    this.viewKey = key;
+    // 指示器滑动（200ms，§2.5）
+    animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
+      this.viewKey = key;
+    });
     this.sourceIds = await HotFeedStore.sourceIds(key);
     this.tick = this.tick + 1;
     if (this.sourceIds.length === 0) return;
@@ -138,7 +141,7 @@ export struct IndexPage {
 
   // 图标按钮（矢量优先，emoji 回退）
   @Builder
-  iconButton(icon: Resource, emoji: string, onTap: () => void) {
+  iconButton(icon: Resource, emoji: string, label: string, onTap: () => void) {
     Row() {
       if (USE_SYMBOL_ICONS) {
         SymbolGlyph(icon)
@@ -156,6 +159,7 @@ export struct IndexPage {
     .borderRadius(this.themeState.palette.radiusSm)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
+    .accessibilityText(label)
     .onClick(onTap)
   }
 
@@ -181,10 +185,10 @@ export struct IndexPage {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      this.iconButton(AppIcons.search, AppIcons.searchEmoji, (): void => {
+      this.iconButton(AppIcons.search, AppIcons.searchEmoji, '搜索', (): void => {
         AppNavigator.push('pages/NewsSearch');
       })
-      this.iconButton(AppIcons.settings, AppIcons.settingsEmoji, (): void => {
+      this.iconButton(AppIcons.settings, AppIcons.settingsEmoji, '设置', (): void => {
         AppNavigator.push('pages/NewsSettings');
       })
     }
@@ -219,6 +223,7 @@ export struct IndexPage {
         SymbolGlyph(AppIcons.forward)
           .fontSize(16)
           .fontColor([this.themeState.palette.textTertiary])
+          .accessibilityLevel('no')
       } else {
         Text(AppIcons.forwardEmoji)
           .fontSize(this.themeState.palette.fsSm)
@@ -266,37 +271,63 @@ export struct IndexPage {
     }
   }
 
-  // ==================== 视图 Tabs（华为式下划线）====================
-  @Builder
-  viewTab(view: HotViewDef) {
-    Column({ space: 5 }) {
-      Text(view.name)
-        .fontSize(this.themeState.palette.fsMd)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.viewKey === view.key ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
-        .fontWeight(this.viewKey === view.key ? FontWeight.Medium : FontWeight.Normal)
-        .maxLines(1)
-      Row()
-        .width(20)
-        .height(2.5)
-        .borderRadius(2)
-        .backgroundColor(this.viewKey === view.key ? this.themeState.palette.primary : Color.Transparent)
+  // ==================== 视图 Tabs（华为式下划线 + 200ms 滑动指示器）====================
+  // 视图名均为 2 字，故按等宽定位 + 单个指示器（§2.5 动效规范）
+  private static readonly TAB_WIDTH: number = 64;
+  private static readonly TAB_INDICATOR_WIDTH: number = 20;
+
+  private viewIndex(): number {
+    for (let i: number = 0; i < HOT_VIEWS.length; i++) {
+      if (HOT_VIEWS[i].key === this.viewKey) return i;
     }
-    .height(42)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .onClick(() => {
-      this.switchView(view.key);
-    })
+    return 0;
+  }
+
+  private indicatorOffset(): number {
+    return this.viewIndex() * IndexPage.TAB_WIDTH +
+      (IndexPage.TAB_WIDTH - IndexPage.TAB_INDICATOR_WIDTH) / 2;
+  }
+
+  @Builder
+  viewTabLabel(view: HotViewDef) {
+    Text(view.name)
+      .fontSize(this.themeState.palette.fsMd)
+      .fontFamily(this.themeState.palette.fontSans)
+      .fontColor(this.viewKey === view.key ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
+      .fontWeight(this.viewKey === view.key ? FontWeight.Medium : FontWeight.Normal)
+      .maxLines(1)
+      .textAlign(TextAlign.Center)
+      .width(IndexPage.TAB_WIDTH)
+      .height(36)
+      .accessibilityText('切换到' + view.name + '视图')
+      .onClick(() => {
+        this.switchView(view.key);
+      })
   }
 
   @Builder
   viewBar() {
     Scroll() {
-      Row({ space: this.themeState.palette.sp5 }) {
-        ForEach(HOT_VIEWS, (view: HotViewDef) => {
-          this.viewTab(view)
-        }, (view: HotViewDef) => view.key)
+      Column({ space: 2 }) {
+        Row() {
+          ForEach(HOT_VIEWS, (view: HotViewDef) => {
+            this.viewTabLabel(view)
+          }, (view: HotViewDef) => view.key)
+        }
+        .width(HOT_VIEWS.length * IndexPage.TAB_WIDTH)
+        .justifyContent(FlexAlign.Start)
+
+        // 滑动指示器：位置由 viewKey 派生，切换时经 animateTo 平滑移动
+        Row() {
+          Row()
+            .width(IndexPage.TAB_INDICATOR_WIDTH)
+            .height(2.5)
+            .borderRadius(2)
+            .backgroundColor(this.themeState.palette.primary)
+            .margin({ left: this.indicatorOffset() })
+        }
+        .width(HOT_VIEWS.length * IndexPage.TAB_WIDTH)
+        .justifyContent(FlexAlign.Start)
       }
       .padding({
         left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,

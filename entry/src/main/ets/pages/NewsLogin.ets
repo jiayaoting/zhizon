@@ -59,6 +59,7 @@ export struct NewsLoginPage {
         .fontColor(this.themeState.palette.textPrimary)
         .width(36)
         .textAlign(TextAlign.Center)
+        .accessibilityText('返回')
         .onClick(() => {
           AppNavigator.pop();
         })

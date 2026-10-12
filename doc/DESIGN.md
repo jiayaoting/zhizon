@@ -152,9 +152,9 @@ zhizon/
         │       │
         │       ├── service/（43，v10 按域分层）  # 业务服务层
         │       │   ├── hot/（7）     NewsNowClient / NewsNowAuth / NewsNowSync / HotFeedStore /
-        │       │   │                 NewsRepository / NewsAiService / HotDataProvider（可注入数据源接缝）
+        │       │   │                 NewsRepository / NewsAiService / HotDataProvider（热榜取数接缝）
         │       │   ├── chat/（10）   LlmClient / ChatRepository / ChatViewModel / ChatExporter / ToolRegistry /
-        │       │   │                 AgentOrchestrator / WebSearchService / SpeechService / OnDeviceAiService / ImageAttachment
+        │       │   │                 AgentOrchestrator / WebSearchService / SpeechService / OnDeviceAiService / ImageAttachment / LlmProvider（模型调用接缝）
         │       │   ├── game/（9）    GameAIService / ChineseChessEngine / ChineseChessBook / ChineseChessNotation /
         │       │   │                 GomokuEngine / SudokuSolver / AchievementService / ReplayService / LeaderboardService
         │       │   ├── betta/（3）   BettaFishApiClient / BettaFishSseClient / BettaFishStore
@@ -178,13 +178,15 @@ zhizon/
         │           ├── Profile.ets / Settings.ets / AppearanceSettings.ets / Achievements.ets / ReadingReport.ets / LegalDoc.ets
         │           └── BettaFishPage.ets / BettaFishProgress.ets / BettaFishReportView.ets / BettaFishServerConfig.ets / BettaFishSystem.ets
         │
-        └── test/（11）                     # 单元测试
-            ├── HotModuleTest.ets / NewsNowAuthTest.ets / HotDataProviderTest.ets / NewsRepositoryTest.ets
+        └── test/（13）                     # 单元测试（入口 `List.test.ets`，`hvigorw test` 可跑）
+            ├── List.test.ets（套件入口）
+            ├── HotModuleTest.ets / NewsNowAuthTest.ets / HotDataProviderTest.ets / LlmProviderTest.ets / NewsRepositoryTest.ets
             ├── DefectClassifierTest.ets / DefectWorkflowTest.ets / GameLaunchFacadeTest.ets / NavigationFacadeTest.ets
             ├── SudokuSolverTest.ets / WindowEnvironmentProviderTest.ets / WindowEnvironmentSnapshotTest.ets
 ```
 
-> v10 工程收敛：全部 38 页面 + 27 组件已统一为 `@ComponentV2` 状态管理；`service/` 按域分层（hot / chat / game / betta / platform），域之间只允许经 platform 的公共能力交互；热榜取数经 `HotDataProvider` 注册表可注入 Fake（见 `test/HotDataProviderTest.ets`）。
+> v10 工程收敛：全部 38 页面 + 27 组件已统一为 `@ComponentV2` 状态管理；`service/` 按域分层（hot / chat / game / betta / platform），域之间只允许经 platform 的公共能力交互；热榜取数与模型调用分别经 `HotDataProvider` / `LlmProvider` 注册表可注入 Fake（见 `test/HotDataProviderTest.ets`、`test/LlmProviderTest.ets`）。
+> 单元测试：`hvigorw test --mode module -p module=entry`（覆盖率报告输出到 `entry/.test/default/outputs/test/reports/`）。
 
 ---
 
@@ -529,7 +531,7 @@ aboutToAppear() {
 | AiModelPicker | components/AiModelPicker.ets | 模型切换半模态（含「跟随全局模型」；供对话页与详情页复用） |
 | GlassEffect | [components/GlassEffect.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlassEffect.ets) | 毛玻璃效果工具（背景色/边框/模糊级别 + 低电降级） |
 | GlobalBackgroundLayer | [components/GlobalBackgroundLayer.ets](file:///workspace/zhizon/entry/src/main/ets/components/GlobalBackgroundLayer.ets) | 全局背景层（自定义背景图 + 强度调节） |
-| SettingGroupCard / SettingRow | [components/SettingGroupCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/SettingGroupCard.ets) | 设置分组卡与行控件 |
+| SettingGroupCard / SettingRow | [components/SettingGroupCard.ets](file:///workspace/zhizon/entry/src/main/ets/components/SettingGroupCard.ets) | 设置分组卡与统一行控件。`SettingRow` 入参：`icon`(emoji) / `useSymbol`+`symbol`(矢量优先) / `title` / `value` / `desc` / `showArrow` / `showDivider` / `danger` / `isSwitch`+`switchValue`(+`@Event onSwitchChange`) / `@Event rowClick`；被 Settings 与 AppearanceSettings 共用 |
 | ChatSessionDrawer / ChatMessageList / ChatMessageBubble / ChatMarkdownText / ChatInputBar | components/Chat*.ets | 会话抽屉、对话列表、气泡、Markdown 渲染与输入条 |
 | BettaConnectionBar / BettaEngineStatusCard / BettaForumMessageItem | components/Betta*.ets | 微舆连接状态、引擎状态卡、论坛消息项 |
 | GameAIPanel / DifficultyOption | components/ | 游戏 AI 托管控制面板、难度选择项 |

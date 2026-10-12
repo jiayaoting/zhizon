@@ -290,6 +290,7 @@ export struct BettaFishServerConfigPage {
             SymbolGlyph(server.isCurrent ? AppIcons.check : AppIcons.server)
               .fontSize(18)
               .fontColor([server.isCurrent ? this.themeState.palette.primary : this.themeState.palette.textTertiary])
+              .accessibilityLevel('no')
           } else {
             Text(server.isCurrent ? AppIcons.checkEmoji : AppIcons.serverEmoji)
               .fontSize(this.themeState.palette.fsSm)

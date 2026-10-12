@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { WindowEnvironmentConfidence, WindowEnvironmentProvider } from '../main/ets/service/WindowEnvironmentProvider';
+import { WindowEnvironmentConfidence, WindowEnvironmentProvider } from '../main/ets/service/platform/WindowEnvironmentProvider';
 
 export default function WindowEnvironmentProviderTest() {
   describe('WindowEnvironmentProviderTest', () => {

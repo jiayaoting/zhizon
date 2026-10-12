@@ -31,6 +31,7 @@ export struct FixedBottomNav {
         SymbolGlyph(AppIcons.navIcon(item.key))
           .fontSize(24)
           .fontColor([this.iconColor(item.key)])
+          .accessibilityLevel('no')
       } else {
         Text(AppIcons.navEmoji(item.key))
           .fontSize(20)

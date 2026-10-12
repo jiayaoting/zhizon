@@ -122,7 +122,7 @@ export struct HotBoardPage {
 
   // 顶栏图标动作：≥44vp 触控区（icon/emoji 为固定入参；状态在各自 builder 内读取，避免按值传参不刷新）
   @Builder
-  barIcon(icon: Resource, emoji: string, onTap: () => void) {
+  barIcon(icon: Resource, emoji: string, label: string, onTap: () => void) {
     Row() {
       if (USE_SYMBOL_ICONS) {
         SymbolGlyph(icon)
@@ -141,6 +141,7 @@ export struct HotBoardPage {
     .alignItems(VerticalAlign.Center)
     .borderRadius(this.themeState.palette.radiusSm)
     .clickEffect({ level: ClickEffectLevel.LIGHT })
+    .accessibilityText(label)
     .onClick(onTap)
   }
 
@@ -210,7 +211,7 @@ export struct HotBoardPage {
   @Builder
   topBar() {
     Row({ space: this.themeState.palette.sp2 }) {
-      this.barIcon(AppIcons.back, AppIcons.backEmoji, (): void => {
+      this.barIcon(AppIcons.back, AppIcons.backEmoji, '返回', (): void => {
         AppNavigator.pop();
       })
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { WindowDeviceType, WindowEnvironmentConfidence, WindowEnvironmentSnapshot, WindowFoldState,
-  WindowOrientation } from '../main/ets/service/WindowEnvironmentProvider';
+  WindowOrientation } from '../main/ets/service/platform/WindowEnvironmentProvider';
 
 export default function WindowEnvironmentSnapshotTest() {
   describe('WindowEnvironmentSnapshotTest', () => {

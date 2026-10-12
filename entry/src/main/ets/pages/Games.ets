@@ -497,6 +497,7 @@ export struct GamesPage {
                   SymbolGlyph(tool.icon)
                     .fontSize(20)
                     .fontColor([this.themeState.palette.primary])
+                    .accessibilityLevel('no')
                 } else {
                   Text(tool.iconEmoji)
                     .fontSize(16)
@@ -522,6 +523,7 @@ export struct GamesPage {
                 SymbolGlyph(AppIcons.forward)
                   .fontSize(20)
                   .fontColor([this.themeState.palette.textTertiary])
+                  .accessibilityLevel('no')
               } else {
                 Text(AppIcons.forwardEmoji)
                   .fontSize(18)

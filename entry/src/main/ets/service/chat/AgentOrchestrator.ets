@@ -1,5 +1,5 @@
 // 智子 - Agent 编排器（P0：非流式工具闭环，最大步数 + 取消 + 步骤回调）
-import { LlmClient } from './LlmClient';
+import { LlmProviders } from './LlmProvider';
 import { LlmConfig, ChatMessage, LlmTokenUsage } from '../../common/LlmModels';
 import { ToolRegistry } from './ToolRegistry';
 import { AgentStep, ToolCall, ToolResult, LlmAgentResult } from '../../common/AgentModels';
@@ -21,7 +21,7 @@ export class AgentOrchestrator {
         return new LlmAgentResult(false, '', '', [], 'CANCELLED', '已停止', lastUsage);
       }
       const startedAt: number = Date.now();
-      const result: LlmAgentResult = await LlmClient.postCompletionAgent(config, working, tools,
+      const result: LlmAgentResult = await LlmProviders.get().postCompletionAgent(config, working, tools,
         AGENT_INSTRUCTION);
       lastUsage = result.tokenUsage;
       if (!result.success) {

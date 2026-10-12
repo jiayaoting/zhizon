@@ -588,6 +588,7 @@ export struct NewsDigestPage {
                 .fontFamily(this.themeState.palette.fontSans)
                 .fontColor(this.themeState.palette.textTertiary)
                 .padding(8)
+                .accessibilityText('关闭')
                 .onClick(() => { this.modelSheet = false; })
             }
             .width('100%')

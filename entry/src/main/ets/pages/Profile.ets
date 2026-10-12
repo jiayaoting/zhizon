@@ -78,6 +78,7 @@ export struct ProfilePage {
         SymbolGlyph(symbol)
           .fontSize(22)
           .fontColor([this.themeState.palette.textSecondary])
+          .accessibilityLevel('no')
       } else {
         Text(emoji)
           .fontSize(this.themeState.palette.fsMd)
@@ -97,6 +98,7 @@ export struct ProfilePage {
       SymbolGlyph(AppIcons.forward)
         .fontSize(16)
         .fontColor([this.themeState.palette.textTertiary])
+        .accessibilityLevel('no')
     } else {
       Text(AppIcons.forwardEmoji)
         .fontSize(this.themeState.palette.fsSm)

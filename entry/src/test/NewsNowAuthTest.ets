@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { NewsNowAuth, HotLoginCallback } from '../main/ets/service/NewsNowAuth';
+import { NewsNowAuth, HotLoginCallback } from '../main/ets/service/hot/NewsNowAuth';
 
 // 构造仅用于解析校验的假 JWT（payload 不含真实签名）
 function fakeJwt(payloadJson: string): string {

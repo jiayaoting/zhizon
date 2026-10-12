@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
-import { IHotDataProvider, HotDataProviders } from '../main/ets/service/HotDataProvider';
-import { HotBoardResult, HotBoardsResult, HotPingResult, HotMetaResult } from '../main/ets/service/NewsNowClient';
+import { IHotDataProvider, HotDataProviders } from '../main/ets/service/hot/HotDataProvider';
+import { HotBoardResult, HotBoardsResult, HotPingResult, HotMetaResult } from '../main/ets/service/hot/NewsNowClient';
 import { HotBoardData, HotItem, HotNowError, FocusMetadata } from '../main/ets/common/HotModels';
 
 // 假数据源：验证「可注入单例」接缝（无需网络/服务端）

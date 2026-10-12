@@ -37,6 +37,7 @@ export struct PasswordSheet {
             .fontFamily(this.themeState.palette.fontSans)
             .fontColor(this.themeState.palette.textTertiary)
             .padding(8)
+            .accessibilityText('关闭')
             .onClick(() => { this.onCancel(); })
         }
         .width('100%')

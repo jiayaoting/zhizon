@@ -80,6 +80,7 @@ export struct NewsFavoritesPage {
         .fontFamily(this.themeState.palette.fontSans)
         .fontColor(this.themeState.palette.textTertiary)
         .padding(10)
+        .accessibilityText('取消收藏')
         .onClick(() => { this.removeFavorite(entry); })
     }
     .width('100%')
@@ -98,6 +99,7 @@ export struct NewsFavoritesPage {
             .fontSize(this.themeState.palette.fsLg)
             .fontFamily(this.themeState.palette.fontSans)
             .padding(6)
+            .accessibilityText('清空收藏')
             .onClick(() => { this.clearAll(); })
         }
       }

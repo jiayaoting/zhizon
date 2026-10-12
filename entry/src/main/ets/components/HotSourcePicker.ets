@@ -40,6 +40,7 @@ export struct HotSourcePicker {
     .height(this.themeState.palette.touchTarget)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
+    .accessibilityText(this.starred(sourceId) ? '取消关注' : '关注')
     .onClick(() => {
       this.onToggleStar(sourceId);
     })

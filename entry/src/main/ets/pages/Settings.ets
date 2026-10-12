@@ -516,6 +516,7 @@ export struct SettingsPage {
               SymbolGlyph(AppIcons.search)
                 .fontSize(18)
                 .fontColor([this.themeState.palette.textTertiary])
+                .accessibilityLevel('no')
             } else {
               Text(AppIcons.searchEmoji)
                 .fontSize(this.themeState.palette.fsSm)

@@ -26,6 +26,7 @@ export struct SideNav {
         SymbolGlyph(AppIcons.navIcon(item.key))
           .fontSize(22)
           .fontColor([this.itemColor(item.key)])
+          .accessibilityLevel('no')
       } else {
         Text(AppIcons.navEmoji(item.key))
           .fontSize(20)

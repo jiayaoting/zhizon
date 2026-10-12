@@ -1,7 +1,7 @@
 // 智子 - 游戏 AI 服务（状态序列化 / 动作解析 / LLM 调用 / 模型管理）
 import { ChatRepository } from '../chat/ChatRepository';
 import { DataRepository } from '../platform/DataRepository';
-import { LlmClient } from '../chat/LlmClient';
+import { LlmProviders } from '../chat/LlmProvider';
 import { ChatMessage, LlmConfig, LlmModelEntry, LlmResult, entryToConfig } from '../../common/LlmModels';
 import { AiCallContext } from '../platform/AiCallLogger';
 import { DifficultyLevel, difficultyLabel } from '../../common/Difficulty';
@@ -306,7 +306,7 @@ export class GameAIService {
   private static async decideOnce(config: LlmConfig, messages: ChatMessage[],
     timeoutMs: number, kind: GameKind): Promise<LlmResult> {
     let settled: boolean = false;
-    const cancellable = LlmClient.postCompletionCancelable(config, messages, new AiCallContext('game', kind));
+    const cancellable = LlmProviders.get().postCompletionCancelable(config, messages, new AiCallContext('game', kind));
     return await new Promise<LlmResult>((resolve: (value: LlmResult) => void) => {
       const timer: number = setTimeout(() => {
         if (!settled) {

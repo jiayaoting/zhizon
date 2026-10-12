@@ -18,7 +18,7 @@ import { TopBar } from '../components/TopBar';
 import { GlobalBackgroundLayer } from '../components/GlobalBackgroundLayer';
 import { ChatRepository } from '../service/chat/ChatRepository';
 import { DatabaseHelper } from '../service/platform/DatabaseHelper';
-import { LlmClient } from '../service/chat/LlmClient';
+import { LlmProviders } from '../service/chat/LlmProvider';
 import { SpeechService } from '../service/chat/SpeechService';
 import { LiveViewService } from '../service/platform/LiveViewService';
 import { WebSearchService, WebSearchResult } from '../service/chat/WebSearchService';
@@ -39,6 +39,7 @@ import { ChatMessageList } from '../components/ChatMessageList';
 import { AiModelPicker } from '../components/AiModelPicker';
 import { ChatInputBar } from '../components/ChatInputBar';
 import { ChatSessionDrawer } from '../components/ChatSessionDrawer';
+import { ChatSearchBar, ChatSearchEmpty } from '../components/ChatSearchBar';
 import { LazyListDataSource } from '../common/LazyDataSource';
 
 @ComponentV2
@@ -964,7 +965,7 @@ export struct ChatTab {
 
     const history: ChatMessage[] = ChatRepository.requestMessages(
       newMessages.slice(0, newMessages.length - 1), config.contextTokensIn);
-    const result: LlmResult = await LlmClient.postCompletionStream(config, history,
+    const result: LlmResult = await LlmProviders.get().postCompletionStream(config, history,
       (delta: string) => {
         // 流式增量先累积，再定时一次性刷新（约 60ms），避免每个分片都触发整条重渲染
         this.streamingContent = this.streamingContent + delta;
@@ -1751,90 +1752,6 @@ export struct ChatTab {
   }
 
   @Builder
-  filterChip(label: string, role: string) {
-    Row() {
-      Text(label)
-        .fontSize(this.themeState.palette.fsXs)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.searchRole === role ? this.themeState.palette.primary : this.themeState.palette.textSecondary)
-        .fontWeight(this.searchRole === role ? FontWeight.Medium : FontWeight.Normal)
-    }
-    .height(32)
-    .padding({ left: 14, right: 14 })
-    .borderRadius(this.themeState.palette.radiusCapsule)
-    .backgroundColor(this.searchRole === role ? this.themeState.palette.primaryBgStrong : this.themeState.palette.bgSurface2)
-    .clickEffect({ level: ClickEffectLevel.LIGHT })
-    .onClick(() => { this.searchRole = role; this.syncMessageSource(); })
-  }
-
-  @Builder
-  searchBar() {
-    Column({ space: this.themeState.palette.sp2 }) {
-      Row({ space: this.themeState.palette.sp2 }) {
-        if (USE_SYMBOL_ICONS) {
-          SymbolGlyph(AppIcons.search)
-            .fontSize(18)
-            .fontColor([this.themeState.palette.textTertiary])
-        } else {
-          Text(AppIcons.searchEmoji)
-            .fontSize(this.themeState.palette.fsSm)
-            .fontFamily(this.themeState.palette.fontSans)
-        }
-        TextInput({ text: this.searchQuery, placeholder: '搜索对话记录…' })
-          .fontSize(this.themeState.palette.fsSm)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textPrimary)
-          .placeholderColor(this.themeState.palette.textTertiary)
-          .backgroundColor(Color.Transparent)
-          .height(40)
-          .layoutWeight(1)
-          .onChange((value: string) => {
-            this.searchQuery = value;
-            this.loadSearchResults();
-          })
-        Row() {
-          if (USE_SYMBOL_ICONS) {
-            SymbolGlyph(AppIcons.close)
-              .fontSize(18)
-              .fontColor([this.themeState.palette.textTertiary])
-          } else {
-            Text(AppIcons.closeEmoji)
-              .fontSize(this.themeState.palette.fsSm)
-              .fontFamily(this.themeState.palette.fontSans)
-              .fontColor(this.themeState.palette.textTertiary)
-          }
-        }
-        .width(40)
-        .height(40)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .accessibilityText('退出搜索')
-        .onClick(() => { this.exitSearch(); })
-      }
-      .width('100%')
-      .padding({ left: 12, right: 4 })
-      .height(44)
-      .backgroundColor(this.themeState.palette.bgSurface2)
-      .borderRadius(this.themeState.palette.radiusCapsule)
-
-      Row({ space: 6 }) {
-        this.filterChip('全部', 'all')
-        this.filterChip('用户', 'user')
-        this.filterChip('助手', 'assistant')
-        Blank()
-        Text('共 ' + this.searchResultCount().toString() + ' 条')
-          .fontSize(this.themeState.palette.fsXs)
-          .fontFamily(this.themeState.palette.fontSans)
-          .fontColor(this.themeState.palette.textTertiary)
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .padding({ left: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg,
-      right: this.themeState.isSm ? this.themeState.palette.pagePadding : this.themeState.palette.pagePaddingLg, top: this.themeState.palette.sp2 })
-  }
-
-  @Builder
   emptyWelcome() {
     Column({ space: this.themeState.palette.sp3 }) {
       Text('🗨️')
@@ -1853,27 +1770,6 @@ export struct ChatTab {
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .padding({ top: 80, bottom: 40 })
-  }
-
-  // 搜索无结果
-  @Builder
-  searchEmpty() {
-    Column({ space: this.themeState.palette.sp2 }) {
-      Text('🔍')
-        .fontSize(36)
-        .fontFamily(this.themeState.palette.fontSans)
-      Text('未找到匹配的对话')
-        .fontSize(this.themeState.palette.fsMd)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textSecondary)
-      Text('试试其他关键词或筛选条件')
-        .fontSize(this.themeState.palette.fsXs)
-        .fontFamily(this.themeState.palette.fontSans)
-        .fontColor(this.themeState.palette.textTertiary)
-    }
-    .width('100%')
-    .justifyContent(FlexAlign.Center)
-    .padding({ top: 60, bottom: 40 })
   }
 
   build() {
@@ -1925,9 +1821,22 @@ export struct ChatTab {
           }
         }
 
-        // 搜索栏
+        // 搜索栏（v10 拆分：ChatSearchBar 只做 UI，检索/同步仍在本页）
         if (this.showSearch && !this.selectionMode) {
-          this.searchBar()
+          ChatSearchBar({
+            query: this.searchQuery,
+            role: this.searchRole,
+            resultCount: this.searchResultCount(),
+            onQueryChange: (value: string): void => {
+              this.searchQuery = value;
+              this.loadSearchResults();
+            },
+            onRoleChange: (role: string): void => {
+              this.searchRole = role;
+              this.syncMessageSource();
+            },
+            onExit: (): void => { this.exitSearch(); }
+          })
         }
 
         // Agent 执行步骤
@@ -1939,7 +1848,7 @@ export struct ChatTab {
         if (this.messages.length === 0) {
           this.emptyWelcome()
         } else if (this.showSearch && !this.selectionMode && this.searchResultCount() === 0) {
-          this.searchEmpty()
+          ChatSearchEmpty()
         } else {
           // 渲染隔离：列表作为独立组件由数据源驱动，输入框按键等高频父组件状态变化不再重建整条消息列表
           ChatMessageList({ source: this.messageSource, scroller: this.scrollController,

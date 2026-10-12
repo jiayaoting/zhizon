@@ -222,6 +222,7 @@ export struct NewsSearchPage {
         .fontSize(this.themeState.palette.fsMd)
         .fontColor(this.themeState.palette.textTertiary)
         .padding(8)
+        .accessibilityText('打开链接')
         .onClick(() => {
           this.openUrl(row.entry.item.url);
         })

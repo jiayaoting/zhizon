@@ -246,6 +246,7 @@ export struct NewsSettingsPage {
         SymbolGlyph(symbol)
           .fontSize(18)
           .fontColor([color])
+          .accessibilityLevel('no')
       } else {
         Text(emoji)
           .fontSize(this.themeState.palette.fsMd)
@@ -350,7 +351,7 @@ export struct NewsSettingsPage {
 
   // 文字箭头（上/下移，无对应矢量符号）
   @Builder
-  glyphTap(glyph: string, onTap: () => void) {
+  glyphTap(glyph: string, label: string, onTap: () => void) {
     Row() {
       Text(glyph)
         .fontSize(this.themeState.palette.fsXs)
@@ -361,12 +362,13 @@ export struct NewsSettingsPage {
     .height(this.themeState.palette.touchTarget)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
+    .accessibilityText(label)
     .onClick(onTap)
   }
 
   // 图标点击（取消关注/退出等）
   @Builder
-  iconTap(symbol: Resource, emoji: string, color: string, onTap: () => void) {
+  iconTap(symbol: Resource, emoji: string, color: string, label: string, onTap: () => void) {
     Row() {
       if (USE_SYMBOL_ICONS) {
         SymbolGlyph(symbol)
@@ -383,6 +385,7 @@ export struct NewsSettingsPage {
     .height(this.themeState.palette.touchTarget)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
+    .accessibilityText(label)
     .onClick(onTap)
   }
 
@@ -607,13 +610,13 @@ export struct NewsSettingsPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row({ space: 0 }) {
-          this.glyphTap('▲', () => {
+          this.glyphTap('▲', '上移', () => {
             this.moveFocus(index, -1);
           })
-          this.glyphTap('▼', () => {
+          this.glyphTap('▼', '下移', () => {
             this.moveFocus(index, 1);
           })
-          this.iconTap(AppIcons.close, AppIcons.closeEmoji, this.themeState.palette.textTertiary, () => {
+          this.iconTap(AppIcons.close, AppIcons.closeEmoji, this.themeState.palette.textTertiary, '取消关注', () => {
             this.toggleStar(sourceId);
           })
         }

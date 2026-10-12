@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { AffectedFeature, DefectInput, DefectStatus, EvidenceConclusion,
   EvidenceType, FixEvidence } from '../main/ets/model/GovernanceModels';
-import { DefectWorkflow } from '../main/ets/service/DefectWorkflow';
+import { DefectWorkflow } from '../main/ets/service/platform/DefectWorkflow';
 
 export default function DefectWorkflowTest() {
   describe('DefectWorkflowTest', () => {
@@ -31,7 +31,7 @@ export default function DefectWorkflowTest() {
         'device run', ['phone'], Date.now(), 'tester');
       expect(DefectWorkflow.canConfirm(null)).assertFalse();
       expect(DefectWorkflow.canConfirm(failedDeviceEvidence)).assertFalse();
-      expect(DefectStatus.NOT_REPRODUCED === DefectStatus.CONFIRMED).assertFalse();
+      expect((DefectStatus.NOT_REPRODUCED as string) === (DefectStatus.CONFIRMED as string)).assertFalse();
     });
   });
 }

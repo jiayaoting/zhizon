@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { AffectedFeature, DefectInput, DefectSeverity } from '../main/ets/model/GovernanceModels';
-import { DefectClassifier } from '../main/ets/service/DefectClassifier';
+import { DefectClassifier } from '../main/ets/service/platform/DefectClassifier';
 
 export default function DefectClassifierTest() {
   describe('DefectClassifierTest', () => {

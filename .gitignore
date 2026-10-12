@@ -1,7 +1,7 @@
 /projects
 /.hvigor
 .cxx
-/.test
+**/.test/
 /.idea
 **/build/
 **/oh_modules/

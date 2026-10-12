@@ -99,16 +99,50 @@ export class NewsNowAuth {
 
   // ==================== JWT 解析 ====================
 
-  // 从 JWT payload 取 exp（秒）；失败返回 0
-  static expiryOf(jwt: string): number {
+  // 纯 ArkTS base64 解码（原生 Base64Helper 不可用时的兜底：本地单测/异常环境；JWT payload 为 ASCII JSON）
+  private static decodeBase64Pure(b64: string): string {
+    const table: string = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let out: string = '';
+    let acc: number = 0;
+    let bits: number = 0;
+    for (let i: number = 0; i < b64.length; i++) {
+      const ch: string = b64.charAt(i);
+      if (ch === '=') break;
+      const idx: number = table.indexOf(ch);
+      if (idx < 0) return '';
+      acc = (acc << 6) | idx;
+      bits += 6;
+      if (bits >= 8) {
+        bits -= 8;
+        out = out + String.fromCharCode((acc >> bits) & 0xFF);
+      }
+    }
+    return out;
+  }
+
+  // payload 文本：优先原生解码，失败或解出空串时回退纯 ArkTS
+  // （原生 Base64Helper 在部分运行时可用但不产出有效结果，若不校验会让过期校验静默失效）
+  private static payloadTextOf(jwt: string): string {
     const parts: string[] = jwt.split('.');
-    if (parts.length < 2) return 0;
+    if (parts.length < 2) return '';
+    const b64: string = NewsNowAuth.base64UrlToBase64(parts[1]);
     try {
-      const b64: string = NewsNowAuth.base64UrlToBase64(parts[1]);
       const helper: util.Base64Helper = new util.Base64Helper();
       const bytes: Uint8Array = new Uint8Array(helper.decodeSync(b64));
       const decoder: util.TextDecoder = new util.TextDecoder();
       const text: string = decoder.decodeToString(bytes);
+      if (text.length > 0) return text;
+    } catch (e) {
+      // 落到纯解码兜底
+    }
+    return NewsNowAuth.decodeBase64Pure(b64);
+  }
+
+  // 从 JWT payload 取 exp（秒）；失败返回 0
+  static expiryOf(jwt: string): number {
+    try {
+      const text: string = NewsNowAuth.payloadTextOf(jwt);
+      if (text.length === 0) return 0;
       const obj: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
       const exp: Object = obj['exp'];
       if (exp === undefined || exp === null) return 0;
@@ -121,14 +155,9 @@ export class NewsNowAuth {
 
   // 从 JWT payload 取 GitHub 用户 id（同步/展示用）
   static subjectOf(jwt: string): string {
-    const parts: string[] = jwt.split('.');
-    if (parts.length < 2) return '';
     try {
-      const b64: string = NewsNowAuth.base64UrlToBase64(parts[1]);
-      const helper: util.Base64Helper = new util.Base64Helper();
-      const bytes: Uint8Array = new Uint8Array(helper.decodeSync(b64));
-      const decoder: util.TextDecoder = new util.TextDecoder();
-      const text: string = decoder.decodeToString(bytes);
+      const text: string = NewsNowAuth.payloadTextOf(jwt);
+      if (text.length === 0) return '';
       const obj: Record<string, Object> = JSON.parse(text) as Record<string, Object>;
       const id: Object = obj['id'];
       return id === undefined || id === null ? '' : id.toString();

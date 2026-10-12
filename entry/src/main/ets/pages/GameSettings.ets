@@ -35,6 +35,7 @@ export struct GameSettingsPage {
                   SymbolGlyph(AppIcons.speaker)
                     .fontSize(20)
                     .fontColor([this.themeState.palette.primary])
+                    .accessibilityLevel('no')
                 } else {
                   Text(AppIcons.speakerEmoji)
                     .fontSize(16)

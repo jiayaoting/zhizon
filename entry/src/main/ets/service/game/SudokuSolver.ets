@@ -123,13 +123,45 @@ function shuffledNumbers(): number[] {
 }
 
 // 校验终局合法性：每行每列每宫 1-9 各出现一次
+// 注意：不能对 (r,c) 直接调用 isSafe(board, r, c, board[r][c])——isSafe 会把该格自身的值也算作冲突，
+// 导致任何完整棋局都被判为非法（历史缺陷，本函数原先即为此写法）。
 export function isValidSolution(board: number[][]): boolean {
+  // 行去重
   for (let r: number = 0; r < SUDOKU_SIZE; r++) {
+    const seen: boolean[] = newSeen();
     for (let c: number = 0; c < SUDOKU_SIZE; c++) {
       const v: number = board[r][c];
-      if (v < 1 || v > SUDOKU_SIZE) return false;
-      if (!isSafe(board, r, c, v)) return false;
+      if (v < 1 || v > SUDOKU_SIZE || seen[v]) return false;
+      seen[v] = true;
+    }
+  }
+  // 列去重
+  for (let c: number = 0; c < SUDOKU_SIZE; c++) {
+    const seen: boolean[] = newSeen();
+    for (let r: number = 0; r < SUDOKU_SIZE; r++) {
+      const v: number = board[r][c];
+      if (v < 1 || v > SUDOKU_SIZE || seen[v]) return false;
+      seen[v] = true;
+    }
+  }
+  // 宫去重
+  for (let br: number = 0; br < SUDOKU_SIZE; br += 3) {
+    for (let bc: number = 0; bc < SUDOKU_SIZE; bc += 3) {
+      const seen: boolean[] = newSeen();
+      for (let i: number = 0; i < 3; i++) {
+        for (let j: number = 0; j < 3; j++) {
+          const v: number = board[br + i][bc + j];
+          if (v < 1 || v > SUDOKU_SIZE || seen[v]) return false;
+          seen[v] = true;
+        }
+      }
     }
   }
   return true;
+}
+
+function newSeen(): boolean[] {
+  const seen: boolean[] = [];
+  for (let i: number = 0; i <= SUDOKU_SIZE; i++) seen.push(false);
+  return seen;
 }

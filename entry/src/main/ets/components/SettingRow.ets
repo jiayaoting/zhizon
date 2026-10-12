@@ -35,6 +35,7 @@ export struct SettingRow {
               SymbolGlyph(this.symbol)
                 .fontSize(22)
                 .fontColor([this.themeState.palette.textSecondary])
+                .accessibilityLevel('no')
             }
             .width(24)
             .height(24)
@@ -86,6 +87,7 @@ export struct SettingRow {
               SymbolGlyph(AppIcons.forward)
                 .fontSize(16)
                 .fontColor([this.themeState.palette.textTertiary])
+                .accessibilityLevel('no')
             } else {
               Text(AppIcons.forwardEmoji)
                 .fontSize(this.themeState.palette.fsMd)

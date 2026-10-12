@@ -4,7 +4,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { ThemeState } from '../common/ThemeState';
 import { TopBar } from '../components/TopBar';
 import { ChatRepository } from '../service/chat/ChatRepository';
-import { LlmClient } from '../service/chat/LlmClient';
+import { LlmProviders } from '../service/chat/LlmProvider';
 import { DataRepository } from '../service/platform/DataRepository';
 import { API_FORMAT_LABELS, ApiFormat, LLM_PROVIDER_TEMPLATES, LlmConfig, LlmModelEntry,
   LlmProviderTemplate, LlmResult, modelDisplayName, providerTemplateById } from '../common/LlmModels';
@@ -468,7 +468,7 @@ export struct ChatConfig {
       return;
     }
     this.testing = true;
-    const result: LlmResult = await LlmClient.testConnection(config);
+    const result: LlmResult = await LlmProviders.get().testConnection(config);
     this.testing = false;
     if (result.success) {
       promptAction.showToast({ message: '连接成功：' + result.content.substring(0, 20) });
